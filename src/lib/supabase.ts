@@ -13,7 +13,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase: Missing environment variables');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storageKey: 'kfa-public-token',
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
 
 export interface BlogPost {
   id: string;

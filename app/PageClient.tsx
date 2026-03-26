@@ -400,8 +400,8 @@ Hello Krishna Flute Academy, I have an inquiry!
                                 <button onClick={() => scrollToSection('contact')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Contact</button>
                             </div>
 
-                            <div className="flex items-center space-x-3 md:space-x-4">
-                                <div className="hidden sm:flex items-center space-x-2">
+                            <div className="flex items-center justify-end">
+                                <div className="hidden sm:flex items-center space-x-3 mr-8 md:mr-16 lg:mr-32 xl:mr-48">
                                     <a href={socialLinks.facebook} target="_blank" rel="noopener noreferrer" className="w-8 h-8 md:w-9 md:h-9 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-300 transform hover:scale-110">
                                         <Facebook className="w-4 h-4 md:w-5 md:h-5 text-white" />
                                     </a>
@@ -413,8 +413,34 @@ Hello Krishna Flute Academy, I have an inquiry!
                                     </a>
                                 </div>
 
+                                <div className="hidden sm:flex items-center relative group">
+                                    <button className="flex items-center justify-center space-x-2 px-5 py-2 bg-[#a15912] text-white rounded-full font-semibold md:text-sm text-xs transition-all duration-300 shadow-md">
+                                        <User className="w-4 h-4" />
+                                        <span>Login</span>
+                                    </button>
+
+                                    {/* Dropdown Menu */}
+                                    <div className="absolute top-full right-0 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 w-40 z-50">
+                                        <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-100 py-2">
+                                            <a
+                                                href="/login?type=student"
+                                                className="block px-4 py-3 text-sm font-medium text-slate-700 hover:bg-[#a15912]/10 hover:text-[#a15912] transition-colors"
+                                            >
+                                                Student Login
+                                            </a>
+                                            <div className="h-px bg-slate-100 mx-4"></div>
+                                            <a
+                                                href="/login?type=teacher"
+                                                className="block px-4 py-3 text-sm font-medium text-slate-700 hover:bg-[#a15912]/10 hover:text-[#a15912] transition-colors"
+                                            >
+                                                Teacher Login
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <button
-                                    className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                                    className="md:hidden p-2 ml-4 rounded-lg hover:bg-gray-100 transition-colors"
                                     onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                                 >
                                     {mobileMenuOpen ? <X className="w-6 h-6 text-blue-900" /> : <Menu className="w-6 h-6 text-blue-900" />}
@@ -460,6 +486,7 @@ Hello Krishna Flute Academy, I have an inquiry!
                                     <button onClick={() => { setCurrentView('gallery'); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Gallery</button>
                                     <a href="/blog/" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Blog</a>
                                     <button onClick={() => { scrollToSection('contact'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Contact</button>
+                                    <a href="/login" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Login</a>
 
                                     <div className="pt-6 border-t border-gray-200">
                                         <div className="flex space-x-4">

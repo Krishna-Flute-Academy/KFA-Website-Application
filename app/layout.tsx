@@ -48,7 +48,10 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en" className={`scroll-behavior-smooth ${inter.variable} ${playfair.variable}`}>
+        <html lang="en" data-scroll-behavior="smooth" className={`${inter.variable} ${playfair.variable}`}>
+            <head>
+                <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+            </head>
             <body className={`${inter.className} antialiased font-sans`}>
                 {children}
             </body>
