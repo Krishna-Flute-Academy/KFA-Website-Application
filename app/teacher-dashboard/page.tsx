@@ -47,6 +47,7 @@ interface TemporaryClass {
 }
 
 interface CalendarEvent {
+    id: string;
     type: 'recurring' | 'temporary';
     name: string;
     time: string;
@@ -82,6 +83,8 @@ export default function TeacherDashboard() {
     const [tempModalDate, setTempModalDate] = useState('');
     const [tempForm, setTempForm] = useState({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '' });
     const [classrooms, setClassrooms] = useState<{ id: string; name: string }[]>([]);
+    const [allStudents, setAllStudents] = useState<{ id: string; name: string }[]>([]);
+    const [tempSelectedStudents, setTempSelectedStudents] = useState<string[]>([]);
 
     const calendarMonth = calendarDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
@@ -104,11 +107,11 @@ export default function TeacherDashboard() {
             const dateStr = d.toISOString().split('T')[0];
             // Recurring
             batchSchedules.filter(s => s.day_of_week === dow).forEach(s => {
-                evts.push({ type: 'recurring', name: s.classroom_name, time: `${s.start_time.slice(0,5)}–${s.end_time.slice(0,5)}`, classroom_id: s.classroom_id });
+                evts.push({ id: s.id, type: 'recurring', name: s.classroom_name, time: `${s.start_time.slice(0,5)}–${s.end_time.slice(0,5)}`, classroom_id: s.classroom_id });
             });
             // Temporary
             tempClasses.filter(t => t.class_date === dateStr).forEach(t => {
-                evts.push({ type: 'temporary', name: t.title, time: `${t.start_time.slice(0,5)}–${t.end_time.slice(0,5)}`, classroom_id: t.classroom_id });
+                evts.push({ id: t.id, type: 'temporary', name: t.title, time: `${t.start_time.slice(0,5)}–${t.end_time.slice(0,5)}`, classroom_id: t.classroom_id });
             });
             return evts;
         };
@@ -263,6 +266,14 @@ export default function TeacherDashboard() {
                     .eq('teacher_id', userId);
                 if (roomList) setClassrooms(roomList);
 
+                // 9. Fetch all students for the current teacher
+                const { data: studentsData } = await supabaseAuth
+                    .from('users')
+                    .select('id, name')
+                    .eq('role', 'student')
+                    .eq('teacher_id', userId);
+                if (studentsData) setAllStudents(studentsData);
+
             } catch (err) {
                 console.error('Critical Dashboard Error:', err);
             } finally {
@@ -277,19 +288,32 @@ export default function TeacherDashboard() {
         setSelectedEvent(evt);
         setSidePanelOpen(true);
         setPanelStudents([]);
-        if (!evt.classroom_id) return;
         setPanelLoading(true);
         try {
-            const { data } = await supabaseAuth
-                .from('classroom_students')
-                .select('users!student_id(id, name, profile_pic_url)')
-                .eq('classroom_id', evt.classroom_id);
-            if (data) {
-                setPanelStudents((data as any[]).map(d => ({
-                    id: d.users?.id || '',
-                    name: d.users?.name || 'Unknown',
-                    profile_pic_url: d.users?.profile_pic_url
-                })));
+            if (evt.type === 'recurring' && evt.classroom_id) {
+                const { data } = await supabaseAuth
+                    .from('classroom_students')
+                    .select('users!student_id(id, name, profile_pic_url)')
+                    .eq('classroom_id', evt.classroom_id);
+                if (data) {
+                    setPanelStudents((data as any[]).map(d => ({
+                        id: d.users?.id || '',
+                        name: d.users?.name || 'Unknown',
+                        profile_pic_url: d.users?.profile_pic_url
+                    })));
+                }
+            } else if (evt.type === 'temporary' && evt.id) {
+                const { data } = await supabaseAuth
+                    .from('temporary_class_students')
+                    .select('users!student_id(id, name, profile_pic_url)')
+                    .eq('temporary_class_id', evt.id);
+                if (data) {
+                    setPanelStudents((data as any[]).map(d => ({
+                        id: d.users?.id || '',
+                        name: d.users?.name || 'Unknown',
+                        profile_pic_url: d.users?.profile_pic_url
+                    })));
+                }
             }
         } catch (e) { console.error('Error fetching panel students:', e); }
         finally { setPanelLoading(false); }
@@ -299,15 +323,25 @@ export default function TeacherDashboard() {
         try {
             const { data: { session } } = await supabaseAuth.auth.getSession();
             if (!session) return;
-            const { error } = await supabaseAuth.from('temporary_classes').insert({
+            const { data: tempClassData, error } = await supabaseAuth.from('temporary_classes').insert({
                 teacher_id: session.user.id,
-                classroom_id: tempForm.classroom_id || null,
+                classroom_id: null,
                 title: tempForm.title || 'Temporary Class',
                 class_date: tempModalDate,
                 start_time: tempForm.start_time,
                 end_time: tempForm.end_time
-            });
+            }).select().single();
             if (error) { console.error('Error creating temp class:', error); alert('Failed to create temporary class.'); return; }
+            
+            // Insert selected students
+            if (tempSelectedStudents.length > 0 && tempClassData) {
+                const studentInserts = tempSelectedStudents.map(studentId => ({
+                    temporary_class_id: tempClassData.id,
+                    student_id: studentId
+                }));
+                await supabaseAuth.from('temporary_class_students').insert(studentInserts);
+            }
+
             // Refresh temp classes
             const { data: tempData } = await supabaseAuth
                 .from('temporary_classes')
@@ -322,6 +356,7 @@ export default function TeacherDashboard() {
             }
             setShowTempModal(false);
             setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '' });
+            setTempSelectedStudents([]);
         } catch (e) { console.error(e); }
     };
 
@@ -491,6 +526,7 @@ export default function TeacherDashboard() {
                                                     onClick={() => {
                                                         if (cell.current && cell.events.length === 0) {
                                                             setTempModalDate(cell.date);
+                                                            setTempSelectedStudents([]);
                                                             setShowTempModal(true);
                                                         }
                                                     }}
@@ -657,7 +693,7 @@ export default function TeacherDashboard() {
                     <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="font-bold text-lg">Add Temporary Class</h3>
-                            <button onClick={() => setShowTempModal(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <button onClick={() => { setShowTempModal(false); setTempSelectedStudents([]); }} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <X size={18} />
                             </button>
                         </div>
@@ -694,17 +730,25 @@ export default function TeacherDashboard() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Assign to Batch (optional)</label>
-                                <select
-                                    value={tempForm.classroom_id}
-                                    onChange={e => setTempForm({ ...tempForm, classroom_id: e.target.value })}
-                                    className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
-                                >
-                                    <option value="">Standalone (no batch)</option>
-                                    {classrooms.map(c => (
-                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
-                                </select>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Select Students</label>
+                                <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl p-2 space-y-1 bg-slate-50 dark:bg-slate-800/50">
+                                    {allStudents.length > 0 ? allStudents.map(s => (
+                                        <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-slate-800 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={tempSelectedStudents.includes(s.id)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) setTempSelectedStudents(prev => [...prev, s.id]);
+                                                    else setTempSelectedStudents(prev => prev.filter(id => id !== s.id));
+                                                }}
+                                                className="w-4 h-4 rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]"
+                                            />
+                                            <span className="text-sm font-medium">{s.name}</span>
+                                        </label>
+                                    )) : (
+                                        <p className="text-xs text-slate-500 p-2 text-center">No students available.</p>
+                                    )}
+                                </div>
                             </div>
                         </div>
                         <button
