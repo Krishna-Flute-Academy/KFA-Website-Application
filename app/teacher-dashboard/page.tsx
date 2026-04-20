@@ -51,6 +51,7 @@ interface CalendarEvent {
     type: 'recurring' | 'temporary';
     name: string;
     time: string;
+    date: string;
     classroom_id: string | null;
 }
 
@@ -59,6 +60,31 @@ interface PanelStudent {
     name: string;
     profile_pic_url?: string;
 }
+
+function formatTime12hr(time24: string) {
+    if (!time24) return '';
+    const [h, m] = time24.split(':');
+    let hours = parseInt(h, 10);
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hStr = hours.toString().padStart(2, '0');
+    return `${hStr}:${m} ${ampm}`;
+}
+
+const generateTimeOptions = () => {
+    const options = [];
+    for (let h = 6; h <= 22; h++) {
+        for (let m = 0; m < 60; m += 15) {
+            const hStr = h.toString().padStart(2, '0');
+            const mStr = m.toString().padStart(2, '0');
+            const value = `${hStr}:${mStr}`;
+            options.push({ value, label: formatTime12hr(value) });
+        }
+    }
+    return options;
+};
+const TIME_OPTIONS = generateTimeOptions();
 
 export default function TeacherDashboard() {
     const router = useRouter();
@@ -76,8 +102,9 @@ export default function TeacherDashboard() {
     const [tempClasses, setTempClasses] = useState<TemporaryClass[]>([]);
     const [calendarDate, setCalendarDate] = useState(new Date());
     const [sidePanelOpen, setSidePanelOpen] = useState(false);
-    const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-    const [panelStudents, setPanelStudents] = useState<PanelStudent[]>([]);
+    const [selectedDateEvents, setSelectedDateEvents] = useState<CalendarEvent[]>([]);
+    const [selectedDateStr, setSelectedDateStr] = useState<string>('');
+    const [panelStudentsMap, setPanelStudentsMap] = useState<{ [key: string]: PanelStudent[] }>({});
     const [panelLoading, setPanelLoading] = useState(false);
     const [showTempModal, setShowTempModal] = useState(false);
     const [tempModalDate, setTempModalDate] = useState('');
@@ -107,11 +134,11 @@ export default function TeacherDashboard() {
             const dateStr = d.toISOString().split('T')[0];
             // Recurring
             batchSchedules.filter(s => s.day_of_week === dow).forEach(s => {
-                evts.push({ id: s.id, type: 'recurring', name: s.classroom_name, time: `${s.start_time.slice(0,5)}–${s.end_time.slice(0,5)}`, classroom_id: s.classroom_id });
+                evts.push({ id: s.id, type: 'recurring', name: s.classroom_name, time: `${formatTime12hr(s.start_time.slice(0,5))} – ${formatTime12hr(s.end_time.slice(0,5))}`, date: dateStr, classroom_id: s.classroom_id });
             });
             // Temporary
             tempClasses.filter(t => t.class_date === dateStr).forEach(t => {
-                evts.push({ id: t.id, type: 'temporary', name: t.title, time: `${t.start_time.slice(0,5)}–${t.end_time.slice(0,5)}`, classroom_id: t.classroom_id });
+                evts.push({ id: t.id, type: 'temporary', name: t.title, time: `${formatTime12hr(t.start_time.slice(0,5))} – ${formatTime12hr(t.end_time.slice(0,5))}`, date: dateStr, classroom_id: t.classroom_id });
             });
             return evts;
         };
@@ -284,39 +311,47 @@ export default function TeacherDashboard() {
         loadDashboardData();
     }, [router]);
 
-    const handleEventClick = async (evt: CalendarEvent) => {
-        setSelectedEvent(evt);
+    const handleEventClick = async (evts: CalendarEvent[], dateStr: string) => {
+        setSelectedDateEvents(evts);
+        setSelectedDateStr(dateStr);
         setSidePanelOpen(true);
-        setPanelStudents([]);
+        setPanelStudentsMap({});
         setPanelLoading(true);
         try {
-            if (evt.type === 'recurring' && evt.classroom_id) {
-                const { data } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('users!student_id(id, name, profile_pic_url)')
-                    .eq('classroom_id', evt.classroom_id);
-                if (data) {
-                    setPanelStudents((data as any[]).map(d => ({
-                        id: d.users?.id || '',
-                        name: d.users?.name || 'Unknown',
-                        profile_pic_url: d.users?.profile_pic_url
-                    })));
+            const results: { [key: string]: PanelStudent[] } = {};
+            await Promise.all(evts.map(async (evt) => {
+                if (evt.type === 'recurring' && evt.classroom_id) {
+                    const { data } = await supabaseAuth
+                        .from('classroom_students')
+                        .select('users!student_id(id, name, profile_pic_url)')
+                        .eq('classroom_id', evt.classroom_id);
+                    if (data) {
+                        results[evt.id] = (data as any[]).map(d => ({
+                            id: d.users?.id || '',
+                            name: d.users?.name || 'Unknown',
+                            profile_pic_url: d.users?.profile_pic_url
+                        }));
+                    }
+                } else if (evt.type === 'temporary' && evt.id) {
+                    const { data } = await supabaseAuth
+                        .from('temporary_class_students')
+                        .select('users!student_id(id, name, profile_pic_url)')
+                        .eq('temporary_class_id', evt.id);
+                    if (data) {
+                        results[evt.id] = (data as any[]).map(d => ({
+                            id: d.users?.id || '',
+                            name: d.users?.name || 'Unknown',
+                            profile_pic_url: d.users?.profile_pic_url
+                        }));
+                    }
                 }
-            } else if (evt.type === 'temporary' && evt.id) {
-                const { data } = await supabaseAuth
-                    .from('temporary_class_students')
-                    .select('users!student_id(id, name, profile_pic_url)')
-                    .eq('temporary_class_id', evt.id);
-                if (data) {
-                    setPanelStudents((data as any[]).map(d => ({
-                        id: d.users?.id || '',
-                        name: d.users?.name || 'Unknown',
-                        profile_pic_url: d.users?.profile_pic_url
-                    })));
-                }
-            }
-        } catch (e) { console.error('Error fetching panel students:', e); }
-        finally { setPanelLoading(false); }
+            }));
+            setPanelStudentsMap(results);
+        } catch (e) {
+            console.error('Error fetching panel students:', e);
+        } finally {
+            setPanelLoading(false);
+        }
     };
 
     const handleCreateTempClass = async () => {
@@ -524,10 +559,8 @@ export default function TeacherDashboard() {
                                                 <div
                                                     key={i}
                                                     onClick={() => {
-                                                        if (cell.current && cell.events.length === 0) {
-                                                            setTempModalDate(cell.date);
-                                                            setTempSelectedStudents([]);
-                                                            setShowTempModal(true);
+                                                        if (cell.current) {
+                                                            handleEventClick(cell.events, cell.date);
                                                         }
                                                     }}
                                                     className={`bg-white dark:bg-slate-900 h-24 p-2 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${
@@ -537,17 +570,16 @@ export default function TeacherDashboard() {
                                                     <span className={`text-xs ${cell.isToday ? 'text-[#ecb613] font-bold' : ''}`}>{cell.day}</span>
                                                     <div className="mt-1 space-y-1 overflow-hidden">
                                                         {cell.events.slice(0, 2).map((evt, j) => (
-                                                            <button
+                                                            <div
                                                                 key={j}
-                                                                onClick={(e) => { e.stopPropagation(); handleEventClick(evt); }}
-                                                                className={`w-full text-left text-[9px] font-bold px-1.5 py-0.5 rounded truncate transition-all hover:opacity-80 ${
+                                                                className={`w-full text-left text-[9px] font-bold px-1.5 py-0.5 rounded truncate ${
                                                                     evt.type === 'recurring'
                                                                         ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                                                                         : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
                                                                 }`}
                                                             >
                                                                 {evt.name}
-                                                            </button>
+                                                            </div>
                                                         ))}
                                                         {cell.events.length > 2 && (
                                                             <span className="text-[9px] text-slate-400 font-bold">+{cell.events.length - 2} more</span>
@@ -574,7 +606,7 @@ export default function TeacherDashboard() {
                                             <div key={cl.id} className={`relative pl-6 border-l-2 ${idx === 0 ? 'border-[#ecb613]' : 'border-slate-200 dark:border-slate-700'}`}>
                                                 <div className={`absolute -left-[9px] top-0 size-4 rounded-full border-2 ${idx === 0 ? 'border-[#ecb613]' : 'border-slate-200 dark:border-slate-700'} bg-white dark:bg-slate-900`}></div>
                                                 <p className={`text-xs font-bold ${idx === 0 ? 'text-[#ecb613]' : 'text-slate-400'} uppercase tracking-wider`}>
-                                                    {cl.start_time.slice(0, 5)} - {cl.end_time.slice(0, 5)}
+                                                    {formatTime12hr(cl.start_time.slice(0, 5))} - {formatTime12hr(cl.end_time.slice(0, 5))}
                                                 </p>
                                                 <h4 className={`text-sm font-bold mt-1 ${idx === 0 ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{cl.classroom_name}</h4>
                                                 <div className="flex items-center gap-2 mt-2">
@@ -642,44 +674,93 @@ export default function TeacherDashboard() {
             {sidePanelOpen && (
                 <>
                     <div className="fixed inset-0 bg-black/30 z-40 backdrop-blur-sm" onClick={() => setSidePanelOpen(false)} />
-                    <div className="fixed right-0 top-0 h-full w-96 bg-white dark:bg-slate-900 z-50 shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-right">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                    <div className="fixed right-0 top-0 h-full w-[450px] bg-white dark:bg-slate-900 z-50 shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-right">
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
                             <div>
-                                <h3 className="font-bold text-lg">{selectedEvent?.name}</h3>
-                                <p className="text-xs text-slate-500 mt-1">{selectedEvent?.time}</p>
-                                <span className={`mt-2 inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                                    selectedEvent?.type === 'recurring' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
-                                }`}>
-                                    {selectedEvent?.type}
-                                </span>
+                                <h3 className="font-bold text-lg">Classes for {selectedDateStr}</h3>
+                                <p className="text-xs text-slate-500 mt-1">{selectedDateEvents.length} class(es) scheduled</p>
                             </div>
-                            <button onClick={() => setSidePanelOpen(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                                <X size={18} />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => {
+                                        setTempModalDate(selectedDateStr);
+                                        setTempSelectedStudents([]);
+                                        setShowTempModal(true);
+                                    }} 
+                                    className="px-3 py-1.5 flex items-center gap-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50 transition-colors text-xs font-bold"
+                                >
+                                    <Plus size={14} /> Add Class
+                                </button>
+                                <button onClick={() => setSidePanelOpen(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                    <X size={18} />
+                                </button>
+                            </div>
                         </div>
-                        <div className="p-6 flex-1 overflow-y-auto">
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Enrolled Students</h4>
+                        <div className="p-6 flex-1 overflow-y-auto space-y-6">
                             {panelLoading ? (
-                                <div className="flex items-center justify-center py-8">
-                                    <Loader2 className="w-6 h-6 animate-spin text-[#ecb613]" />
+                                <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                                    <Loader2 className="w-8 h-8 animate-spin text-[#ecb613]" />
+                                    <p className="text-sm font-medium text-slate-500">Loading student rosters...</p>
                                 </div>
-                            ) : panelStudents.length > 0 ? (
-                                <div className="space-y-3">
-                                    {panelStudents.map(s => (
-                                        <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                                            <div className="size-9 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-300 dark:border-slate-600">
-                                                {s.profile_pic_url ? (
-                                                    <img src={s.profile_pic_url} alt={s.name} className="w-full h-full object-cover rounded-full" loading="lazy" />
-                                                ) : (
-                                                    <span className="text-xs font-bold">{s.name.charAt(0)}</span>
-                                                )}
+                            ) : selectedDateEvents.length > 0 ? (
+                                selectedDateEvents.map((evt, idx) => (
+                                    <div key={evt.id} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                        <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                                            <div>
+                                                <h4 className="font-bold text-sm text-slate-900 dark:text-white">{evt.name}</h4>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                                        evt.type === 'recurring' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                                                    }`}>
+                                                        {evt.type}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                                        <Clock size={12} /> {evt.time}
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <span className="text-sm font-medium">{s.name}</span>
+                                            <div className="text-right">
+                                                <p className="text-xs font-bold text-[#ecb613]">{panelStudentsMap[evt.id]?.length || 0}</p>
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase">Students</p>
+                                            </div>
                                         </div>
-                                    ))}
-                                </div>
+                                        <div className="p-4 bg-slate-50/50 dark:bg-slate-900/50">
+                                            {panelStudentsMap[evt.id]?.length > 0 ? (
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {panelStudentsMap[evt.id]?.map(s => (
+                                                        <div key={s.id} className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xs">
+                                                            <div className="size-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
+                                                                {s.profile_pic_url ? (
+                                                                    <img src={s.profile_pic_url} alt={s.name} className="w-full h-full object-cover rounded-full" />
+                                                                ) : (
+                                                                    <span className="text-[10px] font-bold">{s.name.charAt(0)}</span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-xs font-medium truncate">{s.name}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-[10px] text-slate-400 text-center py-2 italic font-medium">No students enrolled yet.</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
                             ) : (
-                                <p className="text-sm text-slate-500 text-center py-8">No students enrolled in this batch.</p>
+                                <div className="text-center py-12">
+                                    <Calendar size={48} className="mx-auto text-slate-200 mb-4" />
+                                    <p className="text-sm font-medium text-slate-500">No classes scheduled for this day.</p>
+                                    <button 
+                                        onClick={() => {
+                                            setTempModalDate(selectedDateStr);
+                                            setTempSelectedStudents([]);
+                                            setShowTempModal(true);
+                                        }}
+                                        className="mt-4 text-xs font-bold text-[#ecb613] hover:underline"
+                                    >
+                                        + Schedule a Temporary Class
+                                    </button>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -712,21 +793,27 @@ export default function TeacherDashboard() {
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time</label>
-                                    <input
-                                        type="time"
+                                    <select
                                         value={tempForm.start_time}
                                         onChange={e => setTempForm({ ...tempForm, start_time: e.target.value })}
                                         className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
-                                    />
+                                    >
+                                        {TIME_OPTIONS.map(opt => (
+                                            <option key={`start-${opt.value}`} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">End Time</label>
-                                    <input
-                                        type="time"
+                                    <select
                                         value={tempForm.end_time}
                                         onChange={e => setTempForm({ ...tempForm, end_time: e.target.value })}
                                         className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
-                                    />
+                                    >
+                                        {TIME_OPTIONS.map(opt => (
+                                            <option key={`end-${opt.value}`} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                             <div>

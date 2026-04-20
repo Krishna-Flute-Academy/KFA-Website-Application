@@ -8,6 +8,17 @@ import Link from 'next/link';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 
+function formatTime12hr(time24: string) {
+    if (!time24) return '';
+    const [h, m] = time24.split(':');
+    let hours = parseInt(h, 10);
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hStr = hours.toString().padStart(2, '0');
+    return `${hStr}:${m} ${ampm}`;
+}
+
 interface Classroom {
     id: string;
     name: string;
@@ -22,7 +33,9 @@ export default function ClassroomsPage() {
     const [loading, setLoading] = useState(true);
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+    const [tempClassrooms, setTempClassrooms] = useState<Classroom[]>([]);
     const [activeView, setActiveView] = useState<'permanent' | 'temporary'>('permanent');
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         const fetchData = async () => {
@@ -53,7 +66,7 @@ export default function ClassroomsPage() {
                 // Fetch batch schedules for all classrooms
                 const roomIds = (roomsData || []).map(r => r.id);
                 const { data: allSchedules } = roomIds.length > 0
-                    ? await supabaseAuth.from('batch_schedules').select('classroom_id, day_of_week, start_time').in('classroom_id', roomIds)
+                    ? await supabaseAuth.from('batch_schedules').select('classroom_id, day_of_week, start_time, end_time').in('classroom_id', roomIds)
                     : { data: [] };
 
                 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -65,12 +78,17 @@ export default function ClassroomsPage() {
                         grouped[s.classroom_id].push(s);
                     });
                     for (const [cid, entries] of Object.entries(grouped)) {
-                        const days = entries.map(e => DAY_SHORT[e.day_of_week]).join(', ');
-                        const time = entries[0]?.start_time?.slice(0, 5) || '';
-                        const hour = parseInt(time.split(':')[0]);
-                        const ampm = hour >= 12 ? 'PM' : 'AM';
-                        const h12 = hour % 12 || 12;
-                        scheduleMap[cid] = `${days} • ${h12}:${time.split(':')[1]} ${ampm}`;
+                        const days = Array.from(new Set(entries.map(e => DAY_SHORT[e.day_of_week]))).join(', ');
+                        
+                        // Just take the first timing range for the summary view
+                        const first = entries[0];
+                        if (first) {
+                            const startStr = formatTime12hr(first.start_time.slice(0, 5));
+                            const endStr = formatTime12hr(first.end_time.slice(0, 5));
+                            scheduleMap[cid] = `${days} • ${startStr} - ${endStr}`;
+                        } else {
+                            scheduleMap[cid] = `${days}`;
+                        }
                     }
                 }
 
@@ -89,6 +107,32 @@ export default function ClassroomsPage() {
                 }));
 
                 setClassrooms(roomsWithCounts);
+
+                // Fetch Temporary Classes
+                const todayStr = new Date().toISOString().split('T')[0];
+                const { data: tempRoomsData } = await supabaseAuth
+                    .from('temporary_classes')
+                    .select('*')
+                    .eq('teacher_id', profile.id)
+                    .order('class_date', { ascending: false });
+                
+                const tempRoomsWithCounts = await Promise.all((tempRoomsData || []).map(async (room) => {
+                    const { count } = await supabaseAuth
+                        .from('temporary_class_students')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('temporary_class_id', room.id);
+
+                    return {
+                        id: room.id,
+                        name: room.title || 'Temporary Class',
+                        description: `Temporary Session on ${room.class_date}`,
+                        schedule: `${new Date(room.class_date).toLocaleDateString('en-US', {weekday:'short'})} • ${formatTime12hr(room.start_time.slice(0,5))} - ${formatTime12hr(room.end_time.slice(0,5))}`,
+                        student_count: count || 0,
+                        status: 'Active'
+                    };
+                }));
+                
+                setTempClassrooms(tempRoomsWithCounts);
 
             } catch (err) {
                 console.error('Error fetching classrooms:', err);
@@ -114,6 +158,16 @@ export default function ClassroomsPage() {
         );
     }
 
+    let displayedClassrooms = activeView === 'permanent' ? classrooms : tempClassrooms;
+
+    if (searchQuery.trim() !== '') {
+        const lowerQ = searchQuery.toLowerCase();
+        displayedClassrooms = displayedClassrooms.filter(room => 
+            room.name.toLowerCase().includes(lowerQ) || 
+            (room.description && room.description.toLowerCase().includes(lowerQ))
+        );
+    }
+
     return (
         <div className="flex min-h-screen bg-[#f8f8f6] dark:bg-[#221d10] text-[#0f172a] dark:text-slate-100 font-sans">
             <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
@@ -124,7 +178,13 @@ export default function ClassroomsPage() {
                     <div className="flex items-center gap-4 flex-1">
                         <div className="relative w-full max-w-md">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-5" />
-                            <input className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-full text-sm focus:ring-2 focus:ring-[#fef3c7]" placeholder="Search classes, students..." type="text"/>
+                            <input 
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-full text-sm focus:ring-2 focus:ring-[#fef3c7]" 
+                                placeholder="Search classes, students..." 
+                                type="text"
+                            />
                         </div>
                     </div>
                 </header>
@@ -164,7 +224,13 @@ export default function ClassroomsPage() {
                         <div className="flex items-center gap-3 w-full md:w-auto">
                             <div className="relative flex-1 md:w-64">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-5" />
-                                <input className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#fef3c7]" placeholder="Find by name..." type="text"/>
+                                <input 
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#fef3c7]" 
+                                    placeholder="Find by name..." 
+                                    type="text"
+                                />
                             </div>
                             <div className="inline-flex rounded-lg shadow-sm bg-white dark:bg-slate-900 p-1 border border-slate-200 dark:border-slate-800 h-[38px]">
                                 <button className="px-3 py-1 text-sm font-bold bg-[#fef3c7] dark:bg-[#ecb613]/20 text-[#92400e] dark:text-[#ecb613] rounded-md flex items-center justify-center">
@@ -188,7 +254,7 @@ export default function ClassroomsPage() {
                                 <Users className="size-6" />
                             </div>
                             <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-1">Total Students</p>
-                            <p className="text-2xl font-black text-slate-900 dark:text-white">{classrooms.reduce((acc, r) => acc + r.student_count, 0)}</p>
+                            <p className="text-2xl font-black text-slate-900 dark:text-white">{displayedClassrooms.reduce((acc, r) => acc + r.student_count, 0)}</p>
                         </div>
                         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
                             <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-4">
@@ -202,14 +268,14 @@ export default function ClassroomsPage() {
                                 <MapPin className="size-6" />
                             </div>
                             <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-1">Offline Classes</p>
-                            <p className="text-2xl font-black text-slate-900 dark:text-white">{classrooms.length}</p>
+                            <p className="text-2xl font-black text-slate-900 dark:text-white">{displayedClassrooms.length}</p>
                         </div>
                         <div className="bg-[#ecb613] p-6 rounded-2xl border border-[#ecb613] shadow-sm hover:shadow-md transition-shadow text-slate-900">
                             <div className="w-12 h-12 rounded-xl bg-white/30 flex items-center justify-center text-slate-900 mb-4">
                                 <Clock className="size-6" />
                             </div>
                             <p className="text-slate-900/80 text-sm font-medium mb-1">Total Classes</p>
-                            <p className="text-2xl font-black">{classrooms.length}</p>
+                            <p className="text-2xl font-black">{displayedClassrooms.length}</p>
                         </div>
                     </div>
 
@@ -227,7 +293,7 @@ export default function ClassroomsPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                                    {classrooms.map((room, idx) => {
+                                    {displayedClassrooms.map((room, idx) => {
                                         // Pick an icon/color based on index to mimic the design mockup diversity
                                         const iconColors = [
                                             { bg: 'bg-[#fef3c7]/60 dark:bg-[#ecb613]/20', text: 'text-[#ecb613]', icon: Music },
@@ -294,7 +360,7 @@ export default function ClassroomsPage() {
                                             </td>
                                             <td className="px-6 py-6 text-right border-b border-slate-100 dark:border-slate-800/50">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    <Link href={`/teacher-dashboard/classrooms/${room.id}`}>
+                                                    <Link href={activeView === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`}>
                                                         <button className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
                                                             Manage
                                                         </button>
@@ -317,7 +383,7 @@ export default function ClassroomsPage() {
                                             </td>
                                         </tr>
                                     )})}
-                                    {classrooms.length === 0 && (
+                                    {displayedClassrooms.length === 0 && (
                                         <tr>
                                             <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                                                 No classes found. Click "Configure New Class" to get started.
@@ -328,7 +394,7 @@ export default function ClassroomsPage() {
                             </table>
                         </div>
                         <div className="bg-slate-50 dark:bg-slate-800/30 px-6 py-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-800">
-                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Showing {classrooms.length} classes</p>
+                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Showing {displayedClassrooms.length} classes</p>
                             <div className="flex gap-2">
                                 <button className="p-2 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-white dark:hover:bg-slate-700 disabled:opacity-50 transition-colors text-slate-500" disabled>
                                     <ChevronLeft className="size-4" />

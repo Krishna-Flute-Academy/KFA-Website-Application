@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, FileUp, Plus, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2 } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 
@@ -13,6 +13,13 @@ interface ClassroomDetails {
     description: string;
     status: string;
     created_at: string;
+}
+
+interface ScheduleEntry {
+    id: string;
+    day_of_week: number;
+    start_time: string;
+    end_time: string;
 }
 
 interface EnrolledStudent {
@@ -38,7 +45,22 @@ export default function ClassroomDashboardPage() {
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
     const [classroom, setClassroom] = useState<ClassroomDetails | null>(null);
     const [students, setStudents] = useState<EnrolledStudent[]>([]);
+    const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
     const [activeTab, setActiveTab] = useState('Overview');
+    const [currentPage, setCurrentPage] = useState(1);
+    const PAGE_SIZE = 10;
+
+    // New schedule form state
+    const [newSchedule, setNewSchedule] = useState({
+        day: 0,
+        start: '09:00',
+        end: '10:30'
+    });
+    const [isSavingSchedule, setIsSavingSchedule] = useState(false);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -111,6 +133,16 @@ export default function ClassroomDashboardPage() {
 
                 setStudents(formattedRoster);
 
+                // 6. Fetch Schedules
+                const { data: scheduleData } = await supabaseAuth
+                    .from('batch_schedules')
+                    .select('*')
+                    .eq('classroom_id', classroomId)
+                    .order('day_of_week', { ascending: true })
+                    .order('start_time', { ascending: true });
+                
+                setSchedules(scheduleData || []);
+
             } catch (err) {
                 console.error('Error fetching classroom data:', err);
                 router.push('/teacher-dashboard/classrooms');
@@ -160,6 +192,98 @@ export default function ClassroomDashboardPage() {
         if (score >= 6.5) return 'B';
         return 'C';
     };
+
+    const formatTime12hr = (time24: string) => {
+        if (!time24) return '';
+        const [h, m] = time24.split(':');
+        let hours = parseInt(h, 10);
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        const hStr = hours.toString().padStart(2, '0');
+        return `${hStr}:${m} ${ampm}`;
+    };
+
+    const handleSaveSchedule = async () => {
+        if (!classroomId) return;
+
+        // Local check for duplicates
+        const isDuplicate = schedules.some(s => 
+            s.day_of_week === newSchedule.day && 
+            s.start_time.startsWith(newSchedule.start)
+        );
+
+        if (isDuplicate) {
+            alert('This schedule slot already exists for this class.');
+            return;
+        }
+
+        setIsSavingSchedule(true);
+        try {
+            const { data, error } = await supabaseAuth
+                .from('batch_schedules')
+                .insert([{
+                    classroom_id: classroomId,
+                    day_of_week: newSchedule.day,
+                    start_time: newSchedule.start,
+                    end_time: newSchedule.end
+                }])
+                .select();
+            
+            if (error) {
+                // Handle Supabase unique constraint violation
+                if (error.code === '23505') {
+                    alert('This schedule slot already exists.');
+                    return;
+                }
+                throw error;
+            }
+
+            if (data) {
+                setSchedules(prev => [...prev, data[0]].sort((a, b) => a.day_of_week - b.day_of_week));
+                setNewSchedule({ day: 0, start: '09:00', end: '10:30' });
+            }
+        } catch (err) {
+            console.error('Error saving schedule:', err);
+            alert('Failed to save schedule');
+        } finally {
+            setIsSavingSchedule(false);
+        }
+    };
+
+    const handleDeleteSchedule = async (id: string) => {
+        try {
+            const { error } = await supabaseAuth
+                .from('batch_schedules')
+                .delete()
+                .eq('id', id);
+            
+            if (error) throw error;
+            setSchedules(prev => prev.filter(s => s.id !== id));
+        } catch (err) {
+            console.error('Error deleting schedule:', err);
+            alert('Failed to delete schedule');
+        }
+    };
+
+    const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+    const generateTimeOptions = () => {
+        const options = [];
+        for (let h = 6; h <= 22; h++) {
+            for (let m = 0; m < 60; m += 15) {
+                const hStr = h.toString().padStart(2, '0');
+                const mStr = m.toString().padStart(2, '0');
+                const value = `${hStr}:${mStr}`;
+                options.push({ value, label: formatTime12hr(value) });
+            }
+        }
+        return options;
+    };
+    const TIME_OPTIONS = generateTimeOptions();
+
+    const totalPages = Math.ceil(students.length / PAGE_SIZE);
+    const paginatedStudents = students.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
     return (
         <div className="flex min-h-screen bg-[#f8f8f6] dark:bg-[#221d10] text-slate-900 dark:text-slate-100 font-sans">
@@ -276,7 +400,31 @@ export default function ClassroomDashboardPage() {
                                     </p>
                                 </div>
 
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between flex-1">
+                                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Schedule</h4>
+                                        <Clock className="w-5 h-5 text-[#ecb613]" />
+                                    </div>
+                                    <div className="space-y-3">
+                                        {schedules.length === 0 ? (
+                                            <p className="text-xs text-slate-400 italic">No schedule set</p>
+                                        ) : (
+                                            schedules.slice(0, 3).map(slot => (
+                                                <div key={slot.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{DAY_NAMES[slot.day_of_week]}</span>
+                                                    <span className="text-xs font-medium text-[#ecb613]">{formatTime12hr(slot.start_time)} - {formatTime12hr(slot.end_time)}</span>
+                                                </div>
+                                            ))
+                                        )}
+                                        {schedules.length > 3 && (
+                                            <button onClick={() => setActiveTab('Settings')} className="text-[10px] font-bold text-[#ecb613] hover:underline w-full text-center mt-2">
+                                                View all {schedules.length} slots
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
                                     <div className="flex justify-between items-center mb-4">
                                         <h4 className="text-sm font-bold text-slate-900 dark:text-white">Quick Actions</h4>
                                         <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
@@ -321,7 +469,7 @@ export default function ClassroomDashboardPage() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                            {students.map(student => (
+                                            {paginatedStudents.map(student => (
                                                 <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">
@@ -362,7 +510,7 @@ export default function ClassroomDashboardPage() {
                                                     </td>
                                                 </tr>
                                             ))}
-                                            {students.length === 0 && (
+                                            {paginatedStudents.length === 0 && (
                                                 <tr>
                                                     <td colSpan={6} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
                                                         <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">No students found. Add some students to start tracking progress.</p>
@@ -373,10 +521,24 @@ export default function ClassroomDashboardPage() {
                                     </table>
                                 </div>
                                 <div className="p-4 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center rounded-b-2xl">
-                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Showing {students.length} students</span>
+                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                        Showing {paginatedStudents.length > 0 ? (currentPage - 1) * PAGE_SIZE + 1 : 0} - {Math.min(currentPage * PAGE_SIZE, students.length)} of {students.length} students
+                                    </span>
                                     <div className="flex gap-2">
-                                        <button className="px-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50">Previous</button>
-                                        <button className="px-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50">Next</button>
+                                        <button 
+                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                            disabled={currentPage === 1}
+                                            className="px-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50"
+                                        >
+                                            Previous
+                                        </button>
+                                        <button 
+                                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                            disabled={currentPage === totalPages || totalPages === 0}
+                                            className="px-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50"
+                                        >
+                                            Next
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -626,7 +788,7 @@ export default function ClassroomDashboardPage() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                                            {students.map(student => (
+                                            {paginatedStudents.map(student => (
                                                 <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">
@@ -667,7 +829,7 @@ export default function ClassroomDashboardPage() {
                                                     </td>
                                                 </tr>
                                             ))}
-                                            {students.length === 0 && (
+                                            {paginatedStudents.length === 0 && (
                                                 <tr>
                                                     <td colSpan={6} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
                                                         <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">No students found. Add some students to see them in this roster.</p>
@@ -678,10 +840,24 @@ export default function ClassroomDashboardPage() {
                                     </table>
                                 </div>
                                 <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center rounded-b-xl">
-                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Showing {Math.min(students.length, 24)} of {students.length} students</p>
+                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                                        Showing {paginatedStudents.length > 0 ? (currentPage - 1) * PAGE_SIZE + 1 : 0} - {Math.min(currentPage * PAGE_SIZE, students.length)} of {students.length} students
+                                    </p>
                                     <div className="flex gap-2">
-                                        <button className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">Previous</button>
-                                        <button className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">Next</button>
+                                        <button 
+                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                            disabled={currentPage === 1}
+                                            className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                                        >
+                                            Previous
+                                        </button>
+                                        <button 
+                                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                            disabled={currentPage === totalPages || totalPages === 0}
+                                            className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                                        >
+                                            Next
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -717,6 +893,134 @@ export default function ClassroomDashboardPage() {
                                     <div className="pt-4 border-t border-slate-900/20 mt-4">
                                         <p className="text-xs font-semibold italic text-slate-900/80">"Strongest participation on Wednesdays."</p>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : activeTab === 'Settings' ? (
+                        <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                                <div className="p-8 border-b border-slate-200 dark:border-slate-800">
+                                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Classroom Settings</h3>
+                                    <p className="text-sm text-slate-500 mt-1">Manage class details and recurring schedule timings.</p>
+                                </div>
+                                <div className="p-8 space-y-10">
+                                    {/* Schedule Section */}
+                                    <section>
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                                                <Clock className="w-6 h-6" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-lg font-bold text-slate-900 dark:text-white">Recurring Schedule</h4>
+                                                <p className="text-xs text-slate-500">Set the weekly timings for this class.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                            {/* List of Schedules */}
+                                            <div className="space-y-4">
+                                                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Active Slots</h5>
+                                                {schedules.length === 0 ? (
+                                                    <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                                                        <p className="text-xs font-bold text-slate-400">No schedule slots configured yet.</p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-3">
+                                                        {schedules.map((slot) => (
+                                                            <div key={slot.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 rounded-xl hover:shadow-md transition-all group">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="w-10 h-10 rounded-lg bg-white dark:bg-slate-900 flex items-center justify-center border border-slate-100 dark:border-slate-700">
+                                                                        <Calendar className="w-5 h-5 text-[#ecb613]" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{DAY_NAMES[slot.day_of_week]}</p>
+                                                                        <p className="text-xs font-medium text-slate-500">{formatTime12hr(slot.start_time)} - {formatTime12hr(slot.end_time)}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <button 
+                                                                    onClick={() => handleDeleteSchedule(slot.id)}
+                                                                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Add Schedule Form */}
+                                            <div className="bg-slate-50 dark:bg-slate-800/30 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                                <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Add New Timing</h5>
+                                                <div className="space-y-5">
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-500 mb-2 px-1 uppercase tracking-wide">Day of the Week</label>
+                                                        <select 
+                                                            value={newSchedule.day}
+                                                            onChange={(e) => setNewSchedule(prev => ({ ...prev, day: parseInt(e.target.value) }))}
+                                                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all"
+                                                        >
+                                                            {DAY_NAMES.map((day, idx) => (
+                                                                <option key={idx} value={idx}>{day}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-slate-500 mb-2 px-1 uppercase tracking-wide">Start Time</label>
+                                                            <select 
+                                                                value={newSchedule.start}
+                                                                onChange={(e) => setNewSchedule(prev => ({ ...prev, start: e.target.value }))}
+                                                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all"
+                                                            >
+                                                                {TIME_OPTIONS.map(opt => (
+                                                                    <option key={`start-${opt.value}`} value={opt.value}>{opt.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-slate-500 mb-2 px-1 uppercase tracking-wide">End Time</label>
+                                                            <select 
+                                                                value={newSchedule.end}
+                                                                onChange={(e) => setNewSchedule(prev => ({ ...prev, end: e.target.value }))}
+                                                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-[#ecb613] outline-none transition-all"
+                                                            >
+                                                                {TIME_OPTIONS.map(opt => (
+                                                                    <option key={`end-${opt.value}`} value={opt.value}>{opt.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={handleSaveSchedule}
+                                                        disabled={isSavingSchedule}
+                                                        className="w-full bg-[#ecb613] text-slate-900 font-bold py-3 rounded-xl shadow-md shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
+                                                    >
+                                                        {isSavingSchedule ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlusCircle className="w-5 h-5" />}
+                                                        Save Schedule Slot
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <hr className="border-slate-100 dark:border-slate-800" />
+
+                                    {/* Other Settings (Placeholder) */}
+                                    <section>
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                                                <Edit3 className="w-6 h-6" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-lg font-bold text-slate-900 dark:text-white">Class Details</h4>
+                                                <p className="text-xs text-slate-500">Edit class name and description.</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-center py-12 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
+                                            <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Metadata editing coming soon</p>
+                                        </div>
+                                    </section>
                                 </div>
                             </div>
                         </div>

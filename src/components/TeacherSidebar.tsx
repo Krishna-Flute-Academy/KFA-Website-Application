@@ -37,7 +37,9 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
             <nav className="flex-1 px-4 space-y-1 mt-4 overflow-y-auto">
                 {menuItems.map((item) => {
-                    const isActive = pathname === item.href;
+                    const isActive = item.href === '/teacher-dashboard' 
+                        ? pathname === item.href 
+                        : pathname?.startsWith(item.href);
                     return (
                         <Link
                             key={item.name}

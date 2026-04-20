@@ -29,9 +29,34 @@ export default function CreateClassPage() {
         description: '',
         type: 'permanent',
         selectedDays: [] as number[], // 0=Sun, 1=Mon, ..., 6=Sat
-        startTime: '07:00',
-        endTime: '08:00'
+        classDate: new Date().toISOString().split('T')[0],
+        startTime: '10:00',
+        endTime: '11:00'
     });
+
+    function formatTime12hr(time24: string) {
+        if (!time24) return '';
+        const [h, m] = time24.split(':');
+        let hours = parseInt(h, 10);
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        return `${hours}:${m} ${ampm}`;
+    }
+
+    const generateTimeOptions = () => {
+        const options = [];
+        for (let h = 6; h <= 22; h++) {
+            for (let m = 0; m < 60; m += 15) {
+                const hStr = h.toString().padStart(2, '0');
+                const mStr = m.toString().padStart(2, '0');
+                const value = `${hStr}:${mStr}`;
+                options.push({ value, label: formatTime12hr(value) });
+            }
+        }
+        return options;
+    };
+    const TIME_OPTIONS = generateTimeOptions();
 
     const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -110,60 +135,91 @@ export default function CreateClassPage() {
 
         setSubmitting(true);
         try {
-            // Build schedule text for display
-            const scheduleText = formData.selectedDays.length > 0
-                ? formData.selectedDays.map(d => DAY_LABELS[d]).join(', ') + ` • ${formData.startTime}`
-                : `${formData.startTime}`;
+            if (formData.type === 'permanent') {
+                // Build schedule text for display
+                const scheduleText = formData.selectedDays.length > 0
+                    ? formData.selectedDays.map(d => DAY_LABELS[d]).join(', ') + ` • ${formatTime12hr(formData.startTime)}`
+                    : `${formatTime12hr(formData.startTime)}`;
 
-            // 1. Create Classroom
-            const { data: classroom, error: classroomError } = await supabaseAuth
-                .from('classrooms')
-                .insert([{
-                    teacher_id: teacherProfile.id,
-                    name: formData.name,
-                    description: formData.description,
-                    schedule: scheduleText
-                }])
-                .select()
-                .single();
+                // 1. Create Permanent Classroom
+                const { data: classroom, error: classroomError } = await supabaseAuth
+                    .from('classrooms')
+                    .insert([{
+                        teacher_id: teacherProfile.id,
+                        name: formData.name,
+                        description: formData.description,
+                        type: formData.type
+                    }])
+                    .select()
+                    .single();
 
-            if (classroomError) throw classroomError;
+                if (classroomError) throw classroomError;
 
-            // 2. Insert Batch Schedules for each selected day
-            if (formData.selectedDays.length > 0) {
-                const schedules = formData.selectedDays.map(day => ({
-                    classroom_id: classroom.id,
-                    day_of_week: day,
-                    start_time: formData.startTime,
-                    end_time: formData.endTime
-                }));
-                const { error: schedError } = await supabaseAuth
-                    .from('batch_schedules')
-                    .insert(schedules);
-                if (schedError) console.error('Error inserting batch schedules:', schedError);
+                // 2. Insert Batch Schedules for each selected day
+                if (formData.selectedDays.length > 0) {
+                    const schedules = formData.selectedDays.map(day => ({
+                        classroom_id: classroom.id,
+                        day_of_week: day,
+                        start_time: formData.startTime,
+                        end_time: formData.endTime
+                    }));
+                    const { error: schedError } = await supabaseAuth
+                        .from('batch_schedules')
+                        .insert(schedules);
+                    if (schedError) console.error('Error inserting batch schedules:', schedError);
+                }
+
+                // 3. Assign Students
+                if (selectedStudents.length > 0) {
+                    const assignments = selectedStudents.map(studentId => ({
+                        classroom_id: classroom.id,
+                        student_id: studentId,
+                        joined_at: new Date().toISOString()
+                    }));
+
+                    const { error: assignmentError } = await supabaseAuth
+                        .from('classroom_students')
+                        .insert(assignments);
+
+                    if (assignmentError) throw assignmentError;
+                }
+            } else {
+                // 1. Create Temporary Class
+                const { data: tempClass, error: tempError } = await supabaseAuth
+                    .from('temporary_classes')
+                    .insert([{
+                        teacher_id: teacherProfile.id,
+                        classroom_id: null,
+                        title: formData.name,
+                        class_date: formData.classDate,
+                        start_time: formData.startTime,
+                        end_time: formData.endTime
+                    }])
+                    .select()
+                    .single();
+                
+                if (tempError) throw tempError;
+
+                // 2. Assign Students to Temporary Class
+                if (selectedStudents.length > 0) {
+                    const studentInserts = selectedStudents.map(studentId => ({
+                        temporary_class_id: tempClass.id,
+                        student_id: studentId
+                    }));
+                    const { error: tempAssignmentError } = await supabaseAuth
+                        .from('temporary_class_students')
+                        .insert(studentInserts);
+                    if (tempAssignmentError) throw tempAssignmentError;
+                }
             }
 
-            // 3. Assign Students
-            if (selectedStudents.length > 0) {
-                const assignments = selectedStudents.map(studentId => ({
-                    classroom_id: classroom.id,
-                    student_id: studentId,
-                    joined_at: new Date().toISOString()
-                }));
-
-                const { error: assignmentError } = await supabaseAuth
-                    .from('classroom_students')
-                    .insert(assignments);
-
-                if (assignmentError) throw assignmentError;
-            }
-
-            alert('Class created successfully!');
+            alert(`${formData.type === 'permanent' ? 'Permanent Class' : 'Temporary Session'} created successfully!`);
             router.push('/teacher-dashboard/classrooms');
 
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error creating class:', err);
-            alert('Failed to create class. Please try again.');
+            const errorMessage = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+            alert(`Failed to create class: ${errorMessage}`);
         } finally {
             setSubmitting(false);
         }
@@ -264,46 +320,64 @@ export default function CreateClassPage() {
                                                 </button>
                                             </div>
                                         </div>
-                                        <div>
-                                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Schedule Days</label>
-                                            <div className="flex gap-1.5 flex-wrap">
-                                                {DAY_LABELS.map((label, idx) => (
-                                                    <button
-                                                        key={idx}
-                                                        type="button"
-                                                        onClick={() => toggleDay(idx)}
-                                                        className={`px-3 py-2.5 rounded-lg text-xs font-bold transition-all ${formData.selectedDays.includes(idx) ? 'bg-[#ecb613] text-slate-900 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                                                    >
-                                                        {label}
-                                                    </button>
-                                                ))}
+                                        {formData.type === 'permanent' ? (
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Schedule Days</label>
+                                                <div className="flex gap-1.5 flex-wrap">
+                                                    {DAY_LABELS.map((label, idx) => (
+                                                        <button
+                                                            key={idx}
+                                                            type="button"
+                                                            onClick={() => toggleDay(idx)}
+                                                            className={`px-3 py-2.5 rounded-lg text-xs font-bold transition-all ${formData.selectedDays.includes(idx) ? 'bg-[#ecb613] text-slate-900 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                                        >
+                                                            {label}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
+                                        ) : (
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Class Date</label>
+                                                <input
+                                                    value={formData.classDate}
+                                                    onChange={(e) => setFormData({ ...formData, classDate: e.target.value })}
+                                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
+                                                    type="date"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div>
                                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Start Time</label>
                                             <div className="relative">
-                                                <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 size-5" />
-                                                <input
+                                                <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 size-5 pointer-events-none" />
+                                                <select
                                                     value={formData.startTime}
                                                     onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                                                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all"
-                                                    type="time"
-                                                />
+                                                    className="w-full pl-12 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all appearance-none"
+                                                >
+                                                    {TIME_OPTIONS.map(opt => (
+                                                        <option key={`start-${opt.value}`} value={opt.value}>{opt.label}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         </div>
                                         <div>
                                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">End Time</label>
                                             <div className="relative">
-                                                <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 size-5" />
-                                                <input
+                                                <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 size-5 pointer-events-none" />
+                                                <select
                                                     value={formData.endTime}
                                                     onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                                                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all"
-                                                    type="time"
-                                                />
+                                                    className="w-full pl-12 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all appearance-none"
+                                                >
+                                                    {TIME_OPTIONS.map(opt => (
+                                                        <option key={`end-${opt.value}`} value={opt.value}>{opt.label}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         </div>
                                     </div>

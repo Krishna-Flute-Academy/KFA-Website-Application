@@ -45,6 +45,8 @@ export default function AttendancePage() {
     const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [viewDate, setViewDate] = useState(new Date()); // The month being displayed in calendar
     const [searchQuery, setSearchQuery] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 10;
     
     // Data State
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
@@ -167,6 +169,10 @@ export default function AttendancePage() {
     };
 
     useEffect(() => {
+        setCurrentPage(1);
+    }, [mode, searchQuery, selectedDate, selectedClassroom]);
+
+    useEffect(() => {
         const fetchStudents = async () => {
             if (!teacherProfile) return;
 
@@ -233,8 +239,7 @@ export default function AttendancePage() {
                     classroom_id: selectedClassroom,
                     date: selectedDate,
                     status,
-                    marked_by: teacherProfile.id,
-                    created_at: new Date().toISOString()
+                    marked_by: teacherProfile.id
                 }, { onConflict: 'student_id, classroom_id, date' });
 
             if (error) throw error;
@@ -312,47 +317,47 @@ export default function AttendancePage() {
                     </div>
                 </header>
 
-                <div className="p-8 space-y-8 max-w-[1600px] mx-auto w-full flex-1">
+                <div className="p-6 space-y-6 max-w-[1600px] mx-auto w-full flex-1">
                     {/* Summary Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="p-2 bg-amber-50 rounded-xl text-amber-600 transition-colors group-hover:bg-amber-100">
-                                    <Users className="w-5 h-5" />
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all group">
+                            <div className="flex justify-between items-start mb-3">
+                                <div className="p-2 bg-amber-50 rounded-lg text-amber-600 transition-colors group-hover:bg-amber-100">
+                                    <Users className="w-4 h-4" />
                                 </div>
-                                <span className="text-[10px] font-black text-green-600 bg-green-50 px-2 py-1 rounded-full uppercase">Stable</span>
+                                <span className="text-[10px] font-black text-green-600 bg-green-50 px-2 py-0.5 rounded-full uppercase">Stable</span>
                             </div>
-                            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider">Total Students</p>
-                            <h3 className="text-2xl font-black text-slate-900 mt-1">{stats.total}</h3>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Total Students</p>
+                            <h3 className="text-xl font-black text-slate-900 mt-0.5">{stats.total}</h3>
                         </div>
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="p-2 bg-green-50 rounded-xl text-green-600 transition-colors group-hover:bg-green-100">
-                                    <CheckCircle2 className="w-5 h-5" />
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all group">
+                            <div className="flex justify-between items-start mb-3">
+                                <div className="p-2 bg-green-50 rounded-lg text-green-600 transition-colors group-hover:bg-green-100">
+                                    <CheckCircle2 className="w-4 h-4" />
                                 </div>
                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider font-sans">Today</span>
                             </div>
-                            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider font-sans">Present</p>
-                            <h3 className="text-2xl font-black text-slate-900 mt-1">{stats.present}</h3>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider font-sans">Present</p>
+                            <h3 className="text-xl font-black text-slate-900 mt-0.5">{stats.present}</h3>
                         </div>
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="p-2 bg-red-50 rounded-xl text-red-600 transition-colors group-hover:bg-red-100">
-                                    <XCircle className="w-5 h-5" />
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all group">
+                            <div className="flex justify-between items-start mb-3">
+                                <div className="p-2 bg-red-50 rounded-lg text-red-600 transition-colors group-hover:bg-red-100">
+                                    <XCircle className="w-4 h-4" />
                                 </div>
-                                <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-1 rounded-full uppercase">High</span>
+                                <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-full uppercase">High</span>
                             </div>
-                            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider font-sans">Absent Today</p>
-                            <h3 className="text-2xl font-black text-slate-900 mt-1">{stats.absent}</h3>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider font-sans">Absent Today</p>
+                            <h3 className="text-xl font-black text-slate-900 mt-0.5">{stats.absent}</h3>
                         </div>
-                        <div className="bg-primary text-on-primary p-6 rounded-2xl shadow-xl shadow-primary/20 transition-all hover:scale-[1.02]">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="p-2 bg-white/20 rounded-xl">
-                                    <TrendingUp className="w-5 h-5" />
+                        <div className="bg-primary text-on-primary p-4 rounded-xl shadow-xl shadow-primary/20 transition-all hover:scale-[1.02]">
+                            <div className="flex justify-between items-start mb-3">
+                                <div className="p-2 bg-white/20 rounded-lg">
+                                    <TrendingUp className="w-4 h-4" />
                                 </div>
                             </div>
-                            <p className="text-on-primary/80 text-xs font-bold uppercase tracking-wider font-sans">Attendance Rate</p>
-                            <h3 className="text-3xl font-black mt-1">{stats.rate}</h3>
+                            <p className="text-on-primary/80 text-[10px] font-bold uppercase tracking-wider font-sans">Attendance Rate</p>
+                            <h3 className="text-2xl font-black mt-0.5">{stats.rate}</h3>
                         </div>
                     </div>
 
@@ -389,11 +394,11 @@ export default function AttendancePage() {
                     </div>
 
                     {/* Main Content Area */}
-                    <div className="grid grid-cols-12 gap-8">
+                    <div className="grid grid-cols-12 gap-5">
                         {/* Calendar Column */}
-                        <div className="col-span-12 lg:col-span-4 space-y-6">
-                            <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm transition-all hover:shadow-md">
-                                <div className="flex items-center justify-between mb-8">
+                        <div className="col-span-12 lg:col-span-4 space-y-4">
+                            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
+                                <div className="flex items-center justify-between mb-4">
                                     <h4 className="font-extrabold text-slate-900 tracking-tight">
                                         {viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                                     </h4>
@@ -403,13 +408,13 @@ export default function AttendancePage() {
                                     </div>
                                 </div>
                                 
-                                <div className="grid grid-cols-7 gap-1 text-center mb-6">
+                                <div className="grid grid-cols-7 gap-1 text-center mb-4">
                                     {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
                                         <div key={day} className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{day}</div>
                                     ))}
                                 </div>
                                 
-                                <div className="grid grid-cols-7 gap-2">
+                                <div className="grid grid-cols-7 gap-1">
                                     {getDaysInMonth(viewDate).map((day, idx) => {
                                         if (!day) return <div key={`empty-${idx}`} className="aspect-square" />;
                                         
@@ -433,7 +438,7 @@ export default function AttendancePage() {
                                 </div>
                             </div>
 
-                            <div className="bg-primary/10 p-8 rounded-[2rem] border border-primary/20 relative overflow-hidden group">
+                            <div className="bg-primary/10 p-5 rounded-2xl border border-primary/20 relative overflow-hidden group">
                                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
                                     <Lightbulb className="w-16 h-16" />
                                 </div>
@@ -448,13 +453,13 @@ export default function AttendancePage() {
                         </div>
 
                         {/* List Column */}
-                        <div className="col-span-12 lg:col-span-8 space-y-6 flex flex-col h-full">
+                        <div className="col-span-12 lg:col-span-8 space-y-4 flex flex-col h-full">
                             {/* Search (for both modes but primarily individual) */}
-                            <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm transition-all hover:shadow-md">
+                            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
                                 <div className="relative">
-                                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                                     <input 
-                                        className="w-full pl-14 pr-6 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-primary/50 text-sm font-medium transition-all" 
+                                        className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-primary/50 text-xs font-medium transition-all" 
                                         placeholder={mode === 'class' ? "Search within this class..." : "Search any student in academy..."}
                                         type="text"
                                         value={searchQuery}
@@ -474,11 +479,14 @@ export default function AttendancePage() {
                                     </span>
                                 </div>
 
-                                <div className="grid gap-4">
-                                    {students.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase())).map(student => (
-                                        <div key={student.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center gap-6 group hover:border-primary/30 transition-all hover:shadow-lg">
-                                            <div className="flex items-center gap-5 flex-1">
-                                                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform overflow-hidden relative border-2 border-slate-50">
+                                <div className="grid gap-3">
+                                    {students
+                                        .filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                                        .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
+                                        .map(student => (
+                                        <div key={student.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center gap-4 group hover:border-primary/30 transition-all hover:shadow-md">
+                                            <div className="flex items-center gap-4 flex-1">
+                                                <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform overflow-hidden relative border-2 border-slate-50">
                                                     {student.profile_pic_url ? (
                                                         <img 
                                                             src={student.profile_pic_url} 
@@ -487,11 +495,11 @@ export default function AttendancePage() {
                                                             loading="lazy"
                                                         />
                                                     ) : (
-                                                        <div className="text-primary font-black text-xl">{student.name.charAt(0)}</div>
+                                                        <div className="text-primary font-black text-lg">{student.name.charAt(0)}</div>
                                                     )}
                                                 </div>
                                                 <div>
-                                                    <h5 className="font-extrabold text-slate-900 text-lg tracking-tight">{student.name}</h5>
+                                                    <h5 className="font-extrabold text-slate-900 text-base tracking-tight">{student.name}</h5>
                                                     <div className="flex items-center gap-2 mt-1">
                                                         <School className="w-3 h-3 text-slate-400" />
                                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest truncate max-w-[150px]">Intermediate Flute</span>
@@ -499,10 +507,10 @@ export default function AttendancePage() {
                                                 </div>
                                             </div>
 
-                                            <div className="flex flex-col gap-2">
+                                            <div className="flex flex-col gap-1.5">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Session</label>
                                                 <div className="relative">
-                                                    <select className="text-xs font-black border-none rounded-xl py-3 bg-slate-50 min-w-[160px] focus:ring-2 focus:ring-primary/50 outline-none appearance-none pr-10 pl-4 tracking-tight">
+                                                    <select className="text-[10px] font-black border-none rounded-lg py-2 bg-slate-50 min-w-[140px] focus:ring-2 focus:ring-primary/50 outline-none appearance-none pr-8 pl-3 tracking-tight">
                                                         <option>Saturday 9:00 AM</option>
                                                         <option>Saturday 11:00 AM</option>
                                                     </select>
@@ -510,10 +518,10 @@ export default function AttendancePage() {
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-1.5">
                                                 <button 
                                                     onClick={() => handleMarkAttendance(student.id, 'present')}
-                                                    className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${
+                                                    className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all ${
                                                         student.attendance_status === 'present'
                                                         ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
                                                         : 'border-2 border-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white hover:border-emerald-500'
@@ -523,7 +531,7 @@ export default function AttendancePage() {
                                                 </button>
                                                 <button 
                                                     onClick={() => handleMarkAttendance(student.id, 'absent')}
-                                                    className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${
+                                                    className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all ${
                                                         student.attendance_status === 'absent'
                                                         ? 'bg-red-500 text-white shadow-lg shadow-red-200'
                                                         : 'border-2 border-red-50 text-red-600 hover:bg-red-500 hover:text-white hover:border-red-500'
@@ -533,7 +541,7 @@ export default function AttendancePage() {
                                                 </button>
                                                 <button 
                                                     onClick={() => handleMarkAttendance(student.id, 'late')}
-                                                    className={`px-6 py-3 rounded-xl text-xs font-black transition-all ${
+                                                    className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all ${
                                                         student.attendance_status === 'late'
                                                         ? 'bg-amber-500 text-white shadow-lg shadow-amber-200'
                                                         : 'border-2 border-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white hover:border-amber-500'
@@ -555,17 +563,47 @@ export default function AttendancePage() {
                                         </div>
                                     )}
                                 </div>
-                            </div>
 
-                            {/* Load More (Simplified) */}
-                            {students.length > 5 && (
-                                <div className="flex items-center justify-center pt-4">
-                                    <button className="flex items-center gap-2 text-xs font-black text-slate-500 hover:text-primary transition-all py-3 px-8 bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 active:translate-y-0">
-                                        <ArrowDown className="w-4 h-4" />
-                                        Show All Search Results
-                                    </button>
-                                </div>
-                            )}
+                                {/* Pagination */}
+                                {students.length > ITEMS_PER_PAGE && (
+                                    <div className="mt-6 flex items-center justify-between px-4">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                            Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, students.length)} of {students.length}
+                                        </span>
+                                        <div className="flex items-center gap-1">
+                                            <button 
+                                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                                disabled={currentPage === 1}
+                                                className="p-2 border border-slate-200 rounded-xl text-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                            >
+                                                <ChevronLeft className="w-4 h-4" />
+                                            </button>
+                                            
+                                            {Array.from({ length: Math.ceil(students.length / ITEMS_PER_PAGE) }).map((_, idx) => (
+                                                <button 
+                                                    key={idx}
+                                                    onClick={() => setCurrentPage(idx + 1)}
+                                                    className={`w-8 h-8 flex items-center justify-center rounded-xl text-[10px] font-black transition-all ${
+                                                        currentPage === idx + 1 
+                                                        ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' 
+                                                        : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    {idx + 1}
+                                                </button>
+                                            ))}
+
+                                            <button 
+                                                onClick={() => setCurrentPage(prev => Math.min(Math.ceil(students.length / ITEMS_PER_PAGE), prev + 1))}
+                                                disabled={currentPage === Math.ceil(students.length / ITEMS_PER_PAGE)}
+                                                className="p-2 border border-slate-200 rounded-xl text-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                            >
+                                                <ChevronRight className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
