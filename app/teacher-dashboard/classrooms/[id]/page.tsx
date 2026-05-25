@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 
@@ -36,6 +36,14 @@ interface EnrolledStudent {
     mock_status: 'Consistent' | 'Improving' | 'At Risk';
 }
 
+// Lightweight record from the teacher's student directory
+interface DirectoryStudent {
+    id: string;
+    name: string;
+    profile_pic_url: string | null;
+    status: string;
+}
+
 export default function ClassroomDashboardPage() {
     const router = useRouter();
     const params = useParams();
@@ -57,6 +65,23 @@ export default function ClassroomDashboardPage() {
         end: '10:30'
     });
     const [isSavingSchedule, setIsSavingSchedule] = useState(false);
+
+    // ── Add-from-Directory modal ──────────────────────────────────────────────
+    const [showDirectoryModal, setShowDirectoryModal] = useState(false);
+    const [directoryStudents, setDirectoryStudents] = useState<DirectoryStudent[]>([]);
+    const [directorySearch, setDirectorySearch] = useState('');
+    const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
+    const [isAddingStudents, setIsAddingStudents] = useState(false);
+    const [directoryLoading, setDirectoryLoading] = useState(false);
+
+    // ── Remove-from-class ─────────────────────────────────────────────────────
+    const [removingStudentId, setRemovingStudentId] = useState<string | null>(null);
+
+    // ── Classroom metadata edit ───────────────────────────────────────────────
+    const [metadataForm, setMetadataForm] = useState({ name: '', description: '', status: 'active' });
+    const [isSavingMetadata, setIsSavingMetadata] = useState(false);
+    const [metadataSaved, setMetadataSaved] = useState(false);
+    const [metadataError, setMetadataError] = useState('');
 
     useEffect(() => {
         setCurrentPage(1);
@@ -93,9 +118,13 @@ export default function ClassroomDashboardPage() {
                     .single();
                 
                 if (roomError) throw roomError;
-                setClassroom({
-                    ...roomData,
-                    status: 'Active'
+                const classroomData = { ...roomData, status: roomData.status || 'active' };
+                setClassroom(classroomData);
+                // Seed the metadata form with fetched values
+                setMetadataForm({
+                    name: roomData.name || '',
+                    description: roomData.description || '',
+                    status: roomData.status || 'active',
                 });
 
                 // 4. Fetch Enrolled Students
@@ -154,31 +183,152 @@ export default function ClassroomDashboardPage() {
         fetchData();
     }, [classroomId, router]);
 
+    // ── Fetch teacher's directory students (excluding already-enrolled) ────────
+    const openDirectoryModal = async () => {
+        if (!teacherProfile) return;
+        setShowDirectoryModal(true);
+        setDirectoryLoading(true);
+        setSelectedToAdd(new Set());
+        setDirectorySearch('');
+        try {
+            const enrolledIds = new Set(students.map(s => s.student_id));
+            const { data, error } = await supabaseAuth
+                .from('users')
+                .select('id, name, profile_pic_url, status')
+                .eq('role', 'student')
+                .eq('teacher_id', teacherProfile.id);
+
+            if (error) throw error;
+            // Filter out already-enrolled students
+            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id));
+            setDirectoryStudents(available);
+        } catch (err) {
+            console.error('Error fetching directory:', err);
+        } finally {
+            setDirectoryLoading(false);
+        }
+    };
+
+    // ── Add selected students to this classroom ───────────────────────────────
+    const handleAddStudents = async () => {
+        if (selectedToAdd.size === 0) return;
+        setIsAddingStudents(true);
+        try {
+            const rows = Array.from(selectedToAdd).map(studentId => ({
+                classroom_id: classroomId,
+                student_id: studentId,
+                joined_at: new Date().toISOString(),
+            }));
+
+            const { error } = await supabaseAuth
+                .from('classroom_students')
+                .insert(rows);
+
+            if (error) throw error;
+
+            // Optimistically add to local state with mock metrics
+            const statusOptions: ('Consistent' | 'Improving' | 'At Risk')[] = ['Consistent', 'Improving', 'At Risk'];
+            const milestoneOptions = ['Alankars Mastery', 'Breath Control II', 'Fingering Basics', 'Rhythm Training', 'Raag Yaman Intros'];
+            const addedStudentObjects = directoryStudents
+                .filter(ds => selectedToAdd.has(ds.id))
+                .map((ds, idx) => {
+                    const seed = parseInt(ds.id.substring(0, 8), 16) || idx;
+                    return {
+                        id: `temp-${ds.id}`,
+                        student_id: ds.id,
+                        name: ds.name,
+                        profile_pic_url: ds.profile_pic_url,
+                        joined_at: new Date().toISOString(),
+                        mock_score: 6 + ((seed % 40) / 10),
+                        mock_progress: 50 + (seed % 50),
+                        mock_attendance: 70 + (seed % 30),
+                        mock_milestone: milestoneOptions[seed % milestoneOptions.length],
+                        mock_status: idx % 3 === 0 ? 'Consistent' : (idx % 2 === 0 ? 'Improving' : 'At Risk') as any,
+                    };
+                });
+
+            setStudents(prev => [...prev, ...addedStudentObjects]);
+            setShowDirectoryModal(false);
+        } catch (err) {
+            console.error('Error adding students:', err);
+            alert('Failed to add students. They may already be in this class.');
+        } finally {
+            setIsAddingStudents(false);
+        }
+    };
+
+    // ── Remove a student from this classroom (not from the directory) ─────────
+    const handleRemoveStudent = async (enrolledStudent: EnrolledStudent) => {
+        if (!window.confirm(`Remove "${enrolledStudent.name}" from this classroom? Their student record will be kept.`)) return;
+        setRemovingStudentId(enrolledStudent.id);
+        try {
+            const { error } = await supabaseAuth
+                .from('classroom_students')
+                .delete()
+                .eq('classroom_id', classroomId)
+                .eq('student_id', enrolledStudent.student_id);
+
+            if (error) throw error;
+            setStudents(prev => prev.filter(s => s.id !== enrolledStudent.id));
+        } catch (err) {
+            console.error('Error removing student:', err);
+            alert('Failed to remove student from classroom.');
+        } finally {
+            setRemovingStudentId(null);
+        }
+    };
+
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/');
     };
 
-    if (loading || !classroom) {
-        return (
-            <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6]">
-                <Loader2 className="w-10 h-10 animate-spin text-[#ecb613] mb-4" />
-                <p className="font-medium text-slate-600 tracking-wide uppercase text-xs">Loading Classroom Dashboard...</p>
-            </div>
-        );
-    }
+    // ── Save classroom metadata ───────────────────────────────────────────────
+    const handleSaveMetadata = async () => {
+        if (!metadataForm.name.trim()) {
+            setMetadataError('Class name is required.');
+            return;
+        }
+        setIsSavingMetadata(true);
+        setMetadataError('');
+        setMetadataSaved(false);
+        try {
+            const { error } = await supabaseAuth
+                .from('classrooms')
+                .update({
+                    name: metadataForm.name.trim(),
+                    description: metadataForm.description.trim(),
+                    status: metadataForm.status,
+                })
+                .eq('id', classroomId);
 
-    // Helper metric calculations
-    const avgAttendance = students.length > 0
-        ? (students.reduce((acc, curr) => acc + curr.mock_attendance, 0) / students.length).toFixed(1)
-        : '0.0';
+            if (error) throw error;
 
+            // Update local classroom state so the header reflects the new name
+            setClassroom(prev => prev ? {
+                ...prev,
+                name: metadataForm.name.trim(),
+                description: metadataForm.description.trim(),
+                status: metadataForm.status,
+            } : prev);
+
+            setMetadataSaved(true);
+            setTimeout(() => setMetadataSaved(false), 3000);
+        } catch (err: any) {
+            console.error('Error saving metadata:', err);
+            setMetadataError(err.message || 'Failed to save changes. Please try again.');
+        } finally {
+            setIsSavingMetadata(false);
+        }
+    };
+
+    // ── Helper functions (defined before early return so hooks order is stable) ─
     const getStatusColor = (status: string) => {
         if (status === 'Consistent') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
         if (status === 'Improving') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
         return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400';
     };
-    
+
     const getProgressBarColor = (status: string) => {
         if (status === 'Consistent') return 'bg-emerald-500';
         if (status === 'Improving') return 'bg-amber-500';
@@ -204,12 +354,51 @@ export default function ClassroomDashboardPage() {
         return `${hStr}:${m} ${ampm}`;
     };
 
+    const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+    const generateTimeOptions = () => {
+        const options = [];
+        for (let h = 6; h <= 22; h++) {
+            for (let m = 0; m < 60; m += 15) {
+                const hStr = h.toString().padStart(2, '0');
+                const mStr = m.toString().padStart(2, '0');
+                const value = `${hStr}:${mStr}`;
+                options.push({ value, label: formatTime12hr(value) });
+            }
+        }
+        return options;
+    };
+    const TIME_OPTIONS = generateTimeOptions();
+
+    const totalPages = Math.ceil(students.length / PAGE_SIZE);
+    const paginatedStudents = students.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+    const avgAttendance = students.length > 0
+        ? (students.reduce((acc, curr) => acc + curr.mock_attendance, 0) / students.length).toFixed(1)
+        : '0.0';
+
+    // ── useMemo MUST be above any early return (Rules of Hooks) ──────────────
+    const filteredDirectory = useMemo(() => {
+        if (!directorySearch.trim()) return directoryStudents;
+        const q = directorySearch.toLowerCase();
+        return directoryStudents.filter(s => s.name.toLowerCase().includes(q));
+    }, [directoryStudents, directorySearch]);
+
+    if (loading || !classroom) {
+        return (
+            <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6]">
+                <Loader2 className="w-10 h-10 animate-spin text-[#ecb613] mb-4" />
+                <p className="font-medium text-slate-600 tracking-wide uppercase text-xs">Loading Classroom Dashboard...</p>
+            </div>
+        );
+    }
+
     const handleSaveSchedule = async () => {
         if (!classroomId) return;
 
         // Local check for duplicates
-        const isDuplicate = schedules.some(s => 
-            s.day_of_week === newSchedule.day && 
+        const isDuplicate = schedules.some(s =>
+            s.day_of_week === newSchedule.day &&
             s.start_time.startsWith(newSchedule.start)
         );
 
@@ -229,7 +418,7 @@ export default function ClassroomDashboardPage() {
                     end_time: newSchedule.end
                 }])
                 .select();
-            
+
             if (error) {
                 // Handle Supabase unique constraint violation
                 if (error.code === '23505') {
@@ -257,7 +446,7 @@ export default function ClassroomDashboardPage() {
                 .from('batch_schedules')
                 .delete()
                 .eq('id', id);
-            
+
             if (error) throw error;
             setSchedules(prev => prev.filter(s => s.id !== id));
         } catch (err) {
@@ -266,27 +455,140 @@ export default function ClassroomDashboardPage() {
         }
     };
 
-    const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-    const generateTimeOptions = () => {
-        const options = [];
-        for (let h = 6; h <= 22; h++) {
-            for (let m = 0; m < 60; m += 15) {
-                const hStr = h.toString().padStart(2, '0');
-                const mStr = m.toString().padStart(2, '0');
-                const value = `${hStr}:${mStr}`;
-                options.push({ value, label: formatTime12hr(value) });
-            }
-        }
-        return options;
-    };
-    const TIME_OPTIONS = generateTimeOptions();
-
-    const totalPages = Math.ceil(students.length / PAGE_SIZE);
-    const paginatedStudents = students.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-
     return (
         <div className="flex min-h-screen bg-[#f8f8f6] dark:bg-[#221d10] text-slate-900 dark:text-slate-100 font-sans">
+
+            {/* ── Add from Directory Modal ─────────────────────────────────────── */}
+            {showDirectoryModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-[#ecb613]/10 flex items-center justify-center">
+                                    <UserPlus className="w-5 h-5 text-[#ecb613]" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Add from Student Directory</h3>
+                                    <p className="text-xs text-slate-500">Select students to enroll in <span className="font-semibold">{classroom?.name}</span></p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowDirectoryModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Search */}
+                        <div className="px-6 py-3 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Search students..."
+                                    value={directorySearch}
+                                    onChange={e => setDirectorySearch(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Student list */}
+                        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
+                            {directoryLoading ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <Loader2 className="w-7 h-7 animate-spin text-[#ecb613]" />
+                                </div>
+                            ) : filteredDirectory.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-12 text-center">
+                                    <Users className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" />
+                                    <p className="text-sm font-semibold text-slate-500">
+                                        {directoryStudents.length === 0
+                                            ? 'All your students are already in this classroom.'
+                                            : 'No students match your search.'}
+                                    </p>
+                                    {directoryStudents.length === 0 && (
+                                        <Link
+                                            href="/teacher-dashboard/students/add"
+                                            className="mt-3 text-xs font-bold text-[#ecb613] hover:underline"
+                                        >
+                                            + Add a new student to your directory
+                                        </Link>
+                                    )}
+                                </div>
+                            ) : (
+                                filteredDirectory.map(s => {
+                                    const isSelected = selectedToAdd.has(s.id);
+                                    return (
+                                        <button
+                                            key={s.id}
+                                            onClick={() => setSelectedToAdd(prev => {
+                                                const next = new Set(prev);
+                                                isSelected ? next.delete(s.id) : next.add(s.id);
+                                                return next;
+                                            })}
+                                            className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                                                isSelected
+                                                    ? 'border-[#ecb613] bg-[#ecb613]/5 dark:bg-[#ecb613]/10'
+                                                    : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                                            }`}
+                                        >
+                                            <div className="w-10 h-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm flex-shrink-0">
+                                                {s.profile_pic_url ? (
+                                                    <img src={s.profile_pic_url} alt={s.name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <span className="text-sm font-bold text-[#ecb613]">{s.name.charAt(0)}</span>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{s.name}</p>
+                                                <p className="text-xs text-slate-500">
+                                                    <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${s.status === 'active' ? 'bg-green-500' : 'bg-slate-400'}`} />
+                                                    {s.status === 'active' ? 'Active' : 'Inactive'}
+                                                </p>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all ${
+                                                isSelected
+                                                    ? 'bg-[#ecb613] border-[#ecb613]'
+                                                    : 'border-slate-300 dark:border-slate-600'
+                                            }`}>
+                                                {isSelected && (
+                                                    <svg className="w-3 h-3 text-slate-900" fill="none" viewBox="0 0 12 12">
+                                                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 flex-shrink-0">
+                            <span className="text-xs font-semibold text-slate-500">
+                                {selectedToAdd.size > 0 ? `${selectedToAdd.size} student${selectedToAdd.size !== 1 ? 's' : ''} selected` : 'Click students to select'}
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setShowDirectoryModal(false)}
+                                    className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleAddStudents}
+                                    disabled={selectedToAdd.size === 0 || isAddingStudents}
+                                    className="px-4 py-2 rounded-lg text-sm font-bold bg-[#ecb613] text-slate-900 hover:bg-[#ecb613]/90 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                >
+                                    {isAddingStudents ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                                    {isAddingStudents ? 'Adding...' : `Add ${selectedToAdd.size > 0 ? selectedToAdd.size : ''} to Class`}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
             {/* Main Content Area */}
@@ -451,9 +753,13 @@ export default function ClassroomDashboardPage() {
                                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">Student Roster</h3>
                                     <div className="flex gap-3">
                                         <button className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm">Export PDF</button>
-                                        <Link href="/teacher-dashboard/students/add">
-                                            <button className="px-4 py-2 bg-[#ecb613] shadow-md shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 text-slate-900 rounded-xl text-xs font-bold transition-colors">Add Student</button>
-                                        </Link>
+                                        <button
+                                            onClick={openDirectoryModal}
+                                            className="flex items-center gap-1.5 px-4 py-2 bg-[#ecb613] shadow-md shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 text-slate-900 rounded-xl text-xs font-bold transition-colors"
+                                        >
+                                            <UserPlus className="w-3.5 h-3.5" />
+                                            Add from Directory
+                                        </button>
                                     </div>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -465,7 +771,7 @@ export default function ClassroomDashboardPage() {
                                                 <th className="px-6 py-4">Avg. Score</th>
                                                 <th className="px-6 py-4">Attendance</th>
                                                 <th className="px-6 py-4">Joined Date</th>
-                                                <th className="px-6 py-4 text-right">Action</th>
+                                                <th className="px-6 py-4 text-right">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -504,8 +810,16 @@ export default function ClassroomDashboardPage() {
                                                         {new Date(student.joined_at).toLocaleDateString()}
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <button className="text-slate-400 hover:text-[#ecb613] focus:text-[#ecb613] p-1.5 rounded-lg hover:bg-[#ecb613]/10 transition-all">
-                                                            <MoreVertical className="w-5 h-5" />
+                                                        <button
+                                                            onClick={() => handleRemoveStudent(student)}
+                                                            disabled={removingStudentId === student.id}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50"
+                                                            title="Remove from this classroom"
+                                                        >
+                                                            {removingStudentId === student.id
+                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                : <Trash2 className="w-3.5 h-3.5" />}
+                                                            Remove
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -513,7 +827,13 @@ export default function ClassroomDashboardPage() {
                                             {paginatedStudents.length === 0 && (
                                                 <tr>
                                                     <td colSpan={6} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
-                                                        <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">No students found. Add some students to start tracking progress.</p>
+                                                        <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-3">No students enrolled yet.</p>
+                                                        <button
+                                                            onClick={openDirectoryModal}
+                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#ecb613]/90 transition-colors shadow-sm"
+                                                        >
+                                                            <UserPlus className="w-4 h-4" /> Add from Directory
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             )}
@@ -764,12 +1084,13 @@ export default function ClassroomDashboardPage() {
                                         <Mail className="w-5 h-5" />
                                         Message All
                                     </button>
-                                    <Link href="/teacher-dashboard/students/add">
-                                        <button className="flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-lg font-semibold hover:bg-[#ecb613]/90 transition-all shadow-md shadow-[#ecb613]/20">
-                                            <UserPlus className="w-5 h-5" />
-                                            Add Student to Class
-                                        </button>
-                                    </Link>
+                                    <button
+                                        onClick={openDirectoryModal}
+                                        className="flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-lg font-semibold hover:bg-[#ecb613]/90 transition-all shadow-md shadow-[#ecb613]/20"
+                                    >
+                                        <UserPlus className="w-5 h-5" />
+                                        Add from Directory
+                                    </button>
                                 </div>
                             </div>
 
@@ -823,8 +1144,16 @@ export default function ClassroomDashboardPage() {
                                                     <td className="px-6 py-4 text-sm font-medium text-slate-700 dark:text-slate-300">{student.mock_attendance}%</td>
                                                     <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">{getGrade(student.mock_score)}</td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <button className="text-slate-400 hover:text-[#ecb613] transition-colors p-1 rounded-lg">
-                                                            <MoreVertical className="w-5 h-5" />
+                                                        <button
+                                                            onClick={() => handleRemoveStudent(student)}
+                                                            disabled={removingStudentId === student.id}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50"
+                                                            title="Remove from this classroom"
+                                                        >
+                                                            {removingStudentId === student.id
+                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                : <Trash2 className="w-3.5 h-3.5" />}
+                                                            Remove
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -832,7 +1161,13 @@ export default function ClassroomDashboardPage() {
                                             {paginatedStudents.length === 0 && (
                                                 <tr>
                                                     <td colSpan={6} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
-                                                        <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">No students found. Add some students to see them in this roster.</p>
+                                                        <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-3">No students enrolled yet.</p>
+                                                        <button
+                                                            onClick={openDirectoryModal}
+                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#ecb613]/90 transition-colors shadow-sm"
+                                                        >
+                                                            <UserPlus className="w-4 h-4" /> Add from Directory
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             )}
@@ -1006,7 +1341,7 @@ export default function ClassroomDashboardPage() {
 
                                     <hr className="border-slate-100 dark:border-slate-800" />
 
-                                    {/* Other Settings (Placeholder) */}
+                                    {/* Class Details – Editable */}
                                     <section>
                                         <div className="flex items-center gap-3 mb-6">
                                             <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
@@ -1014,11 +1349,104 @@ export default function ClassroomDashboardPage() {
                                             </div>
                                             <div>
                                                 <h4 className="text-lg font-bold text-slate-900 dark:text-white">Class Details</h4>
-                                                <p className="text-xs text-slate-500">Edit class name and description.</p>
+                                                <p className="text-xs text-slate-500">Edit class name, description, and status.</p>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-center py-12 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
-                                            <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Metadata editing coming soon</p>
+
+                                        <div className="space-y-5">
+                                            {/* Class Name */}
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
+                                                    Class Name <span className="text-rose-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={metadataForm.name}
+                                                    onChange={e => setMetadataForm(prev => ({ ...prev, name: e.target.value }))}
+                                                    placeholder="e.g. Morning Beginners Batch"
+                                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all placeholder:font-normal placeholder:text-slate-400"
+                                                />
+                                            </div>
+
+                                            {/* Description */}
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider px-1">Description</label>
+                                                <textarea
+                                                    rows={4}
+                                                    value={metadataForm.description}
+                                                    onChange={e => setMetadataForm(prev => ({ ...prev, description: e.target.value }))}
+                                                    placeholder="Briefly describe the focus, level, or goals of this class…"
+                                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all resize-none placeholder:text-slate-400"
+                                                />
+                                            </div>
+
+                                            {/* Status */}
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider px-1">Class Status</label>
+                                                <div className="flex items-center gap-3">
+                                                    {(['active', 'inactive', 'archived'] as const).map(s => (
+                                                        <button
+                                                            key={s}
+                                                            type="button"
+                                                            onClick={() => setMetadataForm(prev => ({ ...prev, status: s }))}
+                                                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-xs font-bold uppercase tracking-wide transition-all ${
+                                                                metadataForm.status === s
+                                                                    ? s === 'active'
+                                                                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
+                                                                        : s === 'inactive'
+                                                                        ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'
+                                                                        : 'border-slate-400 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                                                    : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
+                                                            }`}
+                                                        >
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${
+                                                                s === 'active' ? 'bg-emerald-500' : s === 'inactive' ? 'bg-amber-400' : 'bg-slate-400'
+                                                            }`} />
+                                                            {s}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Error / Success feedback */}
+                                            {metadataError && (
+                                                <div className="flex items-center gap-2 p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-xl">
+                                                    <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                                                    <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{metadataError}</p>
+                                                </div>
+                                            )}
+                                            {metadataSaved && (
+                                                <div className="flex items-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+                                                    <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                                                    <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Changes saved successfully!</p>
+                                                </div>
+                                            )}
+
+                                            {/* Action buttons */}
+                                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setMetadataForm({
+                                                        name: classroom?.name || '',
+                                                        description: classroom?.description || '',
+                                                        status: classroom?.status || 'active',
+                                                    })}
+                                                    className="text-sm font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                                                >
+                                                    Reset changes
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleSaveMetadata}
+                                                    disabled={isSavingMetadata}
+                                                    className="flex items-center gap-2 px-6 py-2.5 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-bold text-sm rounded-xl shadow-md shadow-[#ecb613]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                                >
+                                                    {isSavingMetadata
+                                                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                                                        : <><Edit3 className="w-4 h-4" /> Save Changes</>
+                                                    }
+                                                </button>
+                                            </div>
                                         </div>
                                     </section>
                                 </div>
