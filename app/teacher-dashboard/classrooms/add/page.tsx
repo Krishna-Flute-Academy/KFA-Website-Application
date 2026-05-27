@@ -184,12 +184,26 @@ export default function CreateClassPage() {
                     if (assignmentError) throw assignmentError;
                 }
             } else {
-                // 1. Create Temporary Class
+                // 1. Create shadow Classroom first
+                const { data: classroom, error: classroomError } = await supabaseAuth
+                    .from('classrooms')
+                    .insert([{
+                        teacher_id: teacherProfile.id,
+                        name: formData.name,
+                        description: formData.description || 'Temporary class session',
+                        type: 'temporary'
+                    }])
+                    .select()
+                    .single();
+
+                if (classroomError) throw classroomError;
+
+                // 2. Create Temporary Class
                 const { data: tempClass, error: tempError } = await supabaseAuth
                     .from('temporary_classes')
                     .insert([{
                         teacher_id: teacherProfile.id,
-                        classroom_id: null,
+                        classroom_id: classroom.id,
                         title: formData.name,
                         class_date: formData.classDate,
                         start_time: formData.startTime,

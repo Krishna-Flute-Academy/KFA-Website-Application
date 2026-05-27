@@ -5,7 +5,8 @@ import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../../src/lib/supabase-auth';
 import {
     Loader2, ArrowLeft, LogOut, Wifi, WifiOff, Users, CheckCircle2,
-    XCircle, AlertCircle, ChevronRight, Check, Clock, BookOpen, Music
+    XCircle, AlertCircle, ChevronRight, Check, Clock, BookOpen, Music,
+    ChevronLeft, Calendar
 } from 'lucide-react';
 import TeacherSidebar from '../../../../../src/components/TeacherSidebar';
 
@@ -15,7 +16,7 @@ declare global {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionType = 'online' | 'offline';
-type AttendanceStatus = 'present' | 'absent_informed' | 'absent_not_joined' | null;
+type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused' | null;
 
 interface SessionStudent {
     id: string;
@@ -43,7 +44,8 @@ export default function MeetingPage() {
     // Step flow
     const [step, setStep] = useState<Step>(1);
     const [sessionType, setSessionType] = useState<SessionType | null>(null);
-    const [sessionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const isFirstRender = useRef(true);
 
     // ── Fetch classroom + enrolled students ──────────────────────────────────
     useEffect(() => {
@@ -71,7 +73,25 @@ export default function MeetingPage() {
                     profile_pic_url: r.users?.profile_pic_url || null,
                     attendance: null,
                 }));
-                setStudents(formatted);
+
+                // Fetch existing attendance for the selected date on load
+                const { data: attendanceData } = await supabaseAuth
+                    .from('attendance')
+                    .select('student_id, status')
+                    .eq('classroom_id', classroomId)
+                    .eq('date', sessionDate);
+
+                const recordsMap: Record<string, AttendanceStatus> = {};
+                (attendanceData || []).forEach((row: any) => {
+                    recordsMap[row.student_id] = row.status;
+                });
+
+                const withAttendance = formatted.map(s => ({
+                    ...s,
+                    attendance: recordsMap[s.id] || null
+                }));
+
+                setStudents(withAttendance);
             } catch (err) {
                 console.error('Error initializing session:', err);
             } finally {
@@ -80,6 +100,41 @@ export default function MeetingPage() {
         };
         init();
     }, [classroomId, router]);
+
+    // ── Update attendance when date changes ──────────────────────────────
+    useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+
+        const updateAttendanceForDate = async () => {
+            if (!classroomId || students.length === 0) return;
+            try {
+                const { data, error } = await supabaseAuth
+                    .from('attendance')
+                    .select('student_id, status')
+                    .eq('classroom_id', classroomId)
+                    .eq('date', sessionDate);
+
+                if (error) throw error;
+
+                const recordsMap: Record<string, AttendanceStatus> = {};
+                (data || []).forEach((row: any) => {
+                    recordsMap[row.student_id] = row.status;
+                });
+
+                setStudents(prev => prev.map(s => ({
+                    ...s,
+                    attendance: recordsMap[s.id] || null
+                })));
+            } catch (err) {
+                console.error('Error updating attendance for date:', err);
+            }
+        };
+
+        updateAttendanceForDate();
+    }, [sessionDate, classroomId]);
 
     // ── Launch Jitsi after attendance is submitted (online only) ─────────────
     useEffect(() => {
@@ -129,10 +184,11 @@ export default function MeetingPage() {
 
     const stats = useMemo(() => {
         const present = students.filter(s => s.attendance === 'present').length;
-        const absentInformed = students.filter(s => s.attendance === 'absent_informed').length;
-        const absentNotJoined = students.filter(s => s.attendance === 'absent_not_joined').length;
-        const unmarked = students.filter(s => s.attendance === null).length;
-        return { present, absentInformed, absentNotJoined, unmarked, total: students.length };
+        const absent = students.filter(s => s.attendance === 'absent').length;
+        const late = students.filter(s => s.attendance === 'late').length;
+        const excused = students.filter(s => s.attendance === 'excused').length;
+        const unmarked = students.filter(s => s.attendance === null || s.attendance === undefined).length;
+        return { present, absent, late, excused, unmarked, total: students.length };
     }, [students]);
 
     const allMarked = stats.unmarked === 0;
@@ -146,7 +202,7 @@ export default function MeetingPage() {
                 student_id: s.id,
                 classroom_id: classroomId,
                 date: sessionDate,
-                status: s.attendance === 'present' ? 'present' : 'absent',
+                status: (s.attendance || 'present').toLowerCase(),
                 marked_by: teacherProfile.id,
             }));
 
@@ -245,12 +301,13 @@ export default function MeetingPage() {
 
                     <div className="p-8 max-w-4xl mx-auto w-full space-y-6">
                         {/* Attendance summary */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                             {[
                                 { label: 'Total', value: stats.total, color: 'bg-slate-100 text-slate-700', icon: <Users className="w-5 h-5" /> },
-                                { label: 'Present', value: stats.present, color: 'bg-emerald-50 text-emerald-700', icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" /> },
-                                { label: 'Prior Informed', value: stats.absentInformed, color: 'bg-amber-50 text-amber-700', icon: <AlertCircle className="w-5 h-5 text-amber-500" /> },
-                                { label: 'Not Joined', value: stats.absentNotJoined, color: 'bg-red-50 text-red-700', icon: <XCircle className="w-5 h-5 text-red-500" /> },
+                                { label: 'Present', value: stats.present, color: 'bg-emerald-50 text-emerald-700 border border-emerald-100', icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" /> },
+                                { label: 'Absent', value: stats.absent, color: 'bg-rose-50 text-rose-700 border border-rose-100', icon: <XCircle className="w-5 h-5 text-rose-500" /> },
+                                { label: 'Late', value: stats.late, color: 'bg-amber-50 text-amber-700 border border-amber-100', icon: <Clock className="w-5 h-5 text-amber-500" /> },
+                                { label: 'Excused', value: stats.excused, color: 'bg-indigo-50 text-indigo-700 border border-indigo-150', icon: <AlertCircle className="w-5 h-5 text-indigo-500" /> },
                             ].map(c => (
                                 <div key={c.label} className={`${c.color} rounded-2xl p-5 flex flex-col gap-2`}>
                                     {c.icon}
@@ -277,8 +334,9 @@ export default function MeetingPage() {
                                         </div>
                                         <span className="flex-1 text-sm font-semibold text-slate-800">{s.name}</span>
                                         {s.attendance === 'present' && <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full">Present</span>}
-                                        {s.attendance === 'absent_informed' && <span className="px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full">Prior Informed</span>}
-                                        {s.attendance === 'absent_not_joined' && <span className="px-2.5 py-1 bg-red-50 text-red-700 text-xs font-bold rounded-full">Not Joined</span>}
+                                        {s.attendance === 'absent' && <span className="px-2.5 py-1 bg-rose-50 text-rose-700 text-xs font-bold rounded-full">Absent</span>}
+                                        {s.attendance === 'late' && <span className="px-2.5 py-1 bg-amber-50 text-amber-705 text-xs font-bold rounded-full">Late</span>}
+                                        {s.attendance === 'excused' && <span className="px-2.5 py-1 bg-slate-150 text-slate-700 text-xs font-bold rounded-full">Excused</span>}
                                     </div>
                                 ))}
                             </div>
@@ -392,19 +450,68 @@ export default function MeetingPage() {
                     {step === 2 && (
                         <div className="max-w-3xl mx-auto space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300">
                             {/* Header + bulk actions */}
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div>
                                     <h2 className="text-xl font-extrabold text-slate-900">Take Attendance</h2>
                                     <p className="text-xs text-slate-500 mt-0.5">
-                                        {sessionDate} · {sessionType === 'online' ? '🔵 Online' : '🟡 Offline'} · {stats.total} students
+                                        {sessionType === 'online' ? '🔵 Online Session' : '🟡 Offline Session'} · {stats.total} students
                                     </p>
                                 </div>
-                                <button
-                                    onClick={markAllPresent}
-                                    className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
-                                >
-                                    <CheckCircle2 className="w-4 h-4" /> Mark All Present
-                                </button>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={markAllPresent}
+                                        className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
+                                    >
+                                        <CheckCircle2 className="w-4 h-4" /> Mark All Present
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Date Navigation / Selector */}
+                            <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+                                        <Calendar className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Attendance Date</p>
+                                        <p className="text-xs text-slate-500 mt-0.5">Marking session records for this specific date.</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-100 self-end sm:self-auto">
+                                    <button 
+                                        onClick={() => {
+                                            const prev = new Date(sessionDate);
+                                            prev.setDate(prev.getDate() - 1);
+                                            setSessionDate(prev.toISOString().split('T')[0]);
+                                        }}
+                                        className="p-2 hover:bg-white rounded-lg text-slate-500 hover:text-slate-900 transition-all shadow-sm"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" />
+                                    </button>
+                                    <input 
+                                        type="date" 
+                                        value={sessionDate}
+                                        onChange={(e) => setSessionDate(e.target.value)}
+                                        className="bg-transparent border-none text-sm font-bold text-slate-700 focus:ring-0 outline-none px-2 text-center w-36"
+                                    />
+                                    <button 
+                                        onClick={() => {
+                                            const next = new Date(sessionDate);
+                                            next.setDate(next.getDate() + 1);
+                                            setSessionDate(next.toISOString().split('T')[0]);
+                                        }}
+                                        className="p-2 hover:bg-white rounded-lg text-slate-500 hover:text-slate-900 transition-all shadow-sm"
+                                    >
+                                        <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                        onClick={() => setSessionDate(new Date().toISOString().split('T')[0])}
+                                        className="px-3 py-1.5 bg-white text-xs font-bold text-slate-600 rounded-lg hover:bg-slate-100 transition-all border border-slate-200 shadow-sm"
+                                    >
+                                        Today
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Progress bar */}
@@ -423,8 +530,9 @@ export default function MeetingPage() {
                                 </div>
                                 <div className="flex items-center gap-4 mt-3 text-[11px] font-bold">
                                     <span className="text-emerald-600">✓ {stats.present} Present</span>
-                                    <span className="text-amber-600">⚠ {stats.absentInformed} Prior Informed</span>
-                                    <span className="text-red-600">✗ {stats.absentNotJoined} Not Joined</span>
+                                    <span className="text-rose-600">✗ {stats.absent} Absent</span>
+                                    <span className="text-amber-600">⚠ {stats.late} Late</span>
+                                    <span className="text-slate-600">ℹ {stats.excused} Excused</span>
                                 </div>
                             </div>
 
@@ -436,70 +544,57 @@ export default function MeetingPage() {
                                         className={`bg-white rounded-2xl border-2 transition-all shadow-sm overflow-hidden ${
                                             student.attendance === 'present'
                                                 ? 'border-emerald-300 bg-emerald-50/30'
-                                                : student.attendance === 'absent_informed'
+                                                : student.attendance === 'absent'
+                                                ? 'border-rose-300 bg-rose-50/30'
+                                                : student.attendance === 'late'
                                                 ? 'border-amber-300 bg-amber-50/30'
-                                                : student.attendance === 'absent_not_joined'
-                                                ? 'border-red-300 bg-red-50/20'
+                                                : student.attendance === 'excused'
+                                                ? 'border-slate-300 bg-slate-50/30'
                                                 : 'border-slate-200'
                                         }`}
                                     >
-                                        <div className="flex items-center gap-4 p-4">
-                                            {/* Avatar */}
-                                            <div className="w-11 h-11 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-white shadow-sm">
-                                                {student.profile_pic_url
-                                                    ? <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
-                                                    : <span className="text-base font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
-                                                }
-                                            </div>
+                                        <div className="flex items-center justify-between gap-4 p-4 flex-wrap sm:flex-nowrap">
+                                            <div className="flex items-center gap-4 min-w-0">
+                                                {/* Avatar */}
+                                                <div className="w-11 h-11 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-white shadow-sm">
+                                                    {student.profile_pic_url
+                                                        ? <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
+                                                        : <span className="text-base font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                    }
+                                                </div>
 
-                                            {/* Name */}
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-bold text-slate-900 truncate">{student.name}</p>
-                                                {student.attendance === null && (
-                                                    <p className="text-[10px] text-slate-400 font-semibold">Not marked yet</p>
-                                                )}
+                                                {/* Name */}
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-bold text-slate-900 truncate">{student.name}</p>
+                                                    {student.attendance === null && (
+                                                        <p className="text-[10px] text-slate-400 font-semibold">Not marked yet</p>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             {/* Attendance buttons */}
-                                            <div className="flex items-center gap-2 flex-shrink-0">
-                                                {/* Present */}
-                                                <button
-                                                    onClick={() => markStudent(student.id, 'present')}
-                                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border-2 transition-all ${
-                                                        student.attendance === 'present'
-                                                            ? 'bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-200'
-                                                            : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
-                                                    }`}
-                                                >
-                                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                                    Present
-                                                </button>
-
-                                                {/* Absent group */}
-                                                <div className="flex flex-col gap-1.5">
-                                                    <button
-                                                        onClick={() => markStudent(student.id, 'absent_informed')}
-                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border-2 transition-all ${
-                                                            student.attendance === 'absent_informed'
-                                                                ? 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-200'
-                                                                : 'border-amber-200 text-amber-600 hover:bg-amber-50'
-                                                        }`}
-                                                    >
-                                                        <AlertCircle className="w-3 h-3" />
-                                                        Prior Informed
-                                                    </button>
-                                                    <button
-                                                        onClick={() => markStudent(student.id, 'absent_not_joined')}
-                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border-2 transition-all ${
-                                                            student.attendance === 'absent_not_joined'
-                                                                ? 'bg-red-500 text-white border-red-500 shadow-md shadow-red-200'
-                                                                : 'border-red-200 text-red-600 hover:bg-red-50'
-                                                        }`}
-                                                    >
-                                                        <XCircle className="w-3 h-3" />
-                                                        Not Joined
-                                                    </button>
-                                                </div>
+                                            <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+                                                {([
+                                                    { key: 'present', label: 'Present', color: 'emerald', border: 'border-emerald-200', activeBg: 'bg-emerald-500 text-white shadow-md shadow-emerald-200' },
+                                                    { key: 'absent', label: 'Absent', color: 'rose', border: 'border-rose-200', activeBg: 'bg-rose-500 text-white shadow-md shadow-rose-200' },
+                                                    { key: 'late', label: 'Late', color: 'amber', border: 'border-amber-200', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-200' },
+                                                    { key: 'excused', label: 'Excused', color: 'slate', border: 'border-slate-200', activeBg: 'bg-slate-600 text-white shadow-md shadow-slate-200' }
+                                                ] as const).map(opt => {
+                                                    const isActive = student.attendance === opt.key;
+                                                    return (
+                                                        <button
+                                                            key={opt.key}
+                                                            onClick={() => markStudent(student.id, opt.key)}
+                                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all duration-200 ${
+                                                                isActive 
+                                                                    ? opt.activeBg
+                                                                    : `border ${opt.border} bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50`
+                                                            }`}
+                                                        >
+                                                            {opt.label}
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     </div>

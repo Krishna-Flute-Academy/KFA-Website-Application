@@ -148,7 +148,7 @@ export default function StudentDirectory() {
 
                         let attendancePct = 0;
                         if (attendanceData && attendanceData.length > 0) {
-                            const presentCount = attendanceData.filter(a => a.status === 'present').length;
+                            const presentCount = attendanceData.filter(a => a.status === 'present' || a.status === 'late').length;
                             attendancePct = Math.round((presentCount / attendanceData.length) * 100);
                         } else {
                             // Default or mock for empty data so it looks good

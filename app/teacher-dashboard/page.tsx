@@ -358,9 +358,28 @@ export default function TeacherDashboard() {
         try {
             const { data: { session } } = await supabaseAuth.auth.getSession();
             if (!session) return;
+            // 1. Create a shadow classroom first
+            const { data: classroom, error: clError } = await supabaseAuth
+                .from('classrooms')
+                .insert([{
+                    teacher_id: session.user.id,
+                    name: tempForm.title || 'Temporary Class',
+                    description: 'Temporary class session',
+                    type: 'temporary'
+                }])
+                .select()
+                .single();
+
+            if (clError) {
+                console.error('Error creating shadow classroom:', clError);
+                alert('Failed to create temporary class (shadow classroom error).');
+                return;
+            }
+
+            // 2. Create the Temporary Class record linking to it
             const { data: tempClassData, error } = await supabaseAuth.from('temporary_classes').insert({
                 teacher_id: session.user.id,
-                classroom_id: null,
+                classroom_id: classroom.id,
                 title: tempForm.title || 'Temporary Class',
                 class_date: tempModalDate,
                 start_time: tempForm.start_time,
