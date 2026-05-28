@@ -3,73 +3,1512 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Construction } from 'lucide-react';
+import { 
+    Loader2, 
+    ChevronRight, 
+    ChevronDown, 
+    Plus, 
+    Edit2, 
+    Trash2, 
+    Play, 
+    FileText, 
+    Video, 
+    Music, 
+    Link2, 
+    Image as ImageIcon, 
+    ExternalLink, 
+    X, 
+    Save, 
+    UploadCloud, 
+    Globe, 
+    Sparkles, 
+    PlusCircle,
+    CheckSquare,
+    BookOpen,
+    HelpCircle,
+    Keyboard,
+    Users,
+    Award,
+    Trophy,
+    Calendar,
+    ArrowLeft,
+    ArrowRight,
+    CloudLightning,
+    CloudRain,
+    RefreshCw,
+    Database,
+    Zap,
+    Download
+} from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
+import { 
+    CourseModule, 
+    CourseChapter, 
+    CourseLesson,
+    INITIAL_MODULES,
+    INITIAL_CHAPTERS,
+    INITIAL_LESSONS
+} from './initial-data';
 
 export default function InventoryLibrary() {
     const router = useRouter();
+    
+    // Auth & Status States
     const [loading, setLoading] = useState(true);
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    
+    // Core Data States
+    const [modules, setModules] = useState<CourseModule[]>([]);
+    const [chapters, setChapters] = useState<CourseChapter[]>([]);
+    const [lessons, setLessons] = useState<CourseLesson[]>([]);
+    
+    // Navigation & Selected States
+    const [currentView, setCurrentView] = useState<'landing' | 'dashboard'>('landing');
+    const [selectedModuleId, setSelectedModuleId] = useState<string>('a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d');
+    const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+    
+    // DB Mode Status
+    const [isUsingFallback, setIsUsingFallback] = useState(false);
+    
+    // Sync Backup Widget States
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [lastSyncedText, setLastSyncedText] = useState('Synced just now');
+    
+    // Modals & Form States
+    const [activeModal, setActiveModal] = useState<'chapter' | 'lesson' | null>(null);
+    const [editingItem, setEditingItem] = useState<any | null>(null);
+    
+    // Form Inputs
+    const [chapterForm, setChapterForm] = useState({ title: '', description: '', chapter_number: 1, module_id: '' });
+    const [lessonForm, setLessonForm] = useState({
+        title: '', 
+        description: '', 
+        lesson_number: 1, 
+        material_type: 'file', // 'file' | 'image' | 'pdf' | 'audio' | 'video'
+        material_url: '', 
+        file_name: '', 
+        file_size: '', 
+        duration: '',
+        link_url: '',
+        chapter_id: ''
+    });
+    
+    // File Upload Progress State
+    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+    
+    // Media Play Preview overlay state
+    const [mediaPreview, setMediaPreview] = useState<{ type: string; url: string; title: string } | null>(null);
 
+    // Initial Fetch & Auth Verify
     useEffect(() => {
-        const fetchAuth = async () => {
-            const { data: { session } } = await supabaseAuth.auth.getSession();
-            if (!session) {
-                router.push('/login?type=teacher');
-                return;
+        const fetchAuthAndData = async () => {
+            try {
+                const { data: { session } } = await supabaseAuth.auth.getSession();
+                if (!session) {
+                    router.push('/login?type=teacher');
+                    return;
+                }
+                const { data: profile } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, email')
+                    .eq('id', session.user.id)
+                    .single();
+                setTeacherProfile(profile);
+                
+                // Load Curriculum details dynamically from live Supabase tables
+                await loadDatabaseData();
+            } catch (err) {
+                console.error('Failed to query database. Enabling offline local storage fallback mode:', err);
+                enableLocalFallback();
+            } finally {
+                setLoading(false);
             }
-            const { data: profile } = await supabaseAuth.from('users').select('id, name, email').eq('id', session.user.id).single();
-            setTeacherProfile(profile);
-            setLoading(false);
         };
-        fetchAuth();
+        fetchAuthAndData();
     }, [router]);
 
+    // Query active Supabase tables dynamically
+    const loadDatabaseData = async () => {
+        const { data: dbModules, error: modErr } = await supabaseAuth
+            .from('course_modules')
+            .select('*')
+            .order('module_number', { ascending: true });
+        
+        if (modErr) {
+            throw new Error('Supabase tables course_modules query failed.');
+        }
+
+        const { data: dbChapters } = await supabaseAuth
+            .from('course_chapters')
+            .select('*')
+            .order('chapter_number', { ascending: true });
+            
+        const { data: dbLessons } = await supabaseAuth
+            .from('course_lessons')
+            .select('*')
+            .order('lesson_number', { ascending: true });
+
+        if (dbModules && dbModules.length > 0) {
+            setModules(dbModules);
+            setChapters(dbChapters || []);
+            setLessons(dbLessons || []);
+            
+            // Auto expand the first chapter of active module by default
+            if (dbChapters && dbChapters.length > 0) {
+                const firstChap = dbChapters.find(c => c.module_id === selectedModuleId);
+                if (firstChap) {
+                    setExpandedChapters({ [firstChap.id]: true });
+                }
+            }
+            setIsUsingFallback(false);
+        } else {
+            // Tables are empty, auto-seed database from INITIAL constants
+            await seedSupabaseTables();
+        }
+    };
+
+    // Database Auto-seeding
+    const seedSupabaseTables = async () => {
+        try {
+            await supabaseAuth.from('course_modules').insert(INITIAL_MODULES);
+            await supabaseAuth.from('course_chapters').insert(INITIAL_CHAPTERS);
+            await supabaseAuth.from('course_lessons').insert(INITIAL_LESSONS);
+            
+            // Reload seedings
+            const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
+            const { data: dbChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
+            const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+            
+            if (dbModules) setModules(dbModules);
+            if (dbChapters) setChapters(dbChapters || []);
+            if (dbLessons) setLessons(dbLessons || []);
+            
+            if (dbChapters && dbChapters.length > 0) {
+                const firstChap = dbChapters.find(c => c.module_id === selectedModuleId);
+                if (firstChap) {
+                    setExpandedChapters({ [firstChap.id]: true });
+                }
+            }
+            setIsUsingFallback(false);
+        } catch (err) {
+            console.error('Seeding database tables failed:', err);
+            enableLocalFallback();
+        }
+    };
+
+    // Offline interactive mode fallback using localStorage
+    const enableLocalFallback = () => {
+        setIsUsingFallback(true);
+        const localMods = localStorage.getItem('kfa_modules');
+        const localChaps = localStorage.getItem('kfa_chapters');
+        const localLess = localStorage.getItem('kfa_lessons');
+
+        let parsedLess: CourseLesson[] = [];
+        try {
+            parsedLess = localLess ? JSON.parse(localLess) : [];
+        } catch (e) {
+            parsedLess = [];
+        }
+
+        // Force reload/migration to the comprehensive custom structure if legacy seed is detected
+        const hasLegacySeed = !localChaps || !localChaps.includes('Introduction to the Indian bamboo flute') || !localLess || parsedLess.length !== 30;
+        
+        if (localMods && localChaps && localLess && !hasLegacySeed) {
+            setModules(JSON.parse(localMods));
+            setChapters(JSON.parse(localChaps));
+            setLessons(parsedLess);
+            
+            const firstChap = JSON.parse(localChaps).find((c: any) => c.module_id === selectedModuleId);
+            if (firstChap) {
+                setExpandedChapters({ [firstChap.id]: true });
+            }
+        } else {
+            setModules(INITIAL_MODULES);
+            setChapters(INITIAL_CHAPTERS);
+            setLessons(INITIAL_LESSONS);
+            
+            localStorage.setItem('kfa_modules', JSON.stringify(INITIAL_MODULES));
+            localStorage.setItem('kfa_chapters', JSON.stringify(INITIAL_CHAPTERS));
+            localStorage.setItem('kfa_lessons', JSON.stringify(INITIAL_LESSONS));
+            
+            const firstChap = INITIAL_CHAPTERS.find(c => c.module_id === selectedModuleId);
+            if (firstChap) {
+                setExpandedChapters({ [firstChap.id]: true });
+            }
+        }
+    };
+
+    // Offline Local storage saver
+    const persistLocalData = (newMods: CourseModule[], newChaps: CourseChapter[], newLess: CourseLesson[]) => {
+        setModules(newMods);
+        setChapters(newChaps);
+        setLessons(newLess);
+        localStorage.setItem('kfa_modules', JSON.stringify(newMods));
+        localStorage.setItem('kfa_chapters', JSON.stringify(newChaps));
+        localStorage.setItem('kfa_lessons', JSON.stringify(newLess));
+    };
+
+    // Log Out
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/');
     };
 
-    if (loading) {
-        return (
-            <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6] dark:bg-[#221d10]">
-                <Loader2 className="w-10 h-10 animate-spin text-[#ecb613] mb-4" />
-                <p className="font-medium text-slate-600 dark:text-slate-400 tracking-wide uppercase text-xs">Loading...</p>
-            </div>
-        );
-    }
+    // Filter helpers
+    const getChapterLessons = (chapterId: string) => {
+        return lessons
+            .filter(l => l.chapter_id === chapterId)
+            .sort((a, b) => a.lesson_number - b.lesson_number);
+    };
+
+    const getModuleChapters = (moduleId: string) => {
+        return chapters
+            .filter(c => c.module_id === moduleId)
+            .sort((a, b) => a.chapter_number - b.chapter_number);
+    };
+
+    const getMaterialIcon = (type: string) => {
+        switch (type?.toLowerCase()) {
+            case 'pdf': 
+                return <FileText className="size-5 text-red-500 shrink-0" />;
+            case 'video': 
+                return <Video className="size-5 text-amber-500 shrink-0" />;
+            case 'audio': 
+                return <Music className="size-5 text-blue-500 shrink-0" />;
+            case 'image': 
+                return <ImageIcon className="size-5 text-emerald-500 shrink-0" />;
+            default: 
+                return <FileText className="size-5 text-slate-500 shrink-0" />;
+        }
+    };
+
+    // Handle Module Switch from Levels Cards
+    const handleSelectModule = (moduleId: string) => {
+        setSelectedModuleId(moduleId);
+        const moduleChaps = getModuleChapters(moduleId);
+        
+        // Auto-expand the first chapter accordion by default
+        const newExpanded: Record<string, boolean> = {};
+        if (moduleChaps.length > 0) {
+            newExpanded[moduleChaps[0].id] = true;
+        }
+        setExpandedChapters(newExpanded);
+        setCurrentView('dashboard');
+    };
+
+    // Toggle Chapter Accordion
+    const toggleChapterExpand = (chapterId: string) => {
+        setExpandedChapters(prev => ({
+            ...prev,
+            [chapterId]: !prev[chapterId]
+        }));
+    };
+
+    // Open Chapter Edit Modal (populates correctly on edit click)
+    const openChapterModal = (chapter?: CourseChapter, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        
+        if (chapter) {
+            setEditingItem(chapter);
+            setChapterForm({
+                title: chapter.title,
+                description: chapter.description || '',
+                chapter_number: chapter.chapter_number,
+                module_id: chapter.module_id
+            });
+        } else {
+            setEditingItem(null);
+            const numChaps = getModuleChapters(selectedModuleId).length;
+            setChapterForm({
+                title: '',
+                description: '',
+                chapter_number: numChaps + 1,
+                module_id: selectedModuleId
+            });
+        }
+        setActiveModal('chapter');
+    };
+
+    // Save Chapter updates/creates to database or fallback
+    const saveChapter = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!chapterForm.title || !chapterForm.module_id) return;
+
+        setLoading(true);
+        if (isUsingFallback) {
+            let updatedChaps = [...chapters];
+            if (editingItem) {
+                updatedChaps = updatedChaps.map(c => c.id === editingItem.id ? { ...c, ...chapterForm } : c);
+            } else {
+                const newChap: CourseChapter = {
+                    id: 'chap_' + Math.random().toString(36).substring(7),
+                    ...chapterForm
+                };
+                updatedChaps.push(newChap);
+                setExpandedChapters(prev => ({ ...prev, [newChap.id]: true }));
+            }
+            persistLocalData(modules, updatedChaps, lessons);
+            setLoading(false);
+            setActiveModal(null);
+        } else {
+            try {
+                if (editingItem) {
+                    await supabaseAuth
+                        .from('course_chapters')
+                        .update({
+                            title: chapterForm.title,
+                            description: chapterForm.description,
+                            chapter_number: chapterForm.chapter_number,
+                            module_id: chapterForm.module_id
+                        })
+                        .eq('id', editingItem.id);
+                } else {
+                    const newId = crypto.randomUUID();
+                    await supabaseAuth
+                        .from('course_chapters')
+                        .insert([{
+                            id: newId,
+                            title: chapterForm.title,
+                            description: chapterForm.description,
+                            chapter_number: chapterForm.chapter_number,
+                            module_id: chapterForm.module_id
+                        }]);
+                    setExpandedChapters(prev => ({ ...prev, [newId]: true }));
+                }
+                await loadDatabaseData();
+                setActiveModal(null);
+            } catch (err) {
+                console.error(err);
+                alert('Database update failed.');
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
+    // Delete Chapter
+    const deleteChapter = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!confirm('Are you sure you want to delete this chapter? All its learning materials will be deleted.')) return;
+
+        setLoading(true);
+        if (isUsingFallback) {
+            const updatedChaps = chapters.filter(c => c.id !== id);
+            const updatedLessons = lessons.filter(l => l.chapter_id !== id);
+            persistLocalData(modules, updatedChaps, updatedLessons);
+            setLoading(false);
+        } else {
+            try {
+                await supabaseAuth.from('course_chapters').delete().eq('id', id);
+                await loadDatabaseData();
+            } catch (err) {
+                console.error(err);
+                alert('Delete failed.');
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
+    // Open Lesson Card Edit Modal (populates correctly on card edit click)
+    const openLessonModal = (chapterId: string, lesson?: CourseLesson, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+
+        if (lesson) {
+            setEditingItem(lesson);
+            setLessonForm({
+                title: lesson.title,
+                description: lesson.description || '',
+                lesson_number: lesson.lesson_number,
+                material_type: lesson.material_type || 'file',
+                material_url: lesson.material_url || '',
+                file_name: lesson.file_name || '',
+                file_size: lesson.file_size || '',
+                duration: lesson.duration || '',
+                link_url: lesson.link_url || '',
+                chapter_id: lesson.chapter_id
+            });
+        } else {
+            setEditingItem(null);
+            const numLessons = getChapterLessons(chapterId).length;
+            setLessonForm({
+                title: '',
+                description: '',
+                lesson_number: numLessons + 1,
+                material_type: 'file',
+                material_url: '',
+                file_name: '',
+                file_size: '',
+                duration: '',
+                link_url: '',
+                chapter_id: chapterId
+            });
+        }
+        setActiveModal('lesson');
+    };
+
+    // Simplified Attachment File Upload
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
+        const friendlySize = `${sizeInMb}MB`;
+
+        // MIME Mapping rule
+        let mappedType = 'file';
+        if (file.type.startsWith('audio/')) {
+            mappedType = 'audio';
+        } else if (file.type.startsWith('video/')) {
+            mappedType = 'video';
+        } else if (file.type.includes('pdf') || file.name.endsWith('.pdf')) {
+            mappedType = 'pdf';
+        } else if (file.type.startsWith('image/')) {
+            mappedType = 'image';
+        }
+
+        setUploadProgress(20);
+
+        if (isUsingFallback) {
+            // Simulated upload for local fallbacks
+            const interval = setInterval(() => {
+                setUploadProgress(prev => {
+                    if (prev === null) return null;
+                    if (prev >= 100) {
+                        clearInterval(interval);
+                        setTimeout(() => {
+                            setUploadProgress(null);
+                            const objectUrl = URL.createObjectURL(file);
+                            setLessonForm(prevForm => ({
+                                ...prevForm,
+                                material_type: mappedType,
+                                material_url: objectUrl,
+                                file_name: file.name,
+                                file_size: friendlySize,
+                                duration: mappedType.toUpperCase() + ' • ' + friendlySize
+                            }));
+                        }, 400);
+                        return 100;
+                    }
+                    return prev + 25;
+                });
+            }, 100);
+        } else {
+            // Live Upload to Supabase bucket 'inventory_materials'
+            try {
+                const fileExt = file.name.split('.').pop();
+                const randomName = `${Math.random().toString(36).substring(2, 12)}_${Date.now()}.${fileExt}`;
+                const filePath = `materials/${randomName}`;
+
+                setUploadProgress(50);
+                
+                const { error: uploadError } = await supabaseAuth.storage
+                    .from('inventory_materials')
+                    .upload(filePath, file);
+
+                if (uploadError) {
+                    throw uploadError;
+                }
+
+                setUploadProgress(85);
+
+                const { data: { publicUrl } } = supabaseAuth.storage
+                    .from('inventory_materials')
+                    .getPublicUrl(filePath);
+
+                setUploadProgress(100);
+                setTimeout(() => {
+                    setUploadProgress(null);
+                    setLessonForm(prev => ({
+                        ...prev,
+                        material_type: mappedType,
+                        material_url: publicUrl,
+                        file_name: file.name,
+                        file_size: friendlySize,
+                        duration: mappedType.toUpperCase() + ' • ' + friendlySize
+                    }));
+                }, 400);
+            } catch (err: any) {
+                console.error(err);
+                // Graceful fallback to Object URL if bucket or credentials fails
+                setTimeout(() => {
+                    setUploadProgress(null);
+                    const objectUrl = URL.createObjectURL(file);
+                    setLessonForm(prev => ({
+                        ...prev,
+                        material_type: mappedType,
+                        material_url: objectUrl,
+                        file_name: file.name,
+                        file_size: friendlySize,
+                        duration: mappedType.toUpperCase() + ' • ' + friendlySize
+                    }));
+                }, 300);
+            }
+        }
+    };
+
+    // Save Lesson card details
+    const saveLesson = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!lessonForm.title || !lessonForm.chapter_id) return;
+
+        setLoading(true);
+        if (isUsingFallback) {
+            let updatedLess = [...lessons];
+            if (editingItem) {
+                updatedLess = updatedLess.map(l => l.id === editingItem.id ? { ...l, ...lessonForm } : l);
+            } else {
+                const newLesson: CourseLesson = {
+                    id: 'less_' + Math.random().toString(36).substring(7),
+                    ...lessonForm
+                };
+                updatedLess.push(newLesson);
+            }
+            persistLocalData(modules, chapters, updatedLess);
+            setLoading(false);
+            setActiveModal(null);
+        } else {
+            try {
+                if (editingItem) {
+                    await supabaseAuth
+                        .from('course_lessons')
+                        .update({
+                            title: lessonForm.title,
+                            description: lessonForm.description,
+                            lesson_number: lessonForm.lesson_number,
+                            material_type: lessonForm.material_type,
+                            material_url: lessonForm.material_url,
+                            file_name: lessonForm.file_name,
+                            file_size: lessonForm.file_size,
+                            duration: lessonForm.duration,
+                            link_url: lessonForm.link_url,
+                            chapter_id: lessonForm.chapter_id
+                        })
+                        .eq('id', editingItem.id);
+                } else {
+                    await supabaseAuth
+                        .from('course_lessons')
+                        .insert([{
+                            id: crypto.randomUUID(),
+                            title: lessonForm.title,
+                            description: lessonForm.description,
+                            lesson_number: lessonForm.lesson_number,
+                            material_type: lessonForm.material_type,
+                            material_url: lessonForm.material_url,
+                            file_name: lessonForm.file_name,
+                            file_size: lessonForm.file_size,
+                            duration: lessonForm.duration,
+                            link_url: lessonForm.link_url,
+                            chapter_id: lessonForm.chapter_id
+                        }]);
+                }
+                await loadDatabaseData();
+                setActiveModal(null);
+            } catch (err) {
+                console.error(err);
+                alert('Database update failed.');
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
+    // Delete Lesson
+    const deleteLesson = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!confirm('Are you sure you want to delete this lesson material?')) return;
+
+        setLoading(true);
+        if (isUsingFallback) {
+            const updatedLess = lessons.filter(l => l.id !== id);
+            persistLocalData(modules, chapters, updatedLess);
+            setLoading(false);
+        } else {
+            try {
+                await supabaseAuth.from('course_lessons').delete().eq('id', id);
+                await loadDatabaseData();
+            } catch (err) {
+                console.error(err);
+                alert('Delete failed.');
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
+    // Trigger Play/View attachment previewer overlay
+    const handlePlayPreview = (lesson: CourseLesson, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!lesson.material_url) {
+            alert('No attachment uploaded for this lesson.');
+            return;
+        }
+        setMediaPreview({
+            type: lesson.material_type || 'file',
+            url: lesson.material_url,
+            title: lesson.title
+        });
+    };
+
+    // Trigger Simulated Cloud Backup Synchronization
+    const triggerBackupSync = () => {
+        setIsSyncing(true);
+        setTimeout(() => {
+            setIsSyncing(false);
+            setLastSyncedText('Synced just now');
+        }, 1500);
+    };
+
+    // Computed Info
+    const activeModule = modules.find(m => m.id === selectedModuleId);
+    const moduleChapters = getModuleChapters(selectedModuleId);
+
+    // Filters based on header search query
+    const filteredModules = modules.filter(m => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return m.title.toLowerCase().includes(q) || m.description.toLowerCase().includes(q);
+    });
+
+    const getLevelBadge = (levelNum: number) => {
+        switch (levelNum) {
+            case 1: return <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-[10px] text-emerald-600 font-extrabold tracking-wide uppercase">Beginner</span>;
+            case 2: return <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 font-extrabold tracking-wide uppercase">Elementary</span>;
+            case 3: return <span className="px-2.5 py-1 bg-blue-500/10 border border-blue-500/25 rounded-full text-[10px] text-blue-600 font-extrabold tracking-wide uppercase">Intermediate</span>;
+            case 4: return <span className="px-2.5 py-1 bg-purple-500/10 border border-purple-500/25 rounded-full text-[10px] text-purple-600 font-extrabold tracking-wide uppercase">Advanced</span>;
+            default: return null;
+        }
+    };
+
+    const getLevelIcon = (levelNum: number) => {
+        switch (levelNum) {
+            case 1: return <Keyboard className="size-5 text-[#d97706]" />;
+            case 2: return <Music className="size-5 text-[#d97706]" />;
+            case 3: return <Users className="size-5 text-[#d97706]" />;
+            case 4: return <Award className="size-5 text-[#d97706]" />;
+            default: return <BookOpen className="size-5 text-[#d97706]" />;
+        }
+    };
 
     return (
-        <div className="flex h-screen bg-[#f8f8f6] dark:bg-[#221d10] text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
+        <div className="flex h-screen bg-[#f8f8f6] dark:bg-[#14120c] text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
             <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
-            <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            
+            <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 <TeacherHeader 
-                    title="Inventory Library" 
+                    title="Curriculum & Inventory Manager" 
                     searchQuery={searchQuery}
                     onSearchChange={setSearchQuery}
                 />
-                
-                <div className="flex-1 flex flex-col items-center justify-center p-8">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 max-w-lg w-full text-center shadow-sm">
-                        <div className="w-20 h-20 bg-[#ecb613]/10 dark:bg-[#ecb613]/5 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <Construction className="size-10 text-[#ecb613]" />
-                        </div>
-                        <h2 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-4">Coming Soon!</h2>
-                        <p className="text-slate-500 dark:text-slate-400 leading-relaxed mb-8">
-                            The Inventory Library module is currently under construction. Soon you will be able to manage instruments, track sheet music, and request resources right from this dashboard.
-                        </p>
-                        
-                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 rounded-full font-medium text-sm border border-slate-100 dark:border-slate-800">
-                            <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ecb613] opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ecb613]"></span>
-                            </span>
-                            In Development
-                        </div>
+
+                {/* Connection Status Subtitle Bar */}
+                <div className="px-8 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-400 select-none shrink-0">
+                    <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${isUsingFallback ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
+                        <span>{isUsingFallback ? 'OFFLINE INTERACTIVE MODE (LOCAL FALLBACK)' : 'CONNECTED TO SUPABASE CLOUD DATABASE'}</span>
+                    </div>
+                    <div>
+                        <span>LEVELS: 04 • CHAPTERS: {chapters.length} • MATERIALS: {lessons.length}</span>
                     </div>
                 </div>
+
+                {loading ? (
+                    <div className="flex-1 flex flex-col items-center justify-center">
+                        <Loader2 className="w-8 h-8 animate-spin text-[#ecb613] mb-3" />
+                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest animate-pulse">Loading Academy Curriculum...</p>
+                    </div>
+                ) : (
+                    <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8">
+                        
+                        {/* ==================== VIEW A: LANDING SCREEN ==================== */}
+                        {currentView === 'landing' && (
+                            <div className="space-y-8 animate-fadeIn">
+                                
+                                {/* Landing Premium Header Banner */}
+                                <div className="rounded-3xl p-6 md:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 text-white relative overflow-hidden shadow-md border border-slate-800">
+                                    <div className="absolute right-0 top-0 opacity-10 select-none pointer-events-none">
+                                        <Sparkles className="w-72 h-72 text-amber-500 animate-pulse" />
+                                    </div>
+                                    <div className="max-w-2xl relative z-10 space-y-2 text-left">
+                                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-xs text-amber-400 font-extrabold tracking-wide uppercase leading-none">
+                                            <Sparkles className="size-3.5" />
+                                            <span>Curriculum Academy</span>
+                                        </div>
+                                        <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none bg-gradient-to-r from-white via-slate-100 to-amber-400 bg-clip-text text-transparent">
+                                            Music Curriculum Library
+                                        </h1>
+                                        <p className="text-xs md:text-sm text-slate-300 font-medium leading-relaxed max-w-xl">
+                                            Select a Proficiency Level to inspect topics, play guide audios, or edit checklist requirements.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* SECTION 1: PROFICIENCY LEVELS GRID */}
+                                <div className="space-y-4 text-left">
+                                    <div className="flex items-center gap-2 select-none">
+                                        <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
+                                        <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-400">Proficiency Levels</h2>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                        {filteredModules.map((mod, idx) => {
+                                            const chapsInMod = getModuleChapters(mod.id);
+                                            const totalResources = chapsInMod.reduce((sum, c) => sum + getChapterLessons(c.id).length, 0);
+                                            
+                                            return (
+                                                <div
+                                                    key={mod.id}
+                                                    onClick={() => handleSelectModule(mod.id)}
+                                                    className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 cursor-pointer shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] overflow-hidden select-none"
+                                                >
+                                                    {/* Giant semi-transparent floating background number behind card */}
+                                                    <div className="absolute right-4 bottom-2 text-7xl md:text-8xl font-black text-slate-100 dark:text-slate-800/25 pointer-events-none transition-transform duration-500 group-hover:scale-125 group-hover:text-amber-500/10 font-mono">
+                                                        {idx + 1}
+                                                    </div>
+
+                                                    {/* Level card top row */}
+                                                    <div className="relative z-10 space-y-3">
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10 shrink-0">
+                                                                {getLevelIcon(mod.module_number)}
+                                                            </div>
+                                                            {getLevelBadge(mod.module_number)}
+                                                        </div>
+                                                        
+                                                        <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">
+                                                            {mod.title}
+                                                        </h3>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                            {mod.description}
+                                                        </p>
+                                                    </div>
+
+                                                    {/* Level card bottom stats */}
+                                                    <div className="relative z-10 border-t border-slate-100 dark:border-slate-800/60 pt-4 flex items-center gap-4 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
+                                                        <div>
+                                                            <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{chapsInMod.length}</span>
+                                                            Chapters
+                                                        </div>
+                                                        <div className="w-px h-3 bg-slate-200 dark:bg-slate-800" />
+                                                        <div>
+                                                            <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{totalResources}</span>
+                                                            Resources
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* SECTION 2: SPECIALIZED MODULES (Swar Gyan, Compositions 3/4, etc.) */}
+                                <div className="space-y-4 text-left">
+                                    <div className="flex items-center gap-2 select-none">
+                                        <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
+                                        <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-400">Specialized Modules</h2>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                        
+                                        {/* 1. Swar Gyan Masterclass Card (Taller Card, full image overlay) */}
+                                        <div 
+                                            className="group relative rounded-3xl p-6 shadow-xs flex flex-col justify-between min-h-[220px] lg:col-span-2 overflow-hidden cursor-pointer border border-slate-800 text-left"
+                                            onClick={() => alert('Swar Gyan Masterclass: Advanced ear training, note recognition, and mandra-saptak pitch control guides.')}
+                                        >
+                                            {/* Masked Background Sitar Image */}
+                                            <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105 animate-fadeIn" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=600&auto=format&fit=crop')` }} />
+                                            <div className="absolute inset-0 bg-gradient-to-br from-slate-950/90 via-slate-900/80 to-slate-950/95" />
+                                            
+                                            <div className="relative z-10 space-y-2">
+                                                <span className="inline-flex px-2 py-0.5 bg-[#ecb613] text-slate-950 font-black rounded-lg text-[9px] uppercase tracking-wider leading-none select-none">Masterclass</span>
+                                                <h3 className="font-black text-lg text-white group-hover:text-[#ecb613] transition-colors leading-tight">Swar Gyan Ear Training</h3>
+                                                <p className="text-xs text-slate-300 font-medium leading-relaxed max-w-sm">
+                                                    Master Mandra Saptak ear recognition and vocal tuning guides. Essential for bamboo flute players.
+                                                </p>
+                                            </div>
+
+                                            <div className="relative z-10 flex items-center justify-between border-t border-white/10 pt-4 mt-8">
+                                                <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
+                                                    <span>12 Lessons</span>
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                                    <span>6 Guide Videos</span>
+                                                </div>
+                                                <button className="w-8 h-8 rounded-full bg-[#ecb613] hover:bg-amber-500 text-slate-950 flex items-center justify-center transition-all group-hover:translate-x-1.5 shadow-sm">
+                                                    <ArrowRight className="size-4 stroke-[2.5]" />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* 2. Composition 3/4 Card (Premium Dark theme) */}
+                                        <div 
+                                            className="group relative rounded-3xl p-6 bg-slate-900 border border-slate-800 text-white shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left"
+                                            onClick={() => alert('Composition 3/4 waltz rhythm guides and waltz practice files.')}
+                                        >
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
+                                                        <Trophy className="size-5 text-[#ecb613]" />
+                                                    </div>
+                                                    <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[9px] text-[#ecb613] font-black tracking-widest uppercase font-mono leading-none">3/4 Waltz</span>
+                                                </div>
+                                                <h3 className="font-black text-base text-white leading-tight group-hover:text-[#ecb613] transition-colors">Composition 3/4</h3>
+                                                <p className="text-xs text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                    Classical Waltz meter subdivisions. Features custom skipping alankars and Base Pa compositions.
+                                                </p>
+                                            </div>
+                                            
+                                            <div className="border-t border-slate-800 pt-4 flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono">
+                                                <span>TEMPO: 90 BPM</span>
+                                                <div className="flex gap-1.5">
+                                                    <button className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all border border-slate-700/60 leading-none">
+                                                        <Play className="size-3 text-amber-500 fill-amber-500" />
+                                                    </button>
+                                                    <button className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all border border-slate-700/60 leading-none">
+                                                        <FileText className="size-3 text-slate-400" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* 3. Composition 4/4 Card (Sleek Neutral) */}
+                                        <div 
+                                            className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left"
+                                            onClick={() => alert('Composition 4/4 standard rhythm guides and metronome practice files.')}
+                                        >
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
+                                                        <Calendar className="size-5 text-[#ecb613]" />
+                                                    </div>
+                                                    <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[9px] text-slate-500 dark:text-slate-400 font-black tracking-widest uppercase font-mono leading-none">4/4 TeenTaal</span>
+                                                </div>
+                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">Composition 4/4</h3>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                    Standard 4-beat rhythm subdivisions. High-fidelity guides for metronome practices.
+                                                </p>
+                                            </div>
+                                            
+                                            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono">
+                                                <span>TEMPO: 120 BPM</span>
+                                                <div className="flex gap-1.5">
+                                                    <button className="p-2 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 text-slate-800 dark:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-850/80 leading-none">
+                                                        <Play className="size-3 text-amber-500 fill-amber-500" />
+                                                    </button>
+                                                    <button className="p-2 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 text-slate-800 dark:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-850/80 leading-none">
+                                                        <FileText className="size-3 text-slate-400" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* 4. Song Database Card (Light Amber) */}
+                                        <div 
+                                            className="group relative rounded-3xl p-6 bg-[#fef3c7] dark:bg-[#2c2311] border border-amber-200/50 dark:border-amber-900/40 shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left"
+                                            onClick={() => alert('Song Collection explorer.')}
+                                        >
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/10">
+                                                        <Music className="size-5 text-[#d97706]" />
+                                                    </div>
+                                                    <span className="px-2.5 py-1 bg-amber-500/20 border border-amber-500/20 rounded-full text-[9px] text-[#d97706] font-black tracking-widest uppercase font-mono leading-none">15 SONGS</span>
+                                                </div>
+                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#d97706] transition-colors font-sans">Song Database</h3>
+                                                <p className="text-xs text-amber-955/80 dark:text-amber-300/80 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                    Browse classical tunes and movie collections like Bella Ciao, DDLJ, and Bhajan guide files.
+                                                </p>
+                                            </div>
+                                            
+                                            <div className="border-t border-amber-200/50 dark:border-amber-900/40 pt-4 flex justify-between items-center">
+                                                <span className="text-[10px] font-black text-[#d97706] uppercase tracking-wider">Browse Collection</span>
+                                                <ArrowRight className="size-4 text-[#d97706] transition-all group-hover:translate-x-1" />
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                </div>
+
+                            </div>
+                        )}
+
+                        {/* ==================== VIEW B: CURRICULUM WORKSPACE SCREEN ==================== */}
+                        {currentView === 'dashboard' && (
+                            <div className="flex flex-col xl:flex-row gap-8 items-start animate-fadeIn">
+                                
+                                {/* Left/Middle 2/3 Column: Chapter Collapsible accordions stack & Module Header info */}
+                                <div className="flex-1 w-full space-y-6">
+                                    
+                                    {/* Breadcrumb Navigation button */}
+                                    <div className="flex items-center select-none">
+                                        <button
+                                            onClick={() => setCurrentView('landing')}
+                                            className="inline-flex items-center gap-1.5 text-xs font-black text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-white transition-all uppercase tracking-wider border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 py-2 rounded-full shadow-xs"
+                                        >
+                                            <ArrowLeft className="size-3.5 stroke-[2.5]" />
+                                            <span>Back to Modules</span>
+                                        </button>
+                                    </div>
+
+                                    {/* High-impact Orange/Amber Gradient Header Card representing Bansuri brand */}
+                                    {activeModule && (
+                                        <div className="rounded-3xl p-6 md:p-8 bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 text-slate-950 relative overflow-hidden shadow-lg border border-orange-400/20 select-none text-left">
+                                            <div className="absolute right-0 top-0 opacity-15 select-none pointer-events-none">
+                                                <Database className="w-64 h-64 text-white" />
+                                            </div>
+                                            <div className="max-w-2xl relative z-10 space-y-2">
+                                                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 border border-white/20 rounded-full text-[10px] text-white font-black tracking-widest uppercase leading-none">
+                                                    <Sparkles className="size-3.5" />
+                                                    <span>ACTIVE CURRICULUM</span>
+                                                </div>
+                                                <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none text-white font-sans drop-shadow-xs">
+                                                    {activeModule.title} - Curriculum Manager
+                                                </h1>
+                                                <p className="text-xs md:text-sm text-amber-50 font-medium leading-relaxed max-w-xl">
+                                                    {activeModule.description}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Section bar with quick Add Chapter button */}
+                                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 pb-3 select-none">
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
+                                            <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-400">Collapsible Chapter curriculum</h2>
+                                        </div>
+                                        <button 
+                                            onClick={() => openChapterModal()}
+                                            className="inline-flex items-center gap-1.5 text-[10px] font-black text-amber-500 hover:text-amber-600 bg-amber-500/10 hover:bg-amber-500/15 px-3.5 py-2 rounded-full transition-all uppercase tracking-wider border border-amber-500/10 shadow-xs"
+                                        >
+                                            <Plus className="size-3.5 stroke-[2.5]" />
+                                            <span>Add New Chapter</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Collapsible Accordion Chapter stack */}
+                                    <div className="space-y-4">
+                                        {moduleChapters.length === 0 ? (
+                                            <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl text-slate-400">
+                                                <Sparkles className="size-10 text-amber-500 stroke-[1.2] mx-auto mb-2 opacity-50" />
+                                                <p className="text-xs font-semibold">No chapters found for this Level.</p>
+                                            </div>
+                                        ) : (
+                                            moduleChapters.map(chap => {
+                                                const expanded = !!expandedChapters[chap.id];
+                                                const chapLessons = getChapterLessons(chap.id);
+                                                
+                                                return (
+                                                    <div 
+                                                        key={chap.id}
+                                                        className="rounded-3xl border border-slate-200/85 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:border-slate-350 dark:hover:border-slate-750 transition-all duration-300"
+                                                    >
+                                                        {/* Chapter Accordion Header bar */}
+                                                        <div 
+                                                            onClick={() => toggleChapterExpand(chap.id)}
+                                                            className="px-6 py-5 bg-slate-50/50 dark:bg-slate-950/20 hover:bg-slate-50 dark:hover:bg-slate-950/30 flex items-center justify-between gap-4 cursor-pointer select-none transition-all"
+                                                        >
+                                                            <div className="flex items-center gap-4 text-left">
+                                                                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/10 flex items-center justify-center shrink-0">
+                                                                    <span className="font-extrabold text-xs font-mono text-[#d97706]">Ch{chap.chapter_number}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none font-mono">Chapter Accordion Toggle</span>
+                                                                    <h3 className="font-extrabold text-sm md:text-base text-slate-900 dark:text-white leading-tight">
+                                                                        {chap.title}
+                                                                    </h3>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Chapter Actions and chevron */}
+                                                            <div className="flex items-center gap-4 shrink-0">
+                                                                <div className="flex items-center gap-1">
+                                                                    <button 
+                                                                        onClick={(e) => openChapterModal(chap, e)}
+                                                                        className="p-2 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-[#ecb613] transition-all"
+                                                                        title="Edit Chapter Introduction"
+                                                                    >
+                                                                        <Edit2 className="size-4" />
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); deleteChapter(chap.id, e); }}
+                                                                        className="p-2 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500 transition-all"
+                                                                        title="Delete Chapter"
+                                                                    >
+                                                                        <Trash2 className="size-4" />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="text-slate-400">
+                                                                    {expanded ? <ChevronDown className="size-5" /> : <ChevronRight className="size-5" />}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Chapter Accordion Expanded Content body */}
+                                                        {expanded && (
+                                                            <div className="p-6 border-t border-slate-100 dark:border-slate-800/80 space-y-6">
+                                                                
+                                                                {/* Chapter heads-up introduction summary */}
+                                                                {chap.description && (
+                                                                    <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed text-left space-y-2">
+                                                                        <div className="text-[10px] font-bold text-amber-500 uppercase tracking-widest leading-none font-mono mb-2">
+                                                                            Chapter Heads Up / Introduction Overview
+                                                                        </div>
+                                                                        {chap.description.split('\n').map((line, idx) => (
+                                                                            <div key={idx} className={line.startsWith('•') || line.startsWith('*') ? 'pl-4 py-0.5 relative' : 'font-extrabold text-slate-800 dark:text-slate-200 mb-1'}>
+                                                                                {(line.startsWith('•') || line.startsWith('*')) && <span className="absolute left-1 text-amber-500">•</span>}
+                                                                                {line.replace(/^(\*|•)\s*/, '')}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Action bar inside chapter to add new topics instantly */}
+                                                                <div className="flex items-center justify-between select-none">
+                                                                    <div className="text-[10px] font-bold font-mono text-slate-400 uppercase tracking-wider">
+                                                                        TOPICS LIST ({chapLessons.length})
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={(e) => openLessonModal(chap.id, undefined, e)}
+                                                                        className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-[#ecb613] hover:bg-amber-500 text-slate-950 px-3 py-1.5 rounded-full transition-all uppercase tracking-wider active:scale-95 shadow-sm"
+                                                                    >
+                                                                        <PlusCircle className="size-3.5" />
+                                                                        <span>Add Material Card</span>
+                                                                    </button>
+                                                                </div>
+
+                                                                {/* Chapter topics simple cards rendering */}
+                                                                {chapLessons.length === 0 ? (
+                                                                    <div className="py-8 text-center text-slate-400 border border-slate-100 dark:border-slate-800 rounded-2xl">
+                                                                        <HelpCircle className="size-8 stroke-[1.2] mx-auto mb-2 opacity-50" />
+                                                                        <p className="text-xs font-semibold">No materials created yet for this chapter.</p>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-left">
+                                                                        {chapLessons.map(lesson => {
+                                                                            const isLinkClickable = !!lesson.link_url;
+                                                                            const hasAttachment = !!lesson.material_url;
+                                                                            
+                                                                            return (
+                                                                                <div 
+                                                                                    key={lesson.id}
+                                                                                    onClick={(e) => hasAttachment ? handlePlayPreview(lesson, e) : null}
+                                                                                    className={`rounded-2xl p-5 border flex flex-col justify-between h-44 relative bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-850 hover:border-amber-400/60 dark:hover:border-amber-500/50 hover:shadow-md transition-all ${
+                                                                                        hasAttachment ? 'cursor-pointer' : 'cursor-default'
+                                                                                    }`}
+                                                                                >
+                                                                                    {/* Card Upper Title & actions */}
+                                                                                    <div className="space-y-1.5">
+                                                                                        <div className="flex items-center justify-between gap-4 select-none">
+                                                                                            <div className="flex items-center gap-2">
+                                                                                                {getMaterialIcon(lesson.material_type)}
+                                                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                                                                                                    Topic {lesson.lesson_number}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            
+                                                                                            <div className="flex items-center gap-1 shrink-0 relative z-20">
+                                                                                                <button 
+                                                                                                    onClick={(e) => openLessonModal(chap.id, lesson, e)}
+                                                                                                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-amber-500 transition-all font-semibold"
+                                                                                                    title="Edit Topic Details"
+                                                                                                >
+                                                                                                    <Edit2 className="size-3.5" />
+                                                                                                </button>
+                                                                                                <button 
+                                                                                                    onClick={(e) => { e.stopPropagation(); deleteLesson(lesson.id, e); }}
+                                                                                                    className="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-500 transition-all"
+                                                                                                    title="Delete Topic"
+                                                                                                >
+                                                                                                    <Trash2 className="size-3.5" />
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        
+                                                                                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white leading-snug line-clamp-1">
+                                                                                            {lesson.title}
+                                                                                        </h4>
+                                                                                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 font-medium leading-normal">
+                                                                                            {lesson.description}
+                                                                                        </p>
+                                                                                    </div>
+
+                                                                                    {/* Card Bottom detail line & link */}
+                                                                                    <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 select-none">
+                                                                                        <div className="text-[10px] font-bold font-mono text-slate-400">
+                                                                                            {lesson.duration || 'FILE ATTACHMENT'}
+                                                                                        </div>
+                                                                                        
+                                                                                        {isLinkClickable && (
+                                                                                            <a
+                                                                                                href={lesson.link_url}
+                                                                                                target="_blank"
+                                                                                                rel="noopener noreferrer"
+                                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                                className="inline-flex items-center gap-1 text-[10px] font-black text-amber-500 hover:text-amber-600 bg-amber-500/10 px-2.5 py-1.5 rounded-full tracking-wider uppercase transition-all relative z-10"
+                                                                                                title="Open external link"
+                                                                                            >
+                                                                                                <span>Link</span>
+                                                                                                <ExternalLink className="size-2.5" />
+                                                                                            </a>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                )}
+
+                                                            </div>
+                                                        )}
+
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+
+                                </div>
+
+                                {/* Right 1/3 Column: 3 High-fidelity visual Quick Access widgets */}
+                                <div className="w-full xl:w-[340px] shrink-0 space-y-6 select-none">
+                                    
+                                    {/* Chapter metrics bar header */}
+                                    <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+                                        <Zap className="size-4 text-[#ecb613]" />
+                                        <h3 className="font-extrabold text-[10px] tracking-widest uppercase text-slate-400">Quick Access Tools</h3>
+                                    </div>
+
+                                    {/* WIDGET A: STUDENT PROGRESS TRACKER (Animated SVG circular progress wheel) */}
+                                    <div className="rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
+                                        <div className="space-y-1">
+                                            <span className="text-[9px] font-black bg-emerald-500/15 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Simulated Progress</span>
+                                            <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Active Class Completion</h4>
+                                        </div>
+
+                                        <div className="flex items-center justify-between gap-4 my-3">
+                                            {/* Beautiful Circular Progress Wheel */}
+                                            <div className="relative w-20 h-20 flex items-center justify-center shrink-0">
+                                                <svg className="w-20 h-20 transform -rotate-90">
+                                                    <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="6" fill="transparent" />
+                                                    <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-[#ecb613]" strokeWidth="6" fill="transparent"
+                                                            strokeDasharray={2 * Math.PI * 32}
+                                                            strokeDashoffset={2 * Math.PI * 32 * (1 - 0.78)} />
+                                                </svg>
+                                                <div className="absolute font-black text-sm text-slate-900 dark:text-white leading-none font-mono">78%</div>
+                                            </div>
+                                            <div className="text-left space-y-1">
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase font-mono">Completion Rate</div>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-medium">
+                                                    Students have mastered 24 out of 30 sequential curriculum requirements.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono">
+                                            <span>ACTIVE STUDENTS: 14</span>
+                                            <span className="text-[#ecb613]">VIEW CLASS</span>
+                                        </div>
+                                    </div>
+
+                                    {/* WIDGET B: RESOURCE BACKUP SINKER */}
+                                    <div className="rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
+                                        <div className="space-y-1">
+                                            <span className="text-[9px] font-black bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Cloud Backup Status</span>
+                                            <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Supabase Sync Engine</h4>
+                                        </div>
+
+                                        <div className="my-2 space-y-2.5">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10 shrink-0">
+                                                    <RefreshCw className={`size-4 text-blue-500 ${isSyncing ? 'animate-spin' : ''}`} />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] font-bold text-slate-400 font-mono leading-none">{lastSyncedText}</div>
+                                                    <div className="text-[9px] font-semibold text-slate-400 mt-0.5">30 Active curriculum nodes active</div>
+                                                </div>
+                                            </div>
+                                            
+                                            <button 
+                                                onClick={triggerBackupSync}
+                                                disabled={isSyncing}
+                                                className="w-full py-2.5 px-4 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-white font-extrabold rounded-xl border border-slate-200 dark:border-slate-750 transition-all active:scale-98 flex items-center justify-center gap-2 text-xs leading-none"
+                                            >
+                                                {isSyncing ? (
+                                                    <>
+                                                        <Loader2 className="size-3.5 animate-spin" />
+                                                        <span>Syncing Storage...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <RefreshCw className="size-3.5" />
+                                                        <span>Sync to Cloud Database</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+
+                                        <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono leading-none">
+                                            <span>DB SIZE: 1.2MB</span>
+                                            <span className="text-emerald-500 uppercase font-black tracking-wide leading-none">SECURE</span>
+                                        </div>
+                                    </div>
+
+                                    {/* WIDGET C: QUICK STATS */}
+                                    <div className="rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
+                                        <div className="space-y-1">
+                                            <span className="text-[9px] font-black bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Numerical Summaries</span>
+                                            <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Active Level stats</h4>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3 my-2 text-left">
+                                            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                                <div className="text-lg font-black font-mono leading-none">{String(modules.length).padStart(2, '0')}</div>
+                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Levels</div>
+                                            </div>
+                                            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                                <div className="text-lg font-black font-mono leading-none">{String(chapters.length).padStart(2, '0')}</div>
+                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Chapters</div>
+                                            </div>
+                                            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                                <div className="text-lg font-black font-mono leading-none">{String(lessons.length).padStart(2, '0')}</div>
+                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Topics</div>
+                                            </div>
+                                            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 rounded-2xl border border-slate-100 dark:border-slate-850">
+                                                <div className="text-lg font-black font-mono text-emerald-500 leading-none">Active</div>
+                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Status</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono leading-none">
+                                            <span>TEACHER: MAESTRO</span>
+                                            <span className="text-[#ecb613] uppercase font-black tracking-wide leading-none">ADMIN</span>
+                                        </div>
+                                    </div>
+
+                                </div>
+
+                            </div>
+                        )}
+
+                    </div>
+                )}
+
+                {/* ==================== MODAL OVERLAYS ==================== */}
+
+                {/* 1. CHAPTER EDIT MODAL */}
+                {activeModal === 'chapter' && (
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4">
+                            <div className="flex justify-between items-center select-none">
+                                <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none">
+                                    {editingItem ? 'Edit Chapter Heads Up' : 'Add New Chapter'}
+                                </h3>
+                                <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                    <X className="size-5" />
+                                </button>
+                            </div>
+                            
+                            <form onSubmit={saveChapter} className="space-y-4 text-left">
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                        Chapter Title / Headline
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        required
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        placeholder="e.g. Chapter 1 - Introduction to Flute"
+                                        value={chapterForm.title}
+                                        onChange={e => setChapterForm(prev => ({ ...prev, title: e.target.value }))}
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                        Chapter Heads Up / Introduction Bullets
+                                    </label>
+                                    <textarea 
+                                        rows={6}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-medium leading-relaxed"
+                                        placeholder="What is the Flute?&#10;• Introduction to the Indian bamboo flute&#10;• Importance of flute in Indian music"
+                                        value={chapterForm.description}
+                                        onChange={e => setChapterForm(prev => ({ ...prev, description: e.target.value }))}
+                                    />
+                                </div>
+
+                                <button 
+                                    type="submit" 
+                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
+                                >
+                                    {editingItem ? 'Save Updates' : 'Add Chapter'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* 2. SIMPLE TOPIC LESSON CARD EDIT MODAL (Headline, Description, Attachment upload, Link) */}
+                {activeModal === 'lesson' && (
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4">
+                            <div className="flex justify-between items-center select-none">
+                                <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none">
+                                    {editingItem ? 'Edit Topic Material' : 'Add Topic Material'}
+                                </h3>
+                                <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                    <X className="size-5" />
+                                </button>
+                            </div>
+                            
+                            <form onSubmit={saveLesson} className="space-y-4 text-left">
+                                
+                                {/* Field 1: Headline */}
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                        1. Headline (Title)
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        required
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        placeholder="e.g. Rhythm Practice Patterns"
+                                        value={lessonForm.title}
+                                        onChange={e => setLessonForm(prev => ({ ...prev, title: e.target.value }))}
+                                    />
+                                </div>
+
+                                {/* Field 2: Description */}
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                        2. Description
+                                    </label>
+                                    <textarea 
+                                        rows={4}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-medium leading-relaxed"
+                                        placeholder="Using 4/4 rhythm with metronome."
+                                        value={lessonForm.description}
+                                        onChange={e => setLessonForm(prev => ({ ...prev, description: e.target.value }))}
+                                    />
+                                </div>
+
+                                {/* Field 3: Attachment Uploader (File, Image, PDF, Audio, or Video) */}
+                                <div className="space-y-2">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                        3. Attachment Upload (PDF, Audio, Video, Image, File)
+                                    </label>
+                                    
+                                    <div className="flex items-center gap-3">
+                                        <label className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-350 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none">
+                                            <UploadCloud className="size-6 text-slate-400 mb-1" />
+                                            <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Select Attachment File</span>
+                                            <input 
+                                                type="file" 
+                                                className="hidden"
+                                                accept=".pdf,audio/*,video/*,image/*"
+                                                onChange={handleFileUpload}
+                                            />
+                                        </label>
+                                    </div>
+
+                                    {uploadProgress !== null && (
+                                        <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                            <div className="bg-[#ecb613] h-1.5 transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                                        </div>
+                                    )}
+
+                                    {lessonForm.material_url && (
+                                        <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl flex items-center justify-between gap-4 text-[10px] font-bold font-mono text-slate-400 select-all">
+                                            <span className="truncate pr-4 leading-none">{lessonForm.file_name || lessonForm.material_url}</span>
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setLessonForm(prev => ({ ...prev, material_url: '', file_name: '', file_size: '', duration: '', material_type: 'file' }))}
+                                                className="p-1 hover:bg-red-500/10 rounded-lg text-red-500 transition-all shrink-0"
+                                            >
+                                                <X className="size-3.5" />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Field 4: Clickable Link */}
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                        4. Clickable Link (URL)
+                                    </label>
+                                    <div className="relative">
+                                        <Globe className="size-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <input 
+                                            type="url" 
+                                            className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                            placeholder="https://example.com/practice-routine"
+                                            value={lessonForm.link_url}
+                                            onChange={e => setLessonForm(prev => ({ ...prev, link_url: e.target.value }))}
+                                        />
+                                    </div>
+                                </div>
+
+                                <button 
+                                    type="submit" 
+                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
+                                >
+                                    {editingItem ? 'Save Updates' : 'Add Material'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* 3. INTERACTIVE MEDIA PREVIEWER OVERLAY */}
+                {mediaPreview && (
+                    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
+                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-3xl w-full shadow-2xl text-white space-y-4 animate-scaleIn">
+                            <div className="flex justify-between items-center select-none">
+                                <h4 className="font-extrabold text-sm tracking-wide truncate pr-4 uppercase text-amber-500 font-mono">
+                                    Previewing: {mediaPreview.title}
+                                </h4>
+                                <button 
+                                    onClick={() => setMediaPreview(null)} 
+                                    className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-all"
+                                >
+                                    <X className="size-5" />
+                                </button>
+                            </div>
+                            
+                            {/* Interactive Media Frame */}
+                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative">
+                                {mediaPreview.type === 'video' ? (
+                                    <video src={mediaPreview.url} controls className="w-full h-full object-contain" autoPlay />
+                                ) : mediaPreview.type === 'audio' ? (
+                                    <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950/40 h-full">
+                                        <Music className="size-16 text-amber-500 animate-pulse" />
+                                        <audio src={mediaPreview.url} controls className="w-full max-w-md" autoPlay />
+                                    </div>
+                                ) : mediaPreview.type === 'pdf' ? (
+                                    <embed src={mediaPreview.url} type="application/pdf" className="w-full h-full" />
+                                ) : mediaPreview.type === 'image' ? (
+                                    <img src={mediaPreview.url} alt={mediaPreview.title} className="w-full h-full object-contain" />
+                                ) : (
+                                    <div className="text-center p-8 space-y-4">
+                                        <FileText className="size-16 text-slate-600 mx-auto" />
+                                        <p className="text-xs text-slate-400 max-w-sm">No interactive simulation available for generic files. Open details below:</p>
+                                        <a 
+                                            href={mediaPreview.url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-full text-xs transition-all uppercase tracking-wider"
+                                        >
+                                            <span>Open File Attachment</span>
+                                            <ExternalLink className="size-3.5" />
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
             </main>
         </div>
     );
