@@ -896,13 +896,16 @@ export default function InventoryLibrary() {
         return a.localeCompare(b);
     });
 
-    const getLevelBadge = (levelNum: number) => {
+    const getLevelBadge = (levelNum: number, category: string) => {
+        if (category !== 'Proficiency Levels') {
+            return <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 font-extrabold tracking-wide uppercase">{category}</span>;
+        }
         switch (levelNum) {
             case 1: return <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-[10px] text-emerald-600 font-extrabold tracking-wide uppercase">Beginner</span>;
             case 2: return <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 font-extrabold tracking-wide uppercase">Elementary</span>;
             case 3: return <span className="px-2.5 py-1 bg-blue-500/10 border border-blue-500/25 rounded-full text-[10px] text-blue-600 font-extrabold tracking-wide uppercase">Intermediate</span>;
             case 4: return <span className="px-2.5 py-1 bg-purple-500/10 border border-purple-500/25 rounded-full text-[10px] text-purple-600 font-extrabold tracking-wide uppercase">Advanced</span>;
-            default: return null;
+            default: return <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[10px] text-slate-500 dark:text-slate-400 font-extrabold tracking-wide uppercase">Level {levelNum}</span>;
         }
     };
 
@@ -967,7 +970,9 @@ export default function InventoryLibrary() {
                                             Select a Proficiency Level to inspect topics, play guide audios, or edit checklist requirements.
                                         </p>
                                     </div>
-                                                              {/* DYNAMIC HEADLINE CATEGORIES GRID */}
+                                </div>
+                                
+                                {/* DYNAMIC HEADLINE CATEGORIES GRID */}
                                 {sortedCategories.map((category) => (
                                     <div key={category} className="space-y-4 text-left">
                                         <div className="flex items-center justify-between select-none border-b border-slate-200 dark:border-slate-800 pb-2">
@@ -996,249 +1001,72 @@ export default function InventoryLibrary() {
                                                 const parsed = parseModuleCategory(mod);
                                                 const chapsInMod = getModuleChapters(mod.id);
                                                 const totalResources = chapsInMod.reduce((sum, c) => sum + getChapterLessons(c.id).length, 0);
+                                                const displayIdx = category === 'Proficiency Levels' ? mod.module_number : idx + 1;
 
-                                                const titleLower = mod.title.toLowerCase();
-                                                
-                                                if (titleLower.includes('swar gyan')) {
-                                                    return (
-                                                        <div 
-                                                            key={mod.id}
-                                                            className="group relative rounded-3xl p-6 shadow-xs flex flex-col justify-between min-h-[220px] lg:col-span-2 overflow-hidden cursor-pointer border border-slate-850 text-left select-none"
-                                                            onClick={() => handleSelectModule(mod.id)}
-                                                        >
-                                                            <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=600&auto=format&fit=crop')` }} />
-                                                            <div className="absolute inset-0 bg-gradient-to-br from-slate-950/90 via-slate-900/80 to-slate-950/95" />
-                                                            
-                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button 
-                                                                    onClick={(e) => openModuleModal(mod, category, e)}
-                                                                    className="p-1.5 bg-slate-800/85 hover:bg-[#ecb613] text-white hover:text-slate-950 rounded-lg transition-all border border-slate-700/60 shadow-sm"
-                                                                    title="Edit Module"
-                                                                >
-                                                                    <Edit2 className="size-3.5" />
-                                                                </button>
-                                                                <button 
-                                                                    onClick={(e) => deleteModule(mod.id, e)}
-                                                                    className="p-1.5 bg-slate-800/85 hover:bg-red-500 text-white rounded-lg transition-all border border-slate-700/60 shadow-sm"
-                                                                    title="Delete Module"
-                                                                >
-                                                                    <Trash2 className="size-3.5" />
-                                                                </button>
-                                                            </div>
-
-                                                            <div className="relative z-10 space-y-2">
-                                                                <span className="inline-flex px-2 py-0.5 bg-[#ecb613] text-slate-950 font-black rounded-lg text-[9px] uppercase tracking-wider leading-none select-none">Masterclass</span>
-                                                                <h3 className="font-black text-lg text-white group-hover:text-[#ecb613] transition-colors leading-tight">{mod.title}</h3>
-                                                                <p className="text-xs text-slate-300 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                                    {parsed.description}
-                                                                </p>
-                                                            </div>
-
-                                                            <div className="relative z-10 flex items-center justify-between border-t border-white/10 pt-4 mt-8">
-                                                                <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
-                                                                    <span>{chapsInMod.length} Chapters</span>
-                                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                                                    <span>{totalResources} Resources</span>
-                                                                </div>
-                                                                <button className="w-8 h-8 rounded-full bg-[#ecb613] hover:bg-amber-500 text-slate-950 flex items-center justify-center transition-all group-hover:translate-x-1.5 shadow-sm">
-                                                                    <ArrowRight className="size-4 stroke-[2.5]" />
-                                                                </button>
-                                                            </div>
+                                                return (
+                                                    <div
+                                                        key={mod.id}
+                                                        onClick={() => handleSelectModule(mod.id)}
+                                                        className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 cursor-pointer shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] overflow-hidden select-none text-left"
+                                                    >
+                                                        {/* Giant semi-transparent floating background number behind card */}
+                                                        <div className="absolute right-4 bottom-2 text-7xl md:text-8xl font-black text-slate-105 dark:text-slate-800/20 pointer-events-none transition-transform duration-500 group-hover:scale-125 group-hover:text-amber-500/10 font-mono">
+                                                            {displayIdx}
                                                         </div>
-                                                    );
-                                                } else if (titleLower.includes('3/4')) {
-                                                    return (
-                                                        <div 
-                                                            key={mod.id}
-                                                            className="group relative rounded-3xl p-6 bg-slate-900 border border-slate-800 text-white shadow-xs hover:shadow-lg hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left cursor-pointer"
-                                                            onClick={() => handleSelectModule(mod.id)}
-                                                        >
-                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button 
-                                                                    onClick={(e) => openModuleModal(mod, category, e)}
-                                                                    className="p-1.5 bg-slate-800/80 hover:bg-[#ecb613] text-white hover:text-slate-950 rounded-lg transition-all border border-slate-700/60 shadow-sm"
-                                                                    title="Edit Module"
-                                                                >
-                                                                    <Edit2 className="size-3.5" />
-                                                                </button>
-                                                                <button 
-                                                                    onClick={(e) => deleteModule(mod.id, e)}
-                                                                    className="p-1.5 bg-slate-800/80 hover:bg-red-500 text-white rounded-lg transition-all border border-slate-700/60 shadow-sm"
-                                                                    title="Delete Module"
-                                                                >
-                                                                    <Trash2 className="size-3.5" />
-                                                                </button>
-                                                            </div>
 
-                                                            <div className="space-y-3">
-                                                                <div className="flex justify-between items-start">
-                                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
-                                                                        <Trophy className="size-5 text-[#ecb613]" />
-                                                                    </div>
-                                                                    <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[9px] text-[#ecb613] font-black tracking-widest uppercase font-mono leading-none">3/4 Waltz</span>
+                                                        {/* Top action buttons (Edit and Delete) */}
+                                                        <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button 
+                                                                onClick={(e) => openModuleModal(mod, category, e)}
+                                                                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                title="Edit Module"
+                                                            >
+                                                                <Edit2 className="size-3.5" />
+                                                            </button>
+                                                            <button 
+                                                                onClick={(e) => deleteModule(mod.id, e)}
+                                                                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                title="Delete Module"
+                                                            >
+                                                                <Trash2 className="size-3.5" />
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Level card top row */}
+                                                        <div className="relative z-10 space-y-3">
+                                                            <div className="flex justify-between items-start">
+                                                                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10 shrink-0">
+                                                                    {getLevelIcon(mod.module_number)}
                                                                 </div>
-                                                                <h3 className="font-black text-base text-white leading-tight group-hover:text-[#ecb613] transition-colors">{mod.title}</h3>
-                                                                <p className="text-xs text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                                    {parsed.description}
-                                                                </p>
+                                                                {getLevelBadge(mod.module_number, category)}
                                                             </div>
                                                             
-                                                            <div className="border-t border-slate-800 pt-4 flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono">
-                                                                <span>{chapsInMod.length} Chapters • {totalResources} Res</span>
-                                                                <ArrowRight className="size-4 text-[#ecb613] group-hover:translate-x-1 transition-all" />
+                                                            <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">
+                                                                {mod.title}
+                                                            </h3>
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                                {parsed.description}
+                                                            </p>
+                                                        </div>
+
+                                                        {/* Level card bottom stats */}
+                                                        <div className="relative z-10 border-t border-slate-100 dark:border-slate-800/60 pt-4 flex items-center gap-4 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
+                                                            <div>
+                                                                <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{chapsInMod.length}</span>
+                                                                Chapters
+                                                            </div>
+                                                            <div className="w-px h-3 bg-slate-200 dark:bg-slate-800" />
+                                                            <div>
+                                                                <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{totalResources}</span>
+                                                                Resources
                                                             </div>
                                                         </div>
-                                                    );
-                                                } else if (titleLower.includes('4/4')) {
-                                                    return (
-                                                        <div 
-                                                            key={mod.id}
-                                                            className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left cursor-pointer"
-                                                            onClick={() => handleSelectModule(mod.id)}
-                                                        >
-                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button 
-                                                                    onClick={(e) => openModuleModal(mod, category, e)}
-                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
-                                                                    title="Edit Module"
-                                                                >
-                                                                    <Edit2 className="size-3.5" />
-                                                                </button>
-                                                                <button 
-                                                                    onClick={(e) => deleteModule(mod.id, e)}
-                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 text-slate-800 dark:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
-                                                                    title="Delete Module"
-                                                                >
-                                                                    <Trash2 className="size-3.5" />
-                                                                </button>
-                                                            </div>
-
-                                                            <div className="space-y-3">
-                                                                <div className="flex justify-between items-start">
-                                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
-                                                                        <Calendar className="size-5 text-[#ecb613]" />
-                                                                    </div>
-                                                                    <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[9px] text-slate-500 dark:text-slate-400 font-black tracking-widest uppercase font-mono leading-none">4/4 TeenTaal</span>
-                                                                </div>
-                                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">{mod.title}</h3>
-                                                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                                    {parsed.description}
-                                                                </p>
-                                                            </div>
-                                                            
-                                                            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono">
-                                                                <span>{chapsInMod.length} Chapters • {totalResources} Res</span>
-                                                                <ArrowRight className="size-4 text-[#ecb613] group-hover:translate-x-1 transition-all" />
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                } else if (titleLower.includes('song') || titleLower.includes('database')) {
-                                                    return (
-                                                        <div 
-                                                            key={mod.id}
-                                                            className="group relative rounded-3xl p-6 bg-[#fef3c7] dark:bg-[#2c2311] border border-amber-200/50 dark:border-amber-900/40 shadow-xs hover:shadow-lg hover:border-amber-400 transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left cursor-pointer"
-                                                            onClick={() => handleSelectModule(mod.id)}
-                                                        >
-                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button 
-                                                                    onClick={(e) => openModuleModal(mod, category, e)}
-                                                                    className="p-1.5 bg-amber-500/10 hover:bg-[#ecb613] text-[#d97706] hover:text-slate-950 rounded-lg transition-all border border-amber-500/10 shadow-sm"
-                                                                    title="Edit Module"
-                                                                >
-                                                                    <Edit2 className="size-3.5" />
-                                                                </button>
-                                                                <button 
-                                                                    onClick={(e) => deleteModule(mod.id, e)}
-                                                                    className="p-1.5 bg-amber-500/10 hover:bg-red-500 hover:text-white text-[#d97706] rounded-lg transition-all border border-amber-500/10 shadow-sm"
-                                                                    title="Delete Module"
-                                                                >
-                                                                    <Trash2 className="size-3.5" />
-                                                                </button>
-                                                            </div>
-
-                                                            <div className="space-y-3">
-                                                                <div className="flex justify-between items-start">
-                                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/10">
-                                                                        <Music className="size-5 text-[#d97706]" />
-                                                                    </div>
-                                                                    <span className="px-2.5 py-1 bg-amber-500/20 border border-amber-500/20 rounded-full text-[9px] text-[#d97706] font-black tracking-widest uppercase font-mono leading-none">15 SONGS</span>
-                                                                </div>
-                                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#d97706] transition-colors font-sans">{mod.title}</h3>
-                                                                <p className="text-xs text-amber-955/80 dark:text-amber-300/80 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                                    {parsed.description}
-                                                                </p>
-                                                            </div>
-                                                            
-                                                            <div className="border-t border-amber-200/50 dark:border-amber-900/40 pt-4 flex justify-between items-center">
-                                                                <span className="text-[10px] font-black text-[#d97706] uppercase tracking-wider">{chapsInMod.length} Chapters • {totalResources} Res</span>
-                                                                <ArrowRight className="size-4 text-[#d97706] transition-all group-hover:translate-x-1" />
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                } else {
-                                                    const displayIdx = category === 'Proficiency Levels' ? mod.module_number : idx + 1;
-                                                    return (
-                                                        <div
-                                                            key={mod.id}
-                                                            onClick={() => handleSelectModule(mod.id)}
-                                                            className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 cursor-pointer shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] overflow-hidden select-none text-left"
-                                                        >
-                                                            <div className="absolute right-4 bottom-2 text-7xl md:text-8xl font-black text-slate-100 dark:text-slate-800/25 pointer-events-none transition-transform duration-500 group-hover:scale-125 group-hover:text-amber-500/10 font-mono">
-                                                                {displayIdx}
-                                                            </div>
-
-                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <button 
-                                                                    onClick={(e) => openModuleModal(mod, category, e)}
-                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
-                                                                    title="Edit Module"
-                                                                >
-                                                                    <Edit2 className="size-3.5" />
-                                                                </button>
-                                                                <button 
-                                                                    onClick={(e) => deleteModule(mod.id, e)}
-                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 text-slate-800 dark:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
-                                                                    title="Delete Module"
-                                                                >
-                                                                    <Trash2 className="size-3.5" />
-                                                                </button>
-                                                            </div>
-
-                                                            <div className="relative z-10 space-y-3">
-                                                                <div className="flex justify-between items-start">
-                                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10 shrink-0">
-                                                                        {getLevelIcon(mod.module_number)}
-                                                                    </div>
-                                                                    {getLevelBadge(mod.module_number)}
-                                                                </div>
-                                                                
-                                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">
-                                                                    {mod.title}
-                                                                </h3>
-                                                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                                    {parsed.description}
-                                                                </p>
-                                                            </div>
-
-                                                            <div className="relative z-10 border-t border-slate-100 dark:border-slate-800/60 pt-4 flex items-center gap-4 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
-                                                                <div>
-                                                                    <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{chapsInMod.length}</span>
-                                                                    Chapters
-                                                                </div>
-                                                                <div className="w-px h-3 bg-slate-200 dark:bg-slate-800" />
-                                                                <div>
-                                                                    <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{totalResources}</span>
-                                                                    Resources
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                }
+                                                    </div>
+                                                );
                                             })}
                                         </div>
                                     </div>
-                                ))}    </div>
-
+                                ))}
                             </div>
                         )}
 
