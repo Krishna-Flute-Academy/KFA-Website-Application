@@ -77,10 +77,12 @@ export default function InventoryLibrary() {
     const [lastSyncedText, setLastSyncedText] = useState('Synced just now');
     
     // Modals & Form States
-    const [activeModal, setActiveModal] = useState<'chapter' | 'lesson' | null>(null);
+    const [activeModal, setActiveModal] = useState<'chapter' | 'lesson' | 'module' | 'category' | null>(null);
     const [editingItem, setEditingItem] = useState<any | null>(null);
     
     // Form Inputs
+    const [moduleForm, setModuleForm] = useState({ title: '', category: '', description: '', module_number: 1 });
+    const [categoryForm, setCategoryForm] = useState({ oldName: '', newName: '' });
     const [chapterForm, setChapterForm] = useState({ title: '', description: '', chapter_number: 1, module_id: '' });
     const [lessonForm, setLessonForm] = useState({
         title: '', 
@@ -412,6 +414,208 @@ export default function InventoryLibrary() {
         }
     };
 
+    const parseModuleCategory = (mod: CourseModule) => {
+        if (!mod.description) {
+            return {
+                category: mod.module_number < 100 ? 'Proficiency Levels' : 'Specialized Modules',
+                description: ''
+            };
+        }
+        const match = mod.description.match(/^\[(.*?)\]\s*([\s\S]*)$/);
+        if (match) {
+            return {
+                category: match[1].trim(),
+                description: match[2].trim()
+            };
+        }
+        return {
+            category: mod.module_number < 100 ? 'Proficiency Levels' : 'Specialized Modules',
+            description: mod.description
+        };
+    };
+
+    // Open Module Modal
+    const openModuleModal = (module?: CourseModule, initialCategory?: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        if (module) {
+            setEditingItem(module);
+            const parsed = parseModuleCategory(module);
+            setModuleForm({
+                title: module.title,
+                category: parsed.category,
+                description: parsed.description,
+                module_number: module.module_number
+            });
+        } else {
+            setEditingItem(null);
+            setModuleForm({
+                title: '',
+                category: initialCategory || 'Specialized Modules',
+                description: '',
+                module_number: modules.length > 0 ? Math.max(...modules.map(m => m.module_number)) + 1 : 1
+            });
+        }
+        setActiveModal('module');
+    };
+
+    // Save Module details
+    const saveModule = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!moduleForm.title || !moduleForm.category) return;
+
+        setLoading(true);
+        const prefixedDescription = `[${moduleForm.category.trim()}] ${moduleForm.description.trim()}`;
+
+        if (isUsingFallback) {
+            let updatedMods = [...modules];
+            if (editingItem) {
+                updatedMods = updatedMods.map(m => m.id === editingItem.id ? { 
+                    ...m, 
+                    title: moduleForm.title, 
+                    description: prefixedDescription,
+                    module_number: Number(moduleForm.module_number)
+                } : m);
+            } else {
+                const newMod: CourseModule = {
+                    id: crypto.randomUUID(),
+                    title: moduleForm.title,
+                    description: prefixedDescription,
+                    module_number: Number(moduleForm.module_number)
+                };
+                updatedMods.push(newMod);
+            }
+            persistLocalData(updatedMods, chapters, lessons);
+            setLoading(false);
+            setActiveModal(null);
+        } else {
+            try {
+                if (editingItem) {
+                    await supabaseAuth
+                        .from('course_modules')
+                        .update({
+                            title: moduleForm.title,
+                            description: prefixedDescription,
+                            module_number: Number(moduleForm.module_number)
+                        })
+                        .eq('id', editingItem.id);
+                } else {
+                    await supabaseAuth
+                        .from('course_modules')
+                        .insert([{
+                            id: crypto.randomUUID(),
+                            title: moduleForm.title,
+                            description: prefixedDescription,
+                            module_number: Number(moduleForm.module_number)
+                        }]);
+                }
+                await loadDatabaseData();
+                setActiveModal(null);
+            } catch (err) {
+                console.error(err);
+                alert('Database update failed.');
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
+    // Delete Module and all its nested chapters and lessons
+    const deleteModule = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!confirm('Are you sure you want to delete this level/module? All its chapters and learning materials will be permanently deleted.')) return;
+
+        setLoading(true);
+        if (isUsingFallback) {
+            const updatedMods = modules.filter(m => m.id !== id);
+            const deletedChaps = chapters.filter(c => c.module_id === id);
+            const deletedChapIds = deletedChaps.map(c => c.id);
+            const updatedChaps = chapters.filter(c => c.module_id !== id);
+            const updatedLessons = lessons.filter(l => !deletedChapIds.includes(l.chapter_id));
+            
+            persistLocalData(updatedMods, updatedChaps, updatedLessons);
+            setLoading(false);
+        } else {
+            try {
+                const { data: dbChaps } = await supabaseAuth.from('course_chapters').select('id').eq('module_id', id);
+                const chapIds = dbChaps?.map(c => c.id) || [];
+                
+                if (chapIds.length > 0) {
+                    await supabaseAuth.from('course_lessons').delete().in('chapter_id', chapIds);
+                    await supabaseAuth.from('course_chapters').delete().eq('module_id', id);
+                }
+                await supabaseAuth.from('course_modules').delete().eq('id', id);
+                await loadDatabaseData();
+            } catch (err) {
+                console.error(err);
+                alert('Delete failed.');
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
+    // Open Category Rename Modal
+    const openCategoryRenameModal = (categoryName: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setCategoryForm({
+            oldName: categoryName,
+            newName: categoryName
+        });
+        setActiveModal('category');
+    };
+
+    // Save Category Rename
+    const saveCategoryRename = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const oldName = categoryForm.oldName.trim();
+        const newName = categoryForm.newName.trim();
+        if (!newName || oldName === newName) {
+            setActiveModal(null);
+            return;
+        }
+
+        setLoading(true);
+        const affectedModules = modules.filter(m => {
+            const parsed = parseModuleCategory(m);
+            return parsed.category === oldName;
+        });
+
+        if (isUsingFallback) {
+            const updatedMods = modules.map(m => {
+                const parsed = parseModuleCategory(m);
+                if (parsed.category === oldName) {
+                    return {
+                        ...m,
+                        description: `[${newName}] ${parsed.description}`
+                    };
+                }
+                return m;
+            });
+            persistLocalData(updatedMods, chapters, lessons);
+            setLoading(false);
+            setActiveModal(null);
+        } else {
+            try {
+                for (const mod of affectedModules) {
+                    const parsed = parseModuleCategory(mod);
+                    await supabaseAuth
+                        .from('course_modules')
+                        .update({
+                            description: `[${newName}] ${parsed.description}`
+                        })
+                        .eq('id', mod.id);
+                }
+                await loadDatabaseData();
+                setActiveModal(null);
+            } catch (err) {
+                console.error(err);
+                alert('Category rename failed.');
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
     // Open Lesson Card Edit Modal (populates correctly on card edit click)
     const openLessonModal = (chapterId: string, lesson?: CourseLesson, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
@@ -672,6 +876,26 @@ export default function InventoryLibrary() {
         return m.title.toLowerCase().includes(q) || m.description.toLowerCase().includes(q);
     });
 
+    // Group modules dynamically by category prefix in the description
+    const groupedModules: Record<string, CourseModule[]> = {};
+    filteredModules.forEach(mod => {
+        const parsed = parseModuleCategory(mod);
+        const category = parsed.category;
+        if (!groupedModules[category]) {
+            groupedModules[category] = [];
+        }
+        groupedModules[category].push(mod);
+    });
+
+    // Sort categories: "Proficiency Levels" first, "Specialized Modules" second, then others alphabetically
+    const sortedCategories = Object.keys(groupedModules).sort((a, b) => {
+        if (a === 'Proficiency Levels') return -1;
+        if (b === 'Proficiency Levels') return 1;
+        if (a === 'Specialized Modules') return -1;
+        if (b === 'Specialized Modules') return 1;
+        return a.localeCompare(b);
+    });
+
     const getLevelBadge = (levelNum: number) => {
         switch (levelNum) {
             case 1: return <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-[10px] text-emerald-600 font-extrabold tracking-wide uppercase">Beginner</span>;
@@ -743,192 +967,277 @@ export default function InventoryLibrary() {
                                             Select a Proficiency Level to inspect topics, play guide audios, or edit checklist requirements.
                                         </p>
                                     </div>
-                                </div>
-
-                                {/* SECTION 1: PROFICIENCY LEVELS GRID */}
-                                <div className="space-y-4 text-left">
-                                    <div className="flex items-center gap-2 select-none">
-                                        <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
-                                        <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-400">Proficiency Levels</h2>
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                        {filteredModules.map((mod, idx) => {
-                                            const chapsInMod = getModuleChapters(mod.id);
-                                            const totalResources = chapsInMod.reduce((sum, c) => sum + getChapterLessons(c.id).length, 0);
-                                            
-                                            return (
-                                                <div
-                                                    key={mod.id}
-                                                    onClick={() => handleSelectModule(mod.id)}
-                                                    className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 cursor-pointer shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] overflow-hidden select-none"
+                                                              {/* DYNAMIC HEADLINE CATEGORIES GRID */}
+                                {sortedCategories.map((category) => (
+                                    <div key={category} className="space-y-4 text-left">
+                                        <div className="flex items-center justify-between select-none border-b border-slate-200 dark:border-slate-800 pb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
+                                                <h2 className="font-extrabold text-xs md:text-sm tracking-wider uppercase text-slate-700 dark:text-slate-300">{category}</h2>
+                                                <button
+                                                    onClick={(e) => openCategoryRenameModal(category, e)}
+                                                    className="p-1 text-slate-400 hover:text-[#ecb613] rounded-md hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all ml-1"
+                                                    title="Rename Headline"
                                                 >
-                                                    {/* Giant semi-transparent floating background number behind card */}
-                                                    <div className="absolute right-4 bottom-2 text-7xl md:text-8xl font-black text-slate-100 dark:text-slate-800/25 pointer-events-none transition-transform duration-500 group-hover:scale-125 group-hover:text-amber-500/10 font-mono">
-                                                        {idx + 1}
-                                                    </div>
-
-                                                    {/* Level card top row */}
-                                                    <div className="relative z-10 space-y-3">
-                                                        <div className="flex justify-between items-start">
-                                                            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10 shrink-0">
-                                                                {getLevelIcon(mod.module_number)}
-                                                            </div>
-                                                            {getLevelBadge(mod.module_number)}
-                                                        </div>
-                                                        
-                                                        <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">
-                                                            {mod.title}
-                                                        </h3>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                            {mod.description}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Level card bottom stats */}
-                                                    <div className="relative z-10 border-t border-slate-100 dark:border-slate-800/60 pt-4 flex items-center gap-4 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
-                                                        <div>
-                                                            <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{chapsInMod.length}</span>
-                                                            Chapters
-                                                        </div>
-                                                        <div className="w-px h-3 bg-slate-200 dark:bg-slate-800" />
-                                                        <div>
-                                                            <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{totalResources}</span>
-                                                            Resources
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                {/* SECTION 2: SPECIALIZED MODULES (Swar Gyan, Compositions 3/4, etc.) */}
-                                <div className="space-y-4 text-left">
-                                    <div className="flex items-center gap-2 select-none">
-                                        <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
-                                        <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-400">Specialized Modules</h2>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                        
-                                        {/* 1. Swar Gyan Masterclass Card (Taller Card, full image overlay) */}
-                                        <div 
-                                            className="group relative rounded-3xl p-6 shadow-xs flex flex-col justify-between min-h-[220px] lg:col-span-2 overflow-hidden cursor-pointer border border-slate-800 text-left"
-                                            onClick={() => alert('Swar Gyan Masterclass: Advanced ear training, note recognition, and mandra-saptak pitch control guides.')}
-                                        >
-                                            {/* Masked Background Sitar Image */}
-                                            <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105 animate-fadeIn" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=600&auto=format&fit=crop')` }} />
-                                            <div className="absolute inset-0 bg-gradient-to-br from-slate-950/90 via-slate-900/80 to-slate-950/95" />
-                                            
-                                            <div className="relative z-10 space-y-2">
-                                                <span className="inline-flex px-2 py-0.5 bg-[#ecb613] text-slate-950 font-black rounded-lg text-[9px] uppercase tracking-wider leading-none select-none">Masterclass</span>
-                                                <h3 className="font-black text-lg text-white group-hover:text-[#ecb613] transition-colors leading-tight">Swar Gyan Ear Training</h3>
-                                                <p className="text-xs text-slate-300 font-medium leading-relaxed max-w-sm">
-                                                    Master Mandra Saptak ear recognition and vocal tuning guides. Essential for bamboo flute players.
-                                                </p>
-                                            </div>
-
-                                            <div className="relative z-10 flex items-center justify-between border-t border-white/10 pt-4 mt-8">
-                                                <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
-                                                    <span>12 Lessons</span>
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                                    <span>6 Guide Videos</span>
-                                                </div>
-                                                <button className="w-8 h-8 rounded-full bg-[#ecb613] hover:bg-amber-500 text-slate-950 flex items-center justify-center transition-all group-hover:translate-x-1.5 shadow-sm">
-                                                    <ArrowRight className="size-4 stroke-[2.5]" />
+                                                    <Edit2 className="size-3.5" />
                                                 </button>
                                             </div>
+                                            <button
+                                                onClick={() => openModuleModal(undefined, category)}
+                                                className="inline-flex items-center gap-1 text-[10px] font-black text-[#ecb613] hover:text-amber-600 dark:hover:text-amber-400 uppercase tracking-widest leading-none border border-amber-500/25 bg-amber-500/5 hover:bg-amber-500/10 px-3 py-1.5 rounded-full transition-all"
+                                            >
+                                                <Plus className="size-3" />
+                                                <span>Add Level / Module</span>
+                                            </button>
                                         </div>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                            {groupedModules[category].map((mod, idx) => {
+                                                const parsed = parseModuleCategory(mod);
+                                                const chapsInMod = getModuleChapters(mod.id);
+                                                const totalResources = chapsInMod.reduce((sum, c) => sum + getChapterLessons(c.id).length, 0);
 
-                                        {/* 2. Composition 3/4 Card (Premium Dark theme) */}
-                                        <div 
-                                            className="group relative rounded-3xl p-6 bg-slate-900 border border-slate-800 text-white shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left"
-                                            onClick={() => alert('Composition 3/4 waltz rhythm guides and waltz practice files.')}
-                                        >
-                                            <div className="space-y-3">
-                                                <div className="flex justify-between items-start">
-                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
-                                                        <Trophy className="size-5 text-[#ecb613]" />
-                                                    </div>
-                                                    <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[9px] text-[#ecb613] font-black tracking-widest uppercase font-mono leading-none">3/4 Waltz</span>
-                                                </div>
-                                                <h3 className="font-black text-base text-white leading-tight group-hover:text-[#ecb613] transition-colors">Composition 3/4</h3>
-                                                <p className="text-xs text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                    Classical Waltz meter subdivisions. Features custom skipping alankars and Base Pa compositions.
-                                                </p>
-                                            </div>
-                                            
-                                            <div className="border-t border-slate-800 pt-4 flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono">
-                                                <span>TEMPO: 90 BPM</span>
-                                                <div className="flex gap-1.5">
-                                                    <button className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all border border-slate-700/60 leading-none">
-                                                        <Play className="size-3 text-amber-500 fill-amber-500" />
-                                                    </button>
-                                                    <button className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-all border border-slate-700/60 leading-none">
-                                                        <FileText className="size-3 text-slate-400" />
-                                                    </button>
-                                                </div>
-                                            </div>
+                                                const titleLower = mod.title.toLowerCase();
+                                                
+                                                if (titleLower.includes('swar gyan')) {
+                                                    return (
+                                                        <div 
+                                                            key={mod.id}
+                                                            className="group relative rounded-3xl p-6 shadow-xs flex flex-col justify-between min-h-[220px] lg:col-span-2 overflow-hidden cursor-pointer border border-slate-850 text-left select-none"
+                                                            onClick={() => handleSelectModule(mod.id)}
+                                                        >
+                                                            <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=600&auto=format&fit=crop')` }} />
+                                                            <div className="absolute inset-0 bg-gradient-to-br from-slate-950/90 via-slate-900/80 to-slate-950/95" />
+                                                            
+                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button 
+                                                                    onClick={(e) => openModuleModal(mod, category, e)}
+                                                                    className="p-1.5 bg-slate-800/85 hover:bg-[#ecb613] text-white hover:text-slate-950 rounded-lg transition-all border border-slate-700/60 shadow-sm"
+                                                                    title="Edit Module"
+                                                                >
+                                                                    <Edit2 className="size-3.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={(e) => deleteModule(mod.id, e)}
+                                                                    className="p-1.5 bg-slate-800/85 hover:bg-red-500 text-white rounded-lg transition-all border border-slate-700/60 shadow-sm"
+                                                                    title="Delete Module"
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="relative z-10 space-y-2">
+                                                                <span className="inline-flex px-2 py-0.5 bg-[#ecb613] text-slate-950 font-black rounded-lg text-[9px] uppercase tracking-wider leading-none select-none">Masterclass</span>
+                                                                <h3 className="font-black text-lg text-white group-hover:text-[#ecb613] transition-colors leading-tight">{mod.title}</h3>
+                                                                <p className="text-xs text-slate-300 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                                    {parsed.description}
+                                                                </p>
+                                                            </div>
+
+                                                            <div className="relative z-10 flex items-center justify-between border-t border-white/10 pt-4 mt-8">
+                                                                <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
+                                                                    <span>{chapsInMod.length} Chapters</span>
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                                                    <span>{totalResources} Resources</span>
+                                                                </div>
+                                                                <button className="w-8 h-8 rounded-full bg-[#ecb613] hover:bg-amber-500 text-slate-950 flex items-center justify-center transition-all group-hover:translate-x-1.5 shadow-sm">
+                                                                    <ArrowRight className="size-4 stroke-[2.5]" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                } else if (titleLower.includes('3/4')) {
+                                                    return (
+                                                        <div 
+                                                            key={mod.id}
+                                                            className="group relative rounded-3xl p-6 bg-slate-900 border border-slate-800 text-white shadow-xs hover:shadow-lg hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left cursor-pointer"
+                                                            onClick={() => handleSelectModule(mod.id)}
+                                                        >
+                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button 
+                                                                    onClick={(e) => openModuleModal(mod, category, e)}
+                                                                    className="p-1.5 bg-slate-800/80 hover:bg-[#ecb613] text-white hover:text-slate-950 rounded-lg transition-all border border-slate-700/60 shadow-sm"
+                                                                    title="Edit Module"
+                                                                >
+                                                                    <Edit2 className="size-3.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={(e) => deleteModule(mod.id, e)}
+                                                                    className="p-1.5 bg-slate-800/80 hover:bg-red-500 text-white rounded-lg transition-all border border-slate-700/60 shadow-sm"
+                                                                    title="Delete Module"
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="space-y-3">
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
+                                                                        <Trophy className="size-5 text-[#ecb613]" />
+                                                                    </div>
+                                                                    <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[9px] text-[#ecb613] font-black tracking-widest uppercase font-mono leading-none">3/4 Waltz</span>
+                                                                </div>
+                                                                <h3 className="font-black text-base text-white leading-tight group-hover:text-[#ecb613] transition-colors">{mod.title}</h3>
+                                                                <p className="text-xs text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                                    {parsed.description}
+                                                                </p>
+                                                            </div>
+                                                            
+                                                            <div className="border-t border-slate-800 pt-4 flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono">
+                                                                <span>{chapsInMod.length} Chapters • {totalResources} Res</span>
+                                                                <ArrowRight className="size-4 text-[#ecb613] group-hover:translate-x-1 transition-all" />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                } else if (titleLower.includes('4/4')) {
+                                                    return (
+                                                        <div 
+                                                            key={mod.id}
+                                                            className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left cursor-pointer"
+                                                            onClick={() => handleSelectModule(mod.id)}
+                                                        >
+                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button 
+                                                                    onClick={(e) => openModuleModal(mod, category, e)}
+                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                    title="Edit Module"
+                                                                >
+                                                                    <Edit2 className="size-3.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={(e) => deleteModule(mod.id, e)}
+                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 text-slate-800 dark:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                    title="Delete Module"
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="space-y-3">
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
+                                                                        <Calendar className="size-5 text-[#ecb613]" />
+                                                                    </div>
+                                                                    <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[9px] text-slate-500 dark:text-slate-400 font-black tracking-widest uppercase font-mono leading-none">4/4 TeenTaal</span>
+                                                                </div>
+                                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">{mod.title}</h3>
+                                                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                                    {parsed.description}
+                                                                </p>
+                                                            </div>
+                                                            
+                                                            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono">
+                                                                <span>{chapsInMod.length} Chapters • {totalResources} Res</span>
+                                                                <ArrowRight className="size-4 text-[#ecb613] group-hover:translate-x-1 transition-all" />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                } else if (titleLower.includes('song') || titleLower.includes('database')) {
+                                                    return (
+                                                        <div 
+                                                            key={mod.id}
+                                                            className="group relative rounded-3xl p-6 bg-[#fef3c7] dark:bg-[#2c2311] border border-amber-200/50 dark:border-amber-900/40 shadow-xs hover:shadow-lg hover:border-amber-400 transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left cursor-pointer"
+                                                            onClick={() => handleSelectModule(mod.id)}
+                                                        >
+                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button 
+                                                                    onClick={(e) => openModuleModal(mod, category, e)}
+                                                                    className="p-1.5 bg-amber-500/10 hover:bg-[#ecb613] text-[#d97706] hover:text-slate-950 rounded-lg transition-all border border-amber-500/10 shadow-sm"
+                                                                    title="Edit Module"
+                                                                >
+                                                                    <Edit2 className="size-3.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={(e) => deleteModule(mod.id, e)}
+                                                                    className="p-1.5 bg-amber-500/10 hover:bg-red-500 hover:text-white text-[#d97706] rounded-lg transition-all border border-amber-500/10 shadow-sm"
+                                                                    title="Delete Module"
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="space-y-3">
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/10">
+                                                                        <Music className="size-5 text-[#d97706]" />
+                                                                    </div>
+                                                                    <span className="px-2.5 py-1 bg-amber-500/20 border border-amber-500/20 rounded-full text-[9px] text-[#d97706] font-black tracking-widest uppercase font-mono leading-none">15 SONGS</span>
+                                                                </div>
+                                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#d97706] transition-colors font-sans">{mod.title}</h3>
+                                                                <p className="text-xs text-amber-955/80 dark:text-amber-300/80 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                                    {parsed.description}
+                                                                </p>
+                                                            </div>
+                                                            
+                                                            <div className="border-t border-amber-200/50 dark:border-amber-900/40 pt-4 flex justify-between items-center">
+                                                                <span className="text-[10px] font-black text-[#d97706] uppercase tracking-wider">{chapsInMod.length} Chapters • {totalResources} Res</span>
+                                                                <ArrowRight className="size-4 text-[#d97706] transition-all group-hover:translate-x-1" />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                } else {
+                                                    const displayIdx = category === 'Proficiency Levels' ? mod.module_number : idx + 1;
+                                                    return (
+                                                        <div
+                                                            key={mod.id}
+                                                            onClick={() => handleSelectModule(mod.id)}
+                                                            className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 cursor-pointer shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] overflow-hidden select-none text-left"
+                                                        >
+                                                            <div className="absolute right-4 bottom-2 text-7xl md:text-8xl font-black text-slate-100 dark:text-slate-800/25 pointer-events-none transition-transform duration-500 group-hover:scale-125 group-hover:text-amber-500/10 font-mono">
+                                                                {displayIdx}
+                                                            </div>
+
+                                                            <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button 
+                                                                    onClick={(e) => openModuleModal(mod, category, e)}
+                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                    title="Edit Module"
+                                                                >
+                                                                    <Edit2 className="size-3.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={(e) => deleteModule(mod.id, e)}
+                                                                    className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 text-slate-800 dark:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                    title="Delete Module"
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="relative z-10 space-y-3">
+                                                                <div className="flex justify-between items-start">
+                                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10 shrink-0">
+                                                                        {getLevelIcon(mod.module_number)}
+                                                                    </div>
+                                                                    {getLevelBadge(mod.module_number)}
+                                                                </div>
+                                                                
+                                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">
+                                                                    {mod.title}
+                                                                </h3>
+                                                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                                    {parsed.description}
+                                                                </p>
+                                                            </div>
+
+                                                            <div className="relative z-10 border-t border-slate-100 dark:border-slate-800/60 pt-4 flex items-center gap-4 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
+                                                                <div>
+                                                                    <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{chapsInMod.length}</span>
+                                                                    Chapters
+                                                                </div>
+                                                                <div className="w-px h-3 bg-slate-200 dark:bg-slate-800" />
+                                                                <div>
+                                                                    <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{totalResources}</span>
+                                                                    Resources
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
+                                            })}
                                         </div>
-
-                                        {/* 3. Composition 4/4 Card (Sleek Neutral) */}
-                                        <div 
-                                            className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left"
-                                            onClick={() => alert('Composition 4/4 standard rhythm guides and metronome practice files.')}
-                                        >
-                                            <div className="space-y-3">
-                                                <div className="flex justify-between items-start">
-                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
-                                                        <Calendar className="size-5 text-[#ecb613]" />
-                                                    </div>
-                                                    <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[9px] text-slate-500 dark:text-slate-400 font-black tracking-widest uppercase font-mono leading-none">4/4 TeenTaal</span>
-                                                </div>
-                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">Composition 4/4</h3>
-                                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                    Standard 4-beat rhythm subdivisions. High-fidelity guides for metronome practices.
-                                                </p>
-                                            </div>
-                                            
-                                            <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex justify-between items-center text-[10px] font-bold text-slate-400 font-mono">
-                                                <span>TEMPO: 120 BPM</span>
-                                                <div className="flex gap-1.5">
-                                                    <button className="p-2 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 text-slate-800 dark:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-850/80 leading-none">
-                                                        <Play className="size-3 text-amber-500 fill-amber-500" />
-                                                    </button>
-                                                    <button className="p-2 bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 text-slate-800 dark:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-850/80 leading-none">
-                                                        <FileText className="size-3 text-slate-400" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* 4. Song Database Card (Light Amber) */}
-                                        <div 
-                                            className="group relative rounded-3xl p-6 bg-[#fef3c7] dark:bg-[#2c2311] border border-amber-200/50 dark:border-amber-900/40 shadow-xs hover:shadow-lg transition-all duration-300 flex flex-col justify-between min-h-[220px] select-none text-left"
-                                            onClick={() => alert('Song Collection explorer.')}
-                                        >
-                                            <div className="space-y-3">
-                                                <div className="flex justify-between items-start">
-                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/10">
-                                                        <Music className="size-5 text-[#d97706]" />
-                                                    </div>
-                                                    <span className="px-2.5 py-1 bg-amber-500/20 border border-amber-500/20 rounded-full text-[9px] text-[#d97706] font-black tracking-widest uppercase font-mono leading-none">15 SONGS</span>
-                                                </div>
-                                                <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#d97706] transition-colors font-sans">Song Database</h3>
-                                                <p className="text-xs text-amber-955/80 dark:text-amber-300/80 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                    Browse classical tunes and movie collections like Bella Ciao, DDLJ, and Bhajan guide files.
-                                                </p>
-                                            </div>
-                                            
-                                            <div className="border-t border-amber-200/50 dark:border-amber-900/40 pt-4 flex justify-between items-center">
-                                                <span className="text-[10px] font-black text-[#d97706] uppercase tracking-wider">Browse Collection</span>
-                                                <ArrowRight className="size-4 text-[#d97706] transition-all group-hover:translate-x-1" />
-                                            </div>
-                                        </div>
-
                                     </div>
-                                </div>
+                                ))}    </div>
 
                             </div>
                         )}
@@ -1296,6 +1605,145 @@ export default function InventoryLibrary() {
                 )}
 
                 {/* ==================== MODAL OVERLAYS ==================== */}
+
+                {/* 0. MODULE EDIT / ADD MODAL */}
+                {activeModal === 'module' && (
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4">
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none font-sans">
+                                    {editingItem ? 'Edit Level / Module' : 'Create Level / Module'}
+                                </h3>
+                                <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                    <X className="size-5" />
+                                </button>
+                            </div>
+                            
+                            <form onSubmit={saveModule} className="space-y-4 text-left">
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
+                                        Level / Module Title
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        required
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        placeholder="e.g. Level 5 - Professional Master"
+                                        value={moduleForm.title}
+                                        onChange={e => setModuleForm(prev => ({ ...prev, title: e.target.value }))}
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
+                                        Headline / Category Name
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        required
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold mb-1.5"
+                                        placeholder="e.g. Proficiency Levels, Specialized Modules, Composition Modules"
+                                        value={moduleForm.category}
+                                        onChange={e => setModuleForm(prev => ({ ...prev, category: e.target.value }))}
+                                    />
+                                    {/* Quick Select Tags */}
+                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                        {Object.keys(groupedModules).map(catName => (
+                                            <button
+                                                key={catName}
+                                                type="button"
+                                                onClick={() => setModuleForm(prev => ({ ...prev, category: catName }))}
+                                                className={`px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded-lg border transition-all ${
+                                                    moduleForm.category === catName
+                                                        ? 'bg-amber-500/15 border-amber-500 text-[#d97706]'
+                                                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                                                }`}
+                                            >
+                                                {catName}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
+                                        Module Description
+                                    </label>
+                                    <textarea 
+                                        rows={3}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-medium leading-relaxed"
+                                        placeholder="Brief foundation summary or composition focus details..."
+                                        value={moduleForm.description}
+                                        onChange={e => setModuleForm(prev => ({ ...prev, description: e.target.value }))}
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
+                                        Order Rank Number (module_number)
+                                    </label>
+                                    <input 
+                                        type="number" 
+                                        required
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        placeholder="e.g. 5 or 105"
+                                        value={moduleForm.module_number}
+                                        onChange={e => setModuleForm(prev => ({ ...prev, module_number: Number(e.target.value) }))}
+                                    />
+                                </div>
+
+                                <button 
+                                    type="submit" 
+                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none"
+                                >
+                                    {editingItem ? 'Save Updates' : 'Add Module'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* 0.1 CATEGORY RENAME MODAL */}
+                {activeModal === 'category' && (
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4">
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none font-sans">
+                                    Rename Headline Category
+                                </h3>
+                                <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                    <X className="size-5" />
+                                </button>
+                            </div>
+                            
+                            <form onSubmit={saveCategoryRename} className="space-y-4 text-left">
+                                <div className="space-y-2">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
+                                        Headline Title Name
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        required
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        placeholder="e.g. Proficiency Levels"
+                                        value={categoryForm.newName}
+                                        onChange={e => setCategoryForm(prev => ({ ...prev, newName: e.target.value }))}
+                                    />
+                                    <p className="text-[10px] font-medium text-slate-450 leading-relaxed dark:text-slate-400 mt-1">
+                                        * Note: This will rename the headline grouping for all levels and modules currently placed under <span className="font-bold text-[#d97706]">"{categoryForm.oldName}"</span>.
+                                    </p>
+                                </div>
+
+                                <button 
+                                    type="submit" 
+                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-98 text-xs tracking-wider uppercase leading-none font-sans"
+                                >
+                                    Rename Headline
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                )}
 
                 {/* 1. CHAPTER EDIT MODAL */}
                 {activeModal === 'chapter' && (

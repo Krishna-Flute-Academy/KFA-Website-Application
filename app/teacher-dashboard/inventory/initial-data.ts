@@ -60,6 +60,31 @@ export const INITIAL_MODULES: CourseModule[] = [
         title: 'Level 4',
         description: 'Professional performance techniques and harmonic analysis.',
         module_number: 4
+    },
+    // Specialized Modules
+    {
+        id: 'e2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
+        title: 'Swar Gyan Ear Training',
+        description: 'Master Mandra Saptak ear recognition and vocal tuning guides. Essential for bamboo flute players.',
+        module_number: 101
+    },
+    {
+        id: 'f3c4d5e6-a7b8-9c0d-1e2f-3a4b5c6d7e8f',
+        title: 'Composition 3/4',
+        description: 'Classical Waltz meter subdivisions. Features custom skipping alankars and Base Pa compositions.',
+        module_number: 102
+    },
+    {
+        id: 'a7b89c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d',
+        title: 'Composition 4/4',
+        description: 'Standard 4-beat rhythm subdivisions. High-fidelity guides for metronome practices.',
+        module_number: 103
+    },
+    {
+        id: 'b8c90d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e',
+        title: 'Song Database',
+        description: 'Browse classical tunes and movie collections like Bella Ciao, DDLJ, and Bhajan guide files.',
+        module_number: 104
     }
 ];
 
@@ -103,8 +128,15 @@ export const INITIAL_CHAPTERS: CourseChapter[] = [
     { id: 'c07864a0-3550-40be-9608-cee5d0880d57', module_id: 'a3b4c5d6-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 1 - Intermediate Rhythms', description: '6 Essential topics • Triple meter structures', chapter_number: 1 },
     
     // Level 4 Chapters
-    { id: '518108c0-363a-4160-b329-f64af9f1ca19', module_id: 'a4b5c6d7-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 1 - Advanced Improvisation', description: '5 Essential topics • Rhythmic subdivisions', chapter_number: 1 }
+    { id: '518108c0-363a-4160-b329-f64af9f1ca19', module_id: 'a4b5c6d7-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 1 - Advanced Improvisation', description: '5 Essential topics • Rhythmic subdivisions', chapter_number: 1 },
+
+    // Specialized Module Default Chapters
+    { id: 'e3c4d5e6-f7a8-9b0c-1d2e-3f4a5b6c7d8e', module_id: 'e2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e', title: 'Chapter 1 - Mandra Saptak Ear Tuning', description: 'Ear training details\n• Pitch recognition practice\n• Mandra Saptak note frequencies', chapter_number: 1 },
+    { id: 'f4c5d6e7-a8b9-0c1d-2e3f-4a5b6c7d8e9f', module_id: 'f3c4d5e6-a7b8-9c0d-1e2f-3a4b5c6d7e8f', title: 'Chapter 1 - Waltz meter (3/4)', description: '3/4 composition overview\n• Waltzing note transitions', chapter_number: 1 },
+    { id: 'a8b90c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d', module_id: 'a7b89c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d', title: 'Chapter 1 - TeenTaal meter (4/4)', description: '4/4 rhythm structure\n• Traditional TeenTaal counts', chapter_number: 1 },
+    { id: 'b9c0d1e2-3f4a-5b6c-7d8e-9f0a1b2c3d4e', module_id: 'b8c90d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e', title: 'Chapter 1 - Flute Songbook', description: 'Song collections overview\n• Tujhe Dekha Toh tutorial', chapter_number: 1 }
 ];
+
 
 export const INITIAL_LESSONS: CourseLesson[] = [
     // Chapter 1 Lessons
