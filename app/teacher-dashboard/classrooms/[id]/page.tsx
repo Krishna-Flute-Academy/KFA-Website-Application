@@ -136,10 +136,59 @@ export default function ClassroomDashboardPage() {
         due_date: '',
         target_type: 'all' as 'all' | 'individual',
         selectedStudentIds: new Set<string>(),
+        file_url: null as string | null,
+        file_name: null as string | null,
+        file_size: null as number | null,
     });
     const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
     const [deletingAssignmentId, setDeletingAssignmentId] = useState<string | null>(null);
     const assignmentFileRef = useRef<HTMLInputElement>(null);
+    const [isDraggingOverAssignments, setIsDraggingOverAssignments] = useState(false);
+
+    const closeAssignmentModal = () => {
+        setShowAssignmentModal(false);
+        setAssignmentForm({
+            title: '',
+            description: '',
+            due_date: '',
+            target_type: 'all',
+            selectedStudentIds: new Set<string>(),
+            file_url: null,
+            file_name: null,
+            file_size: null,
+        });
+        setAssignmentFile(null);
+        setAssignmentError('');
+    };
+
+    const handleDragStart = (e: React.DragEvent, note: ClassNote) => {
+        e.dataTransfer.setData('application/json', JSON.stringify(note));
+        e.dataTransfer.effectAllowed = 'copy';
+    };
+
+    const handleDropNote = (e: React.DragEvent) => {
+        e.preventDefault();
+        try {
+            const noteData = e.dataTransfer.getData('application/json');
+            if (noteData) {
+                const note = JSON.parse(noteData) as ClassNote;
+                setAssignmentForm({
+                    title: note.title,
+                    description: note.content || '',
+                    due_date: '',
+                    target_type: 'all',
+                    selectedStudentIds: new Set<string>(),
+                    file_url: note.file_url || null,
+                    file_name: note.file_name || null,
+                    file_size: note.file_size || null,
+                });
+                setAssignmentFile(null);
+                setShowAssignmentModal(true);
+            }
+        } catch (err) {
+            console.error('Error parsing dropped note data:', err);
+        }
+    };
 
     // ── Class Notes Board ─────────────────────────────────────────────────────
     const [classNotes, setClassNotes] = useState<ClassNote[]>([]);
@@ -513,9 +562,9 @@ export default function ClassroomDashboardPage() {
         setIsSavingAssignment(true);
         setAssignmentError('');
         try {
-            let file_url: string | null = null;
-            let file_name: string | null = null;
-            let file_size: number | null = null;
+            let file_url: string | null = assignmentForm.file_url || null;
+            let file_name: string | null = assignmentForm.file_name || null;
+            let file_size: number | null = assignmentForm.file_size || null;
 
             if (assignmentFile) {
                 const filePath = `assignments/${classroomId}/${Date.now()}_${assignmentFile.name}`;
@@ -557,10 +606,18 @@ export default function ClassroomDashboardPage() {
                 return;
             }
 
-            // If individual, insert assignment_students
+            // Insert assignment_students for either all students in classroom or selected individual students
             let assignedStudents: AssignmentStudent[] = [];
-            if (assignmentForm.target_type === 'individual' && assignmentForm.selectedStudentIds.size > 0) {
-                const rows = Array.from(assignmentForm.selectedStudentIds).map(sid => ({
+            let studentIdsToAssign: string[] = [];
+
+            if (assignmentForm.target_type === 'all') {
+                studentIdsToAssign = students.map(s => s.student_id);
+            } else if (assignmentForm.target_type === 'individual') {
+                studentIdsToAssign = Array.from(assignmentForm.selectedStudentIds);
+            }
+
+            if (studentIdsToAssign.length > 0) {
+                const rows = studentIdsToAssign.map(sid => ({
                     assignment_id: newAsg.id,
                     student_id: sid,
                     status: 'pending',
@@ -582,10 +639,7 @@ export default function ClassroomDashboardPage() {
             setAssignments(prev => [fullAssignment, ...prev]);
 
             // Reset
-            setShowAssignmentModal(false);
-            setAssignmentForm({ title: '', description: '', due_date: '', target_type: 'all', selectedStudentIds: new Set() });
-            setAssignmentFile(null);
-            setAssignmentError('');
+            closeAssignmentModal();
         } catch (err: any) {
             const msg = err?.message || String(err);
             console.error('Error creating assignment:', err);
@@ -1700,7 +1754,7 @@ export default function ClassroomDashboardPage() {
                                                     <p className="text-xs text-slate-500">for <span className="font-semibold">{classroom?.name}</span></p>
                                                 </div>
                                             </div>
-                                            <button onClick={() => { setShowAssignmentModal(false); setAssignmentFile(null); }} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                            <button onClick={closeAssignmentModal} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                                 <X className="w-5 h-5" />
                                             </button>
                                         </div>
@@ -1826,13 +1880,25 @@ export default function ClassroomDashboardPage() {
                                             {/* File Attachment */}
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1.5">Attach File <span className="text-slate-400 font-normal normal-case">(optional)</span></label>
-                                                <input ref={assignmentFileRef} type="file" accept=".pdf,.doc,.docx,.mp3,.mp4,.wav,.jpg,.jpeg,.png" className="hidden" onChange={e => setAssignmentFile(e.target.files?.[0] || null)} />
-                                                {assignmentFile ? (
+                                                <input ref={assignmentFileRef} type="file" accept=".pdf,.doc,.docx,.mp3,.mp4,.wav,.jpg,.jpeg,.png" className="hidden" onChange={e => {
+                                                    setAssignmentFile(e.target.files?.[0] || null);
+                                                    if (e.target.files?.[0]) {
+                                                        setAssignmentForm(f => ({ ...f, file_url: null, file_name: null, file_size: null }));
+                                                    }
+                                                }} />
+                                                {assignmentFile || assignmentForm.file_url ? (
                                                     <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
                                                         <Paperclip className="w-4 h-4 text-[#ecb613] flex-shrink-0" />
-                                                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1 truncate">{assignmentFile.name}</span>
-                                                        <span className="text-xs text-slate-400">{formatFileSize(assignmentFile.size)}</span>
-                                                        <button onClick={() => setAssignmentFile(null)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><X className="w-3.5 h-3.5 text-slate-400" /></button>
+                                                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1 truncate">
+                                                            {assignmentFile ? assignmentFile.name : assignmentForm.file_name}
+                                                        </span>
+                                                        <span className="text-xs text-slate-400">
+                                                            {formatFileSize(assignmentFile ? assignmentFile.size : assignmentForm.file_size)}
+                                                        </span>
+                                                        <button onClick={() => {
+                                                            setAssignmentFile(null);
+                                                            setAssignmentForm(f => ({ ...f, file_url: null, file_name: null, file_size: null }));
+                                                        }} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><X className="w-3.5 h-3.5 text-slate-400" /></button>
                                                     </div>
                                                 ) : (
                                                     <button
@@ -1856,7 +1922,7 @@ export default function ClassroomDashboardPage() {
                                             )}
                                             <div className="flex items-center justify-end gap-3">
                                                 <button
-                                                    onClick={() => { setShowAssignmentModal(false); setAssignmentFile(null); setAssignmentError(''); }}
+                                                    onClick={closeAssignmentModal}
                                                     className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                                                 >Cancel</button>
                                                 <button
@@ -2094,12 +2160,17 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                                 return (
                                                     <div
                                                         key={note.id}
-                                                        className={`rounded-2xl border overflow-hidden shadow-sm group transition-shadow hover:shadow-md ${palette.bg} ${palette.border}`}
+                                                        draggable="true"
+                                                        onDragStart={(e) => handleDragStart(e, note)}
+                                                        className={`rounded-2xl border overflow-hidden shadow-sm group transition-shadow hover:shadow-md cursor-grab active:cursor-grabbing ${palette.bg} ${palette.border}`}
                                                     >
                                                         {/* Note header bar */}
                                                         <div className={`flex items-center justify-between px-4 py-2.5 ${palette.header}`}>
-                                                            <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm truncate flex-1 mr-2">{note.title}</h4>
-                                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                                                <GripVertical className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 cursor-grab active:cursor-grabbing opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                                                                <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm truncate flex-1">{note.title}</h4>
+                                                             </div>
+                                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                                                                 <button
                                                                     onClick={() => openEditNote(note)}
                                                                     className="p-1.5 rounded-lg bg-white/70 dark:bg-slate-700/70 hover:bg-white dark:hover:bg-slate-700 transition-colors"
@@ -2151,7 +2222,44 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                 </div>
 
                                 {/* ══ RIGHT: Assignments Panel ════════════════════════════════ */}
-                                <div className="flex-1 min-w-0 space-y-4">
+                                <div 
+                                    className="flex-1 min-w-0 space-y-4 relative"
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'copy';
+                                    }}
+                                    onDragEnter={(e) => {
+                                        e.preventDefault();
+                                        if (e.dataTransfer.types.includes('application/json')) {
+                                            setIsDraggingOverAssignments(true);
+                                        }
+                                    }}
+                                >
+                                    {isDraggingOverAssignments && (
+                                        <div 
+                                            className="absolute inset-0 z-50 bg-amber-500/10 dark:bg-amber-500/5 border-3 border-dashed border-[#ecb613] rounded-2xl flex flex-col items-center justify-center gap-3 backdrop-blur-[2px] transition-all animate-in fade-in zoom-in-95 duration-200"
+                                            onDragOver={(e) => {
+                                                e.preventDefault();
+                                            }}
+                                            onDragLeave={(e) => {
+                                                e.preventDefault();
+                                                setIsDraggingOverAssignments(false);
+                                            }}
+                                            onDrop={(e) => {
+                                                e.preventDefault();
+                                                setIsDraggingOverAssignments(false);
+                                                handleDropNote(e);
+                                            }}
+                                        >
+                                            <div className="w-14 h-14 rounded-full bg-[#ecb613]/20 flex items-center justify-center text-[#ecb613] animate-bounce shadow-md">
+                                                <ClipboardList className="w-7 h-7" />
+                                            </div>
+                                            <p className="font-extrabold text-[#ecb613] text-sm dark:text-[#ecb613] tracking-wide">Drop Note to Create Assignment</p>
+                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center px-6">
+                                                Release to configure options and assign to everyone or individuals.
+                                            </p>
+                                        </div>
+                                    )}
                                     {/* Panel Header */}
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                         <div className="flex items-center gap-2">

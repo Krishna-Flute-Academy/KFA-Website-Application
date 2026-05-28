@@ -31,3 +31,8 @@ dist-ssr
 # Next.js build output
 .next/
 out/
+
+# Scratch and test files
+scratch/
+test_upsert.cjs
+
