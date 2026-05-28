@@ -1010,7 +1010,7 @@ export default function InventoryLibrary() {
                                                         className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 cursor-pointer shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] overflow-hidden select-none text-left"
                                                     >
                                                         {/* Giant semi-transparent floating background number behind card */}
-                                                        <div className="absolute right-4 bottom-2 text-7xl md:text-8xl font-black text-slate-105 dark:text-slate-800/20 pointer-events-none transition-transform duration-500 group-hover:scale-125 group-hover:text-amber-500/10 font-mono">
+                                                        <div className="absolute right-4 bottom-2 text-7xl md:text-8xl font-black text-slate-100 dark:text-slate-800/20 pointer-events-none transition-transform duration-500 group-hover:scale-125 group-hover:text-amber-500/10 font-mono">
                                                             {displayIdx}
                                                         </div>
 
