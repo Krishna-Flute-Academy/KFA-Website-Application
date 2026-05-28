@@ -35,7 +35,53 @@ export default function TaskReviewPage() {
     const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
     const [filteredSubmissions, setFilteredSubmissions] = useState<TaskSubmission[]>([]);
     const [selectedSub, setSelectedSub] = useState<TaskSubmission | null>(null);
-    const [statusFilter, setStatusFilter] = useState('All Status');
+    const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['pending']);
+    const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+    const statusDropdownRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target as Node)) {
+                setIsStatusDropdownOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+    const statusOptions = [
+        { value: 'pending', label: 'Pending' },
+        { value: 'submitted', label: 'Submitted' },
+        { value: 'reviewed', label: 'Reviewed' },
+        { value: 'approved', label: 'Approved' },
+        { value: 'draft', label: 'Saved as Draft' }
+    ];
+
+    const handleToggleStatus = (status: string) => {
+        setSelectedStatuses(prev => {
+            if (prev.includes(status)) {
+                return prev.filter(s => s !== status);
+            } else {
+                return [...prev, status];
+            }
+        });
+    };
+
+    const handleSelectAllStatuses = () => {
+        setSelectedStatuses(statusOptions.map(opt => opt.value));
+    };
+
+    const handleClearAllStatuses = () => {
+        setSelectedStatuses([]);
+    };
+
+    const getStatusLabel = (statusVal: string) => {
+        const option = statusOptions.find(o => o.value === statusVal);
+        return option ? option.label : statusVal;
+    };
+
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 12;
@@ -299,10 +345,9 @@ export default function TaskReviewPage() {
     useEffect(() => {
         setCurrentPage(1); // Reset pagination on filter change
         let result = submissions;
-        if (statusFilter !== 'All Status') {
-            const targetStatus = statusFilter === 'Saved as Draft' ? 'draft' : statusFilter.toLowerCase();
-            result = result.filter(s => s.status.toLowerCase() === targetStatus);
-        }
+        
+        result = result.filter(s => selectedStatuses.includes(s.status.toLowerCase()));
+        
         if (searchQuery.trim() !== '') {
             const lowerQuery = searchQuery.toLowerCase();
             result = result.filter(s => 
@@ -312,7 +357,7 @@ export default function TaskReviewPage() {
             );
         }
         setFilteredSubmissions(result);
-    }, [statusFilter, submissions, searchQuery]);
+    }, [selectedStatuses, submissions, searchQuery]);
 
     const handleSelectSubmission = (sub: TaskSubmission) => {
         setSelectedSub(sub);
@@ -561,18 +606,75 @@ export default function TaskReviewPage() {
                                     </button>
                                 )}
 
-                                <select 
-                                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none"
-                                    value={statusFilter}
-                                    onChange={(e) => setStatusFilter(e.target.value)}
-                                >
-                                    <option>All Status</option>
-                                    <option>Saved as Draft</option>
-                                    <option>Pending</option>
-                                    <option>Submitted</option>
-                                    <option>Reviewed</option>
-                                    <option>Approved</option>
-                                </select>
+                                <div className="relative" ref={statusDropdownRef}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                                        className="flex items-center justify-between gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all font-semibold shadow-sm min-w-[140px]"
+                                    >
+                                        <Filter className="w-3.5 h-3.5 text-slate-400" />
+                                        <span className="truncate">
+                                            {selectedStatuses.length === 0
+                                                ? 'No Status'
+                                                : selectedStatuses.length === statusOptions.length
+                                                ? 'All Statuses'
+                                                : selectedStatuses.length <= 2
+                                                ? selectedStatuses.map(s => getStatusLabel(s)).join(', ')
+                                                : `Status (${selectedStatuses.length})`}
+                                        </span>
+                                        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isStatusDropdownOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {isStatusDropdownOpen && (
+                                        <div className="absolute right-0 mt-2 w-64 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-50 py-2 animate-in fade-in slide-in-from-top-2 duration-150">
+                                            <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                                <span>Filter Status</span>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSelectAllStatuses}
+                                                        className="text-[#ecb613] hover:text-[#ecb613]/80 capitalize text-[10px]"
+                                                    >
+                                                        All
+                                                    </button>
+                                                    <span className="text-slate-200 dark:text-slate-700">|</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleClearAllStatuses}
+                                                        className="text-rose-500 hover:text-rose-600 capitalize text-[10px]"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="py-1 max-h-60 overflow-y-auto">
+                                                {statusOptions.map(opt => {
+                                                    const isChecked = selectedStatuses.includes(opt.value);
+                                                    const count = submissions.filter(s => s.status.toLowerCase() === opt.value).length;
+                                                    return (
+                                                        <label
+                                                            key={opt.value}
+                                                            className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer select-none text-sm text-slate-700 dark:text-slate-200 transition-colors"
+                                                        >
+                                                            <div className="flex items-center gap-2.5">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={() => handleToggleStatus(opt.value)}
+                                                                    className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer w-4 h-4"
+                                                                />
+                                                                <span className="font-semibold text-slate-800 dark:text-slate-200">{opt.label}</span>
+                                                            </div>
+                                                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold">
+                                                                {count}
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                                 <Link 
                                     href="/teacher-dashboard/tasks/create"
                                     className="bg-[#ecb613] text-slate-900 px-4 py-2 rounded-lg text-sm font-bold hover:bg-[#ecb613]/90 transition-colors flex items-center gap-2 shadow-sm"
