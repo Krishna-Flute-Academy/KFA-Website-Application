@@ -137,6 +137,7 @@ export default function ClassroomDashboardPage() {
     const [courseModules, setCourseModules] = useState<any[]>([]);
     const [courseChapters, setCourseChapters] = useState<any[]>([]);
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
+    const [studentProgress, setStudentProgress] = useState<any[]>([]);
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [mediaPreview, setMediaPreview] = useState<{ type: string; url: string; title: string } | null>(null);
     const [selectedTopic, setSelectedTopic] = useState<any | null>(null);
@@ -321,6 +322,17 @@ export default function ClassroomDashboardPage() {
                 setCourseModules(dbModules || []);
                 setCourseChapters(dbChapters || []);
                 setCourseLessons(dbLessons || []);
+
+                try {
+                    const { data: progressData } = await supabaseAuth
+                        .from('student_topic_progress')
+                        .select('*')
+                        .eq('classroom_id', classroomId);
+                    setStudentProgress(progressData || []);
+                } catch (pe) {
+                    console.warn('Could not fetch student_topic_progress:', pe);
+                    setStudentProgress([]);
+                }
 
             } catch (err) {
                 console.error('Error fetching classroom data:', err);
@@ -1601,9 +1613,16 @@ export default function ClassroomDashboardPage() {
                                                                                                     <p className="text-xs text-slate-400 italic text-center py-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl">No lesson materials uploaded for this chapter.</p>
                                                                                                 ) : (
                                                                                                     <div className="grid grid-cols-1 gap-3 relative pl-3 border-l border-slate-200/60 dark:border-slate-800">
-                                                                                                        {chapLessons.map(lesson => (
-                                                                                                            <LessonRow key={lesson.id} lesson={lesson} onClick={() => setSelectedTopic(lesson)} />
-                                                                                                        ))}
+                                                                                                        {chapLessons.map(lesson => {
+                                                                                                             const stats = {
+                                                                                                                 completed: studentProgress.filter(p => p.lesson_id === lesson.id && p.status === 'completed').length,
+                                                                                                                 unlocked: studentProgress.filter(p => p.lesson_id === lesson.id && p.status === 'unlocked').length,
+                                                                                                                 total: students.length
+                                                                                                             };
+                                                                                                             return (
+                                                                                                                 <LessonRow key={lesson.id} lesson={lesson} onClick={() => setSelectedTopic(lesson)} stats={stats} />
+                                                                                                             );
+                                                                                                         })}
                                                                                                     </div>
                                                                                                 )}
                                                                                             </div>
@@ -1635,9 +1654,16 @@ export default function ClassroomDashboardPage() {
                                                                         {chapLessons.length === 0 ? (
                                                                             <p className="text-xs text-slate-400 italic text-center py-6 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl w-full">No lesson materials defined in this chapter.</p>
                                                                         ) : (
-                                                                            chapLessons.map(lesson => (
-                                                                                <LessonRow key={lesson.id} lesson={lesson} onClick={() => setSelectedTopic(lesson)} />
-                                                                            ))
+                                                                            chapLessons.map(lesson => {
+                                                                                                                const stats = {
+                                                                                                                    completed: studentProgress.filter(p => p.lesson_id === lesson.id && p.status === 'completed').length,
+                                                                                                                    unlocked: studentProgress.filter(p => p.lesson_id === lesson.id && p.status === 'unlocked').length,
+                                                                                                                    total: students.length
+                                                                                                                };
+                                                                                                                return (
+                                                                                                                    <LessonRow key={lesson.id} lesson={lesson} onClick={() => setSelectedTopic(lesson)} stats={stats} />
+                                                                                                                );
+                                                                                                            })
                                                                         )}
                                                                     </div>
                                                                 </div>
@@ -2255,7 +2281,7 @@ CREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true)
 CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);`}</pre>
                                         <button
                                             onClick={() => {
-                                                const sql = `CREATE TABLE IF NOT EXISTS public.class_notes (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, content TEXT, file_url TEXT,\n  file_name TEXT, file_size INTEGER, color TEXT DEFAULT 'yellow',\n  created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, description TEXT, due_date DATE,\n  target_type TEXT NOT NULL DEFAULT 'all',\n  file_url TEXT, file_name TEXT, file_size INTEGER,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignment_students (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  assignment_id UUID NOT NULL, student_id UUID NOT NULL,\n  status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)\n);\nALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);`;
+                                                const sql = `CREATE TABLE IF NOT EXISTS public.class_notes (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, content TEXT, file_url TEXT,\n  file_name TEXT, file_size INTEGER, color TEXT DEFAULT 'yellow',\n  created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, description TEXT, due_date DATE,\n  target_type TEXT NOT NULL DEFAULT 'all',\n  file_url TEXT, file_name TEXT, file_size INTEGER,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignment_students (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  assignment_id UUID NOT NULL, student_id UUID NOT NULL,\n  status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)\n);\nCREATE TABLE IF NOT EXISTS public.student_topic_progress (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  student_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  lesson_id UUID NOT NULL REFERENCES public.course_lessons(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'locked',\n  unlocked_by TEXT NOT NULL DEFAULT 'system',\n  unlocked_at TIMESTAMPTZ DEFAULT now(),\n  completed_at TIMESTAMPTZ,\n  UNIQUE (student_id, lesson_id)\n);\nALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`;
                                                 navigator.clipboard.writeText(sql).then(() => alert('SQL copied to clipboard!'));
                                             }}
                                             className="absolute top-2 right-2 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold rounded-lg transition-colors"
@@ -3212,7 +3238,7 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
     );
 }
 
-function LessonRow({ lesson, onClick }: { lesson: any; onClick: () => void }) {
+function LessonRow({ lesson, onClick, stats }: { lesson: any; onClick: () => void; stats?: { completed: number; unlocked: number; total: number } }) {
     const hasMaterial = !!lesson.material_url;
     const isAudio = lesson.material_type === 'audio';
     const isVideo = lesson.material_type === 'video';
@@ -3263,6 +3289,18 @@ function LessonRow({ lesson, onClick }: { lesson: any; onClick: () => void }) {
                         <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider leading-none ${styleConfig.badge}`}>
                             {styleConfig.label}
                         </span>
+                        {stats && stats.total > 0 && (
+                            <div className="flex items-center gap-1.5 ml-2 select-none shrink-0">
+                                <span className="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 px-2 py-0.5 rounded-full text-[8px] font-mono font-black border border-emerald-500/20">
+                                    {stats.completed}/{stats.total} Done
+                                </span>
+                                {stats.unlocked > 0 && (
+                                    <span className="bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 px-2 py-0.5 rounded-full text-[8px] font-mono font-black border border-amber-500/20 animate-pulse">
+                                        {stats.unlocked} Active
+                                    </span>
+                                )}
+                            </div>
+                        )}
                     </div>
                     {lesson.description && (
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold leading-relaxed max-w-xl">{lesson.description}</p>

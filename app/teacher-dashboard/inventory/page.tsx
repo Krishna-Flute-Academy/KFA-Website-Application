@@ -1212,8 +1212,15 @@ export default function InventoryLibrary() {
                                                             {displayIdx}
                                                         </div>
 
-                                                        {/* Top action buttons (Edit and Delete) */}
+                                                        {/* Top action buttons (Edit, Delete, Assign) */}
                                                         <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); openAssignModal('module', mod.id, mod.title, e); }}
+                                                                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-blue-500 text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                title="Assign Level to Students"
+                                                            >
+                                                                <UserCheck className="size-3.5" />
+                                                            </button>
                                                             <button 
                                                                 onClick={(e) => openModuleModal(mod, category, e)}
                                                                 className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
@@ -1299,6 +1306,14 @@ export default function InventoryLibrary() {
                                                         <Sparkles className="size-3" />
                                                         <span>{activeBadgeText}</span>
                                                     </div>
+                                                    <button 
+                                                        onClick={(e) => openAssignModal('module', activeModule.id, activeModule.title, e)}
+                                                        className="inline-flex items-center gap-1 text-[9px] font-black text-white hover:text-[#ecb613] uppercase tracking-widest leading-none border border-white/20 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full transition-all"
+                                                        title="Assign Level to Students"
+                                                    >
+                                                        <UserCheck className="size-3 shrink-0" />
+                                                        <span>Assign Level</span>
+                                                    </button>
                                                 </div>
                                                 <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none text-white font-sans drop-shadow-sm">
                                                     {activeHeadline}
@@ -1454,6 +1469,13 @@ export default function InventoryLibrary() {
                                                                                             </div>
                                                                                             
                                                                                             <div className="flex items-center gap-1 shrink-0 relative z-20">
+                                                                                                <button 
+                                                                                                    onClick={(e) => { e.stopPropagation(); openAssignModal('lesson', lesson.id, lesson.title, e); }}
+                                                                                                    className="p-1.5 hover:bg-blue-500/10 rounded-lg text-slate-400 hover:text-blue-500 transition-all"
+                                                                                                    title="Assign Topic to Students"
+                                                                                                >
+                                                                                                    <UserCheck className="size-3.5" />
+                                                                                                </button>
                                                                                                 <button 
                                                                                                     onClick={(e) => openLessonModal(chap.id, lesson, e)}
                                                                                                     className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-amber-500 transition-all font-semibold"

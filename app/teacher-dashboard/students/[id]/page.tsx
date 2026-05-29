@@ -49,7 +49,17 @@ export default function StudentProfilePage() {
     const [submissions, setSubmissions] = useState<Submission[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     const [viewDate, setViewDate] = useState(new Date()); // Calendar view month
-    const [activeTab, setActiveTab] = useState('profile'); // profile, history, attendance
+    const [activeTab, setActiveTab] = useState('profile'); // profile, history, attendance, curriculum
+    
+    // Curriculum dynamic states
+    const [classroomId, setClassroomId] = useState<string | null>(null);
+    const [courseModules, setCourseModules] = useState<any[]>([]);
+    const [courseChapters, setCourseChapters] = useState<any[]>([]);
+    const [courseLessons, setCourseLessons] = useState<any[]>([]);
+    const [studentProgress, setStudentProgress] = useState<any[]>([]);
+    const [assignments, setAssignments] = useState<any[]>([]);
+    const [isUpdatingProgress, setIsUpdatingProgress] = useState<string | null>(null);
+    const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
     const formatDate = (date: Date) => {
         const d = new Date(date);
@@ -207,6 +217,141 @@ export default function StudentProfilePage() {
         router.push('/');
     };
 
+
+    // strict top-to-bottom curriculum permission resolver
+    const computedPermissions = React.useMemo(() => {
+        const visibleModules = new Set<string>();
+        const visibleChapters = new Set<string>();
+        const unlockedLessons = new Set<string>();
+        const completedLessons = new Set<string>();
+
+        // Process active assignments in Supabase
+        for (const asg of assignments) {
+            // Level-level assignment (module)
+            if (asg.inventory_ref_type === 'module' && asg.inventory_ref_id) {
+                visibleModules.add(asg.inventory_ref_id);
+                const chaps = courseChapters.filter(c => c.module_id === asg.inventory_ref_id);
+                chaps.forEach(c => {
+                    visibleChapters.add(c.id);
+                    const lessons = courseLessons.filter(l => l.chapter_id === c.id);
+                    lessons.forEach(l => unlockedLessons.add(l.id));
+                });
+            }
+
+            // Chapter-level assignment
+            if (asg.inventory_ref_type === 'chapter' && asg.inventory_ref_id) {
+                const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
+                if (chap) {
+                    visibleModules.add(chap.module_id);
+                    visibleChapters.add(chap.id);
+                    const lessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                    lessons.forEach(l => unlockedLessons.add(l.id));
+                }
+            }
+
+            // Topic-level assignment (lesson)
+            if (asg.inventory_ref_type === 'lesson' && asg.inventory_ref_id) {
+                const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
+                if (lesson) {
+                    const chap = courseChapters.find(c => c.id === lesson.chapter_id);
+                    if (chap) {
+                        visibleModules.add(chap.module_id);
+                        visibleChapters.add(chap.id);
+                        
+                        const siblingLessons = courseLessons
+                            .filter(l => l.chapter_id === chap.id)
+                            .sort((a, b) => a.lesson_number - b.lesson_number);
+                        
+                        siblingLessons.forEach(l => {
+                            if (l.lesson_number <= lesson.lesson_number) {
+                                unlockedLessons.add(l.id);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // Apply student progress overrides
+        studentProgress.forEach(p => {
+            if (p.status === 'completed') {
+                completedLessons.add(p.lesson_id);
+                unlockedLessons.add(p.lesson_id);
+            } else if (p.status === 'unlocked') {
+                unlockedLessons.add(p.lesson_id);
+                completedLessons.delete(p.lesson_id);
+            } else if (p.status === 'locked') {
+                unlockedLessons.delete(p.lesson_id);
+                completedLessons.delete(p.lesson_id);
+            }
+        });
+
+        // Apply sequential auto-unlocks
+        courseChapters.forEach(chap => {
+            const siblingLessons = courseLessons
+                .filter(l => l.chapter_id === chap.id)
+                .sort((a, b) => a.lesson_number - b.lesson_number);
+
+            for (let i = 0; i < siblingLessons.length; i++) {
+                const lesson = siblingLessons[i];
+                if (completedLessons.has(lesson.id)) {
+                    if (i + 1 < siblingLessons.length) {
+                        const nextLesson = siblingLessons[i + 1];
+                        const hasManualLock = studentProgress.some(p => p.lesson_id === nextLesson.id && p.status === 'locked');
+                        if (!hasManualLock) {
+                            unlockedLessons.add(nextLesson.id);
+                        }
+                    }
+                }
+            }
+        });
+
+        // Resolve container visibilities
+        courseLessons.forEach(l => {
+            if (unlockedLessons.has(l.id)) {
+                const chap = courseChapters.find(c => c.id === l.chapter_id);
+                if (chap) {
+                    visibleChapters.add(chap.id);
+                    visibleModules.add(chap.module_id);
+                }
+            }
+        });
+
+        return { visibleModules, visibleChapters, unlockedLessons, completedLessons };
+    }, [assignments, courseModules, courseChapters, courseLessons, studentProgress]);
+
+    const handleProgressChange = async (lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
+        if (!classroomId) return;
+        setIsUpdatingProgress(lessonId);
+        try {
+            const { error } = await supabaseAuth
+                .from('student_topic_progress')
+                .upsert({
+                    student_id: studentId,
+                    classroom_id: classroomId,
+                    lesson_id: lessonId,
+                    status: newStatus,
+                    unlocked_by: 'manual',
+                    unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
+                    completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+                }, {
+                    onConflict: 'student_id,lesson_id'
+                });
+            if (error) throw error;
+
+            const { data: progressData } = await supabaseAuth
+                .from('student_topic_progress')
+                .select('*')
+                .eq('student_id', studentId);
+            setStudentProgress(progressData || []);
+        } catch (err) {
+            console.error('Error updating progress:', err);
+            alert('Failed to update progress. Make sure the database schema is migrated!');
+        } finally {
+            setIsUpdatingProgress(null);
+        }
+    };
+
     if (loading || !studentInfo) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6]">
@@ -319,10 +464,237 @@ export default function StudentProfilePage() {
                         >
                             Attendance & Feedback
                         </button>
+                        <button
+                            onClick={() => setActiveTab('curriculum')}
+                            className={`pb-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'curriculum' ? 'border-[#ecb613] text-[#ecb613]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                        >
+                            Curriculum Progress
+                        </button>
                     </div>
 
                     <div className="space-y-10">
-                        {/* Profile Info Section */}
+                        {/* Curriculum Progress Section */}
+                        {activeTab === 'curriculum' && (
+                            <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
+                                <div className="rounded-3xl p-6 md:p-8 bg-[#0d5257] border border-[#0b4347] relative overflow-hidden shadow-lg select-none text-left mb-6">
+                                    <div className="absolute right-4 top-4 opacity-[0.06] select-none pointer-events-none">
+                                        <Award className="w-64 h-64 text-white animate-pulse" />
+                                    </div>
+                                    <div className="max-w-3xl relative z-10 space-y-3">
+                                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#ef4444] rounded-full text-[9px] text-white font-black tracking-widest uppercase leading-none shadow-sm">
+                                            <Award className="size-3" />
+                                            <span>Individualized Pacing Portal</span>
+                                        </div>
+                                        <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none text-white font-sans drop-shadow-sm">
+                                            Curriculum Pacing Controls — {studentInfo.name}
+                                        </h1>
+                                        <p className="text-xs md:text-sm text-teal-50/90 font-medium leading-relaxed">
+                                            Manage lock overrides, sequential unlocking, and complete manual bypasses for this student. Red badges signify core assignments, gold checkmarks highlight completed topics, and locked panels prevent student view access.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {!classroomId ? (
+                                    <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+                                        <Music className="size-12 text-slate-300 mx-auto mb-4" />
+                                        <h4 className="font-bold text-slate-900">Classroom Unassigned</h4>
+                                        <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto">This student must be enrolled in an active classroom to manage their curriculum progress pathway.</p>
+                                    </div>
+                                ) : courseModules.length === 0 ? (
+                                    <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+                                        <Loader2 className="w-8 h-8 animate-spin text-[#ecb613] mx-auto mb-4" />
+                                        <h4 className="font-bold text-slate-900">Loading learning modules...</h4>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-8">
+                                        {courseModules.map(mod => {
+                                            const modChapters = courseChapters.filter(c => c.module_id === mod.id).sort((a,b) => a.chapter_number - b.chapter_number);
+                                            const isModVisible = computedPermissions.visibleModules.has(mod.id);
+                                            
+                                            return (
+                                                <div key={mod.id} className={`rounded-3xl border transition-all duration-300 bg-white shadow-sm overflow-hidden ${
+                                                    isModVisible 
+                                                        ? 'border-slate-200/80 dark:border-slate-800' 
+                                                        : 'border-slate-100 opacity-60'
+                                                }`}>
+                                                    {/* Module Title Bar */}
+                                                    <div className="px-6 py-5 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between gap-4">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border font-extrabold text-sm ${
+                                                                isModVisible 
+                                                                    ? 'bg-[#ecb613]/10 border-[#ecb613]/30 text-[#d97706]' 
+                                                                    : 'bg-slate-100 border-slate-200 text-slate-400'
+                                                            }`}>
+                                                                L{mod.module_number}
+                                                            </div>
+                                                            <div>
+                                                                <h3 className="font-extrabold text-base text-slate-900">{mod.title}</h3>
+                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                                                                    {isModVisible ? 'Visible to Student' : 'Hidden / Locked'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 px-2.5 py-1 rounded-full">
+                                                                {modChapters.length} Chapters
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Module Chapters accordions */}
+                                                    <div className="p-6 space-y-4">
+                                                        {modChapters.length === 0 ? (
+                                                            <p className="text-xs text-slate-400 italic text-center py-4">No chapters created for this level.</p>
+                                                        ) : (
+                                                            modChapters.map(chap => {
+                                                                const isChapExpanded = !!expandedChapters[chap.id];
+                                                                const isChapVisible = computedPermissions.visibleChapters.has(chap.id);
+                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id).sort((a,b) => a.lesson_number - b.lesson_number);
+                                                                const completedCount = chapLessons.filter(l => computedPermissions.completedLessons.has(l.id)).length;
+                                                                
+                                                                return (
+                                                                    <div key={chap.id} className={`rounded-2xl border transition-all ${
+                                                                        isChapVisible
+                                                                            ? 'border-slate-200 hover:border-slate-300'
+                                                                            : 'border-slate-100 opacity-60'
+                                                                    }`}>
+                                                                        {/* Chapter Accordion Header */}
+                                                                        <div 
+                                                                            onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapExpanded }))}
+                                                                            className="px-5 py-4 bg-slate-50/20 hover:bg-slate-50/50 transition-all flex items-center justify-between cursor-pointer select-none"
+                                                                        >
+                                                                            <div className="flex items-center gap-4 text-left">
+                                                                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs font-mono border ${
+                                                                                    isChapVisible
+                                                                                        ? 'bg-[#ecb613]/10 border-[#ecb613]/25 text-[#d97706]'
+                                                                                        : 'bg-slate-100 border-slate-150 text-slate-400'
+                                                                                }`}>
+                                                                                    Ch{chap.chapter_number}
+                                                                                </div>
+                                                                                <div>
+                                                                                    <h4 className="text-sm font-extrabold text-slate-800 leading-tight">{chap.title}</h4>
+                                                                                    <p className="text-[10px] text-slate-400 mt-1 font-bold font-mono uppercase tracking-wider">
+                                                                                        {completedCount} / {chapLessons.length} COMPLETED
+                                                                                    </p>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2">
+                                                                                {isChapVisible && (
+                                                                                    <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 mr-2 font-mono">
+                                                                                        Unlocked
+                                                                                    </span>
+                                                                                )}
+                                                                                <div className="w-8 h-8 rounded-lg bg-slate-100/80 flex items-center justify-center text-slate-400">
+                                                                                    {isChapExpanded ? (
+                                                                                        <Award className="size-4 rotate-180 transition-all text-amber-500" />
+                                                                                    ) : (
+                                                                                        <Award className="size-4 transition-all text-slate-400" />
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Chapter Topics grid */}
+                                                                        {isChapExpanded && (
+                                                                            <div className="p-5 bg-white border-t border-slate-150 space-y-4">
+                                                                                {chapLessons.length === 0 ? (
+                                                                                    <p className="text-xs text-slate-400 italic text-center py-4">No topics created in this chapter.</p>
+                                                                                ) : (
+                                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                                        {chapLessons.map(lesson => {
+                                                                                            const isUnlocked = computedPermissions.unlockedLessons.has(lesson.id);
+                                                                                            const isCompleted = computedPermissions.completedLessons.has(lesson.id);
+                                                                                            const isUpdating = isUpdatingProgress === lesson.id;
+                                                                                            
+                                                                                            let statusLabel = "Locked";
+                                                                                            let cardBorder = "border-slate-150 bg-slate-50/30 opacity-70";
+                                                                                            if (isCompleted) {
+                                                                                                statusLabel = "Completed";
+                                                                                                cardBorder = "border-emerald-500 bg-emerald-50/10 shadow-xs";
+                                                                                            } else if (isUnlocked) {
+                                                                                                statusLabel = "Unlocked";
+                                                                                                cardBorder = "border-[#ecb613] bg-amber-500/[0.03] shadow-xs";
+                                                                                            }
+
+                                                                                            return (
+                                                                                                <div key={lesson.id} className={`rounded-xl p-4 border flex flex-col justify-between gap-4 transition-all hover:shadow-sm ${cardBorder}`}>
+                                                                                                    <div className="space-y-1">
+                                                                                                        <div className="flex items-center justify-between gap-4">
+                                                                                                            <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
+                                                                                                                isCompleted 
+                                                                                                                    ? 'text-emerald-600' 
+                                                                                                                    : (isUnlocked ? 'text-amber-600' : 'text-slate-400')
+                                                                                                            }`}>
+                                                                                                                Topic {lesson.lesson_number} • {statusLabel}
+                                                                                                            </span>
+                                                                                                            {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                                        </div>
+                                                                                                        <h5 className="font-extrabold text-sm text-slate-800 leading-tight truncate">{lesson.title}</h5>
+                                                                                                        {lesson.description && (
+                                                                                                            <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed font-semibold">{lesson.description}</p>
+                                                                                                        )}
+                                                                                                    </div>
+
+                                                                                                    {/* Interactive overrides panel */}
+                                                                                                    <div className="flex items-center gap-1.5 border-t border-slate-100 pt-3 select-none">
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            disabled={isUpdating}
+                                                                                                            onClick={() => handleProgressChange(lesson.id, 'locked')}
+                                                                                                            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                                                                                                                !isUnlocked && !isCompleted
+                                                                                                                    ? 'bg-slate-800 text-white shadow-xs'
+                                                                                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+                                                                                                            }`}
+                                                                                                        >
+                                                                                                            Lock
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            disabled={isUpdating}
+                                                                                                            onClick={() => handleProgressChange(lesson.id, 'unlocked')}
+                                                                                                            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                                                                                                                isUnlocked && !isCompleted
+                                                                                                                    ? 'bg-[#ecb613] text-white shadow-xs'
+                                                                                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+                                                                                                            }`}
+                                                                                                        >
+                                                                                                            Unlock
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            disabled={isUpdating}
+                                                                                                            onClick={() => handleProgressChange(lesson.id, 'completed')}
+                                                                                                            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                                                                                                                isCompleted
+                                                                                                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                                                                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+                                                                                                            }`}
+                                                                                                        >
+                                                                                                            Done
+                                                                                                        </button>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </section>
+                        )}
+
+                        {/* Profile Info Section *}
                         {activeTab === 'profile' && (
                             <section>
                                 <div className="flex items-center gap-2 mb-4">
