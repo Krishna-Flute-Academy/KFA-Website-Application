@@ -1293,21 +1293,24 @@ export default function InventoryLibrary() {
                                         </button>
                                     </div>
 
-                                    {/* High-fidelity Premium White and Yellow Header Card representing KFA brand */}
+                                    {/* High-fidelity Premium Green, White, and Red Header Card matching the brand tip queue */}
                                     {activeModule && (
-                                        <div className="rounded-3xl p-6 md:p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 relative overflow-hidden shadow-md shadow-amber-500/[0.01] select-none text-left">
-                                            <div className="absolute right-4 top-4 opacity-[0.03] dark:opacity-10 select-none pointer-events-none">
-                                                <Database className="w-64 h-64 text-[#ecb613] animate-pulse" />
+                                        <div className="rounded-3xl p-6 md:p-8 bg-[#0d5257] border border-[#0b4347] relative overflow-hidden shadow-lg select-none text-left">
+                                            {/* Decorative floating icon */}
+                                            <div className="absolute right-4 top-4 opacity-[0.06] select-none pointer-events-none">
+                                                <Database className="w-64 h-64 text-white animate-pulse" />
                                             </div>
-                                            <div className="max-w-2xl relative z-10 space-y-2">
-                                                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 dark:text-amber-400 font-extrabold tracking-widest uppercase leading-none">
-                                                    <Sparkles className="size-3.5" />
-                                                    <span>{activeBadgeText}</span>
+                                            <div className="max-w-2xl relative z-10 space-y-3">
+                                                <div className="flex justify-between items-center gap-4 select-none">
+                                                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#ef4444] rounded-full text-[9px] text-white font-black tracking-widest uppercase leading-none shadow-sm">
+                                                        <Sparkles className="size-3" />
+                                                        <span>{activeBadgeText}</span>
+                                                    </div>
                                                 </div>
-                                                <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none bg-gradient-to-r from-slate-900 via-slate-800 to-[#ecb613] dark:from-white dark:to-amber-400 bg-clip-text text-transparent font-sans">
+                                                <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none text-white font-sans drop-shadow-sm">
                                                     {activeHeadline}
                                                 </h1>
-                                                <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-xl">
+                                                <p className="text-xs md:text-sm text-teal-50/90 font-medium leading-relaxed max-w-xl">
                                                     {activeModuleParsed?.description}
                                                 </p>
                                             </div>
