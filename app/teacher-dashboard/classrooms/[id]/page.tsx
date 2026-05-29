@@ -139,6 +139,7 @@ export default function ClassroomDashboardPage() {
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [mediaPreview, setMediaPreview] = useState<{ type: string; url: string; title: string } | null>(null);
+    const [selectedTopic, setSelectedTopic] = useState<any | null>(null);
     const [showAssignmentModal, setShowAssignmentModal] = useState(false);
     const [isSavingAssignment, setIsSavingAssignment] = useState(false);
     const [assignmentForm, setAssignmentForm] = useState({
@@ -1601,7 +1602,7 @@ export default function ClassroomDashboardPage() {
                                                                                                 ) : (
                                                                                                     <div className="grid grid-cols-1 gap-3 relative pl-3 border-l border-slate-200/60 dark:border-slate-800">
                                                                                                         {chapLessons.map(lesson => (
-                                                                                                            <LessonRow key={lesson.id} lesson={lesson} setMediaPreview={setMediaPreview} />
+                                                                                                            <LessonRow key={lesson.id} lesson={lesson} onClick={() => setSelectedTopic(lesson)} />
                                                                                                         ))}
                                                                                                     </div>
                                                                                                 )}
@@ -1635,7 +1636,7 @@ export default function ClassroomDashboardPage() {
                                                                             <p className="text-xs text-slate-400 italic text-center py-6 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl w-full">No lesson materials defined in this chapter.</p>
                                                                         ) : (
                                                                             chapLessons.map(lesson => (
-                                                                                <LessonRow key={lesson.id} lesson={lesson} setMediaPreview={setMediaPreview} />
+                                                                                <LessonRow key={lesson.id} lesson={lesson} onClick={() => setSelectedTopic(lesson)} />
                                                                             ))
                                                                         )}
                                                                     </div>
@@ -1674,7 +1675,10 @@ export default function ClassroomDashboardPage() {
                                                                     <div className="border-b border-slate-100 dark:border-slate-800 pb-3 pl-2">
                                                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono font-sans">Assigned Lesson Study Guide</h4>
                                                                     </div>
-                                                                    <div className={`p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 border-l-4 ${highlightBorder} bg-slate-50/20 dark:bg-slate-900/40 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all`}>
+                                                                    <div 
+                                                                        onClick={() => setSelectedTopic(lesson)}
+                                                                        className={`p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 border-l-4 ${highlightBorder} bg-slate-50/20 dark:bg-slate-900/40 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all cursor-pointer hover:shadow-md active:scale-[0.995] hover:border-slate-350 dark:hover:border-slate-700`}
+                                                                    >
                                                                         <div className="space-y-4 text-left max-w-xl">
                                                                             <div className="flex items-center gap-3">
                                                                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColor}`}>
@@ -1711,11 +1715,14 @@ export default function ClassroomDashboardPage() {
                                                                         </div>
                                                                         {lesson.material_url && (
                                                                             <button 
-                                                                                onClick={() => setMediaPreview({ type: lesson.material_type || 'file', url: lesson.material_url, title: lesson.title })}
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setSelectedTopic(lesson);
+                                                                                }}
                                                                                 className="inline-flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black rounded-2xl text-xs transition-all hover:scale-[1.02] active:scale-[0.98] tracking-widest uppercase shrink-0 shadow-md shadow-amber-500/10"
                                                                             >
                                                                                 <PlayCircle className="size-4 stroke-[2.5]" />
-                                                                                <span>View Material</span>
+                                                                                <span>View Details</span>
                                                                             </button>
                                                                         )}
                                                                     </div>
@@ -3050,12 +3057,162 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                         </div>
                     </div>
                 )}
+
+                {/* 4. PREMIUM CURRICULUM TOPIC DETAILS DIALOG */}
+                {selectedTopic && (() => {
+                    const chap = courseChapters.find(c => c.id === selectedTopic.chapter_id);
+                    const mod = chap ? courseModules.find(m => m.id === chap.module_id) : null;
+                    
+                    const isAudio = selectedTopic.material_type === 'audio';
+                    const isVideo = selectedTopic.material_type === 'video';
+                    const isPdf = selectedTopic.material_type === 'pdf';
+                    const isImage = selectedTopic.material_type === 'image';
+                    const hasMaterial = !!selectedTopic.material_url;
+                    
+                    // Style config for headers and badges inside modal
+                    const styleConfig = isVideo ? {
+                        badge: 'bg-rose-500/10 text-rose-450 border border-rose-500/20',
+                        icon: <Film className="size-5 text-rose-400" />,
+                        label: 'Video Tutorial'
+                    } : isAudio ? {
+                        badge: 'bg-amber-500/10 text-amber-450 border border-amber-500/20',
+                        icon: <Music className="size-5 text-amber-400 animate-pulse" />,
+                        label: 'Audio Guide'
+                    } : isPdf ? {
+                        badge: 'bg-blue-500/10 text-blue-455 border border-blue-500/20',
+                        icon: <FileText className="size-5 text-blue-400" />,
+                        label: 'PDF Sheet Music'
+                    } : {
+                        badge: 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/20',
+                        icon: <BookOpen className="size-5 text-emerald-400" />,
+                        label: 'Interactive Guide'
+                    };
+
+                    return (
+                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+                            <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl text-white overflow-hidden animate-in zoom-in-95 duration-300">
+                                {/* Header */}
+                                <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800 bg-slate-950/30 flex-shrink-0">
+                                    <div className="flex items-center gap-3 text-left">
+                                        <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-slate-700">
+                                            {styleConfig.icon}
+                                        </div>
+                                        <div className="space-y-0.5">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <h3 className="font-black text-slate-100 text-sm md:text-base tracking-tight leading-none">{selectedTopic.title}</h3>
+                                                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${styleConfig.badge}`}>
+                                                    {styleConfig.label}
+                                                </span>
+                                            </div>
+                                            {(mod || chap) && (
+                                                <p className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider">
+                                                    {mod ? `Module ${mod.module_number}: ${mod.title}` : ''} {chap ? `> Chapter ${chap.chapter_number}: ${chap.title}` : ''}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setSelectedTopic(null)} 
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                {/* Body */}
+                                <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+                                    {/* Media preview iframe / player */}
+                                    {hasMaterial ? (
+                                        <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative shadow-inner">
+                                            {isVideo ? (
+                                                <video src={selectedTopic.material_url} controls className="w-full h-full object-contain" autoPlay />
+                                            ) : isAudio ? (
+                                                <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950/40 h-full">
+                                                    <Music className="size-16 text-amber-500 animate-pulse" />
+                                                    <audio src={selectedTopic.material_url} controls className="w-full max-w-md" autoPlay />
+                                                </div>
+                                            ) : isPdf ? (
+                                                <embed src={selectedTopic.material_url} type="application/pdf" className="w-full h-full" />
+                                            ) : isImage ? (
+                                                <img src={selectedTopic.material_url} alt={selectedTopic.title} className="w-full h-full object-contain" />
+                                            ) : (
+                                                <div className="text-center p-8 space-y-4">
+                                                    <FileText className="size-16 text-slate-600 mx-auto" />
+                                                    <p className="text-xs text-slate-400 max-w-sm">No interactive simulation available for generic files. Download or open in a new tab:</p>
+                                                    <a 
+                                                        href={selectedTopic.material_url} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer" 
+                                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-full text-xs transition-all uppercase tracking-wider"
+                                                    >
+                                                        <span>Open File Attachment</span>
+                                                        <ExternalLink className="size-3.5" />
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="w-full p-8 rounded-2xl bg-slate-950/40 border border-slate-800/60 flex flex-col items-center justify-center text-center space-y-3">
+                                            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                                                <Sparkles className="size-6 text-emerald-400" />
+                                            </div>
+                                            <h4 className="font-extrabold text-sm text-slate-200">Interactive Syllabus Node</h4>
+                                            <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                                                This is a theoretical study and conceptual topic block. Read the instructions and checklist objectives below to complete the learning phase.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Splitted Details */}
+                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 text-left">
+                                        {/* Description */}
+                                        <div className={`${selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 ? 'md:col-span-7' : 'md:col-span-12'} space-y-3`}>
+                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Lesson Overview</h4>
+                                            <div className="p-5 rounded-2xl bg-slate-950/30 border border-slate-800/80 text-slate-300 min-h-[120px] text-xs font-medium leading-relaxed whitespace-pre-wrap">
+                                                {selectedTopic.description || 'No detailed instructions uploaded. Follow general study guides for this level.'}
+                                            </div>
+                                        </div>
+
+                                        {/* Checklist Objectives */}
+                                        {selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 && (
+                                            <div className="md:col-span-5 space-y-3">
+                                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Learning Objectives</h4>
+                                                <div className="p-5 rounded-2xl bg-slate-950/30 border border-slate-800/80 space-y-3.5">
+                                                    <ul className="space-y-2.5">
+                                                        {selectedTopic.bullet_points.map((pt: string, idx: number) => (
+                                                            <li key={idx} className="flex items-start gap-2.5 text-[11px] font-bold text-slate-350">
+                                                                <div className="w-4 h-4 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 mt-0.5 text-emerald-400 font-extrabold text-[8px]">
+                                                                    ✓
+                                                                </div>
+                                                                <span className="leading-tight">{pt}</span>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Footer */}
+                                <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-800 flex justify-end gap-3 flex-shrink-0">
+                                    <button 
+                                        onClick={() => setSelectedTopic(null)} 
+                                        className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors tracking-wider uppercase"
+                                    >
+                                        Back to Curriculum
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
             </main>
         </div>
     );
 }
 
-function LessonRow({ lesson, setMediaPreview }: { lesson: any; setMediaPreview: any }) {
+function LessonRow({ lesson, onClick }: { lesson: any; onClick: () => void }) {
     const hasMaterial = !!lesson.material_url;
     const isAudio = lesson.material_type === 'audio';
     const isVideo = lesson.material_type === 'video';
@@ -3089,7 +3246,10 @@ function LessonRow({ lesson, setMediaPreview }: { lesson: any; setMediaPreview: 
     };
 
     return (
-        <div className={`relative flex flex-col md:flex-row md:items-center justify-between p-5 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white dark:bg-slate-900 border-l-4 ${styleConfig.border} ${styleConfig.bg} transition-all duration-300 hover:shadow-md hover:shadow-slate-500/[0.02] hover:-translate-y-0.5 gap-4`}>
+        <div 
+            onClick={onClick}
+            className={`relative flex flex-col md:flex-row md:items-center justify-between p-5 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white dark:bg-slate-900 border-l-4 ${styleConfig.border} ${styleConfig.bg} transition-all duration-300 hover:shadow-md hover:shadow-slate-500/[0.02] hover:-translate-y-0.5 gap-4 cursor-pointer active:scale-[0.99]`}
+        >
             {/* Elegant node bullet representing a step in the lesson track */}
             <div className="absolute -left-[19px] top-6 w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700 border-2 border-white dark:border-slate-900 group-hover:bg-amber-500 transition-colors z-10 hidden md:block"></div>
             
@@ -3111,11 +3271,14 @@ function LessonRow({ lesson, setMediaPreview }: { lesson: any; setMediaPreview: 
             </div>
             {hasMaterial && (
                 <button
-                    onClick={() => setMediaPreview({ type: lesson.material_type || 'file', url: lesson.material_url, title: lesson.title })}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onClick();
+                    }}
                     className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-gradient-to-r hover:from-amber-500 hover:to-orange-500 hover:text-slate-950 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-transparent rounded-xl text-[10px] font-extrabold tracking-wider uppercase transition-all shadow-sm hover:shadow-amber-500/10 self-start md:self-center shrink-0 active:scale-95"
                 >
                     <PlayCircle className="size-3.5" />
-                    <span>Open Unit</span>
+                    <span>View Details</span>
                 </button>
             )}
         </div>
