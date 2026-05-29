@@ -3121,74 +3121,74 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
 
                                 {/* Body */}
                                 <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
-                                    {/* Media preview iframe / player */}
-                                    {hasMaterial ? (
-                                        <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center relative shadow-inner">
-                                            {isVideo ? (
-                                                <video src={selectedTopic.material_url} controls className="w-full h-full object-contain" autoPlay />
-                                            ) : isAudio ? (
-                                                <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950/40 h-full">
-                                                    <Music className="size-16 text-amber-500 animate-pulse" />
-                                                    <audio src={selectedTopic.material_url} controls className="w-full max-w-md" autoPlay />
-                                                </div>
-                                            ) : isPdf ? (
-                                                <embed src={selectedTopic.material_url} type="application/pdf" className="w-full h-full" />
-                                            ) : isImage ? (
-                                                <img src={selectedTopic.material_url} alt={selectedTopic.title} className="w-full h-full object-contain" />
-                                            ) : (
-                                                <div className="text-center p-8 space-y-4">
-                                                    <FileText className="size-16 text-slate-650 mx-auto" />
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">No interactive simulation available for generic files. Download or open in a new tab:</p>
-                                                    <a 
-                                                        href={selectedTopic.material_url} 
-                                                        target="_blank" 
-                                                        rel="noopener noreferrer" 
-                                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-955 font-black rounded-full text-xs transition-all uppercase tracking-wider"
-                                                    >
-                                                        <span>Open File Attachment</span>
-                                                        <ExternalLink className="size-3.5" />
-                                                    </a>
-                                                </div>
-                                            )}
+                                    {/* 1. Lesson Overview */}
+                                    <div className="space-y-3 text-left">
+                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">1. Lesson Overview</h4>
+                                        <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium leading-relaxed whitespace-pre-wrap">
+                                            {selectedTopic.description || 'No detailed instructions uploaded. Follow general study guides for this level.'}
                                         </div>
-                                    ) : (
-                                        <div className="w-full p-8 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800/60 flex flex-col items-center justify-center text-center space-y-3">
-                                            <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-[#ecb613]">
-                                                <Sparkles className="size-6 text-[#ecb613]" />
+                                    </div>
+
+                                    {/* 2. Learning Objectives */}
+                                    {selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 && (
+                                        <div className="space-y-3 text-left">
+                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">2. Learning Objectives</h4>
+                                            <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 space-y-3.5">
+                                                <ul className="space-y-2.5">
+                                                    {selectedTopic.bullet_points.map((pt: string, idx: number) => (
+                                                        <li key={idx} className="flex items-start gap-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                                                            <div className="w-4 h-4 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5 text-[#ecb613] font-extrabold text-[8px]">
+                                                                ✓
+                                                            </div>
+                                                            <span className="leading-tight">{pt}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
                                             </div>
-                                            <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">Interactive Syllabus Node</h4>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md leading-relaxed">
-                                                This is a theoretical study and conceptual topic block. Read the instructions and checklist objectives below to complete the learning phase.
-                                            </p>
                                         </div>
                                     )}
 
-                                    {/* Splitted Details */}
-                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 text-left">
-                                        {/* Description */}
-                                        <div className={`${selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 ? 'md:col-span-7' : 'md:col-span-12'} space-y-3`}>
-                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Lesson Overview</h4>
-                                            <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 text-slate-700 dark:text-slate-300 min-h-[120px] text-xs font-medium leading-relaxed whitespace-pre-wrap">
-                                                {selectedTopic.description || 'No detailed instructions uploaded. Follow general study guides for this level.'}
+                                    {/* 3. Study Material Attachment */}
+                                    <div className="space-y-3 text-left">
+                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">3. View Attachments & Material Player</h4>
+                                        {hasMaterial ? (
+                                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center relative shadow-inner">
+                                                {isVideo ? (
+                                                    <video src={selectedTopic.material_url} controls className="w-full h-full object-contain" autoPlay />
+                                                ) : isAudio ? (
+                                                    <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950/40 h-full">
+                                                        <Music className="size-16 text-amber-500 animate-pulse" />
+                                                        <audio src={selectedTopic.material_url} controls className="w-full max-w-md" autoPlay />
+                                                    </div>
+                                                ) : isPdf ? (
+                                                    <embed src={selectedTopic.material_url} type="application/pdf" className="w-full h-full" />
+                                                ) : isImage ? (
+                                                    <img src={selectedTopic.material_url} alt={selectedTopic.title} className="w-full h-full object-contain" />
+                                                ) : (
+                                                    <div className="text-center p-8 space-y-4">
+                                                        <FileText className="size-16 text-slate-650 mx-auto" />
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">No interactive simulation available for generic files. Download or open in a new tab:</p>
+                                                        <a 
+                                                            href={selectedTopic.material_url} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer" 
+                                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-955 font-black rounded-full text-xs transition-all uppercase tracking-wider"
+                                                        >
+                                                            <span>Open File Attachment</span>
+                                                            <ExternalLink className="size-3.5" />
+                                                        </a>
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
-
-                                        {/* Checklist Objectives */}
-                                        {selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 && (
-                                            <div className="md:col-span-5 space-y-3">
-                                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Learning Objectives</h4>
-                                                <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 space-y-3.5">
-                                                    <ul className="space-y-2.5">
-                                                        {selectedTopic.bullet_points.map((pt: string, idx: number) => (
-                                                            <li key={idx} className="flex items-start gap-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                                                                <div className="w-4 h-4 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5 text-[#ecb613] font-extrabold text-[8px]">
-                                                                    ✓
-                                                                </div>
-                                                                <span className="leading-tight">{pt}</span>
-                                                            </li>
-                                                        ))}
-                                                    </ul>
+                                        ) : (
+                                            <div className="w-full p-8 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800/60 flex flex-col items-center justify-center text-center space-y-3">
+                                                <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-[#ecb613]">
+                                                    <Sparkles className="size-6 text-[#ecb613]" />
                                                 </div>
+                                                <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">Interactive Syllabus Node</h4>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md leading-relaxed">
+                                                    This is a theoretical study and conceptual topic block. Read the instructions and checklist objectives above to complete the learning phase.
+                                                </p>
                                             </div>
                                         )}
                                     </div>
