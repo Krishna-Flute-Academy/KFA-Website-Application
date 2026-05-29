@@ -70,6 +70,10 @@ interface Assignment {
     file_name: string | null;
     file_size: number | null;
     created_at: string;
+    // inventory reference (set when assigned from Inventory Library)
+    inventory_ref_type?: 'module' | 'chapter' | 'lesson' | null;
+    inventory_ref_id?: string | null;
+    inventory_ref_title?: string | null;
     // joined
     assignment_students?: AssignmentStudent[];
 }
