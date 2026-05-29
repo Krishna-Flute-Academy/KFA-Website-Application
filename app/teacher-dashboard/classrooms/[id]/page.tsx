@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 
@@ -132,6 +132,13 @@ export default function ClassroomDashboardPage() {
     const [assignmentsLoading, setAssignmentsLoading] = useState(false);
     const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
     const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'all_students' | 'individual'>('all');
+    
+    // Course Curriculum DB states
+    const [courseModules, setCourseModules] = useState<any[]>([]);
+    const [courseChapters, setCourseChapters] = useState<any[]>([]);
+    const [courseLessons, setCourseLessons] = useState<any[]>([]);
+    const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+    const [mediaPreview, setMediaPreview] = useState<{ type: string; url: string; title: string } | null>(null);
     const [showAssignmentModal, setShowAssignmentModal] = useState(false);
     const [isSavingAssignment, setIsSavingAssignment] = useState(false);
     const [assignmentForm, setAssignmentForm] = useState({
@@ -305,6 +312,15 @@ export default function ClassroomDashboardPage() {
                 
                 setSchedules(scheduleData || []);
 
+                // 7. Fetch Static Course Curriculum data
+                const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
+                const { data: dbChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
+                const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+
+                setCourseModules(dbModules || []);
+                setCourseChapters(dbChapters || []);
+                setCourseLessons(dbLessons || []);
+
             } catch (err) {
                 console.error('Error fetching classroom data:', err);
                 router.push('/teacher-dashboard/classrooms');
@@ -387,11 +403,13 @@ export default function ClassroomDashboardPage() {
         }
     }, [classroomId, assignments.length]);
 
-    // Fetch when switching to Assignments tab
+    // Fetch when switching to Assignments or Curriculum tab
     useEffect(() => {
-        if (activeTab === 'Assignments') {
+        if (activeTab === 'Assignments' || activeTab === 'Curriculum') {
             fetchAssignments();
-            fetchClassNotes();
+            if (activeTab === 'Assignments') {
+                fetchClassNotes();
+            }
         }
     }, [activeTab, fetchAssignments, fetchClassNotes]);
 
@@ -781,10 +799,15 @@ export default function ClassroomDashboardPage() {
     };
 
     const filteredAssignments = useMemo(() => {
-        if (assignmentFilter === 'all') return assignments;
-        if (assignmentFilter === 'all_students') return assignments.filter(a => a.target_type === 'all');
-        return assignments.filter(a => a.target_type === 'individual');
+        const nonInventoryAssignments = assignments.filter(a => !a.inventory_ref_type);
+        if (assignmentFilter === 'all') return nonInventoryAssignments;
+        if (assignmentFilter === 'all_students') return nonInventoryAssignments.filter(a => a.target_type === 'all');
+        return nonInventoryAssignments.filter(a => a.target_type === 'individual');
     }, [assignments, assignmentFilter]);
+
+    const assignedInventoryItems = useMemo(() => {
+        return assignments.filter(a => a.inventory_ref_type);
+    }, [assignments]);
 
     const statusColors: Record<string, string> = {
         pending: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
@@ -1374,210 +1397,265 @@ export default function ClassroomDashboardPage() {
                         </div>
                     ) : activeTab === 'Curriculum' ? (
                         <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            {/* Section 1: Lesson Plan / Syllabus Roadmap */}
-                            <section className="mb-12">
-                                <div className="flex justify-between items-end mb-6">
-                                    <div>
-                                        <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">Syllabus Roadmap</h2>
-                                        <p className="text-slate-500 dark:text-slate-400 mt-1">Foundational Flute Techniques & Repertoire</p>
+                            {/* Section 1: Dashboard Header */}
+                            <section className="mb-8">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 text-white shadow-lg relative overflow-hidden border border-orange-400/20">
+                                    <div className="absolute right-0 top-0 opacity-15 select-none pointer-events-none">
+                                        <NotebookPen className="w-64 h-64 text-white" />
                                     </div>
-                                    <button className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-all shadow-sm">
-                                        <Edit3 className="w-5 h-5" />
-                                        Edit Roadmap
-                                    </button>
-                                </div>
-                                <div className="relative grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    {/* Progress Connection Line (Dashed) */}
-                                    <div className="absolute top-1/2 left-0 w-full h-0.5 border-t-2 border-dashed border-slate-200 dark:border-slate-700 -z-10 hidden md:block"></div>
-                                    
-                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
-                                        <div className="w-8 h-8 bg-[#ecb613] text-slate-900 rounded-full flex items-center justify-center font-black text-xs mb-3 shadow-md shadow-[#ecb613]/20">01</div>
-                                        <h3 className="font-bold text-slate-900 dark:text-white">Breath Control</h3>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 italic">Week 1-2</p>
-                                        <div className="mt-4 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                            <div className="h-full bg-[#ecb613] w-full"></div>
+                                    <div className="space-y-2 text-left relative z-10">
+                                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 border border-white/20 rounded-full text-[10px] text-white font-black tracking-widest uppercase leading-none">
+                                            <Sparkles className="size-3.5" />
+                                            <span>Active Curriculum Path</span>
                                         </div>
+                                        <h1 className="text-2xl md:text-3xl font-black tracking-tight leading-none text-white drop-shadow-xs">
+                                            Classroom Tutorials
+                                        </h1>
+                                        <p className="text-xs md:text-sm text-amber-50 font-medium leading-relaxed max-w-xl">
+                                            Dynamic interactive tutorials and study guides assigned directly from the Inventory Library for this class.
+                                        </p>
                                     </div>
-                                    
-                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
-                                        <div className="w-8 h-8 bg-[#ecb613] text-slate-900 rounded-full flex items-center justify-center font-black text-xs mb-3 shadow-md shadow-[#ecb613]/20">02</div>
-                                        <h3 className="font-bold text-slate-900 dark:text-white">Embouchure</h3>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 italic">Week 3-4</p>
-                                        <div className="mt-4 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                            <div className="h-full bg-[#ecb613] w-full"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
-                                        <div className="w-8 h-8 bg-[#ecb613]/20 dark:bg-[#ecb613]/10 text-[#ecb613] rounded-full flex items-center justify-center font-black text-xs mb-3">03</div>
-                                        <h3 className="font-bold text-slate-900 dark:text-white">First Scale</h3>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 italic">Week 5-8</p>
-                                        <div className="mt-4 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                            <div className="h-full bg-[#ecb613] w-1/3"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center gap-2 group cursor-pointer hover:border-[#ecb613] hover:bg-[#ecb613]/5 transition-all">
-                                        <PlusCircle className="w-8 h-8 text-slate-300 dark:text-slate-600 group-hover:text-[#ecb613] transition-colors" />
-                                        <span className="text-sm font-bold text-slate-400 group-hover:text-[#ecb613] transition-colors">Add Milestone</span>
-                                    </div>
+                                    <Link 
+                                        href="/teacher-dashboard/inventory"
+                                        className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-white hover:bg-slate-50 text-orange-600 font-extrabold text-xs tracking-wider uppercase transition-all shadow-md self-start sm:self-center shrink-0 border border-white active:scale-95"
+                                    >
+                                        <Plus className="size-4 stroke-[2.5]" />
+                                        <span>Assign From Inventory</span>
+                                    </Link>
                                 </div>
                             </section>
 
-                            {/* Section 2 & 3: Modules and Materials */}
+                            {/* Section 2: Tutorials List */}
                             <section className="space-y-6">
-                                <div className="flex justify-between items-center">
-                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Curriculum Modules</h2>
-                                    <div className="flex gap-3">
-                                        <button className="text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm">
-                                            <FileUp className="w-4 h-4" />
-                                            Upload Resource
-                                        </button>
-                                        <button className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-sm">
-                                            <Plus className="w-4 h-4" />
-                                            Add Module
-                                        </button>
+                                {assignedInventoryItems.length === 0 ? (
+                                    <div className="p-16 text-center bg-white dark:bg-slate-900 border-2 border-dashed border-amber-200 dark:border-amber-700/30 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center max-w-2xl mx-auto">
+                                        <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-900/10 flex items-center justify-center text-amber-500 mb-4 shadow-sm">
+                                            <Sparkles className="size-8 text-amber-500" />
+                                        </div>
+                                        <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200">No Tutorials Assigned Yet</h3>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center">
+                                            Assign proficiency levels, course chapters, or specific lesson topics from the Inventory Library to build an interactive tutorial roadmap for this classroom.
+                                        </p>
+                                        <Link
+                                            href="/teacher-dashboard/inventory"
+                                            className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-black rounded-xl shadow-md transition-all active:scale-[0.98] uppercase tracking-wider"
+                                        >
+                                            <BookOpen className="size-4" /> Explore Inventory Library
+                                        </Link>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {assignedInventoryItems.map((asg) => {
+                                            const isDeleting = deletingAssignmentId === asg.id;
+                                            
+                                            // Render based on inventory reference type
+                                            return (
+                                                <div 
+                                                    key={asg.id} 
+                                                    className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden transition-shadow hover:shadow-md text-left"
+                                                >
+                                                    {/* Tutorial Header */}
+                                                    <div className="px-6 py-5 bg-slate-50 dark:bg-slate-950/20 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                                                                asg.inventory_ref_type === 'module' 
+                                                                    ? 'bg-amber-500/10 text-amber-600'
+                                                                    : asg.inventory_ref_type === 'chapter'
+                                                                    ? 'bg-blue-500/10 text-blue-600'
+                                                                    : 'bg-emerald-500/10 text-emerald-600'
+                                                            }`}>
+                                                                {asg.inventory_ref_type === 'module' ? (
+                                                                    <BookOpen className="size-5" />
+                                                                ) : asg.inventory_ref_type === 'chapter' ? (
+                                                                    <ClipboardList className="size-5" />
+                                                                ) : (
+                                                                    <Music className="size-5" />
+                                                                )}
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <h3 className="font-extrabold text-base text-slate-900 dark:text-white leading-tight">
+                                                                        {asg.inventory_ref_title || asg.title}
+                                                                    </h3>
+                                                                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                                                        asg.inventory_ref_type === 'module' 
+                                                                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                                                                            : asg.inventory_ref_type === 'chapter'
+                                                                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                                                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    }`}>
+                                                                        {asg.inventory_ref_type} tutorial
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 mt-1 uppercase font-mono tracking-wider">
+                                                                    Assigned on {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => handleDeleteAssignment(asg.id)}
+                                                            disabled={isDeleting}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-rose-500/10 shadow-xs"
+                                                            title="Unassign tutorial from class"
+                                                        >
+                                                            {isDeleting ? (
+                                                                <Loader2 className="size-3.5 animate-spin" />
+                                                            ) : (
+                                                                <Trash2 className="size-3.5" />
+                                                            )}
+                                                            <span>Remove</span>
+                                                        </button>
+                                                    </div>
 
-                                {/* Module 1 */}
-                                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm group">
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 px-6 py-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-800">
-                                        <div className="flex items-center gap-4">
-                                            <GripVertical className="w-5 h-5 text-slate-400 cursor-move opacity-50 group-hover:opacity-100 transition-opacity" />
-                                            <div>
-                                                <h3 className="font-bold text-slate-900 dark:text-white text-lg">Module 1: Introduction to Flute</h3>
-                                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">3 Lessons • 2 Resources • 1 Assignment</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] font-bold px-2.5 py-1 rounded uppercase tracking-widest">Active</span>
-                                            <button className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
-                                                <MoreVertical className="w-5 h-5" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
-                                        {/* Module Lessons */}
-                                        <div className="md:col-span-2 space-y-3">
-                                            <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl hover:shadow-md hover:border-[#ecb613]/30 transition-all cursor-pointer group/lesson">
-                                                <div className="flex items-center gap-4">
-                                                    <span className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-black text-slate-600 dark:text-slate-300 group-hover/lesson:bg-[#ecb613] group-hover/lesson:text-slate-900 transition-colors">1.1</span>
-                                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover/lesson:text-slate-900 dark:group-hover/lesson:text-white">Assembling your Instrument</span>
-                                                </div>
-                                                <CheckCircle className="w-5 h-5 text-emerald-500 fill-emerald-100 dark:fill-emerald-900/40" />
-                                            </div>
-                                            <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl hover:shadow-md hover:border-[#ecb613]/30 transition-all cursor-pointer group/lesson">
-                                                <div className="flex items-center gap-4">
-                                                    <span className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-black text-slate-600 dark:text-slate-300 group-hover/lesson:bg-[#ecb613] group-hover/lesson:text-slate-900 transition-colors">1.2</span>
-                                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover/lesson:text-slate-900 dark:group-hover/lesson:text-white">Posture and Hand Position</span>
-                                                </div>
-                                                <CheckCircle className="w-5 h-5 text-emerald-500 fill-emerald-100 dark:fill-emerald-900/40" />
-                                            </div>
-                                            <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl hover:shadow-md hover:border-[#ecb613]/30 transition-all cursor-pointer group/lesson">
-                                                <div className="flex items-center gap-4">
-                                                    <span className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-black text-slate-600 dark:text-slate-300 group-hover/lesson:bg-[#ecb613]/50 group-hover/lesson:text-slate-900 transition-colors">1.3</span>
-                                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover/lesson:text-slate-900 dark:group-hover/lesson:text-white">The Headjoint Exercise</span>
-                                                </div>
-                                                <Circle className="w-5 h-5 text-slate-300 dark:text-slate-600 stroke-[3]" />
-                                            </div>
-                                        </div>
-                                        {/* Module Materials */}
-                                        <div className="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-800">
-                                            <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Attached Materials</h4>
-                                            <div className="space-y-3">
-                                                <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-red-500/30 transition-colors cursor-pointer group/mat">
-                                                    <div className="w-10 h-10 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg flex items-center justify-center group-hover/mat:bg-red-100 transition-colors">
-                                                        <FileText className="w-5 h-5" />
-                                                    </div>
-                                                    <div className="overflow-hidden">
-                                                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate group-hover/mat:text-slate-900 dark:group-hover/mat:text-white">Assembly_Guide.pdf</p>
-                                                        <p className="text-[10px] font-medium text-slate-400 mt-0.5">1.2 MB</p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-blue-500/30 transition-colors cursor-pointer group/mat">
-                                                    <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center group-hover/mat:bg-blue-100 transition-colors">
-                                                        <Film className="w-5 h-5" />
-                                                    </div>
-                                                    <div className="overflow-hidden">
-                                                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate group-hover/mat:text-slate-900 dark:group-hover/mat:text-white">Embouchure_Demo.mp4</p>
-                                                        <p className="text-[10px] font-medium text-slate-400 mt-0.5">45.8 MB</p>
-                                                    </div>
-                                                </div>
-                                                <button className="w-full py-3 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 transition-all flex items-center justify-center gap-2">
-                                                    <Plus className="w-4 h-4" /> Add Material
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                                    {/* Tutorial Body */}
+                                                    <div className="p-6 space-y-6">
+                                                        {/* Description/Instructions */}
+                                                        {asg.description && (
+                                                            <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 text-slate-700 dark:text-slate-300 flex items-start gap-3">
+                                                                <Lightbulb className="size-5 text-amber-500 shrink-0 mt-0.5" />
+                                                                <div className="space-y-1">
+                                                                    <span className="text-[10px] font-black uppercase text-amber-500 tracking-wider font-mono">Teacher's Instructions</span>
+                                                                    <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap">{asg.description}</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
 
-                                {/* Module 2 */}
-                                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm group">
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 px-6 py-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-800">
-                                        <div className="flex items-center gap-4">
-                                            <GripVertical className="w-5 h-5 text-slate-400 cursor-move opacity-50 group-hover:opacity-100 transition-opacity" />
-                                            <div>
-                                                <h3 className="font-bold text-slate-900 dark:text-white text-lg">Module 2: Basic Fingerings</h3>
-                                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">4 Lessons • 3 Resources • 2 Assignments</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className="bg-[#ecb613]/20 text-[#ecb613] text-[10px] font-bold px-2.5 py-1 rounded uppercase tracking-widest">In Progress</span>
-                                            <button className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
-                                                <MoreVertical className="w-5 h-5" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8 opacity-75">
-                                        {/* Module Lessons */}
-                                        <div className="md:col-span-2 space-y-3">
-                                            <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl">
-                                                <div className="flex items-center gap-4 opacity-70">
-                                                    <span className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-black text-slate-500">2.1</span>
-                                                    <span className="text-sm font-bold text-slate-600 dark:text-slate-400">Notes B, A, and G</span>
-                                                </div>
-                                                <Lock className="w-5 h-5 text-slate-300 dark:text-slate-600" />
-                                            </div>
-                                            <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl">
-                                                <div className="flex items-center gap-4 opacity-70">
-                                                    <span className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-black text-slate-500">2.2</span>
-                                                    <span className="text-sm font-bold text-slate-600 dark:text-slate-400">Reading Music Notation</span>
-                                                </div>
-                                                <Lock className="w-5 h-5 text-slate-300 dark:text-slate-600" />
-                                            </div>
-                                        </div>
-                                        {/* Module Materials */}
-                                        <div className="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-800">
-                                            <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Attached Materials</h4>
-                                            <div className="space-y-3">
-                                                <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                                                    <div className="w-10 h-10 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-lg flex items-center justify-center">
-                                                        <Music className="w-5 h-5" />
-                                                    </div>
-                                                    <div className="overflow-hidden">
-                                                        <p className="text-sm font-bold text-slate-700 dark:text-slate-400 truncate">Scale_Practice_Track.wav</p>
-                                                        <p className="text-[10px] font-medium text-slate-400 mt-0.5">8.4 MB</p>
-                                                    </div>
-                                                </div>
-                                                <button className="w-full py-3 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
-                                                    <Plus className="w-4 h-4" /> Add Material
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                                        {/* Render Module details */}
+                                                        {asg.inventory_ref_type === 'module' && (() => {
+                                                            const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
+                                                            if (!mod) return <p className="text-xs text-slate-400 italic">Curriculum Level data could not be loaded.</p>;
+                                                            
+                                                            const chaptersInMod = courseChapters.filter(c => c.module_id === mod.id);
+                                                            return (
+                                                                <div className="space-y-4">
+                                                                    <div className="border-b border-slate-150 dark:border-slate-800 pb-2">
+                                                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Module Syllabus Outline</h4>
+                                                                    </div>
+                                                                    {chaptersInMod.length === 0 ? (
+                                                                        <p className="text-xs text-slate-400 italic">No chapters defined in this level.</p>
+                                                                    ) : (
+                                                                        <div className="space-y-3">
+                                                                            {chaptersInMod.map(chap => {
+                                                                                const isExpanded = !!expandedChapters[chap.id];
+                                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                                
+                                                                                return (
+                                                                                    <div key={chap.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+                                                                                        {/* Chapter Header */}
+                                                                                        <div 
+                                                                                            onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isExpanded }))}
+                                                                                            className="px-5 py-4 bg-slate-50/50 dark:bg-slate-950/10 hover:bg-slate-50 dark:hover:bg-slate-950/20 transition-all flex items-center justify-between cursor-pointer select-none"
+                                                                                        >
+                                                                                            <div className="flex items-center gap-3">
+                                                                                                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500 text-xs font-black font-mono">
+                                                                                                    Ch{chap.chapter_number}
+                                                                                                </div>
+                                                                                                <div>
+                                                                                                    <h5 className="text-sm font-extrabold text-slate-800 dark:text-white leading-tight">
+                                                                                                        {chap.title}
+                                                                                                    </h5>
+                                                                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5 uppercase tracking-wide">
+                                                                                                        {chapLessons.length} Lesson Materials
+                                                                                                    </p>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            {isExpanded ? (
+                                                                                                <ChevronUp className="size-4 text-slate-400" />
+                                                                                            ) : (
+                                                                                                <ChevronDown className="size-4 text-slate-400" />
+                                                                                            )}
+                                                                                        </div>
+                                                                                        
+                                                                                        {/* Chapter Lessons */}
+                                                                                        {isExpanded && (
+                                                                                            <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                                                                                                {chapLessons.length === 0 ? (
+                                                                                                    <p className="text-xs text-slate-400 italic text-center py-2">No lesson materials uploaded for this chapter.</p>
+                                                                                                ) : (
+                                                                                                    chapLessons.map(lesson => (
+                                                                                                        <LessonRow key={lesson.id} lesson={lesson} setMediaPreview={setMediaPreview} />
+                                                                                                    ))
+                                                                                                )}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })()}
 
-                                {/* Empty state for next module */}
-                                <div className="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl py-12 flex flex-col items-center justify-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group">
-                                    <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                        <PlusCircle className="w-6 h-6 text-slate-400 dark:text-slate-500 group-hover:text-[#ecb613] transition-colors" />
+                                                        {/* Render Chapter details */}
+                                                        {asg.inventory_ref_type === 'chapter' && (() => {
+                                                            const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
+                                                            if (!chap) return <p className="text-xs text-slate-400 italic">Curriculum Chapter data could not be loaded.</p>;
+                                                            
+                                                            const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                            return (
+                                                                <div className="space-y-4">
+                                                                    <div className="border-b border-slate-100 dark:border-slate-800 pb-2">
+                                                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Chapter Lesson Materials</h4>
+                                                                    </div>
+                                                                    <div className="space-y-3">
+                                                                        {chapLessons.length === 0 ? (
+                                                                            <p className="text-xs text-slate-400 italic">No lesson materials defined in this chapter.</p>
+                                                                        ) : (
+                                                                            chapLessons.map(lesson => (
+                                                                                <LessonRow key={lesson.id} lesson={lesson} setMediaPreview={setMediaPreview} />
+                                                                            ))
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+
+                                                        {/* Render Lesson details */}
+                                                        {asg.inventory_ref_type === 'lesson' && (() => {
+                                                            const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
+                                                            if (!lesson) return <p className="text-xs text-slate-400 italic">Curriculum Lesson data could not be loaded.</p>;
+                                                            
+                                                            return (
+                                                                <div className="space-y-4">
+                                                                    <div className="border-b border-slate-100 dark:border-slate-800 pb-2">
+                                                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono font-sans">Assigned Lesson Study Guide</h4>
+                                                                    </div>
+                                                                    <div className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                                        <div className="space-y-3 text-left max-w-xl">
+                                                                            <div>
+                                                                                <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">{lesson.title}</h5>
+                                                                                {lesson.description && (
+                                                                                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mt-1">{lesson.description}</p>
+                                                                                )}
+                                                                            </div>
+                                                                            {lesson.bullet_points && lesson.bullet_points.length > 0 && (
+                                                                                <ul className="space-y-1.5 pl-4 list-disc text-[11px] text-slate-600 dark:text-slate-400 font-medium">
+                                                                                    {lesson.bullet_points.map((pt: string, idx: number) => (
+                                                                                        <li key={idx}>{pt}</li>
+                                                                                    ))}
+                                                                                </ul>
+                                                                            )}
+                                                                        </div>
+                                                                        {lesson.material_url && (
+                                                                            <button 
+                                                                                onClick={() => setMediaPreview({ type: lesson.material_type || 'file', url: lesson.material_url, title: lesson.title })}
+                                                                                className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs transition-all tracking-wider uppercase shrink-0"
+                                                                            >
+                                                                                <PlayCircle className="size-4" />
+                                                                                <span>Study Material</span>
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                    <div className="text-center">
-                                        <h4 className="font-bold text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">Create Module 3</h4>
-                                        <p className="text-xs font-medium text-slate-400 dark:text-slate-500 mt-1">Define the next steps for your students</p>
-                                    </div>
-                                </div>
+                                )}
                             </section>
                         </div>
                     ) : activeTab === 'Students' ? (
@@ -2851,7 +2929,80 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                         </div>
                     )}
                 </div>
+
+                {/* 3. INTERACTIVE MEDIA PREVIEWER OVERLAY */}
+                {mediaPreview && (
+                    <div className="fixed inset-0 z-[400] bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
+                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-3xl w-full shadow-2xl text-white space-y-4 animate-scaleIn">
+                            <div className="flex justify-between items-center select-none">
+                                <h4 className="font-extrabold text-sm tracking-wide truncate pr-4 uppercase text-amber-500 font-mono">
+                                    Previewing: {mediaPreview.title}
+                                </h4>
+                                <button 
+                                    onClick={() => setMediaPreview(null)} 
+                                    className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-all"
+                                >
+                                    <X className="size-5" />
+                                </button>
+                            </div>
+                            
+                            {/* Interactive Media Frame */}
+                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative">
+                                {mediaPreview.type === 'video' ? (
+                                    <video src={mediaPreview.url} controls className="w-full h-full object-contain" autoPlay />
+                                ) : mediaPreview.type === 'audio' ? (
+                                    <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950/40 h-full">
+                                        <Music className="size-16 text-amber-500 animate-pulse" />
+                                        <audio src={mediaPreview.url} controls className="w-full max-w-md" autoPlay />
+                                    </div>
+                                ) : mediaPreview.type === 'pdf' ? (
+                                    <embed src={mediaPreview.url} type="application/pdf" className="w-full h-full" />
+                                ) : mediaPreview.type === 'image' ? (
+                                    <img src={mediaPreview.url} alt={mediaPreview.title} className="w-full h-full object-contain" />
+                                ) : (
+                                    <div className="text-center p-8 space-y-4">
+                                        <FileText className="size-16 text-slate-600 mx-auto" />
+                                        <p className="text-xs text-slate-400 max-w-sm">No interactive simulation available for generic files. Open details below:</p>
+                                        <a 
+                                            href={mediaPreview.url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-full text-xs transition-all uppercase tracking-wider"
+                                        >
+                                            <span>Open File Attachment</span>
+                                            <ExternalLink className="size-3.5" />
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </main>
+        </div>
+    );
+}
+
+function LessonRow({ lesson, setMediaPreview }: { lesson: any; setMediaPreview: any }) {
+    const hasMaterial = !!lesson.material_url;
+    
+    return (
+        <div className="flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all gap-4">
+            <div className="space-y-1 text-left">
+                <h6 className="text-xs font-bold text-slate-800 dark:text-slate-200">{lesson.title}</h6>
+                {lesson.description && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">{lesson.description}</p>
+                )}
+            </div>
+            {hasMaterial && (
+                <button
+                    onClick={() => setMediaPreview({ type: lesson.material_type || 'file', url: lesson.material_url, title: lesson.title })}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-700 dark:text-slate-200 rounded-lg text-[10px] font-black transition-all tracking-wider uppercase self-start md:self-center shrink-0 border border-slate-200 dark:border-slate-750"
+                >
+                    <PlayCircle className="size-3.5" />
+                    <span>View Tutorial</span>
+                </button>
+            )}
         </div>
     );
 }

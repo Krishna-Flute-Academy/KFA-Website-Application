@@ -151,7 +151,7 @@ export default function TaskReviewPage() {
 
             const res = await supabaseAuth
                 .from('assignments')
-                .select('id, title, description, created_at, due_date, target_type, classroom_id, status')
+                .select('id, title, description, created_at, due_date, target_type, classroom_id, status, inventory_ref_type')
                 .in('classroom_id', classroomIds);
             
             assignmentsList = res.data;
@@ -161,7 +161,7 @@ export default function TaskReviewPage() {
                 console.warn('status column missing in assignments, running fallback...');
                 const fallback = await supabaseAuth
                     .from('assignments')
-                    .select('id, title, description, created_at, due_date, target_type, classroom_id')
+                    .select('id, title, description, created_at, due_date, target_type, classroom_id, inventory_ref_type')
                     .in('classroom_id', classroomIds);
                 assignmentsList = fallback.data;
                 assignmentsError = fallback.error;
@@ -223,6 +223,7 @@ export default function TaskReviewPage() {
             const formatted: TaskSubmission[] = [];
 
             (assignmentsList || []).forEach(asg => {
+                if (asg.inventory_ref_type) return; // Hide inventory assignments from tasks dashboard
                 const associatedClassroomStudents = studentsList.filter(s => s.classroom_id === asg.classroom_id);
                 const classInfo = (classrooms || []).find(c => c.id === asg.classroom_id);
                 const className = classInfo?.name || 'Unknown Class';
