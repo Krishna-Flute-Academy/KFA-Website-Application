@@ -298,13 +298,13 @@ export default function InventoryLibrary() {
         }
         switch (type?.toLowerCase()) {
             case 'pdf': 
-                return <FileText className="size-5 text-red-500 shrink-0" />;
+                return <FileText className="size-5 text-amber-500 shrink-0" />;
             case 'video': 
                 return <Video className="size-5 text-amber-500 shrink-0" />;
             case 'audio': 
-                return <Music className="size-5 text-blue-500 shrink-0" />;
+                return <Music className="size-5 text-amber-500 shrink-0 animate-pulse" />;
             case 'image': 
-                return <ImageIcon className="size-5 text-emerald-500 shrink-0" />;
+                return <ImageIcon className="size-5 text-amber-500 shrink-0" />;
             default: 
                 return <FileText className="size-5 text-slate-500 shrink-0" />;
         }
@@ -1099,10 +1099,10 @@ export default function InventoryLibrary() {
             return <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 font-extrabold tracking-wide uppercase">{category}</span>;
         }
         switch (levelNum) {
-            case 1: return <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-[10px] text-emerald-600 font-extrabold tracking-wide uppercase">Beginner</span>;
+            case 1: return <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 font-extrabold tracking-wide uppercase">Beginner</span>;
             case 2: return <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 font-extrabold tracking-wide uppercase">Elementary</span>;
-            case 3: return <span className="px-2.5 py-1 bg-blue-500/10 border border-blue-500/25 rounded-full text-[10px] text-blue-600 font-extrabold tracking-wide uppercase">Intermediate</span>;
-            case 4: return <span className="px-2.5 py-1 bg-purple-500/10 border border-purple-500/25 rounded-full text-[10px] text-purple-600 font-extrabold tracking-wide uppercase">Advanced</span>;
+            case 3: return <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 font-extrabold tracking-wide uppercase">Intermediate</span>;
+            case 4: return <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 font-extrabold tracking-wide uppercase">Advanced</span>;
             default: return <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[10px] text-slate-500 dark:text-slate-400 font-extrabold tracking-wide uppercase">Level {levelNum}</span>;
         }
     };
@@ -1152,19 +1152,19 @@ export default function InventoryLibrary() {
                             <div className="space-y-8 animate-fadeIn">
                                 
                                 {/* Landing Premium Header Banner */}
-                                <div className="rounded-3xl p-6 md:p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 text-white relative overflow-hidden shadow-md border border-slate-800">
-                                    <div className="absolute right-0 top-0 opacity-10 select-none pointer-events-none">
-                                        <Sparkles className="w-72 h-72 text-amber-500 animate-pulse" />
+                                <div className="rounded-3xl p-6 md:p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 relative overflow-hidden shadow-md shadow-amber-500/[0.01]">
+                                    <div className="absolute right-0 top-0 opacity-[0.03] dark:opacity-10 select-none pointer-events-none">
+                                        <Sparkles className="w-72 h-72 text-[#ecb613] animate-pulse" />
                                     </div>
                                     <div className="max-w-2xl relative z-10 space-y-2 text-left">
-                                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-xs text-amber-400 font-extrabold tracking-wide uppercase leading-none">
+                                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-xs text-amber-600 dark:text-amber-400 font-extrabold tracking-wide uppercase leading-none">
                                             <Sparkles className="size-3.5" />
                                             <span>Curriculum Academy</span>
                                         </div>
-                                        <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none bg-gradient-to-r from-white via-slate-100 to-amber-400 bg-clip-text text-transparent">
+                                        <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none bg-gradient-to-r from-slate-900 via-slate-800 to-[#ecb613] dark:from-white dark:to-amber-400 bg-clip-text text-transparent">
                                             Music Curriculum Library
                                         </h1>
-                                        <p className="text-xs md:text-sm text-slate-300 font-medium leading-relaxed max-w-xl">
+                                        <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-xl">
                                             Select a Proficiency Level to inspect topics, play guide audios, or edit checklist requirements.
                                         </p>
                                     </div>
@@ -1971,27 +1971,27 @@ export default function InventoryLibrary() {
 
                 {/* 3. INTERACTIVE MEDIA PREVIEWER OVERLAY */}
                 {mediaPreview && (
-                    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
-                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-3xl w-full shadow-2xl text-white space-y-4 animate-scaleIn">
+                    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-3xl w-full shadow-2xl text-slate-800 dark:text-slate-100 space-y-4 animate-scaleIn">
                             <div className="flex justify-between items-center select-none">
-                                <h4 className="font-extrabold text-sm tracking-wide truncate pr-4 uppercase text-amber-500 font-mono">
+                                <h4 className="font-extrabold text-sm tracking-wide truncate pr-4 uppercase text-[#ecb613] dark:text-amber-400 font-mono">
                                     Previewing: {mediaPreview.title}
                                 </h4>
                                 <button 
                                     onClick={() => setMediaPreview(null)} 
-                                    className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-all"
+                                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-650 dark:hover:text-white transition-all"
                                 >
                                     <X className="size-5" />
                                 </button>
                             </div>
                             
                             {/* Interactive Media Frame */}
-                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative">
+                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center relative shadow-inner">
                                 {mediaPreview.type === 'video' ? (
                                     <video src={mediaPreview.url} controls className="w-full h-full object-contain" autoPlay />
                                 ) : mediaPreview.type === 'audio' ? (
-                                    <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950/40 h-full">
-                                        <Music className="size-16 text-amber-500 animate-pulse" />
+                                    <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950 h-full">
+                                        <Music className="size-16 text-[#ecb613] animate-pulse" />
                                         <audio src={mediaPreview.url} controls className="w-full max-w-md" autoPlay />
                                     </div>
                                 ) : mediaPreview.type === 'pdf' ? (
@@ -1999,14 +1999,14 @@ export default function InventoryLibrary() {
                                 ) : mediaPreview.type === 'image' ? (
                                     <img src={mediaPreview.url} alt={mediaPreview.title} className="w-full h-full object-contain" />
                                 ) : (
-                                    <div className="text-center p-8 space-y-4">
+                                    <div className="text-center p-8 space-y-4 bg-slate-950 h-full w-full flex flex-col items-center justify-center">
                                         <FileText className="size-16 text-slate-600 mx-auto" />
                                         <p className="text-xs text-slate-400 max-w-sm">No interactive simulation available for generic files. Open details below:</p>
                                         <a 
                                             href={mediaPreview.url} 
                                             target="_blank" 
                                             rel="noopener noreferrer" 
-                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-full text-xs transition-all uppercase tracking-wider"
+                                            className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-black rounded-full text-xs transition-all uppercase tracking-wider shadow-md hover:shadow-lg active:scale-98"
                                         >
                                             <span>Open File Attachment</span>
                                             <ExternalLink className="size-3.5" />
