@@ -1400,27 +1400,27 @@ export default function ClassroomDashboardPage() {
                         <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
                             {/* Section 1: Dashboard Header */}
                             <section className="mb-8">
-                                <div className="relative overflow-hidden p-8 rounded-3xl bg-slate-900 text-white border border-slate-800 shadow-xl shadow-amber-500/[0.03]">
+                                <div className="relative overflow-hidden p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md shadow-amber-500/[0.01]">
                                     {/* Decorative glowing gradient sphere */}
-                                    <div className="absolute -right-16 -bottom-16 w-72 h-72 bg-gradient-to-tr from-amber-500/20 via-orange-500/10 to-transparent rounded-full blur-3xl pointer-events-none select-none"></div>
-                                    <div className="absolute left-1/3 top-0 w-64 h-64 bg-blue-500/[0.04] rounded-full blur-3xl pointer-events-none select-none"></div>
+                                    <div className="absolute -right-16 -bottom-16 w-72 h-72 bg-gradient-to-tr from-amber-500/10 via-amber-500/[0.02] to-transparent rounded-full blur-3xl pointer-events-none select-none"></div>
+                                    <div className="absolute left-1/3 top-0 w-64 h-64 bg-amber-500/[0.02] rounded-full blur-3xl pointer-events-none select-none"></div>
                                     
                                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
                                         <div className="space-y-3 text-left">
-                                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-[10px] text-amber-400 font-extrabold tracking-widest uppercase select-none">
-                                                <Sparkles className="size-3 text-amber-400 animate-pulse" />
+                                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-[10px] text-amber-600 dark:text-amber-400 font-extrabold tracking-widest uppercase select-none">
+                                                <Sparkles className="size-3 text-amber-500 animate-pulse" />
                                                 <span>Classroom Learning Path</span>
                                             </div>
-                                            <h1 className="text-3xl md:text-4xl font-black tracking-tight leading-none text-white">
-                                                Curriculum <span className="bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 bg-clip-text text-transparent">Tutorials</span>
+                                            <h1 className="text-3xl md:text-4xl font-black tracking-tight leading-none text-slate-900 dark:text-white">
+                                                Curriculum <span className="bg-gradient-to-r from-[#ecb613] to-amber-500 bg-clip-text text-transparent">Tutorials</span>
                                             </h1>
-                                            <p className="text-xs md:text-sm text-slate-400 font-medium max-w-xl leading-relaxed">
+                                            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 font-medium max-w-xl leading-relaxed">
                                                 An interactive learning roadmap. Students access these modules, audio files, sheet music PDFs, and step-by-step video guides directly in their student portals.
                                             </p>
                                         </div>
                                         <Link 
                                             href="/teacher-dashboard/inventory"
-                                            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-lg hover:shadow-amber-500/20 hover:-translate-y-0.5 active:translate-y-0 active:scale-98 self-start md:self-center shrink-0"
+                                            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-md shadow-[#ecb613]/10 hover:-translate-y-0.5 active:translate-y-0 active:scale-98 self-start md:self-center shrink-0 border border-[#ecb613]/10"
                                         >
                                             <Plus className="size-4 stroke-[3]" />
                                             <span>Add from Inventory</span>
@@ -1455,22 +1455,22 @@ export default function ClassroomDashboardPage() {
                                             // Define beautiful styles based on reference type
                                             const typeColors = {
                                                 module: {
-                                                    bg: 'bg-purple-500/[0.03] dark:bg-purple-500/[0.01]',
-                                                    border: 'hover:border-purple-500/30 border-l-purple-500',
-                                                    badge: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300 border border-purple-200 dark:border-purple-500/20',
-                                                    iconBg: 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                                                    bg: 'bg-amber-500/[0.01] dark:bg-amber-500/[0.005]',
+                                                    border: 'hover:border-amber-500/30 border-l-[#ecb613]',
+                                                    badge: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/10',
+                                                    iconBg: 'bg-[#ecb613]/10 text-[#ecb613]'
                                                 },
                                                 chapter: {
-                                                    bg: 'bg-blue-500/[0.03] dark:bg-blue-500/[0.01]',
-                                                    border: 'hover:border-blue-500/30 border-l-blue-500',
-                                                    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300 border border-blue-200 dark:border-blue-500/20',
-                                                    iconBg: 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                                                    bg: 'bg-amber-400/[0.01] dark:bg-amber-400/[0.005]',
+                                                    border: 'hover:border-amber-400/30 border-l-amber-400',
+                                                    badge: 'bg-amber-50/80 text-amber-600 dark:bg-amber-400/10 dark:text-amber-300 border border-amber-150 dark:border-amber-400/15',
+                                                    iconBg: 'bg-amber-400/10 text-amber-500'
                                                 },
                                                 lesson: {
-                                                    bg: 'bg-emerald-500/[0.03] dark:bg-emerald-500/[0.01]',
-                                                    border: 'hover:border-emerald-500/30 border-l-emerald-500',
-                                                    badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/20',
-                                                    iconBg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                                    bg: 'bg-amber-300/[0.01] dark:bg-amber-300/[0.005]',
+                                                    border: 'hover:border-amber-300/30 border-l-amber-300',
+                                                    badge: 'bg-amber-50/50 text-amber-500 dark:bg-amber-300/10 dark:text-amber-300 border border-amber-100 dark:border-amber-300/10',
+                                                    iconBg: 'bg-amber-300/10 text-amber-500'
                                                 }
                                             }[asg.inventory_ref_type as 'module' | 'chapter' | 'lesson'] || {
                                                 bg: 'bg-slate-500/[0.03]',
@@ -1573,7 +1573,7 @@ export default function ClassroomDashboardPage() {
                                                                                             className="px-5 py-4 bg-slate-50/50 dark:bg-slate-950/[0.2] hover:bg-slate-100/60 dark:hover:bg-slate-950/[0.3] transition-all flex items-center justify-between cursor-pointer select-none"
                                                                                         >
                                                                                             <div className="flex items-center gap-4">
-                                                                                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/10 flex items-center justify-center text-blue-500 text-xs font-black font-mono">
+                                                                                                <div className="w-10 h-10 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/25 flex items-center justify-center text-[#ecb613] text-xs font-black font-mono">
                                                                                                     Ch{chap.chapter_number}
                                                                                                 </div>
                                                                                                 <div className="text-left">
@@ -3071,41 +3071,41 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                     
                     // Style config for headers and badges inside modal
                     const styleConfig = isVideo ? {
-                        badge: 'bg-rose-500/10 text-rose-450 border border-rose-500/20',
-                        icon: <Film className="size-5 text-rose-400" />,
+                        badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20',
+                        icon: <Film className="size-5 text-[#ecb613]" />,
                         label: 'Video Tutorial'
                     } : isAudio ? {
-                        badge: 'bg-amber-500/10 text-amber-450 border border-amber-500/20',
-                        icon: <Music className="size-5 text-amber-400 animate-pulse" />,
+                        badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-450 border border-amber-500/20',
+                        icon: <Music className="size-5 text-amber-500 animate-pulse" />,
                         label: 'Audio Guide'
                     } : isPdf ? {
-                        badge: 'bg-blue-500/10 text-blue-455 border border-blue-500/20',
-                        icon: <FileText className="size-5 text-blue-400" />,
+                        badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-450 border border-amber-500/20',
+                        icon: <FileText className="size-5 text-[#ecb613]" />,
                         label: 'PDF Sheet Music'
                     } : {
-                        badge: 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/20',
-                        icon: <BookOpen className="size-5 text-emerald-400" />,
+                        badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-450 border border-amber-500/20',
+                        icon: <BookOpen className="size-5 text-amber-500" />,
                         label: 'Interactive Guide'
                     };
 
                     return (
-                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
-                            <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl text-white overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl text-slate-800 dark:text-slate-100 overflow-hidden animate-in zoom-in-95 duration-300">
                                 {/* Header */}
-                                <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800 bg-slate-950/30 flex-shrink-0">
+                                <div className="flex items-center justify-between px-6 py-5 border-b border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex-shrink-0">
                                     <div className="flex items-center gap-3 text-left">
-                                        <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-slate-700">
+                                        <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
                                             {styleConfig.icon}
                                         </div>
                                         <div className="space-y-0.5">
                                             <div className="flex items-center gap-2 flex-wrap">
-                                                <h3 className="font-black text-slate-100 text-sm md:text-base tracking-tight leading-none">{selectedTopic.title}</h3>
+                                                <h3 className="font-black text-slate-900 dark:text-white text-sm md:text-base tracking-tight leading-none">{selectedTopic.title}</h3>
                                                 <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${styleConfig.badge}`}>
                                                     {styleConfig.label}
                                                 </span>
                                             </div>
                                             {(mod || chap) && (
-                                                <p className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-wider">
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono font-bold uppercase tracking-wider">
                                                     {mod ? `Module ${mod.module_number}: ${mod.title}` : ''} {chap ? `> Chapter ${chap.chapter_number}: ${chap.title}` : ''}
                                                 </p>
                                             )}
@@ -3113,7 +3113,7 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                     </div>
                                     <button 
                                         onClick={() => setSelectedTopic(null)} 
-                                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                                        className="p-1.5 rounded-lg text-slate-450 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                                     >
                                         <X className="w-5 h-5" />
                                     </button>
@@ -3123,7 +3123,7 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                 <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
                                     {/* Media preview iframe / player */}
                                     {hasMaterial ? (
-                                        <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative shadow-inner">
+                                        <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center relative shadow-inner">
                                             {isVideo ? (
                                                 <video src={selectedTopic.material_url} controls className="w-full h-full object-contain" autoPlay />
                                             ) : isAudio ? (
@@ -3137,13 +3137,13 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                                 <img src={selectedTopic.material_url} alt={selectedTopic.title} className="w-full h-full object-contain" />
                                             ) : (
                                                 <div className="text-center p-8 space-y-4">
-                                                    <FileText className="size-16 text-slate-600 mx-auto" />
-                                                    <p className="text-xs text-slate-400 max-w-sm">No interactive simulation available for generic files. Download or open in a new tab:</p>
+                                                    <FileText className="size-16 text-slate-650 mx-auto" />
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">No interactive simulation available for generic files. Download or open in a new tab:</p>
                                                     <a 
                                                         href={selectedTopic.material_url} 
                                                         target="_blank" 
                                                         rel="noopener noreferrer" 
-                                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-full text-xs transition-all uppercase tracking-wider"
+                                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-955 font-black rounded-full text-xs transition-all uppercase tracking-wider"
                                                     >
                                                         <span>Open File Attachment</span>
                                                         <ExternalLink className="size-3.5" />
@@ -3152,12 +3152,12 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="w-full p-8 rounded-2xl bg-slate-950/40 border border-slate-800/60 flex flex-col items-center justify-center text-center space-y-3">
-                                            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
-                                                <Sparkles className="size-6 text-emerald-400" />
+                                        <div className="w-full p-8 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800/60 flex flex-col items-center justify-center text-center space-y-3">
+                                            <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-[#ecb613]">
+                                                <Sparkles className="size-6 text-[#ecb613]" />
                                             </div>
-                                            <h4 className="font-extrabold text-sm text-slate-200">Interactive Syllabus Node</h4>
-                                            <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+                                            <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">Interactive Syllabus Node</h4>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md leading-relaxed">
                                                 This is a theoretical study and conceptual topic block. Read the instructions and checklist objectives below to complete the learning phase.
                                             </p>
                                         </div>
@@ -3168,7 +3168,7 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                         {/* Description */}
                                         <div className={`${selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 ? 'md:col-span-7' : 'md:col-span-12'} space-y-3`}>
                                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Lesson Overview</h4>
-                                            <div className="p-5 rounded-2xl bg-slate-950/30 border border-slate-800/80 text-slate-300 min-h-[120px] text-xs font-medium leading-relaxed whitespace-pre-wrap">
+                                            <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 text-slate-700 dark:text-slate-300 min-h-[120px] text-xs font-medium leading-relaxed whitespace-pre-wrap">
                                                 {selectedTopic.description || 'No detailed instructions uploaded. Follow general study guides for this level.'}
                                             </div>
                                         </div>
@@ -3177,11 +3177,11 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                         {selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 && (
                                             <div className="md:col-span-5 space-y-3">
                                                 <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Learning Objectives</h4>
-                                                <div className="p-5 rounded-2xl bg-slate-950/30 border border-slate-800/80 space-y-3.5">
+                                                <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 space-y-3.5">
                                                     <ul className="space-y-2.5">
                                                         {selectedTopic.bullet_points.map((pt: string, idx: number) => (
-                                                            <li key={idx} className="flex items-start gap-2.5 text-[11px] font-bold text-slate-350">
-                                                                <div className="w-4 h-4 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 mt-0.5 text-emerald-400 font-extrabold text-[8px]">
+                                                            <li key={idx} className="flex items-start gap-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                                                                <div className="w-4 h-4 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5 text-[#ecb613] font-extrabold text-[8px]">
                                                                     ✓
                                                                 </div>
                                                                 <span className="leading-tight">{pt}</span>
@@ -3195,10 +3195,10 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                 </div>
 
                                 {/* Footer */}
-                                <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-800 flex justify-end gap-3 flex-shrink-0">
+                                <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-150 dark:border-slate-800 flex justify-end gap-3 flex-shrink-0">
                                     <button 
                                         onClick={() => setSelectedTopic(null)} 
-                                        className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors tracking-wider uppercase"
+                                        className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors tracking-wider uppercase"
                                     >
                                         Back to Curriculum
                                     </button>
@@ -3220,29 +3220,29 @@ function LessonRow({ lesson, onClick }: { lesson: any; onClick: () => void }) {
     
     // Choose beautiful left-accent colors, background fills, and badge classes
     const styleConfig = isVideo ? {
-        border: 'border-l-rose-500 dark:border-l-rose-600',
-        bg: 'hover:bg-rose-500/[0.02] dark:hover:bg-rose-500/[0.01]',
-        badge: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-        icon: <Film className="size-4 text-rose-500" />,
-        label: 'Video'
+        border: 'border-l-[#ecb613] dark:border-l-amber-500',
+        bg: 'hover:bg-amber-500/[0.01]',
+        badge: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/10',
+        icon: <Film className="size-4 text-[#ecb613]" />,
+        label: 'Video Tutorial'
     } : isAudio ? {
-        border: 'border-l-amber-500 dark:border-l-amber-600',
-        bg: 'hover:bg-amber-500/[0.02] dark:hover:bg-amber-500/[0.01]',
-        badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+        border: 'border-l-amber-450 dark:border-l-amber-500',
+        bg: 'hover:bg-amber-400/[0.01]',
+        badge: 'bg-amber-50 text-amber-700 dark:bg-amber-450/10 dark:text-amber-300 border border-amber-200 dark:border-amber-450/15',
         icon: <Music className="size-4 text-amber-500 animate-pulse" />,
         label: 'Audio Guide'
     } : isPdf ? {
-        border: 'border-l-blue-500 dark:border-l-blue-600',
-        bg: 'hover:bg-blue-500/[0.02] dark:hover:bg-blue-500/[0.01]',
-        badge: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-        icon: <FileText className="size-4 text-blue-500" />,
-        label: 'PDF Sheet'
+        border: 'border-l-[#ecb613] dark:border-l-amber-550',
+        bg: 'hover:bg-amber-500/[0.01]',
+        badge: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-450 border border-amber-200/60 dark:border-amber-500/10',
+        icon: <FileText className="size-4 text-[#ecb613]" />,
+        label: 'PDF Sheet Music'
     } : {
-        border: 'border-l-emerald-500 dark:border-l-emerald-600',
-        bg: 'hover:bg-emerald-500/[0.02] dark:hover:bg-emerald-500/[0.01]',
-        badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-        icon: <BookOpen className="size-4 text-emerald-500" />,
-        label: 'Guide'
+        border: 'border-l-amber-300 dark:border-l-amber-500',
+        bg: 'hover:bg-amber-300/[0.01]',
+        badge: 'bg-amber-50 text-amber-600 dark:bg-amber-300/10 dark:text-amber-400 border border-amber-100 dark:border-amber-300/10',
+        icon: <BookOpen className="size-4 text-amber-500" />,
+        label: 'Interactive Guide'
     };
 
     return (
@@ -3251,7 +3251,7 @@ function LessonRow({ lesson, onClick }: { lesson: any; onClick: () => void }) {
             className={`relative flex flex-col md:flex-row md:items-center justify-between p-5 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white dark:bg-slate-900 border-l-4 ${styleConfig.border} ${styleConfig.bg} transition-all duration-300 hover:shadow-md hover:shadow-slate-500/[0.02] hover:-translate-y-0.5 gap-4 cursor-pointer active:scale-[0.99]`}
         >
             {/* Elegant node bullet representing a step in the lesson track */}
-            <div className="absolute -left-[19px] top-6 w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700 border-2 border-white dark:border-slate-900 group-hover:bg-amber-500 transition-colors z-10 hidden md:block"></div>
+            <div className="absolute -left-[19px] top-6 w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700 border-2 border-white dark:border-slate-900 group-hover:bg-[#ecb613] transition-colors z-10 hidden md:block"></div>
             
             <div className="flex items-start gap-3.5 text-left flex-1">
                 <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-950/60 flex items-center justify-center shrink-0 mt-0.5">
@@ -3275,7 +3275,7 @@ function LessonRow({ lesson, onClick }: { lesson: any; onClick: () => void }) {
                         e.stopPropagation();
                         onClick();
                     }}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-gradient-to-r hover:from-amber-500 hover:to-orange-500 hover:text-slate-950 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-transparent rounded-xl text-[10px] font-extrabold tracking-wider uppercase transition-all shadow-sm hover:shadow-amber-500/10 self-start md:self-center shrink-0 active:scale-95"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] hover:text-slate-950 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:border-transparent rounded-xl text-[10px] font-extrabold tracking-wider uppercase transition-all shadow-sm hover:shadow-[#ecb613]/10 self-start md:self-center shrink-0 active:scale-95"
                 >
                     <PlayCircle className="size-3.5" />
                     <span>View Details</span>
