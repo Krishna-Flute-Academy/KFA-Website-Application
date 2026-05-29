@@ -1293,21 +1293,21 @@ export default function InventoryLibrary() {
                                         </button>
                                     </div>
 
-                                    {/* High-impact Orange/Amber Gradient Header Card representing Bansuri brand */}
+                                    {/* High-fidelity Premium White and Yellow Header Card representing KFA brand */}
                                     {activeModule && (
-                                        <div className="rounded-3xl p-6 md:p-8 bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 text-slate-950 relative overflow-hidden shadow-lg border border-orange-400/20 select-none text-left">
-                                            <div className="absolute right-0 top-0 opacity-15 select-none pointer-events-none">
-                                                <Database className="w-64 h-64 text-white" />
+                                        <div className="rounded-3xl p-6 md:p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 relative overflow-hidden shadow-md shadow-amber-500/[0.01] select-none text-left">
+                                            <div className="absolute right-4 top-4 opacity-[0.03] dark:opacity-10 select-none pointer-events-none">
+                                                <Database className="w-64 h-64 text-[#ecb613] animate-pulse" />
                                             </div>
                                             <div className="max-w-2xl relative z-10 space-y-2">
-                                                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/20 border border-white/20 rounded-full text-[10px] text-white font-black tracking-widest uppercase leading-none">
+                                                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/25 rounded-full text-[10px] text-amber-600 dark:text-amber-400 font-extrabold tracking-widest uppercase leading-none">
                                                     <Sparkles className="size-3.5" />
                                                     <span>{activeBadgeText}</span>
                                                 </div>
-                                                <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none text-white font-sans drop-shadow-xs">
+                                                <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none bg-gradient-to-r from-slate-900 via-slate-800 to-[#ecb613] dark:from-white dark:to-amber-400 bg-clip-text text-transparent font-sans">
                                                     {activeHeadline}
                                                 </h1>
-                                                <p className="text-xs md:text-sm text-amber-50 font-medium leading-relaxed max-w-xl">
+                                                <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-xl">
                                                     {activeModuleParsed?.description}
                                                 </p>
                                             </div>
@@ -1315,14 +1315,14 @@ export default function InventoryLibrary() {
                                     )}
 
                                     {/* Section bar with quick Add Chapter button */}
-                                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 pb-3 select-none">
+                                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 select-none">
                                         <div className="flex items-center gap-2">
                                             <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
-                                            <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-400">Collapsible Chapter curriculum</h2>
+                                            <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-700 dark:text-slate-350">Collapsible Chapter curriculum</h2>
                                         </div>
                                         <button 
                                             onClick={() => openChapterModal()}
-                                            className="inline-flex items-center gap-1.5 text-[10px] font-black text-amber-500 hover:text-amber-600 bg-amber-500/10 hover:bg-amber-500/15 px-3.5 py-2 rounded-full transition-all uppercase tracking-wider border border-amber-500/10 shadow-xs"
+                                            className="inline-flex items-center gap-1.5 text-[10px] font-black bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 px-4 py-2.5 rounded-full transition-all uppercase tracking-wider active:scale-95 shadow-md shadow-[#ecb613]/10"
                                         >
                                             <Plus className="size-3.5 stroke-[2.5]" />
                                             <span>Add New Chapter</span>
@@ -1352,11 +1352,13 @@ export default function InventoryLibrary() {
                                                             className="px-6 py-5 bg-slate-50/50 dark:bg-slate-950/20 hover:bg-slate-50 dark:hover:bg-slate-950/30 flex items-center justify-between gap-4 cursor-pointer select-none transition-all"
                                                         >
                                                             <div className="flex items-center gap-4 text-left">
-                                                                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/10 flex items-center justify-center shrink-0">
-                                                                    <span className="font-extrabold text-xs font-mono text-[#d97706]">Ch{chap.chapter_number}</span>
+                                                                <div className="w-10 h-10 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/25 flex items-center justify-center shrink-0">
+                                                                    <span className="font-extrabold text-xs font-mono text-[#d97706] dark:text-[#ecb613]">Ch{chap.chapter_number}</span>
                                                                 </div>
                                                                 <div>
-                                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none font-mono">Chapter Accordion Toggle</span>
+                                                                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest leading-none font-mono mb-1.5 block">
+                                                                        {chapLessons.length} {chapLessons.length === 1 ? 'TOPIC' : 'TOPICS'} AVAILABLE
+                                                                    </span>
                                                                     <h3 className="font-extrabold text-sm md:text-base text-slate-900 dark:text-white leading-tight">
                                                                         {chap.title}
                                                                     </h3>
@@ -1450,7 +1452,7 @@ export default function InventoryLibrary() {
                                                                                         <div className="flex items-center justify-between gap-4 select-none">
                                                                                             <div className="flex items-center gap-2">
                                                                                                 {getMaterialIcon(lesson.material_type, hasAttachment)}
-                                                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                                                                                                <span className="text-[10px] font-extrabold text-[#d97706] dark:text-amber-400 uppercase tracking-widest font-mono">
                                                                                                     Topic {lesson.lesson_number}
                                                                                                 </span>
                                                                                             </div>
