@@ -1212,15 +1212,8 @@ export default function InventoryLibrary() {
                                                             {displayIdx}
                                                         </div>
 
-                                                        {/* Top action buttons (Assign, Edit and Delete) */}
+                                                        {/* Top action buttons (Edit and Delete) */}
                                                         <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            <button 
-                                                                onClick={(e) => openAssignModal('module', mod.id, mod.title, e)}
-                                                                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-blue-500 text-slate-800 dark:text-white hover:text-white rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
-                                                                title="Assign Level to Students"
-                                                            >
-                                                                <UserCheck className="size-3.5" />
-                                                            </button>
                                                             <button 
                                                                 onClick={(e) => openModuleModal(mod, category, e)}
                                                                 className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
@@ -1461,13 +1454,6 @@ export default function InventoryLibrary() {
                                                                                             </div>
                                                                                             
                                                                                             <div className="flex items-center gap-1 shrink-0 relative z-20">
-                                                                                                <button 
-                                                                                                    onClick={(e) => openAssignModal('lesson', lesson.id, lesson.title, e)}
-                                                                                                    className="p-1.5 hover:bg-blue-500/10 rounded-lg text-slate-400 hover:text-blue-500 transition-all"
-                                                                                                    title="Assign Topic to Students"
-                                                                                                >
-                                                                                                    <UserCheck className="size-3.5" />
-                                                                                                </button>
                                                                                                 <button 
                                                                                                     onClick={(e) => openLessonModal(chap.id, lesson, e)}
                                                                                                     className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-amber-500 transition-all font-semibold"
@@ -2342,25 +2328,10 @@ export default function InventoryLibrary() {
                                                 </div>
                                             )}
 
-                                            {/* ── Step 3: Due Date ── */}
+                                            {/* ── Step 3: Instructions ── */}
                                             <div className="space-y-1.5">
                                                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                                                    3. Due Date{' '}
-                                                    <span className="text-slate-300 dark:text-slate-600 font-medium normal-case tracking-normal">— optional</span>
-                                                </label>
-                                                <input
-                                                    type="date"
-                                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold text-slate-700 dark:text-slate-200"
-                                                    value={assignForm.dueDate}
-                                                    min={new Date().toISOString().split('T')[0]}
-                                                    onChange={e => setAssignForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                                                />
-                                            </div>
-
-                                            {/* ── Step 4: Instructions ── */}
-                                            <div className="space-y-1.5">
-                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                                                    4. Instructions{' '}
+                                                    3. Instructions{' '}
                                                     <span className="text-slate-300 dark:text-slate-600 font-medium normal-case tracking-normal">— optional</span>
                                                 </label>
                                                 <textarea
