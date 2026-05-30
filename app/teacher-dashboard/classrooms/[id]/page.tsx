@@ -911,6 +911,15 @@ export default function ClassroomDashboardPage() {
         return uniqueLessons.sort((a, b) => a.lesson_number - b.lesson_number);
     }, [assignedInventoryItems, courseChapters, courseLessons]);
 
+    const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
+        if (syllabusLessons.length === 0) return defaultMockVal;
+        const completedCount = syllabusLessons.filter(lesson => {
+            const row = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lesson.id);
+            return row && row.status === 'completed';
+        }).length;
+        return Math.round((completedCount / syllabusLessons.length) * 100);
+    }, [syllabusLessons, studentProgress]);
+
     const selectedStudentPermissions = useMemo(() => {
         const completed = new Set<string>();
         const unlocked = new Set<string>();
@@ -1594,18 +1603,25 @@ export default function ClassroomDashboardPage() {
                                                     <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{student.name.charAt(0)}</span>
                                                 )}
                                             </div>
-                                            <div className="flex-1">
-                                                <div className="flex justify-between mb-1">
-                                                    <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</span>
-                                                    <span className={`text-xs font-bold ${
-                                                        student.mock_status === 'Consistent' ? 'text-emerald-500' : (student.mock_status === 'Improving' ? 'text-[#ecb613]' : 'text-rose-500')
-                                                    }`}>{student.mock_milestone}</span>
-                                                </div>
-                                                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                                                    <div className={`h-full ${getProgressBarColor(student.mock_status)}`} style={{ width: `${student.mock_progress}%` }}></div>
-                                                </div>
-                                            </div>
-                                            <span className="text-xs font-bold text-slate-400 w-8 text-right">{student.mock_progress}%</span>
+                                            {(() => {
+                                                const realProgress = getRealStudentProgress(student.student_id, student.mock_progress);
+                                                return (
+                                                    <>
+                                                        <div className="flex-1">
+                                                            <div className="flex justify-between mb-1">
+                                                                <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</span>
+                                                                <span className={`text-xs font-bold ${
+                                                                    student.mock_status === 'Consistent' ? 'text-emerald-500' : (student.mock_status === 'Improving' ? 'text-[#ecb613]' : 'text-rose-500')
+                                                                }`}>{student.mock_milestone}</span>
+                                                            </div>
+                                                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                                                                <div className={`h-full ${getProgressBarColor(student.mock_status)}`} style={{ width: `${realProgress}%` }}></div>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-xs font-bold text-slate-400 w-8 text-right">{realProgress}%</span>
+                                                    </>
+                                                );
+                                            })()}
                                         </div>
                                     ))}
                                     {students.length === 0 && (
@@ -2146,7 +2162,7 @@ export default function ClassroomDashboardPage() {
                                                                                                                                  onClick={() => {
                                                                                                                                      setAllocationTargetLesson(lesson);
                                                                                                                                      setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                                                     let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                                                                     let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
                                                                                                                                      if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
                                                                                                                                          initialStatus = 'completed';
                                                                                                                                      } else if (statusLabel === 'Unlocked') {
@@ -2315,11 +2331,9 @@ export default function ClassroomDashboardPage() {
                                                                                                      onClick={() => {
                                                                                                          setAllocationTargetLesson(lesson);
                                                                                                          setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
                                                                                                          if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
                                                                                                              initialStatus = 'completed';
-                                                                                                         } else if (statusLabel === 'Unlocked') {
-                                                                                                             initialStatus = 'unlocked';
                                                                                                          }
                                                                                                          setAllocationStatus(initialStatus);
                                                                                                          const currentSelected = studentProgress
@@ -2351,11 +2365,9 @@ export default function ClassroomDashboardPage() {
                                                                                                      onClick={() => {
                                                                                                          setAllocationTargetLesson(lesson);
                                                                                                          setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
                                                                                                          if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
                                                                                                              initialStatus = 'completed';
-                                                                                                         } else if (statusLabel === 'Unlocked') {
-                                                                                                             initialStatus = 'unlocked';
                                                                                                          }
                                                                                                          setAllocationStatus(initialStatus);
                                                                                                          const currentSelected = studentProgress
@@ -2518,11 +2530,9 @@ export default function ClassroomDashboardPage() {
                                                                                     onClick={() => {
                                                                                         setAllocationTargetLesson(lesson);
                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
                                                                                         if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
                                                                                             initialStatus = 'completed';
-                                                                                        } else if (statusLabel === 'Unlocked') {
-                                                                                            initialStatus = 'unlocked';
                                                                                         }
                                                                                         setAllocationStatus(initialStatus);
                                                                                         const currentSelected = studentProgress
@@ -2554,11 +2564,9 @@ export default function ClassroomDashboardPage() {
                                                                                     onClick={() => {
                                                                                         setAllocationTargetLesson(lesson);
                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
                                                                                         if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
                                                                                             initialStatus = 'completed';
-                                                                                        } else if (statusLabel === 'Unlocked') {
-                                                                                            initialStatus = 'unlocked';
                                                                                         }
                                                                                         setAllocationStatus(initialStatus);
                                                                                         const currentSelected = studentProgress
@@ -2765,14 +2773,19 @@ export default function ClassroomDashboardPage() {
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <div className="w-32">
-                                                            <div className="flex justify-between mb-1">
-                                                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{student.mock_progress}% Complete</span>
-                                                            </div>
-                                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 flex overflow-hidden">
-                                                                <div className={`h-1.5 rounded-full ${student.mock_status === 'At Risk' ? 'bg-rose-500' : 'bg-[#ecb613]'}`} style={{ width: `${student.mock_progress}%` }}></div>
-                                                            </div>
-                                                        </div>
+                                                        {(() => {
+                                                            const realProgress = getRealStudentProgress(student.student_id, student.mock_progress);
+                                                            return (
+                                                                <div className="w-32">
+                                                                    <div className="flex justify-between mb-1">
+                                                                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{realProgress}% Complete</span>
+                                                                    </div>
+                                                                    <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 flex overflow-hidden">
+                                                                        <div className={`h-1.5 rounded-full ${student.mock_status === 'At Risk' ? 'bg-rose-500' : 'bg-[#ecb613]'}`} style={{ width: `${realProgress}%` }}></div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </td>
                                                     <td className="px-6 py-4 text-sm font-medium text-slate-700 dark:text-slate-300">{student.mock_attendance}%</td>
                                                     <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">{getGrade(student.mock_score)}</td>
