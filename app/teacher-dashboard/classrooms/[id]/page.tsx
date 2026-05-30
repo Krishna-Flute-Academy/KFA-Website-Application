@@ -957,6 +957,7 @@ export default function ClassroomDashboardPage() {
 
     const handleToggleTopicLock = async (studentId: string, lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
         if (!classroomId) return;
+        console.log(`[Pacing Debug] Toggle Individual pacing clicked for studentId: ${studentId}, lessonId: ${lessonId}, newStatus: ${newStatus}`);
         setIsUpdatingProgress(lessonId);
         try {
             const { error } = await supabaseAuth
@@ -972,16 +973,26 @@ export default function ClassroomDashboardPage() {
                 }, {
                     onConflict: 'student_id,lesson_id'
                 });
-            if (error) throw error;
+            if (error) {
+                console.error('[Pacing Debug] Individual upsert error:', error);
+                alert(`Database Upsert Failed: ${error.message} (Code: ${error.code})`);
+                throw error;
+            }
 
-            const { data: progressData } = await supabaseAuth
+            const { data: progressData, error: fetchError } = await supabaseAuth
                 .from('student_topic_progress')
                 .select('*')
                 .eq('classroom_id', classroomId);
+            if (fetchError) {
+                console.error('[Pacing Debug] Fetch error:', fetchError);
+                throw fetchError;
+            }
+            
             setStudentProgress(progressData || []);
-        } catch (err) {
+            alert(`Pacing updated successfully! Status set to "${newStatus.toUpperCase()}".`);
+        } catch (err: any) {
             console.error('Error updating individual progress:', err);
-            alert('Failed to update individual progress.');
+            alert(`Failed to update individual progress: ${err.message || err}`);
         } finally {
             setIsUpdatingProgress(null);
         }
@@ -989,6 +1000,9 @@ export default function ClassroomDashboardPage() {
 
     const handleToggleTopicLockClasswide = async (lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
         if (!classroomId) return;
+        console.log(`[Pacing Debug] Toggle Classwide pacing clicked for lessonId: ${lessonId}, newStatus: ${newStatus}`);
+        console.log(`[Pacing Debug] Current student count: ${students.length}`);
+        
         if (students.length === 0) {
             alert('Cannot manage class-wide pacing: No students are currently enrolled in this classroom. Please add students from the dashboard roster first.');
             return;
@@ -1005,21 +1019,34 @@ export default function ClassroomDashboardPage() {
                 completed_at: newStatus === 'completed' ? new Date().toISOString() : null
             }));
 
+            console.log(`[Pacing Debug] Upserting ${rows.length} rows to student_topic_progress:`, rows);
+
             const { error } = await supabaseAuth
                 .from('student_topic_progress')
                 .upsert(rows, {
                     onConflict: 'student_id,lesson_id'
                 });
-            if (error) throw error;
+            if (error) {
+                console.error('[Pacing Debug] Upsert error:', error);
+                alert(`Database Upsert Failed: ${error.message} (Code: ${error.code})`);
+                throw error;
+            }
 
-            const { data: progressData } = await supabaseAuth
+            const { data: progressData, error: fetchError } = await supabaseAuth
                 .from('student_topic_progress')
                 .select('*')
                 .eq('classroom_id', classroomId);
+            if (fetchError) {
+                console.error('[Pacing Debug] Fetch error:', fetchError);
+                throw fetchError;
+            }
+            
+            console.log(`[Pacing Debug] Fresh progress data fetched: ${progressData?.length || 0} rows`);
             setStudentProgress(progressData || []);
-        } catch (err) {
+            alert(`Pacing updated successfully! All ${students.length} students set to "${newStatus.toUpperCase()}" status.`);
+        } catch (err: any) {
             console.error('Error updating classwide progress:', err);
-            alert('Failed to update classwide progress.');
+            alert(`Failed to update classwide progress: ${err.message || err}`);
         } finally {
             setIsUpdatingProgress(null);
         }
