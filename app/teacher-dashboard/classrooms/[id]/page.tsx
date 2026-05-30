@@ -144,7 +144,7 @@ export default function ClassroomDashboardPage() {
     const [isUpdatingProgress, setIsUpdatingProgress] = useState<string | null>(null);
     const [isInventoryDrawerOpen, setIsInventoryDrawerOpen] = useState(false);
     const [inventorySearchQuery, setInventorySearchQuery] = useState('');
-    const [inventoryActiveTab, setInventoryActiveTab] = useState<'proficiency' | 'specialized'>('proficiency');
+    const [inventoryActiveTab, setInventoryActiveTab] = useState<string>('Proficiency Levels');
     const [expandedInventoryModules, setExpandedInventoryModules] = useState<Record<string, boolean>>({});
     const [importingItemId, setImportingItemId] = useState<string | null>(null);
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
@@ -175,6 +175,56 @@ export default function ClassroomDashboardPage() {
     const [deletingAssignmentId, setDeletingAssignmentId] = useState<string | null>(null);
     const assignmentFileRef = useRef<HTMLInputElement>(null);
     const [isDraggingOverAssignments, setIsDraggingOverAssignments] = useState(false);
+
+    const parseModuleCategory = (mod: any) => {
+        if (!mod.description) {
+            return {
+                category: mod.module_number < 100 ? 'Proficiency Levels' : 'Specialized Modules',
+                description: ''
+            };
+        }
+        const match = mod.description.match(/^\[(.*?)\]\s*([\s\S]*)$/);
+        if (match) {
+            return {
+                category: match[1].trim(),
+                description: match[2].trim()
+            };
+        }
+        return {
+            category: mod.module_number < 100 ? 'Proficiency Levels' : 'Specialized Modules',
+            description: mod.description
+        };
+    };
+
+    const getImporterCategories = () => {
+        const categoriesSet = new Set<string>();
+        courseModules.forEach(mod => {
+            const parsed = parseModuleCategory(mod);
+            categoriesSet.add(parsed.category);
+        });
+        const categories = Array.from(categoriesSet);
+        return categories.sort((a, b) => {
+            if (a === 'Proficiency Levels') return -1;
+            if (b === 'Proficiency Levels') return 1;
+            if (a === 'Specialized Modules') return -1;
+            if (b === 'Specialized Modules') return 1;
+            return a.localeCompare(b);
+        });
+    };
+
+    const getCategoryAbbreviation = (category: string) => {
+        if (category === 'Proficiency Levels') return 'PL';
+        if (category === 'Specialized Modules') return 'SM';
+        const clean = category.replace(/[^a-zA-Z0-9\s]/g, '');
+        const words = clean.trim().split(/\s+/);
+        if (words.length >= 2) {
+            return (words[0][0] + words[1][0]).toUpperCase();
+        }
+        if (words.length === 1 && words[0].length >= 2) {
+            return words[0].substring(0, 2).toUpperCase();
+        }
+        return category.substring(0, 2).toUpperCase() || 'SP';
+    };
 
     const closeAssignmentModal = () => {
         setShowAssignmentModal(false);
@@ -1985,7 +2035,7 @@ export default function ClassroomDashboardPage() {
                                                                             {asg.inventory_ref_type === 'module' ? (() => {
                                                                                 const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
                                                                                 if (mod) {
-                                                                                    return mod.module_number < 100 ? 'Proficiency Level' : 'Specialized Module';
+                                                                                    return parseModuleCategory(mod).category;
                                                                                 }
                                                                                 return 'Module';
                                                                             })() : asg.inventory_ref_type}
@@ -2036,7 +2086,7 @@ export default function ClassroomDashboardPage() {
                                                                     <div className="space-y-5">
                                                                         <div className="border-b border-slate-100 dark:border-slate-800/80 pb-3 flex items-center justify-between pl-2">
                                                                             <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
-                                                                                {mod.module_number < 100 ? 'Proficiency Level Syllabus Outline' : 'Specialized Module Syllabus Outline'}
+                                                                                {`${parseModuleCategory(mod).category} Syllabus Outline`}
                                                                             </h4>
                                                                             <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded">
                                                                                 {chaptersInMod.length} Chapters
@@ -4257,82 +4307,42 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                 </div>
 
                                 {/* Tab Selectors */}
-                                <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
-                                    <button
-                                        onClick={() => setInventoryActiveTab('proficiency')}
-                                        className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-                                            inventoryActiveTab === 'proficiency'
-                                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
-                                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                                        }`}
-                                    >
-                                        Proficiency Levels
-                                    </button>
-                                    <button
-                                        onClick={() => setInventoryActiveTab('specialized')}
-                                        className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
-                                            inventoryActiveTab === 'specialized'
-                                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
-                                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                                        }`}
-                                    >
-                                        Specialized Modules
-                                    </button>
-                                </div>
+                                {(() => {
+                                    const sortedCategories = getImporterCategories();
+                                    const activeCategoryTab = sortedCategories.includes(inventoryActiveTab) 
+                                        ? inventoryActiveTab 
+                                        : (sortedCategories[0] || 'Proficiency Levels');
+                                    return (
+                                        <>
+                                            <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl overflow-x-auto custom-scrollbar gap-1 max-w-full">
+                                                {sortedCategories.map((category) => (
+                                                    <button
+                                                        key={category}
+                                                        onClick={() => setInventoryActiveTab(category)}
+                                                        className={`px-4 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
+                                                            activeCategoryTab === category
+                                                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                                                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        {category}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
 
                             {/* List Area */}
                             <div className="flex-1 overflow-y-auto p-5 space-y-4 text-left">
-                                {inventoryActiveTab === 'proficiency' ? (
-                                    // Proficiency Levels Tab
-                                    courseModules
-                                        .filter(m => m.module_number < 100)
-                                        .filter(m => m.title.toLowerCase().includes(inventorySearchQuery.toLowerCase()))
-                                        .map(mod => {
-                                            const isImporting = importingItemId === mod.id;
-                                            const isAssigned = assignments.some(a => a.inventory_ref_id === mod.id);
-
-                                            return (
-                                                <div 
-                                                    key={mod.id} 
-                                                    className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4 transition-all hover:border-slate-300 dark:hover:border-slate-700"
-                                                >
-                                                    <div className="space-y-1.5 flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2">
-                                                            <h4 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight truncate">{mod.title}</h4>
-                                                            <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-550 border border-amber-555/20">
-                                                                Core Level
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-xs text-slate-555 dark:text-slate-400 font-medium line-clamp-2 leading-relaxed">
-                                                            {mod.description || 'Core learning track syllabus containing basic practice exercises and songs.'}
-                                                        </p>
-                                                    </div>
-                                                    <button
-                                                        disabled={isImporting || isAssigned}
-                                                        onClick={() => handleImportItem('module', mod.id, mod.title, mod.description)}
-                                                        className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-2 shrink-0 ${
-                                                            isAssigned
-                                                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-450 border border-transparent dark:border-slate-750 cursor-not-allowed shadow-none'
-                                                                : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 hover:-translate-y-0.5'
-                                                        }`}
-                                                    >
-                                                        {isImporting ? (
-                                                            <Loader2 className="size-3.5 animate-spin" />
-                                                        ) : isAssigned ? (
-                                                            <CheckCircle className="size-3.5" />
-                                                        ) : (
-                                                            <Plus className="size-3.5 stroke-[3]" />
-                                                        )}
-                                                        <span>{isAssigned ? 'Assigned' : 'Import Level'}</span>
-                                                    </button>
-                                                </div>
-                                            );
-                                        })
-                                ) : (
-                                    // Specialized Modules Tab
-                                    courseModules
-                                        .filter(m => m.module_number >= 100)
+                                {(() => {
+                                    const sortedCategories = getImporterCategories();
+                                    const activeCategoryTab = sortedCategories.includes(inventoryActiveTab) 
+                                        ? inventoryActiveTab 
+                                        : (sortedCategories[0] || 'Proficiency Levels');
+                                    const filteredModules = courseModules
+                                        .filter(m => parseModuleCategory(m).category === activeCategoryTab)
                                         .filter(m => {
                                             const query = inventorySearchQuery.toLowerCase();
                                             if (m.title.toLowerCase().includes(query)) return true;
@@ -4341,30 +4351,59 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                             if (hasMatchingChap) return true;
                                             const chapIds = new Set(modChaps.map(c => c.id));
                                             return courseLessons.filter(l => chapIds.has(l.chapter_id)).some(l => l.title.toLowerCase().includes(query));
-                                        })
-                                        .map(mod => {
-                                            const isExpanded = !!expandedInventoryModules[mod.id];
-                                            const modChapters = courseChapters.filter(c => c.module_id === mod.id);
+                                        });
 
-                                            return (
-                                                <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
-                                                    {/* Header Panel */}
-                                                    <div 
-                                                        onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
-                                                        className="px-5 py-4 bg-slate-50/50 dark:bg-slate-900/60 hover:bg-slate-100/60 dark:hover:bg-slate-900/80 transition-all flex items-center justify-between cursor-pointer select-none"
-                                                    >
-                                                        <div className="flex items-center gap-3 text-left">
-                                                            <div className="w-8.5 h-8.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 text-[10px] font-black uppercase font-mono">
-                                                                SP
-                                                            </div>
-                                                            <div className="min-w-0 flex-1">
-                                                                <h5 className="text-xs font-black text-slate-855 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
-                                                                <p className="text-[9px] text-slate-450 dark:text-slate-550 font-bold uppercase mt-1 tracking-wider font-mono">
-                                                                    {modChapters.length} CHAPTERS • Specialized
-                                                                </p>
-                                                            </div>
+                                    if (filteredModules.length === 0) {
+                                        return <p className="text-xs text-slate-400 italic text-center py-8">No learning materials found in this category.</p>;
+                                    }
+
+                                    return filteredModules.map(mod => {
+                                        const isExpanded = !!expandedInventoryModules[mod.id];
+                                        const modChapters = courseChapters.filter(c => c.module_id === mod.id);
+                                        const isImporting = importingItemId === mod.id;
+                                        const isAssigned = assignments.some(a => a.inventory_ref_id === mod.id);
+
+                                        return (
+                                            <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
+                                                {/* Header Panel */}
+                                                <div 
+                                                    onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
+                                                    className="px-5 py-4 bg-slate-50/50 dark:bg-slate-900/60 hover:bg-slate-100/60 dark:hover:bg-slate-900/80 transition-all flex items-center justify-between cursor-pointer select-none gap-4"
+                                                >
+                                                    <div className="flex items-center gap-3 text-left min-w-0 flex-1">
+                                                        <div className="w-8.5 h-8.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 text-[10px] font-black uppercase font-mono shrink-0">
+                                                            {getCategoryAbbreviation(activeCategoryTab)}
                                                         </div>
-                                                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                                                        <div className="min-w-0 flex-1">
+                                                            <h5 className="text-xs font-black text-slate-855 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
+                                                            <p className="text-[9px] text-slate-450 dark:text-slate-555 font-bold uppercase mt-1 tracking-wider font-mono">
+                                                                {modChapters.length} CHAPTERS • {activeCategoryTab}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                                        <button
+                                                            disabled={isImporting || isAssigned}
+                                                            onClick={() => handleImportItem('module', mod.id, mod.title, mod.description)}
+                                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 ${
+                                                                isAssigned
+                                                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
+                                                                    : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 hover:-translate-y-0.5'
+                                                            }`}
+                                                        >
+                                                            {isImporting ? (
+                                                                <Loader2 className="size-3 animate-spin" />
+                                                            ) : isAssigned ? (
+                                                                <CheckCircle className="size-3" />
+                                                            ) : (
+                                                                <Plus className="size-3 stroke-[3]" />
+                                                            )}
+                                                            <span>{isAssigned ? 'Assigned' : 'Import Module'}</span>
+                                                        </button>
+                                                        <div 
+                                                            onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
+                                                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                                                        >
                                                             {isExpanded ? (
                                                                 <ChevronUp className="size-4" />
                                                             ) : (
@@ -4372,105 +4411,105 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                             )}
                                                         </div>
                                                     </div>
-
-                                                    {/* Specialized Chapters & Lessons */}
-                                                    {isExpanded && (
-                                                        <div className="p-4 bg-white dark:bg-slate-950/20 border-t border-slate-150 dark:border-slate-850 space-y-4">
-                                                            {modChapters.length === 0 ? (
-                                                                <p className="text-xs text-slate-400 italic text-center py-2">No chapters defined.</p>
-                                                            ) : (
-                                                                modChapters.map(chap => {
-                                                                    const isChapImporting = importingItemId === chap.id;
-                                                                    const isChapAssigned = assignments.some(a => a.inventory_ref_id === chap.id);
-                                                                    const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
-
-                                                                    return (
-                                                                        <div key={chap.id} className="p-3.5 rounded-xl border border-slate-150 dark:border-slate-850 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
-                                                                            {/* Chapter header row */}
-                                                                            <div className="flex items-start justify-between gap-3">
-                                                                                <div className="text-left">
-                                                                                    <span className="text-[8px] font-black text-amber-550 font-mono uppercase tracking-widest leading-none">CHAPTER LEVEL</span>
-                                                                                    <h6 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">{chap.title}</h6>
-                                                                                </div>
-                                                                                <button
-                                                                                    disabled={isChapImporting || isChapAssigned}
-                                                                                    onClick={() => handleImportItem('chapter', chap.id, chap.title, chap.description)}
-                                                                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 ${
-                                                                                        isChapAssigned
-                                                                                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-450 cursor-not-allowed shadow-none'
-                                                                                            : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-200 dark:border-slate-700 hover:border-transparent'
-                                                                                    }`}
-                                                                                >
-                                                                                    {isChapImporting ? (
-                                                                                        <Loader2 className="size-3 animate-spin" />
-                                                                                    ) : isChapAssigned ? (
-                                                                                        <CheckCircle className="size-3" />
-                                                                                    ) : (
-                                                                                        <Plus className="size-3 stroke-[3]" />
-                                                                                    )}
-                                                                                    <span>{isChapAssigned ? 'Assigned' : 'Import'}</span>
-                                                                                </button>
-                                                                            </div>
-
-                                                                            {/* Chapter Lessons */}
-                                                                            {chapLessons.length > 0 && (
-                                                                                <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
-                                                                                    {chapLessons.map(lesson => {
-                                                                                        const isLessonImporting = importingItemId === lesson.id;
-                                                                                        const isLessonAssigned = assignments.some(a => a.inventory_ref_id === lesson.id);
-
-                                                                                        return (
-                                                                                            <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
-                                                                                                <div className="flex items-center gap-2 min-w-0">
-                                                                                                    <div className="w-5.5 h-5.5 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                                                                                                        {lesson.material_type === 'video' ? (
-                                                                                                            <Film className="size-3 text-amber-550" />
-                                                                                                        ) : lesson.material_type === 'audio' ? (
-                                                                                                            <Music className="size-3 text-amber-550" />
-                                                                                                        ) : (
-                                                                                                            <FileText className="size-3 text-slate-400" />
-                                                                                                        )}
-                                                                                                    </div>
-                                                                                                    <span className="text-[11px] font-bold text-slate-650 dark:text-slate-350 truncate leading-none mt-0.5">{lesson.title}</span>
-                                                                                                </div>
-                                                                                                <button
-                                                                                                    disabled={isLessonImporting || isLessonAssigned}
-                                                                                                    onClick={() => handleImportItem('lesson', lesson.id, lesson.title, lesson.description)}
-                                                                                                    className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 ${
-                                                                                                        isLessonAssigned
-                                                                                                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-450 cursor-not-allowed shadow-none'
-                                                                                                            : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-200 dark:border-slate-700 hover:border-transparent'
-                                                                                                    }`}
-                                                                                                >
-                                                                                                    {isLessonImporting ? (
-                                                                                                        <Loader2 className="size-2.5 animate-spin" />
-                                                                                                    ) : isLessonAssigned ? (
-                                                                                                        <CheckCircle className="size-2.5" />
-                                                                                                    ) : (
-                                                                                                        <Plus className="size-2.5 stroke-[3]" />
-                                                                                                    )}
-                                                                                                    <span>{isLessonAssigned ? 'Assigned' : 'Import'}</span>
-                                                                                                </button>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    );
-                                                                })
-                                                            )}
-                                                        </div>
-                                                    )}
                                                 </div>
-                                            );
-                                        })
-                                )}
+
+                                                {/* Chapters & Lessons */}
+                                                {isExpanded && (
+                                                    <div className="p-4 bg-white dark:bg-slate-955/20 border-t border-slate-150 dark:border-slate-850 space-y-4">
+                                                        {modChapters.length === 0 ? (
+                                                            <p className="text-xs text-slate-400 italic text-center py-2">No chapters defined.</p>
+                                                        ) : (
+                                                            modChapters.map(chap => {
+                                                                const isChapImporting = importingItemId === chap.id;
+                                                                const isChapAssigned = assignments.some(a => a.inventory_ref_id === chap.id);
+                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+
+                                                                return (
+                                                                    <div key={chap.id} className="p-3.5 rounded-xl border border-slate-150 dark:border-slate-855 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
+                                                                        {/* Chapter header row */}
+                                                                        <div className="flex items-start justify-between gap-3">
+                                                                            <div className="text-left">
+                                                                                <span className="text-[8px] font-black text-amber-550 font-mono uppercase tracking-widest leading-none">CHAPTER LEVEL</span>
+                                                                                <h6 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">{chap.title}</h6>
+                                                                            </div>
+                                                                            <button
+                                                                                disabled={isChapImporting || isChapAssigned}
+                                                                                onClick={() => handleImportItem('chapter', chap.id, chap.title, chap.description)}
+                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 ${
+                                                                                    isChapAssigned
+                                                                                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
+                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                }`}
+                                                                            >
+                                                                                {isChapImporting ? (
+                                                                                    <Loader2 className="size-3 animate-spin" />
+                                                                                ) : isChapAssigned ? (
+                                                                                    <CheckCircle className="size-3" />
+                                                                                ) : (
+                                                                                    <Plus className="size-3 stroke-[3]" />
+                                                                                )}
+                                                                                <span>{isChapAssigned ? 'Assigned' : 'Import'}</span>
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {/* Chapter Lessons */}
+                                                                        {chapLessons.length > 0 && (
+                                                                            <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
+                                                                                {chapLessons.map(lesson => {
+                                                                                    const isLessonImporting = importingItemId === lesson.id;
+                                                                                    const isLessonAssigned = assignments.some(a => a.inventory_ref_id === lesson.id);
+
+                                                                                    return (
+                                                                                        <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
+                                                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                                                <div className="w-5.5 h-5.5 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                                                                                    {lesson.material_type === 'video' ? (
+                                                                                                        <Film className="size-3 text-amber-550" />
+                                                                                                    ) : lesson.material_type === 'audio' ? (
+                                                                                                        <Music className="size-3 text-amber-550" />
+                                                                                                    ) : (
+                                                                                                        <FileText className="size-3 text-slate-400" />
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <span className="text-[11px] font-bold text-slate-655 dark:text-slate-355 truncate leading-none mt-0.5">{lesson.title}</span>
+                                                                                            </div>
+                                                                                            <button
+                                                                                                disabled={isLessonImporting || isLessonAssigned}
+                                                                                                onClick={() => handleImportItem('lesson', lesson.id, lesson.title, lesson.description)}
+                                                                                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 ${
+                                                                                                    isLessonAssigned
+                                                                                                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
+                                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                                }`}
+                                                                                            >
+                                                                                                {isLessonImporting ? (
+                                                                                                    <Loader2 className="size-2.5 animate-spin" />
+                                                                                                ) : isLessonAssigned ? (
+                                                                                                    <CheckCircle className="size-2.5" />
+                                                                                                ) : (
+                                                                                                    <Plus className="size-2.5 stroke-[3]" />
+                                                                                                )}
+                                                                                                <span>{isLessonAssigned ? 'Assigned' : 'Import'}</span>
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    });
+                                })()}
                             </div>
                         </div>
                     </div>
                 )}
-
                 {/* Allocation Manager Sliding Drawer */}
                 {isAllocationDrawerOpen && (
                     <div className="fixed inset-0 z-[600] flex justify-end animate-in fade-in duration-300">
