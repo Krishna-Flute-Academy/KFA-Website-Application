@@ -2136,53 +2136,73 @@ export default function ClassroomDashboardPage() {
                                                                                                                  }
                                                                                                                  
                                                                                                                  return (
-                                                                                                                     <div key={lesson.id} className={`rounded-2xl p-4 border flex flex-col justify-between gap-4 transition-all hover:shadow-md ${cardBorder}`}>
-                                                                                                                         <div className="space-y-1">
-                                                                                                                             <div className="flex items-center justify-between gap-4">
-                                                                                                                                 <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                                                     statusLabel === 'Completed' || statusLabel.includes('Done')
-                                                                                                                                         ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                                                                                         : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
-                                                                                                                                 }`}>
-                                                                                                                                     Topic {lesson.lesson_number} • {statusLabel}
-                                                                                                                                 </span>
-                                                                                                                                 {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                                                     <div 
+                                                                                                                         key={lesson.id} 
+                                                                                                                         onClick={() => {
+                                                                                                                             if (isUpdating) return;
+                                                                                                                             setAllocationTargetLesson(lesson);
+                                                                                                                             setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                                                             let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
+                                                                                                                             if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                                                 initialStatus = 'completed';
+                                                                                                                             } else if (statusLabel === 'Unlocked') {
+                                                                                                                                 initialStatus = 'unlocked';
+                                                                                                                             }
+                                                                                                                             setAllocationStatus(initialStatus);
+                                                                                                                             const currentSelected = studentProgress
+                                                                                                                                 .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                                                                 .map(p => p.student_id);
+                                                                                                                             setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                                             setIsAllocationDrawerOpen(true);
+                                                                                                                         }}
+                                                                                                                         className={`group rounded-2xl p-4 border flex items-center justify-between gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md ${cardBorder}`}
+                                                                                                                     >
+                                                                                                                         {/* Left side: Material Type Icon */}
+                                                                                                                         <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                                                                                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
+                                                                                                                                 lesson.material_type === 'video' 
+                                                                                                                                     ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' 
+                                                                                                                                     : lesson.material_type === 'audio' 
+                                                                                                                                     ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' 
+                                                                                                                                     : 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+                                                                                                                             }`}>
+                                                                                                                                 {lesson.material_type === 'video' ? (
+                                                                                                                                     <Film className="size-4.5" />
+                                                                                                                                 ) : lesson.material_type === 'audio' ? (
+                                                                                                                                     <Music className="size-4.5" />
+                                                                                                                                 ) : (
+                                                                                                                                     <FileText className="size-4.5" />
+                                                                                                                                 )}
                                                                                                                              </div>
-                                                                                                                             <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-tight truncate">{lesson.title}</h5>
-                                                                                                                             {lesson.description && (
-                                                                                                                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed font-semibold">{lesson.description}</p>
-                                                                                                                             )}
+
+                                                                                                                             {/* Middle: Details */}
+                                                                                                                             <div className="text-left min-w-0 flex-1">
+                                                                                                                                 <div className="flex items-center gap-2">
+                                                                                                                                     <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
+                                                                                                                                         statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                                             ? 'text-emerald-600 dark:text-emerald-400' 
+                                                                                                                                             : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
+                                                                                                                                     }`}>
+                                                                                                                                         Topic {lesson.lesson_number}
+                                                                                                                                     </span>
+                                                                                                                                     {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-amber-500" />}
+                                                                                                                                 </div>
+                                                                                                                                 <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug truncate mt-0.5">{lesson.title}</h5>
+                                                                                                                                 {lesson.description && (
+                                                                                                                                     <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 leading-relaxed font-semibold mt-0.5">{lesson.description}</p>
+                                                                                                                                 )}
+                                                                                                                             </div>
                                                                                                                          </div>
-                                                                                                                         
-                                                                                                                         {/* Premium pacing controls triggering Allocation Manager drawer */}
-                                                                                                                         <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-3 select-none">
-                                                                                                                             <button
-                                                                                                                                 type="button"
-                                                                                                                                 disabled={isUpdating}
-                                                                                                                                 onClick={() => {
-                                                                                                                                     setAllocationTargetLesson(lesson);
-                                                                                                                                     setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                                                     let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                                                     if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
-                                                                                                                                         initialStatus = 'completed';
-                                                                                                                                     } else if (statusLabel === 'Unlocked') {
-                                                                                                                                         initialStatus = 'unlocked';
-                                                                                                                                     }
-                                                                                                                                     setAllocationStatus(initialStatus);
-                                                                                                                                     const currentSelected = studentProgress
-                                                                                                                                         .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                                                         .map(p => p.student_id);
-                                                                                                                                     setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
-                                                                                                                                     setIsAllocationDrawerOpen(true);
-                                                                                                                                 }}
-                                                                                                                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-xs active:scale-95 ${
-                                                                                                                                     statusLabel === 'Completed' || statusLabel.includes('Done')
-                                                                                                                                         ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25'
-                                                                                                                                         : statusLabel === 'Unlocked'
-                                                                                                                                         ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-[#ecb613] border border-amber-500/25'
-                                                                                                                                         : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white dark:text-slate-100 border border-transparent'
-                                                                                                                                 }`}
-                                                                                                                             >
+
+                                                                                                                         {/* Right side: Status indicator & slider action */}
+                                                                                                                         <div className="flex items-center gap-2 shrink-0">
+                                                                                                                             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${
+                                                                                                                                 statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                                     ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                                                                                                                                     : statusLabel === 'Unlocked'
+                                                                                                                                     ? 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/25'
+                                                                                                                                     : 'bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-100 border-transparent'
+                                                                                                                             }`}>
                                                                                                                                  {statusLabel === 'Locked' ? (
                                                                                                                                      <Lock className="size-3" />
                                                                                                                                  ) : statusLabel === 'Unlocked' ? (
@@ -2191,30 +2211,10 @@ export default function ClassroomDashboardPage() {
                                                                                                                                      <CheckCircle className="size-3" />
                                                                                                                                  )}
                                                                                                                                  <span>{statusLabel}</span>
-                                                                                                                             </button>
-                                                                                                                             <button
-                                                                                                                                 type="button"
-                                                                                                                                 disabled={isUpdating}
-                                                                                                                                 onClick={() => {
-                                                                                                                                     setAllocationTargetLesson(lesson);
-                                                                                                                                     setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                                                     let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
-                                                                                                                                     if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
-                                                                                                                                         initialStatus = 'completed';
-                                                                                                                                     } else if (statusLabel === 'Unlocked') {
-                                                                                                                                         initialStatus = 'unlocked';
-                                                                                                                                     }
-                                                                                                                                     setAllocationStatus(initialStatus);
-                                                                                                                                     const currentSelected = studentProgress
-                                                                                                                                         .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                                                         .map(p => p.student_id);
-                                                                                                                                     setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
-                                                                                                                                     setIsAllocationDrawerOpen(true);
-                                                                                                                                 }}
-                                                                                                                                 className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
-                                                                                                                             >
-                                                                                                                                 <MoreVertical className="size-3.5" />
-                                                                                                                             </button>
+                                                                                                                             </div>
+                                                                                                                             <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent group-hover:border-[#ecb613]/30 transition-all">
+                                                                                                                                 <Sliders className="size-3.5" />
+                                                                                                                             </div>
                                                                                                                          </div>
                                                                                                                      </div>
                                                                                                                  );
@@ -2305,51 +2305,73 @@ export default function ClassroomDashboardPage() {
                                                                                      }
                                                                                      
                                                                                      return (
-                                                                                         <div key={lesson.id} className={`rounded-2xl p-4 border flex flex-col justify-between gap-4 transition-all hover:shadow-md ${cardBorder}`}>
-                                                                                             <div className="space-y-1">
-                                                                                                 <div className="flex items-center justify-between gap-4">
-                                                                                                     <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                         statusLabel === 'Completed' || statusLabel.includes('Done')
-                                                                                                             ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                                                             : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
-                                                                                                     }`}>
-                                                                                                         Topic {lesson.lesson_number} • {statusLabel}
-                                                                                                     </span>
-                                                                                                     {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                         <div 
+                                                                                             key={lesson.id} 
+                                                                                             onClick={() => {
+                                                                                                 if (isUpdating) return;
+                                                                                                 setAllocationTargetLesson(lesson);
+                                                                                                 setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                                 let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
+                                                                                                 if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                     initialStatus = 'completed';
+                                                                                                 } else if (statusLabel === 'Unlocked') {
+                                                                                                     initialStatus = 'unlocked';
+                                                                                                 }
+                                                                                                 setAllocationStatus(initialStatus);
+                                                                                                 const currentSelected = studentProgress
+                                                                                                     .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                                     .map(p => p.student_id);
+                                                                                                 setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                 setIsAllocationDrawerOpen(true);
+                                                                                             }}
+                                                                                             className={`group rounded-2xl p-4 border flex items-center justify-between gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md ${cardBorder}`}
+                                                                                         >
+                                                                                             {/* Left side: Material Type Icon */}
+                                                                                             <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                                                                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
+                                                                                                     lesson.material_type === 'video' 
+                                                                                                         ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' 
+                                                                                                         : lesson.material_type === 'audio' 
+                                                                                                         ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' 
+                                                                                                         : 'text-blue-500 bg-blue-500/10 border-blue-500/20'
+                                                                                                 }`}>
+                                                                                                     {lesson.material_type === 'video' ? (
+                                                                                                         <Film className="size-4.5" />
+                                                                                                     ) : lesson.material_type === 'audio' ? (
+                                                                                                         <Music className="size-4.5" />
+                                                                                                     ) : (
+                                                                                                         <FileText className="size-4.5" />
+                                                                                                     )}
                                                                                                  </div>
-                                                                                                 <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-tight truncate">{lesson.title}</h5>
-                                                                                                 {lesson.description && (
-                                                                                                     <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed font-semibold">{lesson.description}</p>
-                                                                                                 )}
+
+                                                                                                 {/* Middle: Details */}
+                                                                                                 <div className="text-left min-w-0 flex-1">
+                                                                                                     <div className="flex items-center gap-2">
+                                                                                                         <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
+                                                                                                             statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                 ? 'text-emerald-600 dark:text-emerald-400' 
+                                                                                                                 : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
+                                                                                                         }`}>
+                                                                                                             Topic {lesson.lesson_number}
+                                                                                                         </span>
+                                                                                                         {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-amber-500" />}
+                                                                                                     </div>
+                                                                                                     <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug truncate mt-0.5">{lesson.title}</h5>
+                                                                                                     {lesson.description && (
+                                                                                                         <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 leading-relaxed font-semibold mt-0.5">{lesson.description}</p>
+                                                                                                     )}
+                                                                                                 </div>
                                                                                              </div>
-                                                                                             
-                                                                                             {/* Premium pacing controls triggering Allocation Manager drawer */}
-                                                                                             <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-3 select-none">
-                                                                                                 <button
-                                                                                                     type="button"
-                                                                                                     disabled={isUpdating}
-                                                                                                     onClick={() => {
-                                                                                                         setAllocationTargetLesson(lesson);
-                                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                         if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
-                                                                                                             initialStatus = 'completed';
-                                                                                                         }
-                                                                                                         setAllocationStatus(initialStatus);
-                                                                                                         const currentSelected = studentProgress
-                                                                                                             .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                             .map(p => p.student_id);
-                                                                                                         setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
-                                                                                                         setIsAllocationDrawerOpen(true);
-                                                                                                     }}
-                                                                                                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-xs active:scale-95 ${
-                                                                                                         statusLabel === 'Completed' || statusLabel.includes('Done')
-                                                                                                             ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25'
-                                                                                                             : statusLabel === 'Unlocked'
-                                                                                                             ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-[#ecb613] border border-amber-500/25'
-                                                                                                             : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white dark:text-slate-100 border border-transparent'
-                                                                                                     }`}
-                                                                                                 >
+
+                                                                                             {/* Right side: Status indicator & slider action */}
+                                                                                             <div className="flex items-center gap-2 shrink-0">
+                                                                                                 <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${
+                                                                                                     statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                                                                                                         : statusLabel === 'Unlocked'
+                                                                                                         ? 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/25'
+                                                                                                         : 'bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-100 border-transparent'
+                                                                                                 }`}>
                                                                                                      {statusLabel === 'Locked' ? (
                                                                                                          <Lock className="size-3" />
                                                                                                      ) : statusLabel === 'Unlocked' ? (
@@ -2358,28 +2380,10 @@ export default function ClassroomDashboardPage() {
                                                                                                          <CheckCircle className="size-3" />
                                                                                                      )}
                                                                                                      <span>{statusLabel}</span>
-                                                                                                 </button>
-                                                                                                 <button
-                                                                                                     type="button"
-                                                                                                     disabled={isUpdating}
-                                                                                                     onClick={() => {
-                                                                                                         setAllocationTargetLesson(lesson);
-                                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                         if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
-                                                                                                             initialStatus = 'completed';
-                                                                                                         }
-                                                                                                         setAllocationStatus(initialStatus);
-                                                                                                         const currentSelected = studentProgress
-                                                                                                             .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                             .map(p => p.student_id);
-                                                                                                         setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
-                                                                                                         setIsAllocationDrawerOpen(true);
-                                                                                                     }}
-                                                                                                     className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
-                                                                                                 >
-                                                                                                     <MoreVertical className="size-3.5" />
-                                                                                                 </button>
+                                                                                                 </div>
+                                                                                                 <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-750 flex items-center justify-center text-slate-400 dark:text-slate-455 border border-transparent group-hover:border-[#ecb613]/30 transition-all">
+                                                                                                     <Sliders className="size-3.5" />
+                                                                                                 </div>
                                                                                              </div>
                                                                                          </div>
                                                                                      );
