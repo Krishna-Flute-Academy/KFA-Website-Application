@@ -23,7 +23,7 @@ export default function TeacherHeader({
     avatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
 }: TeacherHeaderProps) {
     return (
-        <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-10">
+        <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
             <div className="max-w-[1600px] mx-auto w-full h-full flex items-center justify-between px-8">
                 <div className="flex items-center gap-4 flex-1">
                     <h2 className="text-lg font-bold tracking-tight text-slate-800 dark:text-white shrink-0">{title}</h2>

@@ -269,7 +269,7 @@ export default function CreateClassPage() {
 
             <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
                 {/* Header */}
-                <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 sticky top-0 z-10 shrink-0">
+                <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-8 sticky top-0 z-30 shrink-0">
                     <div className="flex items-center gap-4">
                         <Link href="/teacher-dashboard/classrooms" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors group">
                             <ArrowLeft className="size-5 text-slate-500 group-hover:text-slate-900 dark:group-hover:text-white" />
