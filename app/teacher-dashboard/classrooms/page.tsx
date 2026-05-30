@@ -26,7 +26,10 @@ interface Classroom {
     schedule?: string;
     student_count: number;
     status: string;
+    type?: 'permanent' | 'temporary';
+    classroom_id?: string | null;
 }
+
 
 export default function ClassroomsPage() {
     const router = useRouter();
@@ -108,7 +111,8 @@ export default function ClassroomsPage() {
                         ...room,
                         schedule: scheduleMap[room.id] || room.schedule || 'No schedule set',
                         student_count: count || 0,
-                        status: 'Active'
+                        status: 'Active',
+                        type: 'permanent' as const
                     };
                 }));
 
@@ -137,7 +141,8 @@ export default function ClassroomsPage() {
                         class_date: room.class_date,
                         classroom_id: room.classroom_id,
                         start_time: room.start_time,
-                        end_time: room.end_time
+                        end_time: room.end_time,
+                        type: 'temporary' as const
                     };
                 }));
                 
@@ -453,7 +458,7 @@ export default function ClassroomsPage() {
                                                     </div>
                                                     <div>
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <Link href={`/teacher-dashboard/classrooms/${room.id}`} className="font-bold text-lg text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
+                                                            <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-lg text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
                                                                 {room.name}
                                                             </Link>
                                                             {room.type === 'temporary' ? (
@@ -480,14 +485,14 @@ export default function ClassroomsPage() {
                                                         </button>
                                                     </Link>
                                                     {isOnline ? (
-                                                        <Link href={`/teacher-dashboard/classrooms/${room.id}/meeting`}>
+                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                             <button className="px-4 py-2.5 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 text-xs font-bold rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors flex items-center gap-2">
                                                                 <LinkIcon className="size-4" />
                                                                 Join Link
                                                             </button>
                                                         </Link>
                                                     ) : (
-                                                        <Link href={`/teacher-dashboard/classrooms/${room.id}/meeting`}>
+                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                             <button className="px-4 py-2.5 bg-[#0d5a5e] text-white text-xs font-bold rounded-lg hover:bg-[#115e59] transition-colors shadow-sm">
                                                                 Start Session
                                                             </button>
@@ -582,7 +587,7 @@ export default function ClassroomsPage() {
                                                                     <IconComponent className="size-5" />
                                                                 </div>
                                                                 <div>
-                                                                    <Link href={`/teacher-dashboard/classrooms/${room.id}`} className="font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
+                                                                    <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
                                                                         {room.name}
                                                                     </Link>
                                                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">ID: {room.id.substring(0, 8).toUpperCase()}</p>
@@ -624,20 +629,20 @@ export default function ClassroomsPage() {
                                                         </td>
                                                         <td className="px-6 py-6 text-right border-b border-slate-100 dark:border-slate-800/50">
                                                             <div className="flex items-center justify-end gap-2">
-                                                                <Link href={activeView === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`}>
+                                                                <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`}>
                                                                     <button className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
                                                                         Manage
                                                                     </button>
                                                                 </Link>
                                                                 {isOnline ? (
-                                                                    <Link href={`/teacher-dashboard/classrooms/${room.id}/meeting`}>
+                                                                    <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                                         <button className="px-4 py-2 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 text-xs font-bold rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors flex items-center gap-2">
                                                                             <LinkIcon className="size-4" />
                                                                             Join Link
                                                                         </button>
                                                                     </Link>
                                                                 ) : (
-                                                                    <Link href={`/teacher-dashboard/classrooms/${room.id}/meeting`}>
+                                                                    <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                                         <button className="px-4 py-2 bg-[#0d5a5e] text-white text-xs font-bold rounded-lg hover:bg-[#115e59] transition-colors shadow-sm">
                                                                             Start Session
                                                                         </button>
