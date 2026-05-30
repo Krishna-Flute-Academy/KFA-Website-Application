@@ -4307,204 +4307,204 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                 </div>
 
                                 {/* Tab Selectors */}
-                                {(() => {
-                                    const sortedCategories = getImporterCategories();
-                                    const activeCategoryTab = sortedCategories.includes(inventoryActiveTab) 
-                                        ? inventoryActiveTab 
-                                        : (sortedCategories[0] || 'Proficiency Levels');
-                                    return (
-                                        <>
-                                            <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl overflow-x-auto custom-scrollbar gap-1 max-w-full">
-                                                {sortedCategories.map((category) => (
-                                                    <button
-                                                        key={category}
-                                                        onClick={() => setInventoryActiveTab(category)}
-                                                        className={`px-4 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap ${
-                                                            activeCategoryTab === category
-                                                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
-                                                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                                                        }`}
-                                                    >
-                                                        {category}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </>
-                                    );
-                                })()}
                             </div>
 
                             {/* List Area */}
-                            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-left">
+                            <div className="flex-1 overflow-y-auto p-5 space-y-6 text-left custom-scrollbar">
                                 {(() => {
                                     const sortedCategories = getImporterCategories();
-                                    const activeCategoryTab = sortedCategories.includes(inventoryActiveTab) 
-                                        ? inventoryActiveTab 
-                                        : (sortedCategories[0] || 'Proficiency Levels');
-                                    const filteredModules = courseModules
-                                        .filter(m => parseModuleCategory(m).category === activeCategoryTab)
-                                        .filter(m => {
-                                            const query = inventorySearchQuery.toLowerCase();
-                                            if (m.title.toLowerCase().includes(query)) return true;
-                                            const modChaps = courseChapters.filter(c => c.module_id === m.id);
-                                            const hasMatchingChap = modChaps.some(c => c.title.toLowerCase().includes(query));
-                                            if (hasMatchingChap) return true;
-                                            const chapIds = new Set(modChaps.map(c => c.id));
-                                            return courseLessons.filter(l => chapIds.has(l.chapter_id)).some(l => l.title.toLowerCase().includes(query));
-                                        });
+                                    let totalRenderedModules = 0;
 
-                                    if (filteredModules.length === 0) {
-                                        return <p className="text-xs text-slate-400 italic text-center py-8">No learning materials found in this category.</p>;
-                                    }
+                                    const renderedCategories = sortedCategories.map(category => {
+                                        const filteredModules = courseModules
+                                            .filter(m => parseModuleCategory(m).category === category)
+                                            .filter(m => {
+                                                const query = inventorySearchQuery.toLowerCase();
+                                                if (!query) return true;
+                                                if (m.title.toLowerCase().includes(query)) return true;
+                                                const modChaps = courseChapters.filter(c => c.module_id === m.id);
+                                                const hasMatchingChap = modChaps.some(c => c.title.toLowerCase().includes(query));
+                                                if (hasMatchingChap) return true;
+                                                const chapIds = new Set(modChaps.map(c => c.id));
+                                                return courseLessons.filter(l => chapIds.has(l.chapter_id)).some(l => l.title.toLowerCase().includes(query));
+                                            });
 
-                                    return filteredModules.map(mod => {
-                                        const isExpanded = !!expandedInventoryModules[mod.id];
-                                        const modChapters = courseChapters.filter(c => c.module_id === mod.id);
-                                        const isImporting = importingItemId === mod.id;
-                                        const isAssigned = assignments.some(a => a.inventory_ref_id === mod.id);
+                                        if (filteredModules.length === 0) return null;
+                                        totalRenderedModules += filteredModules.length;
 
                                         return (
-                                            <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
-                                                {/* Header Panel */}
-                                                <div 
-                                                    onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
-                                                    className="px-5 py-4 bg-slate-50/50 dark:bg-slate-900/60 hover:bg-slate-100/60 dark:hover:bg-slate-900/80 transition-all flex items-center justify-between cursor-pointer select-none gap-4"
-                                                >
-                                                    <div className="flex items-center gap-3 text-left min-w-0 flex-1">
-                                                        <div className="w-8.5 h-8.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 text-[10px] font-black uppercase font-mono shrink-0">
-                                                            {getCategoryAbbreviation(activeCategoryTab)}
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <h5 className="text-xs font-black text-slate-855 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
-                                                            <p className="text-[9px] text-slate-450 dark:text-slate-555 font-bold uppercase mt-1 tracking-wider font-mono">
-                                                                {modChapters.length} CHAPTERS • {activeCategoryTab}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                                                        <button
-                                                            disabled={isImporting || isAssigned}
-                                                            onClick={() => handleImportItem('module', mod.id, mod.title, mod.description)}
-                                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 ${
-                                                                isAssigned
-                                                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
-                                                                    : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 hover:-translate-y-0.5'
-                                                            }`}
-                                                        >
-                                                            {isImporting ? (
-                                                                <Loader2 className="size-3 animate-spin" />
-                                                            ) : isAssigned ? (
-                                                                <CheckCircle className="size-3" />
-                                                            ) : (
-                                                                <Plus className="size-3 stroke-[3]" />
-                                                            )}
-                                                            <span>{isAssigned ? 'Assigned' : 'Import Module'}</span>
-                                                        </button>
-                                                        <div 
-                                                            onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
-                                                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
-                                                        >
-                                                            {isExpanded ? (
-                                                                <ChevronUp className="size-4" />
-                                                            ) : (
-                                                                <ChevronDown className="size-4" />
-                                                            )}
-                                                        </div>
-                                                    </div>
+                                            <div key={category} className="space-y-3">
+                                                {/* Category Headline */}
+                                                <div className="flex items-center gap-2 select-none border-b border-slate-150 dark:border-slate-855 pb-1.5 pt-1">
+                                                    <span className="w-1.5 h-3.5 bg-[#ecb613] rounded-full" />
+                                                    <h6 className="font-extrabold text-[11px] tracking-wider uppercase text-slate-500 dark:text-slate-400">
+                                                        {category}
+                                                    </h6>
+                                                    <span className="text-[9px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.2 rounded-md">
+                                                        {filteredModules.length} Modules
+                                                    </span>
                                                 </div>
 
-                                                {/* Chapters & Lessons */}
-                                                {isExpanded && (
-                                                    <div className="p-4 bg-white dark:bg-slate-955/20 border-t border-slate-150 dark:border-slate-850 space-y-4">
-                                                        {modChapters.length === 0 ? (
-                                                            <p className="text-xs text-slate-400 italic text-center py-2">No chapters defined.</p>
-                                                        ) : (
-                                                            modChapters.map(chap => {
-                                                                const isChapImporting = importingItemId === chap.id;
-                                                                const isChapAssigned = assignments.some(a => a.inventory_ref_id === chap.id);
-                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                {/* Modules Accordion List */}
+                                                <div className="space-y-3">
+                                                    {filteredModules.map(mod => {
+                                                        const isExpanded = !!expandedInventoryModules[mod.id];
+                                                        const modChapters = courseChapters.filter(c => c.module_id === mod.id);
+                                                        const isImporting = importingItemId === mod.id;
+                                                        const isAssigned = assignments.some(a => a.inventory_ref_id === mod.id);
 
-                                                                return (
-                                                                    <div key={chap.id} className="p-3.5 rounded-xl border border-slate-150 dark:border-slate-855 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
-                                                                        {/* Chapter header row */}
-                                                                        <div className="flex items-start justify-between gap-3">
-                                                                            <div className="text-left">
-                                                                                <span className="text-[8px] font-black text-amber-550 font-mono uppercase tracking-widest leading-none">CHAPTER LEVEL</span>
-                                                                                <h6 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">{chap.title}</h6>
-                                                                            </div>
-                                                                            <button
-                                                                                disabled={isChapImporting || isChapAssigned}
-                                                                                onClick={() => handleImportItem('chapter', chap.id, chap.title, chap.description)}
-                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 ${
-                                                                                    isChapAssigned
-                                                                                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
-                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
-                                                                                }`}
-                                                                            >
-                                                                                {isChapImporting ? (
-                                                                                    <Loader2 className="size-3 animate-spin" />
-                                                                                ) : isChapAssigned ? (
-                                                                                    <CheckCircle className="size-3" />
-                                                                                ) : (
-                                                                                    <Plus className="size-3 stroke-[3]" />
-                                                                                )}
-                                                                                <span>{isChapAssigned ? 'Assigned' : 'Import'}</span>
-                                                                            </button>
+                                                        return (
+                                                            <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
+                                                                {/* Header Panel */}
+                                                                <div 
+                                                                    onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
+                                                                    className="px-5 py-4 bg-slate-50/50 dark:bg-slate-900/60 hover:bg-slate-100/60 dark:hover:bg-slate-900/80 transition-all flex items-center justify-between cursor-pointer select-none gap-4"
+                                                                >
+                                                                    <div className="flex items-center gap-3 text-left min-w-0 flex-1">
+                                                                        <div className="w-8.5 h-8.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 text-[10px] font-black uppercase font-mono shrink-0">
+                                                                            {getCategoryAbbreviation(category)}
                                                                         </div>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <h5 className="text-xs font-black text-slate-855 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
+                                                                            <p className="text-[9px] text-slate-450 dark:text-slate-555 font-bold uppercase mt-1 tracking-wider font-mono">
+                                                                                {modChapters.length} CHAPTERS • {category}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                                                        <button
+                                                                            disabled={isImporting || isAssigned}
+                                                                            onClick={() => handleImportItem('module', mod.id, mod.title, mod.description)}
+                                                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 ${
+                                                                                isAssigned
+                                                                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
+                                                                                    : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 hover:-translate-y-0.5'
+                                                                            }`}
+                                                                        >
+                                                                            {isImporting ? (
+                                                                                <Loader2 className="size-3 animate-spin" />
+                                                                            ) : isAssigned ? (
+                                                                                <CheckCircle className="size-3" />
+                                                                            ) : (
+                                                                                <Plus className="size-3 stroke-[3]" />
+                                                                            )}
+                                                                            <span>{isAssigned ? 'Assigned' : 'Import Module'}</span>
+                                                                        </button>
+                                                                        <div 
+                                                                            onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
+                                                                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                                                                        >
+                                                                            {isExpanded ? (
+                                                                                <ChevronUp className="size-4" />
+                                                                            ) : (
+                                                                                <ChevronDown className="size-4" />
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
 
-                                                                        {/* Chapter Lessons */}
-                                                                        {chapLessons.length > 0 && (
-                                                                            <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
-                                                                                {chapLessons.map(lesson => {
-                                                                                    const isLessonImporting = importingItemId === lesson.id;
-                                                                                    const isLessonAssigned = assignments.some(a => a.inventory_ref_id === lesson.id);
+                                                                {/* Chapters & Lessons */}
+                                                                {isExpanded && (
+                                                                    <div className="p-4 bg-white dark:bg-slate-955/20 border-t border-slate-150 dark:border-slate-850 space-y-4">
+                                                                        {modChapters.length === 0 ? (
+                                                                            <p className="text-xs text-slate-400 italic text-center py-2">No chapters defined.</p>
+                                                                        ) : (
+                                                                            modChapters.map(chap => {
+                                                                                const isChapImporting = importingItemId === chap.id;
+                                                                                const isChapAssigned = assignments.some(a => a.inventory_ref_id === chap.id);
+                                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
 
-                                                                                    return (
-                                                                                        <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
-                                                                                            <div className="flex items-center gap-2 min-w-0">
-                                                                                                <div className="w-5.5 h-5.5 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                                                                                                    {lesson.material_type === 'video' ? (
-                                                                                                        <Film className="size-3 text-amber-550" />
-                                                                                                    ) : lesson.material_type === 'audio' ? (
-                                                                                                        <Music className="size-3 text-amber-550" />
-                                                                                                    ) : (
-                                                                                                        <FileText className="size-3 text-slate-400" />
-                                                                                                    )}
-                                                                                                </div>
-                                                                                                <span className="text-[11px] font-bold text-slate-655 dark:text-slate-355 truncate leading-none mt-0.5">{lesson.title}</span>
+                                                                                return (
+                                                                                    <div key={chap.id} className="p-3.5 rounded-xl border border-slate-150 dark:border-slate-855 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
+                                                                                        {/* Chapter header row */}
+                                                                                        <div className="flex items-start justify-between gap-3">
+                                                                                            <div className="text-left">
+                                                                                                <span className="text-[8px] font-black text-amber-550 font-mono uppercase tracking-widest leading-none">CHAPTER LEVEL</span>
+                                                                                                <h6 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">{chap.title}</h6>
                                                                                             </div>
                                                                                             <button
-                                                                                                disabled={isLessonImporting || isLessonAssigned}
-                                                                                                onClick={() => handleImportItem('lesson', lesson.id, lesson.title, lesson.description)}
-                                                                                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 ${
-                                                                                                    isLessonAssigned
+                                                                                                disabled={isChapImporting || isChapAssigned}
+                                                                                                onClick={() => handleImportItem('chapter', chap.id, chap.title, chap.description)}
+                                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 ${
+                                                                                                    isChapAssigned
                                                                                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
                                                                                                         : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
                                                                                                 }`}
                                                                                             >
-                                                                                                {isLessonImporting ? (
-                                                                                                    <Loader2 className="size-2.5 animate-spin" />
-                                                                                                ) : isLessonAssigned ? (
-                                                                                                    <CheckCircle className="size-2.5" />
+                                                                                                {isChapImporting ? (
+                                                                                                    <Loader2 className="size-3 animate-spin" />
+                                                                                                ) : isChapAssigned ? (
+                                                                                                    <CheckCircle className="size-3" />
                                                                                                 ) : (
-                                                                                                    <Plus className="size-2.5 stroke-[3]" />
+                                                                                                    <Plus className="size-3 stroke-[3]" />
                                                                                                 )}
-                                                                                                <span>{isLessonAssigned ? 'Assigned' : 'Import'}</span>
+                                                                                                <span>{isChapAssigned ? 'Assigned' : 'Import'}</span>
                                                                                             </button>
                                                                                         </div>
-                                                                                    );
-                                                                                })}
-                                                                            </div>
+
+                                                                                        {/* Chapter Lessons */}
+                                                                                        {chapLessons.length > 0 && (
+                                                                                            <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
+                                                                                                {chapLessons.map(lesson => {
+                                                                                                    const isLessonImporting = importingItemId === lesson.id;
+                                                                                                    const isLessonAssigned = assignments.some(a => a.inventory_ref_id === lesson.id);
+
+                                                                                                    return (
+                                                                                                        <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
+                                                                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                                                                <div className="w-5.5 h-5.5 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                                                                                                    {lesson.material_type === 'video' ? (
+                                                                                                                        <Film className="size-3 text-amber-550" />
+                                                                                                                    ) : lesson.material_type === 'audio' ? (
+                                                                                                                        <Music className="size-3 text-amber-550" />
+                                                                                                                    ) : (
+                                                                                                                        <FileText className="size-3 text-slate-400" />
+                                                                                                                    )}
+                                                                                                                </div>
+                                                                                                                <span className="text-[11px] font-bold text-slate-655 dark:text-slate-355 truncate leading-none mt-0.5">{lesson.title}</span>
+                                                                                                            </div>
+                                                                                                            <button
+                                                                                                                disabled={isLessonImporting || isLessonAssigned}
+                                                                                                                onClick={() => handleImportItem('lesson', lesson.id, lesson.title, lesson.description)}
+                                                                                                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 ${
+                                                                                                                    isLessonAssigned
+                                                                                                                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
+                                                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                                                }`}
+                                                                                                            >
+                                                                                                                {isLessonImporting ? (
+                                                                                                                    <Loader2 className="size-2.5 animate-spin" />
+                                                                                                                ) : isLessonAssigned ? (
+                                                                                                                    <CheckCircle className="size-2.5" />
+                                                                                                                ) : (
+                                                                                                                    <Plus className="size-2.5 stroke-[3]" />
+                                                                                                                )}
+                                                                                                                <span>{isLessonAssigned ? 'Assigned' : 'Import'}</span>
+                                                                                                            </button>
+                                                                                                        </div>
+                                                                                                    );
+                                                                                                })}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            })
                                                                         )}
                                                                     </div>
-                                                                );
-                                                            })
-                                                        )}
-                                                    </div>
-                                                )}
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                         );
                                     });
+
+                                    if (totalRenderedModules === 0) {
+                                        return <p className="text-xs text-slate-400 italic text-center py-8">No learning materials found.</p>;
+                                    }
+
+                                    return renderedCategories;
                                 })()}
                             </div>
                         </div>
