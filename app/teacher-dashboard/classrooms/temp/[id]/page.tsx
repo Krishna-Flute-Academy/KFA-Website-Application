@@ -94,8 +94,8 @@ export default function TempClassManagePage() {
                 
                 if (roomError) throw roomError;
                 setTempClass(roomData);
-                setStartTime(roomData.start_time.slice(0, 5));
-                setEndTime(roomData.end_time.slice(0, 5));
+                setStartTime(roomData?.start_time ? roomData.start_time.slice(0, 5) : '10:00');
+                setEndTime(roomData?.end_time ? roomData.end_time.slice(0, 5) : '11:00');
 
                 // 2. Fetch All Students
                 const { data: studentsData } = await supabaseAuth
@@ -114,7 +114,14 @@ export default function TempClassManagePage() {
                 setSelectedStudents((assignedData || []).map(a => a.student_id));
 
             } catch (err: any) {
-                console.error('Error fetching data:', err?.message || err?.code || JSON.stringify(err) || err);
+                console.error('Error fetching data:', err);
+                console.error('Error details:', {
+                    message: err?.message,
+                    code: err?.code,
+                    details: err?.details,
+                    hint: err?.hint,
+                    stack: err?.stack
+                });
             } finally {
                 setLoading(false);
             }
