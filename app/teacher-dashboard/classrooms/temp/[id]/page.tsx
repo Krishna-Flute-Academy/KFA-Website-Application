@@ -113,8 +113,8 @@ export default function TempClassManagePage() {
                 
                 setSelectedStudents((assignedData || []).map(a => a.student_id));
 
-            } catch (err) {
-                console.error('Error fetching data:', err);
+            } catch (err: any) {
+                console.error('Error fetching data:', err?.message || err?.code || JSON.stringify(err) || err);
             } finally {
                 setLoading(false);
             }
