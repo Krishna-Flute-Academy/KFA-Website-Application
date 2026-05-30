@@ -1,6 +1,14 @@
 // Interfaces
+export interface CourseCategory {
+    id: string;
+    name: string;
+    category_order: number;
+    created_at?: string;
+}
+
 export interface CourseModule {
     id: string;
+    category_id?: string;
     title: string;
     description: string;
     module_number: number;
@@ -36,27 +44,38 @@ export interface CourseLesson {
 }
 
 // Offline Initial Seed Data
+export const INITIAL_CATEGORIES: CourseCategory[] = [
+    { id: 'c1000000-0000-0000-0000-000000000001', name: 'Proficiency Levels', category_order: 1 },
+    { id: 'c1000000-0000-0000-0000-000000000002', name: 'Specialized Modules', category_order: 2 },
+    { id: 'c1000000-0000-0000-0000-000000000003', name: 'Compositions', category_order: 3 },
+    { id: 'c1000000-0000-0000-0000-000000000004', name: 'Songs', category_order: 4 }
+];
+
 export const INITIAL_MODULES: CourseModule[] = [
     {
         id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+        category_id: 'c1000000-0000-0000-0000-000000000001',
         title: 'Level 1',
         description: 'Foundation of music theory, notes, and basic rhythm patterns.',
         module_number: 1
     },
     {
         id: 'a2b3c4d5-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+        category_id: 'c1000000-0000-0000-0000-000000000001',
         title: 'Level 2',
         description: 'Introduction to scales, major chords, and simple compositions.',
         module_number: 2
     },
     {
         id: 'a3b4c5d6-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+        category_id: 'c1000000-0000-0000-0000-000000000001',
         title: 'Level 3',
         description: 'Complex rhythms, dynamic notations, and ear training exercises.',
         module_number: 3
     },
     {
         id: 'a4b5c6d7-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+        category_id: 'c1000000-0000-0000-0000-000000000001',
         title: 'Level 4',
         description: 'Professional performance techniques and harmonic analysis.',
         module_number: 4
@@ -64,24 +83,28 @@ export const INITIAL_MODULES: CourseModule[] = [
     // Specialized Modules
     {
         id: 'e2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
+        category_id: 'c1000000-0000-0000-0000-000000000002',
         title: 'Swar Gyan Ear Training',
         description: 'Master Mandra Saptak ear recognition and vocal tuning guides. Essential for bamboo flute players.',
         module_number: 101
     },
     {
         id: 'f3c4d5e6-a7b8-9c0d-1e2f-3a4b5c6d7e8f',
+        category_id: 'c1000000-0000-0000-0000-000000000003',
         title: 'Composition 3/4',
         description: 'Classical Waltz meter subdivisions. Features custom skipping alankars and Base Pa compositions.',
         module_number: 102
     },
     {
         id: 'a7b89c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d',
+        category_id: 'c1000000-0000-0000-0000-000000000003',
         title: 'Composition 4/4',
         description: 'Standard 4-beat rhythm subdivisions. High-fidelity guides for metronome practices.',
         module_number: 103
     },
     {
         id: 'b8c90d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e',
+        category_id: 'c1000000-0000-0000-0000-000000000004',
         title: 'Song Database',
         description: 'Browse classical tunes and movie collections like Bella Ciao, DDLJ, and Bhajan guide files.',
         module_number: 104

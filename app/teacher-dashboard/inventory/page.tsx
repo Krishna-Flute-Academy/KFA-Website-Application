@@ -43,9 +43,11 @@ import {
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { 
+    CourseCategory,
     CourseModule, 
     CourseChapter, 
     CourseLesson,
+    INITIAL_CATEGORIES,
     INITIAL_MODULES,
     INITIAL_CHAPTERS,
     INITIAL_LESSONS
@@ -60,6 +62,7 @@ export default function InventoryLibrary() {
     const [searchQuery, setSearchQuery] = useState('');
     
     // Core Data States
+    const [categories, setCategories] = useState<CourseCategory[]>([]);
     const [modules, setModules] = useState<CourseModule[]>([]);
     const [chapters, setChapters] = useState<CourseChapter[]>([]);
     const [lessons, setLessons] = useState<CourseLesson[]>([]);
@@ -138,6 +141,20 @@ export default function InventoryLibrary() {
 
     // Query active Supabase tables dynamically
     const loadDatabaseData = async () => {
+        let loadedCats = INITIAL_CATEGORIES;
+        try {
+            const { data: dbCategories, error: catErr } = await supabaseAuth
+                .from('course_categories')
+                .select('*')
+                .order('category_order', { ascending: true });
+            if (!catErr && dbCategories && dbCategories.length > 0) {
+                loadedCats = dbCategories;
+            }
+        } catch (e) {
+            console.warn('Failed to query course_categories, using fallbacks:', e);
+        }
+        setCategories(loadedCats);
+
         const { data: dbModules, error: modErr } = await supabaseAuth
             .from('course_modules')
             .select('*')
@@ -222,6 +239,14 @@ export default function InventoryLibrary() {
         // Force reload/migration to the comprehensive custom structure if legacy seed is detected
         const hasLegacySeed = !localChaps || !localChaps.includes('Introduction to the Indian bamboo flute') || !localLess || parsedLess.length !== 30;
         
+        const localCats = localStorage.getItem('kfa_categories');
+        if (localCats) {
+            setCategories(JSON.parse(localCats));
+        } else {
+            setCategories(INITIAL_CATEGORIES);
+            localStorage.setItem('kfa_categories', JSON.stringify(INITIAL_CATEGORIES));
+        }
+
         if (localMods && localChaps && localLess && !hasLegacySeed) {
             setModules(JSON.parse(localMods));
             setChapters(JSON.parse(localChaps));
@@ -423,6 +448,21 @@ export default function InventoryLibrary() {
     };
 
     const parseModuleCategory = (mod: CourseModule) => {
+        if (mod.category_id) {
+            const matchedCat = categories.find(c => c.id === mod.category_id);
+            if (matchedCat) {
+                let cleanDesc = mod.description || '';
+                const match = cleanDesc.match(/^\[(.*?)\]\s*([\s\S]*)$/);
+                if (match) {
+                    cleanDesc = match[2].trim();
+                }
+                return {
+                    category: matchedCat.name,
+                    description: cleanDesc
+                };
+            }
+        }
+
         if (!mod.description) {
             return {
                 category: mod.module_number < 100 ? 'Proficiency Levels' : 'Specialized Modules',
@@ -484,8 +524,23 @@ export default function InventoryLibrary() {
                     module_number: Number(moduleForm.module_number)
                 } : m);
             } else {
-                const newMod: CourseModule = {
+                // Find or link category ID dynamically
+            let matchedCat = categories.find(c => c.name.toLowerCase() === moduleForm.category.trim().toLowerCase());
+            let categoryId = matchedCat?.id;
+
+            if (!categoryId) {
+                const newCatId = crypto.randomUUID();
+                const newCatName = moduleForm.category.trim();
+                const newCatOrder = categories.length + 1;
+                const updatedCats = [...categories, { id: newCatId, name: newCatName, category_order: newCatOrder }];
+                setCategories(updatedCats);
+                localStorage.setItem('kfa_categories', JSON.stringify(updatedCats));
+                categoryId = newCatId;
+            }
+
+            const newMod: CourseModule = {
                     id: crypto.randomUUID(),
+                    category_id: categoryId,
                     title: moduleForm.title,
                     description: prefixedDescription,
                     module_number: Number(moduleForm.module_number)
@@ -497,13 +552,37 @@ export default function InventoryLibrary() {
             setActiveModal(null);
         } else {
             try {
+                let matchedCat = categories.find(c => c.name.toLowerCase() === moduleForm.category.trim().toLowerCase());
+                let categoryId = matchedCat?.id;
+
+                if (!categoryId) {
+                    const newCatId = crypto.randomUUID();
+                    const newCatName = moduleForm.category.trim();
+                    const newCatOrder = categories.length + 1;
+                    try {
+                        const { data: inserted, error: insertErr } = await supabaseAuth
+                            .from('course_categories')
+                            .insert([{ id: newCatId, name: newCatName, category_order: newCatOrder }])
+                            .select('id')
+                            .single();
+                        if (!insertErr && inserted) {
+                            categoryId = inserted.id;
+                        } else {
+                            categoryId = newCatId;
+                        }
+                    } catch (e) {
+                        categoryId = newCatId;
+                    }
+                }
+
                 if (editingItem) {
                     await supabaseAuth
                         .from('course_modules')
                         .update({
                             title: moduleForm.title,
                             description: prefixedDescription,
-                            module_number: Number(moduleForm.module_number)
+                            module_number: Number(moduleForm.module_number),
+                            category_id: categoryId
                         })
                         .eq('id', editingItem.id);
                 } else {
@@ -513,7 +592,8 @@ export default function InventoryLibrary() {
                             id: crypto.randomUUID(),
                             title: moduleForm.title,
                             description: prefixedDescription,
-                            module_number: Number(moduleForm.module_number)
+                            module_number: Number(moduleForm.module_number),
+                            category_id: categoryId
                         }]);
                 }
                 await loadDatabaseData();

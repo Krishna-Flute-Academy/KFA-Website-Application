@@ -6,7 +6,7 @@ import { supabaseAuth } from '../../../../src/lib/supabase-auth';
 import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink, Unlock, Sliders } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
-import { INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
+import { CourseCategory, INITIAL_CATEGORIES, INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
 
 interface ClassroomDetails {
     id: string;
@@ -135,6 +135,7 @@ export default function ClassroomDashboardPage() {
     const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'all_students' | 'individual'>('all');
     
     // Course Curriculum DB states
+    const [categories, setCategories] = useState<CourseCategory[]>([]);
     const [courseModules, setCourseModules] = useState<any[]>([]);
     const [courseChapters, setCourseChapters] = useState<any[]>([]);
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
@@ -177,6 +178,21 @@ export default function ClassroomDashboardPage() {
     const [isDraggingOverAssignments, setIsDraggingOverAssignments] = useState(false);
 
     const parseModuleCategory = (mod: any) => {
+        if (mod.category_id) {
+            const matchedCat = categories.find(c => c.id === mod.category_id);
+            if (matchedCat) {
+                let cleanDesc = mod.description || '';
+                const match = cleanDesc.match(/^\[(.*?)\]\s*([\s\S]*)$/);
+                if (match) {
+                    cleanDesc = match[2].trim();
+                }
+                return {
+                    category: matchedCat.name,
+                    description: cleanDesc
+                };
+            }
+        }
+
         if (!mod.description) {
             return {
                 category: mod.module_number < 100 ? 'Proficiency Levels' : 'Specialized Modules',
@@ -387,6 +403,21 @@ export default function ClassroomDashboardPage() {
                 let dbChaptersData = [];
                 let dbLessonsData = [];
 
+                // Load course categories safely
+                let loadedCats = INITIAL_CATEGORIES;
+                try {
+                    const { data: dbCategories, error: catErr } = await supabaseAuth
+                        .from('course_categories')
+                        .select('*')
+                        .order('category_order', { ascending: true });
+                    if (!catErr && dbCategories && dbCategories.length > 0) {
+                        loadedCats = dbCategories;
+                    }
+                } catch (e) {
+                    console.warn('Failed to query course_categories, using fallbacks:', e);
+                }
+                setCategories(loadedCats);
+
                 const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
                 
                 if (dbModules && dbModules.length > 0) {
@@ -416,6 +447,10 @@ export default function ClassroomDashboardPage() {
                         dbLessonsData = INITIAL_LESSONS;
                     }
                 }
+                if (dbModulesData.length === INITIAL_MODULES.length) {
+                    setCategories(INITIAL_CATEGORIES);
+                }
+
 
                 setCourseModules(dbModulesData);
                 setCourseChapters(dbChaptersData);
