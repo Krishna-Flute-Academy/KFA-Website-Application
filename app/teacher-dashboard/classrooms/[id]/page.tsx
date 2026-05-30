@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink, Unlock } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink, Unlock, Sliders } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
@@ -150,6 +150,15 @@ export default function ClassroomDashboardPage() {
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [mediaPreview, setMediaPreview] = useState<{ type: string; url: string; title: string } | null>(null);
     const [selectedTopic, setSelectedTopic] = useState<any | null>(null);
+
+    // Allocation Manager Drawer states
+    const [isAllocationDrawerOpen, setIsAllocationDrawerOpen] = useState(false);
+    const [allocationTargetLesson, setAllocationTargetLesson] = useState<any | null>(null);
+    const [allocationTargetType, setAllocationTargetType] = useState<'classwide' | 'individual'>('classwide');
+    const [allocationStatus, setAllocationStatus] = useState<'locked' | 'unlocked' | 'completed'>('locked');
+    const [allocationSelectedStudents, setAllocationSelectedStudents] = useState<string[]>([]);
+    const [allocationSearchQuery, setAllocationSearchQuery] = useState('');
+    const [isSavingAllocation, setIsSavingAllocation] = useState(false);
     const [showAssignmentModal, setShowAssignmentModal] = useState(false);
     const [isSavingAssignment, setIsSavingAssignment] = useState(false);
     const [assignmentForm, setAssignmentForm] = useState({
@@ -1067,6 +1076,80 @@ export default function ClassroomDashboardPage() {
             });
         } finally {
             setIsUpdatingProgress(null);
+        }
+    };
+
+    const handleSaveAllocation = async () => {
+        if (!allocationTargetLesson || !classroomId) return;
+        setIsSavingAllocation(true);
+        const lessonId = allocationTargetLesson.id;
+
+        try {
+            if (allocationTargetType === 'classwide') {
+                await handleToggleTopicLockClasswide(lessonId, allocationStatus);
+            } else {
+                if (students.length === 0) {
+                    // Empty classroom in-memory fallback
+                    const fallbackRow = {
+                        student_id: 'classwide_default',
+                        classroom_id: classroomId,
+                        lesson_id: lessonId,
+                        status: allocationStatus,
+                        unlocked_by: 'manual',
+                        unlocked_at: allocationStatus !== 'locked' ? new Date().toISOString() : null,
+                        completed_at: allocationStatus === 'completed' ? new Date().toISOString() : null
+                    };
+                    setStudentProgress(prev => {
+                        const filtered = prev.filter(p => p.lesson_id !== lessonId);
+                        return [...filtered, fallbackRow];
+                    });
+                    alert('Classroom has no students. Pacing saved to default setting in-memory!');
+                    setIsAllocationDrawerOpen(false);
+                    return;
+                }
+
+                const rows = students.map(s => {
+                    const isSelected = allocationSelectedStudents.includes(s.student_id);
+                    const status = isSelected ? allocationStatus : 'locked';
+                    return {
+                        student_id: s.student_id,
+                        classroom_id: classroomId,
+                        lesson_id: lessonId,
+                        status: status,
+                        unlocked_by: 'manual',
+                        unlocked_at: status !== 'locked' ? new Date().toISOString() : null,
+                        completed_at: status === 'completed' ? new Date().toISOString() : null
+                    };
+                });
+
+                const { error } = await supabaseAuth
+                    .from('student_topic_progress')
+                    .upsert(rows, {
+                        onConflict: 'student_id,lesson_id'
+                    });
+
+                if (error) {
+                    console.warn('[Pacing] Database upsert failed, updating in-memory only:', error.message);
+                    setStudentProgress(prev => {
+                        const filtered = prev.filter(p => p.lesson_id !== lessonId);
+                        return [...filtered, ...rows];
+                    });
+                } else {
+                    const { data: progressData, error: fetchError } = await supabaseAuth
+                        .from('student_topic_progress')
+                        .select('*')
+                        .eq('classroom_id', classroomId);
+                    if (fetchError) throw fetchError;
+                    setStudentProgress(progressData || []);
+                }
+                alert('Pacing allocations updated successfully!');
+            }
+            setIsAllocationDrawerOpen(false);
+        } catch (err: any) {
+            console.error('Error saving pacing allocations:', err);
+            alert(`Failed to save pacing allocations: ${err.message || err}`);
+        } finally {
+            setIsSavingAllocation(false);
         }
     };
 
@@ -2055,64 +2138,66 @@ export default function ClassroomDashboardPage() {
                                                                                                                              )}
                                                                                                                          </div>
                                                                                                                          
-                                                                                                                         {/* Interactive toggle panel */}
-                                                                                                                         <div className="flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800/80 pt-3 select-none">
+                                                                                                                         {/* Premium pacing controls triggering Allocation Manager drawer */}
+                                                                                                                         <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-3 select-none">
                                                                                                                              <button
                                                                                                                                  type="button"
                                                                                                                                  disabled={isUpdating}
                                                                                                                                  onClick={() => {
-                                                                                                                                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                                                                         handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'locked');
-                                                                                                                                     } else {
-                                                                                                                                         handleToggleTopicLockClasswide(lesson.id, 'locked');
+                                                                                                                                     setAllocationTargetLesson(lesson);
+                                                                                                                                     setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                                                                     let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                                                                     if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                                                         initialStatus = 'completed';
+                                                                                                                                     } else if (statusLabel === 'Unlocked') {
+                                                                                                                                         initialStatus = 'unlocked';
                                                                                                                                      }
+                                                                                                                                     setAllocationStatus(initialStatus);
+                                                                                                                                     const currentSelected = studentProgress
+                                                                                                                                         .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                                                                         .map(p => p.student_id);
+                                                                                                                                     setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                                                     setIsAllocationDrawerOpen(true);
                                                                                                                                  }}
-                                                                                                                                 className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                                                                     statusLabel === 'Locked'
-                                                                                                                                         ? 'bg-slate-800 dark:bg-slate-800 text-white shadow-xs'
-                                                                                                                                         : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                                                                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-xs active:scale-95 ${
+                                                                                                                                     statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                                         ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25'
+                                                                                                                                         : statusLabel === 'Unlocked'
+                                                                                                                                         ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-[#ecb613] border border-amber-500/25'
+                                                                                                                                         : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white dark:text-slate-100 border border-transparent'
                                                                                                                                  }`}
                                                                                                                              >
-                                                                                                                                 <Lock className="size-3" />
-                                                                                                                                 <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Lock for ${selectedStudentForCurriculum.name}` : 'Lock Class-wide'}</span>
+                                                                                                                                 {statusLabel === 'Locked' ? (
+                                                                                                                                     <Lock className="size-3" />
+                                                                                                                                 ) : statusLabel === 'Unlocked' ? (
+                                                                                                                                     <Unlock className="size-3" />
+                                                                                                                                 ) : (
+                                                                                                                                     <CheckCircle className="size-3" />
+                                                                                                                                 )}
+                                                                                                                                 <span>{statusLabel}</span>
                                                                                                                              </button>
                                                                                                                              <button
                                                                                                                                  type="button"
                                                                                                                                  disabled={isUpdating}
                                                                                                                                  onClick={() => {
-                                                                                                                                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                                                                         handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'unlocked');
-                                                                                                                                     } else {
-                                                                                                                                         handleToggleTopicLockClasswide(lesson.id, 'unlocked');
+                                                                                                                                     setAllocationTargetLesson(lesson);
+                                                                                                                                     setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                                                                     let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                                                                     if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                                                         initialStatus = 'completed';
+                                                                                                                                     } else if (statusLabel === 'Unlocked') {
+                                                                                                                                         initialStatus = 'unlocked';
                                                                                                                                      }
+                                                                                                                                     setAllocationStatus(initialStatus);
+                                                                                                                                     const currentSelected = studentProgress
+                                                                                                                                         .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                                                                         .map(p => p.student_id);
+                                                                                                                                     setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                                                     setIsAllocationDrawerOpen(true);
                                                                                                                                  }}
-                                                                                                                                 className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                                                                     statusLabel === 'Unlocked'
-                                                                                                                                         ? 'bg-[#ecb613] text-white shadow-xs'
-                                                                                                                                         : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
-                                                                                                                                 }`}
+                                                                                                                                 className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
                                                                                                                              >
-                                                                                                                                 <Unlock className="size-3" />
-                                                                                                                                 <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Unlock for ${selectedStudentForCurriculum.name}` : 'Unlock Class-wide'}</span>
-                                                                                                                             </button>
-                                                                                                                             <button
-                                                                                                                                 type="button"
-                                                                                                                                 disabled={isUpdating}
-                                                                                                                                 onClick={() => {
-                                                                                                                                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                                                                         handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'completed');
-                                                                                                                                     } else {
-                                                                                                                                         handleToggleTopicLockClasswide(lesson.id, 'completed');
-                                                                                                                                     }
-                                                                                                                                 }}
-                                                                                                                                 className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                                                                     statusLabel === 'Completed'
-                                                                                                                                         ? 'bg-emerald-600 text-white shadow-xs'
-                                                                                                                                         : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
-                                                                                                                                 }`}
-                                                                                                                             >
-                                                                                                                                 <CheckCircle className="size-3" />
-                                                                                                                                 <span>Done</span>
+                                                                                                                                 <MoreVertical className="size-3.5" />
                                                                                                                              </button>
                                                                                                                          </div>
                                                                                                                      </div>
@@ -2222,64 +2307,66 @@ export default function ClassroomDashboardPage() {
                                                                                                  )}
                                                                                              </div>
                                                                                              
-                                                                                             {/* Interactive toggle panel */}
-                                                                                             <div className="flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800/80 pt-3 select-none">
+                                                                                             {/* Premium pacing controls triggering Allocation Manager drawer */}
+                                                                                             <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-3 select-none">
                                                                                                  <button
                                                                                                      type="button"
                                                                                                      disabled={isUpdating}
                                                                                                      onClick={() => {
-                                                                                                         if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                                             handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'locked');
-                                                                                                         } else {
-                                                                                                             handleToggleTopicLockClasswide(lesson.id, 'locked');
+                                                                                                         setAllocationTargetLesson(lesson);
+                                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                                         if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                             initialStatus = 'completed';
+                                                                                                         } else if (statusLabel === 'Unlocked') {
+                                                                                                             initialStatus = 'unlocked';
                                                                                                          }
+                                                                                                         setAllocationStatus(initialStatus);
+                                                                                                         const currentSelected = studentProgress
+                                                                                                             .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                                             .map(p => p.student_id);
+                                                                                                         setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                         setIsAllocationDrawerOpen(true);
                                                                                                      }}
-                                                                                                     className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                                         statusLabel === 'Locked'
-                                                                                                             ? 'bg-slate-800 dark:bg-slate-800 text-white shadow-xs'
-                                                                                                             : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                                                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-xs active:scale-95 ${
+                                                                                                         statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                             ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25'
+                                                                                                             : statusLabel === 'Unlocked'
+                                                                                                             ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-[#ecb613] border border-amber-500/25'
+                                                                                                             : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white dark:text-slate-100 border border-transparent'
                                                                                                      }`}
                                                                                                  >
-                                                                                                     <Lock className="size-3" />
-                                                                                                     <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Lock for ${selectedStudentForCurriculum.name}` : 'Lock Class-wide'}</span>
+                                                                                                     {statusLabel === 'Locked' ? (
+                                                                                                         <Lock className="size-3" />
+                                                                                                     ) : statusLabel === 'Unlocked' ? (
+                                                                                                         <Unlock className="size-3" />
+                                                                                                     ) : (
+                                                                                                         <CheckCircle className="size-3" />
+                                                                                                     )}
+                                                                                                     <span>{statusLabel}</span>
                                                                                                  </button>
                                                                                                  <button
                                                                                                      type="button"
                                                                                                      disabled={isUpdating}
                                                                                                      onClick={() => {
-                                                                                                         if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                                             handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'unlocked');
-                                                                                                         } else {
-                                                                                                             handleToggleTopicLockClasswide(lesson.id, 'unlocked');
+                                                                                                         setAllocationTargetLesson(lesson);
+                                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                                         if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                             initialStatus = 'completed';
+                                                                                                         } else if (statusLabel === 'Unlocked') {
+                                                                                                             initialStatus = 'unlocked';
                                                                                                          }
+                                                                                                         setAllocationStatus(initialStatus);
+                                                                                                         const currentSelected = studentProgress
+                                                                                                             .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                                             .map(p => p.student_id);
+                                                                                                         setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                         setIsAllocationDrawerOpen(true);
                                                                                                      }}
-                                                                                                     className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                                         statusLabel === 'Unlocked'
-                                                                                                             ? 'bg-[#ecb613] text-white shadow-xs'
-                                                                                                             : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
-                                                                                                     }`}
+                                                                                                     className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
                                                                                                  >
-                                                                                                     <Unlock className="size-3" />
-                                                                                                     <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Unlock for ${selectedStudentForCurriculum.name}` : 'Unlock Class-wide'}</span>
-                                                                                                 </button>
-                                                                                                 <button
-                                                                                                     type="button"
-                                                                                                     disabled={isUpdating}
-                                                                                                     onClick={() => {
-                                                                                                         if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                                             handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'completed');
-                                                                                                         } else {
-                                                                                                             handleToggleTopicLockClasswide(lesson.id, 'completed');
-                                                                                                         }
-                                                                                                     }}
-                                                                                                     className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                                         statusLabel === 'Completed'
-                                                                                                             ? 'bg-emerald-600 text-white shadow-xs'
-                                                                                                             : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
-                                                                                                     }`}
-                                                                                                 >
-                                                                                                     <CheckCircle className="size-3" />
-                                                                                                     <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Done for ${selectedStudentForCurriculum.name}` : 'Done Class-wide'}</span>
+                                                                                                     <MoreVertical className="size-3.5" />
                                                                                                  </button>
                                                                                              </div>
                                                                                          </div>
@@ -2423,66 +2510,67 @@ export default function ClassroomDashboardPage() {
                                                                                 )}
                                                                             </div>
 
-                                                                            {/* Pacing Override Controls for Lesson Level Assignment */}
-                                                                            <div className="flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800/80 pt-4 select-none">
+                                                                            {/* Premium pacing controls triggering Allocation Manager drawer */}
+                                                                            <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-4 select-none">
                                                                                 <button
                                                                                     type="button"
                                                                                     disabled={isUpdating}
                                                                                     onClick={() => {
-                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                            handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'locked');
-                                                                                        } else {
-                                                                                            handleToggleTopicLockClasswide(lesson.id, 'locked');
+                                                                                        setAllocationTargetLesson(lesson);
+                                                                                        setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                        if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                            initialStatus = 'completed';
+                                                                                        } else if (statusLabel === 'Unlocked') {
+                                                                                            initialStatus = 'unlocked';
                                                                                         }
+                                                                                        setAllocationStatus(initialStatus);
+                                                                                        const currentSelected = studentProgress
+                                                                                            .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                            .map(p => p.student_id);
+                                                                                        setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                        setIsAllocationDrawerOpen(true);
                                                                                     }}
-                                                                                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                        statusLabel === 'Locked'
-                                                                                            ? 'bg-slate-800 dark:bg-slate-800 text-white shadow-xs'
-                                                                                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400'
+                                                                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-xs active:scale-95 ${
+                                                                                        statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                            ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25'
+                                                                                            : statusLabel === 'Unlocked'
+                                                                                            ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-[#ecb613] border border-amber-500/25'
+                                                                                            : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white dark:text-slate-100 border border-transparent'
                                                                                     }`}
                                                                                 >
-                                                                                    <Lock className="size-3" />
-                                                                                    <span>Lock</span>
+                                                                                    {statusLabel === 'Locked' ? (
+                                                                                        <Lock className="size-3" />
+                                                                                    ) : statusLabel === 'Unlocked' ? (
+                                                                                        <Unlock className="size-3" />
+                                                                                    ) : (
+                                                                                        <CheckCircle className="size-3" />
+                                                                                    )}
+                                                                                    <span>{statusLabel}</span>
                                                                                 </button>
                                                                                 <button
                                                                                     type="button"
                                                                                     disabled={isUpdating}
                                                                                     onClick={() => {
-                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                            handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'unlocked');
-                                                                                        } else {
-                                                                                            handleToggleTopicLockClasswide(lesson.id, 'unlocked');
+                                                                                        setAllocationTargetLesson(lesson);
+                                                                                        setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+                                                                                        if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                            initialStatus = 'completed';
+                                                                                        } else if (statusLabel === 'Unlocked') {
+                                                                                            initialStatus = 'unlocked';
                                                                                         }
+                                                                                        setAllocationStatus(initialStatus);
+                                                                                        const currentSelected = studentProgress
+                                                                                            .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                            .map(p => p.student_id);
+                                                                                        setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                        setIsAllocationDrawerOpen(true);
                                                                                     }}
-                                                                                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                        statusLabel === 'Unlocked'
-                                                                                            ? 'bg-[#ecb613] text-white shadow-xs'
-                                                                                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400'
-                                                                                    }`}
+                                                                                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
                                                                                 >
-                                                                                    <Unlock className="size-3" />
-                                                                                    <span>Unlock</span>
+                                                                                    <MoreVertical className="size-3.5" />
                                                                                 </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    disabled={isUpdating}
-                                                                                    onClick={() => {
-                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                            handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'completed');
-                                                                                        } else {
-                                                                                            handleToggleTopicLockClasswide(lesson.id, 'completed');
-                                                                                        }
-                                                                                    }}
-                                                                                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                                                                                        statusLabel === 'Completed'
-                                                                                            ? 'bg-emerald-600 text-white shadow-xs'
-                                                                                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400'
-                                                                                    }`}
-                                                                                >
-                                                                                    <CheckCircle className="size-3" />
-                                                                                    <span>Done</span>
-                                                                                </button>
-                                                                                {isUpdating && <Loader2 className="w-4 h-4 animate-spin text-amber-500 ml-2" />}
                                                                             </div>
                                                                         </div>
                                                                     </div>
@@ -4354,6 +4442,250 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         })
                                 )}
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Allocation Manager Sliding Drawer */}
+                {isAllocationDrawerOpen && (
+                    <div className="fixed inset-0 z-[600] flex justify-end animate-in fade-in duration-300">
+                        {/* Backdrop */}
+                        <div 
+                            onClick={() => setIsAllocationDrawerOpen(false)}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs cursor-pointer"
+                        ></div>
+
+                        {/* Drawer Content */}
+                        <div className="relative w-full max-w-md h-full bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
+                            
+                            {/* Drawer Header */}
+                            <div className="px-6 py-5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40">
+                                <div className="flex items-center gap-2.5 text-left">
+                                    <div className="w-9 h-9 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/20 flex items-center justify-center text-[#ecb613]">
+                                        <Sliders className="size-4.5 text-[#ecb613]" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-extrabold text-slate-900 dark:text-white text-base tracking-tight leading-none">Allocation Manager</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase font-mono tracking-wider mt-1">Curriculum Pace & Targets</p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setIsAllocationDrawerOpen(false)}
+                                    className="p-1.5 rounded-lg text-slate-450 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Content Body */}
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6 text-left">
+                                
+                                {/* Current Target Card */}
+                                <div className="space-y-2">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-[#ecb613] font-mono">Current Target</span>
+                                    <div className="p-4 rounded-2xl bg-amber-500/[0.02] border border-amber-500/10 dark:bg-slate-900/60 dark:border-slate-800 space-y-1">
+                                        <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-tight">
+                                            {allocationTargetLesson?.title || 'No target selected'}
+                                        </h4>
+                                        <p className="text-[11px] text-slate-505 dark:text-slate-400 font-semibold leading-none">
+                                            Topic {allocationTargetLesson?.lesson_number || ''} • Level 1
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Target Type Segment Switcher */}
+                                <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => setAllocationTargetType('classwide')}
+                                        className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                                            allocationTargetType === 'classwide'
+                                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                                                : 'text-slate-450 hover:text-slate-600 dark:hover:text-slate-350'
+                                        }`}
+                                    >
+                                        Class-wide
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAllocationTargetType('individual')}
+                                        className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                                            allocationTargetType === 'individual'
+                                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                                                : 'text-slate-450 hover:text-slate-600 dark:hover:text-slate-350'
+                                        }`}
+                                    >
+                                        Individual Student
+                                    </button>
+                                </div>
+
+                                {/* Update Content Status Blocks */}
+                                <div className="space-y-2">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 font-mono">Update Content Status</span>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        {[
+                                            { status: 'locked', label: 'LOCKED', icon: Lock },
+                                            { status: 'unlocked', label: 'UNLOCKED', icon: Unlock },
+                                            { status: 'completed', label: 'DONE', icon: CheckCircle }
+                                        ].map(item => {
+                                            const isSelected = allocationStatus === item.status;
+                                            const IconComponent = item.icon;
+                                            return (
+                                                <button
+                                                    key={item.status}
+                                                    type="button"
+                                                    onClick={() => setAllocationStatus(item.status as any)}
+                                                    className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all gap-2 cursor-pointer ${
+                                                        isSelected
+                                                            ? `${
+                                                                item.status === 'locked' 
+                                                                    ? 'bg-slate-900 dark:bg-slate-800 border-slate-900 dark:border-slate-850 text-white font-bold' 
+                                                                    : item.status === 'unlocked' 
+                                                                    ? 'border-[#ecb613] bg-amber-500/[0.04] text-[#ecb613] font-bold' 
+                                                                    : 'border-emerald-500 bg-emerald-500/[0.04] text-emerald-600 dark:text-emerald-400 font-bold'
+                                                            }`
+                                                            : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60 text-slate-400 dark:text-slate-500'
+                                                    }`}
+                                                >
+                                                    <IconComponent className="size-4.5 stroke-[2.2]" />
+                                                    <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Student Roster (Individual Student Mode only) */}
+                                {allocationTargetType === 'individual' && (
+                                    <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800 animate-in fade-in duration-300">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 font-mono">Student Roster</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const allIds = students.map(s => s.student_id);
+                                                    if (allocationSelectedStudents.length === students.length) {
+                                                        setAllocationSelectedStudents([]);
+                                                    } else {
+                                                        setAllocationSelectedStudents(allIds);
+                                                    }
+                                                }}
+                                                className="text-[9px] font-black uppercase tracking-wider text-amber-600 hover:text-amber-550 dark:text-[#ecb613] cursor-pointer"
+                                            >
+                                                {allocationSelectedStudents.length === students.length ? 'Clear All' : 'Select All'}
+                                            </button>
+                                        </div>
+
+                                        {/* Roster Search Input */}
+                                        <div className="relative">
+                                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 size-3.5" />
+                                            <input
+                                                type="text"
+                                                value={allocationSearchQuery}
+                                                onChange={(e) => setAllocationSearchQuery(e.target.value)}
+                                                placeholder="Search by name or ID..."
+                                                className="w-full pl-9 pr-4 py-2.5 bg-slate-100 dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-slate-100 transition-all"
+                                            />
+                                        </div>
+
+                                        {/* Scrollable list of students */}
+                                        <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1.5 scrollbar-thin">
+                                            {students.length === 0 ? (
+                                                <p className="text-xs text-slate-450 italic text-center py-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl">No students enrolled in this classroom.</p>
+                                            ) : (() => {
+                                                const filtered = students.filter(s => 
+                                                    s.name.toLowerCase().includes(allocationSearchQuery.toLowerCase()) ||
+                                                    s.student_id.toLowerCase().includes(allocationSearchQuery.toLowerCase())
+                                                );
+                                                if (filtered.length === 0) {
+                                                    return <p className="text-xs text-slate-450 italic text-center py-4">No matching students found.</p>;
+                                                }
+                                                return filtered.map((s, idx) => {
+                                                    const isChecked = allocationSelectedStudents.includes(s.student_id);
+                                                    return (
+                                                        <div
+                                                            key={s.id}
+                                                            onClick={() => {
+                                                                if (isChecked) {
+                                                                    setAllocationSelectedStudents(prev => prev.filter(id => id !== s.student_id));
+                                                                } else {
+                                                                    setAllocationSelectedStudents(prev => [...prev, s.student_id]);
+                                                                }
+                                                            }}
+                                                            className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                                                isChecked
+                                                                    ? 'border-[#ecb613]/40 bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01]'
+                                                                    : 'border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-900/40'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-2.5">
+                                                                {/* Avatar */}
+                                                                <div className="relative">
+                                                                    {s.profile_pic_url ? (
+                                                                        <img 
+                                                                            src={s.profile_pic_url} 
+                                                                            alt={s.name} 
+                                                                            className="size-8 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="size-8 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 font-extrabold text-xs flex items-center justify-center border border-amber-500/20">
+                                                                            {s.name.charAt(0).toUpperCase()}
+                                                                        </div>
+                                                                    )}
+                                                                    <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 rounded-full border border-white dark:border-slate-950"></span>
+                                                                </div>
+
+                                                                {/* Name & ID */}
+                                                                <div>
+                                                                    <p className="text-[11px] font-black text-slate-800 dark:text-slate-100 leading-none">{s.name}</p>
+                                                                    <p className="text-[9px] font-black text-slate-450 dark:text-slate-550 font-mono tracking-tight mt-0.5">ID: #FL{2000 + idx * 13}</p>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Checkbox */}
+                                                            <div className="relative flex items-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    readOnly
+                                                                    className="size-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500 dark:border-slate-700 dark:bg-slate-900 cursor-pointer pointer-events-none"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Drawer Footer */}
+                            <div className="p-6 border-t border-slate-150 dark:border-slate-800 flex items-center gap-3 bg-slate-50/50 dark:bg-slate-900/40">
+                                <button
+                                    type="button"
+                                    disabled={isSavingAllocation}
+                                    onClick={handleSaveAllocation}
+                                    className="flex-1 py-3 bg-[#ecb613] hover:bg-amber-500 disabled:bg-slate-150 dark:disabled:bg-slate-800 text-slate-950 disabled:text-slate-400 font-black rounded-xl text-xs transition-all hover:scale-[1.02] active:scale-[0.98] tracking-widest uppercase flex items-center justify-center gap-2 shadow-md shadow-amber-500/10 cursor-pointer"
+                                >
+                                    {isSavingAllocation ? (
+                                        <>
+                                            <Loader2 className="size-3.5 animate-spin" />
+                                            <span>Saving Changes...</span>
+                                        </>
+                                    ) : (
+                                        <span>Save Changes</span>
+                                    )}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => alert('Feature coming soon: Scheduling and history')}
+                                    className="p-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-transparent rounded-xl transition-all cursor-pointer"
+                                >
+                                    <Clock className="size-4" />
+                                </button>
+                            </div>
+
                         </div>
                     </div>
                 )}
