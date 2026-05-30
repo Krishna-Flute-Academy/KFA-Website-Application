@@ -669,6 +669,10 @@ export default function InventoryLibrary() {
         });
 
         if (isUsingFallback) {
+            const updatedCats = categories.map(c => c.name === oldName ? { ...c, name: newName } : c);
+            setCategories(updatedCats);
+            localStorage.setItem('kfa_categories', JSON.stringify(updatedCats));
+
             const updatedMods = modules.map(m => {
                 const parsed = parseModuleCategory(m);
                 if (parsed.category === oldName) {
@@ -684,6 +688,14 @@ export default function InventoryLibrary() {
             setActiveModal(null);
         } else {
             try {
+                const matchedCat = categories.find(c => c.name.toLowerCase() === oldName.toLowerCase());
+                if (matchedCat) {
+                    await supabaseAuth
+                        .from('course_categories')
+                        .update({ name: newName })
+                        .eq('id', matchedCat.id);
+                }
+
                 for (const mod of affectedModules) {
                     const parsed = parseModuleCategory(mod);
                     await supabaseAuth
