@@ -230,12 +230,28 @@ export default function StudentProfilePage() {
             // Level-level assignment (module)
             if (asg.inventory_ref_type === 'module' && asg.inventory_ref_id) {
                 visibleModules.add(asg.inventory_ref_id);
-                const chaps = courseChapters.filter(c => c.module_id === asg.inventory_ref_id);
-                chaps.forEach(c => {
-                    visibleChapters.add(c.id);
-                    const lessons = courseLessons.filter(l => l.chapter_id === c.id);
-                    lessons.forEach(l => unlockedLessons.add(l.id));
-                });
+                const chaps = courseChapters
+                    .filter(c => c.module_id === asg.inventory_ref_id)
+                    .sort((a, b) => a.chapter_number - b.chapter_number);
+                
+                if (chaps.length > 0) {
+                    chaps.forEach(c => visibleChapters.add(c.id));
+                    
+                    const levelLessons = courseLessons
+                        .filter(l => chaps.some(c => c.id === l.chapter_id))
+                        .sort((a, b) => {
+                            const chapA = chaps.find(c => c.id === a.chapter_id)!;
+                            const chapB = chaps.find(c => c.id === b.chapter_id)!;
+                            if (chapA.chapter_number !== chapB.chapter_number) {
+                                return chapA.chapter_number - chapB.chapter_number;
+                            }
+                            return a.lesson_number - b.lesson_number;
+                        });
+                    
+                    if (levelLessons.length > 0) {
+                        unlockedLessons.add(levelLessons[0].id); // First lesson unlocked sequentially
+                    }
+                }
             }
 
             // Chapter-level assignment
@@ -244,8 +260,12 @@ export default function StudentProfilePage() {
                 if (chap) {
                     visibleModules.add(chap.module_id);
                     visibleChapters.add(chap.id);
-                    const lessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                    lessons.forEach(l => unlockedLessons.add(l.id));
+                    const chapLessons = courseLessons
+                        .filter(l => l.chapter_id === chap.id)
+                        .sort((a, b) => a.lesson_number - b.lesson_number);
+                    if (chapLessons.length > 0) {
+                        unlockedLessons.add(chapLessons[0].id); // First lesson of chapter unlocked sequentially
+                    }
                 }
             }
 
@@ -286,17 +306,25 @@ export default function StudentProfilePage() {
             }
         });
 
-        // Apply sequential auto-unlocks
-        courseChapters.forEach(chap => {
-            const siblingLessons = courseLessons
-                .filter(l => l.chapter_id === chap.id)
-                .sort((a, b) => a.lesson_number - b.lesson_number);
+        // Apply sequential auto-unlocks across entire level pathway
+        courseModules.forEach(mod => {
+            const chaps = courseChapters.filter(c => c.module_id === mod.id).sort((a,b) => a.chapter_number - b.chapter_number);
+            const levelLessons = courseLessons
+                .filter(l => chaps.some(c => c.id === l.chapter_id))
+                .sort((a, b) => {
+                    const chapA = chaps.find(c => c.id === a.chapter_id)!;
+                    const chapB = chaps.find(c => c.id === b.chapter_id)!;
+                    if (chapA.chapter_number !== chapB.chapter_number) {
+                        return chapA.chapter_number - chapB.chapter_number;
+                    }
+                    return a.lesson_number - b.lesson_number;
+                });
 
-            for (let i = 0; i < siblingLessons.length; i++) {
-                const lesson = siblingLessons[i];
+            for (let i = 0; i < levelLessons.length; i++) {
+                const lesson = levelLessons[i];
                 if (completedLessons.has(lesson.id)) {
-                    if (i + 1 < siblingLessons.length) {
-                        const nextLesson = siblingLessons[i + 1];
+                    if (i + 1 < levelLessons.length) {
+                        const nextLesson = levelLessons[i + 1];
                         const hasManualLock = studentProgress.some(p => p.lesson_id === nextLesson.id && p.status === 'locked');
                         if (!hasManualLock) {
                             unlockedLessons.add(nextLesson.id);

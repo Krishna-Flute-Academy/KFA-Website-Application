@@ -3,9 +3,10 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink, Unlock } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
+import { INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
 
 interface ClassroomDetails {
     id: string;
@@ -138,6 +139,14 @@ export default function ClassroomDashboardPage() {
     const [courseChapters, setCourseChapters] = useState<any[]>([]);
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
     const [studentProgress, setStudentProgress] = useState<any[]>([]);
+    const [curriculumTab, setCurriculumTab] = useState<'classwide' | 'individual'>('classwide');
+    const [selectedStudentForCurriculum, setSelectedStudentForCurriculum] = useState<EnrolledStudent | null>(null);
+    const [isUpdatingProgress, setIsUpdatingProgress] = useState<string | null>(null);
+    const [isInventoryDrawerOpen, setIsInventoryDrawerOpen] = useState(false);
+    const [inventorySearchQuery, setInventorySearchQuery] = useState('');
+    const [inventoryActiveTab, setInventoryActiveTab] = useState<'proficiency' | 'specialized'>('proficiency');
+    const [expandedInventoryModules, setExpandedInventoryModules] = useState<Record<string, boolean>>({});
+    const [importingItemId, setImportingItemId] = useState<string | null>(null);
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [mediaPreview, setMediaPreview] = useState<{ type: string; url: string; title: string } | null>(null);
     const [selectedTopic, setSelectedTopic] = useState<any | null>(null);
@@ -315,13 +324,43 @@ export default function ClassroomDashboardPage() {
                 setSchedules(scheduleData || []);
 
                 // 7. Fetch Static Course Curriculum data
-                const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
-                const { data: dbChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-                const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+                let dbModulesData = [];
+                let dbChaptersData = [];
+                let dbLessonsData = [];
 
-                setCourseModules(dbModules || []);
-                setCourseChapters(dbChapters || []);
-                setCourseLessons(dbLessons || []);
+                const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
+                
+                if (dbModules && dbModules.length > 0) {
+                    dbModulesData = dbModules;
+                    const { data: dbChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
+                    const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+                    dbChaptersData = dbChapters || [];
+                    dbLessonsData = dbLessons || [];
+                } else {
+                    // Auto-seed Supabase database if tables are empty
+                    try {
+                        await supabaseAuth.from('course_modules').insert(INITIAL_MODULES);
+                        await supabaseAuth.from('course_chapters').insert(INITIAL_CHAPTERS);
+                        await supabaseAuth.from('course_lessons').insert(INITIAL_LESSONS);
+
+                        const { data: seedModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
+                        const { data: seedChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
+                        const { data: seedLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+
+                        dbModulesData = seedModules || [];
+                        dbChaptersData = seedChapters || [];
+                        dbLessonsData = seedLessons || [];
+                    } catch (seedingErr) {
+                        console.error('Failed to auto-seed course curriculum data:', seedingErr);
+                        dbModulesData = INITIAL_MODULES;
+                        dbChaptersData = INITIAL_CHAPTERS;
+                        dbLessonsData = INITIAL_LESSONS;
+                    }
+                }
+
+                setCourseModules(dbModulesData);
+                setCourseChapters(dbChaptersData);
+                setCourseLessons(dbLessonsData);
 
                 try {
                     const { data: progressData } = await supabaseAuth
@@ -821,6 +860,217 @@ export default function ClassroomDashboardPage() {
     const assignedInventoryItems = useMemo(() => {
         return assignments.filter(a => a.inventory_ref_type);
     }, [assignments]);
+
+    const syllabusLessons = useMemo(() => {
+        const lessonsSet = new Set<string>();
+        const uniqueLessons: any[] = [];
+
+        assignedInventoryItems.forEach(item => {
+            if (item.inventory_ref_type === 'module') {
+                const chapters = courseChapters.filter(c => c.module_id === item.inventory_ref_id);
+                const chapterIds = new Set(chapters.map(c => c.id));
+                const lessons = courseLessons.filter(l => chapterIds.has(l.chapter_id));
+                lessons.forEach(l => {
+                    if (!lessonsSet.has(l.id)) {
+                        lessonsSet.add(l.id);
+                        uniqueLessons.push(l);
+                    }
+                });
+            } else if (item.inventory_ref_type === 'chapter') {
+                const lessons = courseLessons.filter(l => l.chapter_id === item.inventory_ref_id);
+                lessons.forEach(l => {
+                    if (!lessonsSet.has(l.id)) {
+                        lessonsSet.add(l.id);
+                        uniqueLessons.push(l);
+                    }
+                });
+            } else if (item.inventory_ref_type === 'lesson') {
+                const lesson = courseLessons.find(l => l.id === item.inventory_ref_id);
+                if (lesson && !lessonsSet.has(lesson.id)) {
+                    lessonsSet.add(lesson.id);
+                    uniqueLessons.push(lesson);
+                }
+            }
+        });
+
+        return uniqueLessons.sort((a, b) => a.lesson_number - b.lesson_number);
+    }, [assignedInventoryItems, courseChapters, courseLessons]);
+
+    const selectedStudentPermissions = useMemo(() => {
+        const completed = new Set<string>();
+        const unlocked = new Set<string>();
+
+        if (selectedStudentForCurriculum) {
+            const studentId = selectedStudentForCurriculum.student_id;
+            studentProgress.forEach(p => {
+                if (p.student_id === studentId) {
+                    if (p.status === 'completed') {
+                        completed.add(p.lesson_id);
+                        unlocked.add(p.lesson_id);
+                    } else if (p.status === 'unlocked') {
+                        unlocked.add(p.lesson_id);
+                    }
+                }
+            });
+        }
+
+        return {
+            completedLessons: completed,
+            unlockedLessons: unlocked
+        };
+    }, [selectedStudentForCurriculum, studentProgress]);
+
+    const livePreviewData = useMemo(() => {
+        if (!selectedStudentForCurriculum || syllabusLessons.length === 0) return null;
+
+        const completedCount = syllabusLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length;
+        const progressPercentage = Math.round((completedCount / syllabusLessons.length) * 100);
+
+        let currentlyLearning = syllabusLessons.find(l => 
+            selectedStudentPermissions.unlockedLessons.has(l.id) && 
+            !selectedStudentPermissions.completedLessons.has(l.id)
+        );
+        if (!currentlyLearning) {
+            currentlyLearning = syllabusLessons.find(l => 
+                !selectedStudentPermissions.completedLessons.has(l.id)
+            );
+        }
+
+        const nextLockedItems = syllabusLessons.filter(l => 
+            !selectedStudentPermissions.completedLessons.has(l.id) && 
+            !selectedStudentPermissions.unlockedLessons.has(l.id) &&
+            l.id !== currentlyLearning?.id
+        );
+
+        return {
+            progressPercentage,
+            currentlyLearning,
+            nextLockedItems: nextLockedItems.slice(0, 3)
+        };
+    }, [selectedStudentForCurriculum, syllabusLessons, selectedStudentPermissions]);
+
+    const handleToggleTopicLock = async (studentId: string, lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
+        if (!classroomId) return;
+        setIsUpdatingProgress(lessonId);
+        try {
+            const { error } = await supabaseAuth
+                .from('student_topic_progress')
+                .upsert({
+                    student_id: studentId,
+                    classroom_id: classroomId,
+                    lesson_id: lessonId,
+                    status: newStatus,
+                    unlocked_by: 'manual',
+                    unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
+                    completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+                }, {
+                    onConflict: 'student_id,lesson_id'
+                });
+            if (error) throw error;
+
+            const { data: progressData } = await supabaseAuth
+                .from('student_topic_progress')
+                .select('*')
+                .eq('classroom_id', classroomId);
+            setStudentProgress(progressData || []);
+        } catch (err) {
+            console.error('Error updating individual progress:', err);
+            alert('Failed to update individual progress.');
+        } finally {
+            setIsUpdatingProgress(null);
+        }
+    };
+
+    const handleToggleTopicLockClasswide = async (lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
+        if (!classroomId || students.length === 0) return;
+        setIsUpdatingProgress(lessonId);
+        try {
+            const rows = students.map(s => ({
+                student_id: s.student_id,
+                classroom_id: classroomId,
+                lesson_id: lessonId,
+                status: newStatus,
+                unlocked_by: 'manual',
+                unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
+                completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+            }));
+
+            const { error } = await supabaseAuth
+                .from('student_topic_progress')
+                .upsert(rows, {
+                    onConflict: 'student_id,lesson_id'
+                });
+            if (error) throw error;
+
+            const { data: progressData } = await supabaseAuth
+                .from('student_topic_progress')
+                .select('*')
+                .eq('classroom_id', classroomId);
+            setStudentProgress(progressData || []);
+        } catch (err) {
+            console.error('Error updating classwide progress:', err);
+            alert('Failed to update classwide progress.');
+        } finally {
+            setIsUpdatingProgress(null);
+        }
+    };
+
+    const handleImportItem = async (
+        type: 'module' | 'chapter' | 'lesson',
+        id: string,
+        title: string,
+        description: string
+    ) => {
+        if (!classroomId || !teacherProfile) return;
+        
+        // Prevent duplicate import
+        const isAlreadyAssigned = assignments.some(a => 
+            a.inventory_ref_type === type && a.inventory_ref_id === id
+        );
+        if (isAlreadyAssigned) {
+            alert(`"${title}" is already assigned to this classroom.`);
+            return;
+        }
+
+        setImportingItemId(id);
+        try {
+            const { data: newAsg, error } = await supabaseAuth
+                .from('assignments')
+                .insert([{
+                    classroom_id: classroomId,
+                    teacher_id: teacherProfile.id,
+                    title: title,
+                    description: description || `Study guide for ${title}`,
+                    due_date: null,
+                    target_type: 'all',
+                    inventory_ref_type: type,
+                    inventory_ref_id: id,
+                    inventory_ref_title: title
+                }])
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Also insert assignment_students for all students in the class
+            if (students.length > 0) {
+                const rows = students.map(s => ({
+                    assignment_id: newAsg.id,
+                    student_id: s.student_id,
+                    status: 'pending'
+                }));
+                await supabaseAuth.from('assignment_students').insert(rows);
+            }
+
+            // Refresh assignments list
+            await fetchAssignments();
+        } catch (err) {
+            console.error('Failed to import item:', err);
+            alert('Failed to import item from inventory.');
+        } finally {
+            setImportingItemId(null);
+        }
+    };
 
     const statusColors: Record<string, string> = {
         pending: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
@@ -1409,7 +1659,7 @@ export default function ClassroomDashboardPage() {
                             </div>
                         </div>
                     ) : activeTab === 'Curriculum' ? (
-                        <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
+                        <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
                             {/* Section 1: Dashboard Header */}
                             <section className="mb-8">
                                 <div className="relative overflow-hidden p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md shadow-amber-500/[0.01]">
@@ -1430,338 +1680,837 @@ export default function ClassroomDashboardPage() {
                                                 An interactive learning roadmap. Students access these modules, audio files, sheet music PDFs, and step-by-step video guides directly in their student portals.
                                             </p>
                                         </div>
-                                        <Link 
-                                            href="/teacher-dashboard/inventory"
+                                        <button 
+                                            onClick={() => setIsInventoryDrawerOpen(true)}
                                             className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-md shadow-[#ecb613]/10 hover:-translate-y-0.5 active:translate-y-0 active:scale-98 self-start md:self-center shrink-0 border border-[#ecb613]/10"
                                         >
                                             <Plus className="size-4 stroke-[3]" />
                                             <span>Add from Inventory</span>
-                                        </Link>
+                                        </button>
+                                    </div>
+
+                                    {/* Class-wide vs Individual Sub-tabs */}
+                                    <div className="flex border-b border-slate-200 dark:border-slate-800 gap-8 mt-6">
+                                        <button
+                                            onClick={() => setCurriculumTab('classwide')}
+                                            className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${
+                                                curriculumTab === 'classwide' 
+                                                    ? 'border-[#ecb613] text-[#ecb613]' 
+                                                    : 'border-transparent text-slate-400 hover:text-slate-605 dark:text-slate-500 dark:hover:text-slate-400'
+                                            }`}
+                                        >
+                                            Class-wide Roster Lock
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setCurriculumTab('individual');
+                                                if (!selectedStudentForCurriculum && students.length > 0) {
+                                                    setSelectedStudentForCurriculum(students[0]);
+                                                }
+                                            }}
+                                            className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${
+                                                curriculumTab === 'individual' 
+                                                    ? 'border-[#ecb613] text-[#ecb613]' 
+                                                    : 'border-transparent text-slate-400 hover:text-slate-605 dark:text-slate-500 dark:hover:text-slate-400'
+                                            }`}
+                                        >
+                                            Individual Override Pacing
+                                        </button>
                                     </div>
                                 </div>
                             </section>
 
-                            {/* Section 2: Tutorials List */}
-                            <section className="space-y-6">
-                                {assignedInventoryItems.length === 0 ? (
-                                    <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center max-w-2xl mx-auto min-h-[400px]">
-                                        <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner animate-bounce duration-1000">
-                                            <BookOpen className="size-10 text-amber-500" />
-                                        </div>
-                                        <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">No Learning Path Set</h3>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center">
-                                            You haven't assigned any study materials yet. Open the Inventory Library to assign levels, chapters, or individual lessons.
-                                        </p>
-                                        <Link
-                                            href="/teacher-dashboard/inventory"
-                                            className="mt-8 inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 text-xs font-black rounded-xl shadow-lg hover:shadow-amber-500/10 transition-all hover:-translate-y-0.5 uppercase tracking-wider"
-                                        >
-                                            <Sparkles className="size-4" /> Explore Inventory Library
-                                        </Link>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-8">
-                                        {assignedInventoryItems.map((asg) => {
-                                            const isDeleting = deletingAssignmentId === asg.id;
-                                            
-                                            // Define beautiful styles based on reference type
-                                            const typeColors = {
-                                                module: {
-                                                    bg: 'bg-amber-500/[0.01] dark:bg-amber-500/[0.005]',
-                                                    border: 'hover:border-amber-500/30 border-l-[#ecb613]',
-                                                    badge: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/10',
-                                                    iconBg: 'bg-[#ecb613]/10 text-[#ecb613]'
-                                                },
-                                                chapter: {
-                                                    bg: 'bg-amber-400/[0.01] dark:bg-amber-400/[0.005]',
-                                                    border: 'hover:border-amber-400/30 border-l-amber-400',
-                                                    badge: 'bg-amber-50/80 text-amber-600 dark:bg-amber-400/10 dark:text-amber-300 border border-amber-150 dark:border-amber-400/15',
-                                                    iconBg: 'bg-amber-400/10 text-amber-500'
-                                                },
-                                                lesson: {
-                                                    bg: 'bg-amber-300/[0.01] dark:bg-amber-300/[0.005]',
-                                                    border: 'hover:border-amber-300/30 border-l-amber-300',
-                                                    badge: 'bg-amber-50/50 text-amber-500 dark:bg-amber-300/10 dark:text-amber-300 border border-amber-100 dark:border-amber-300/10',
-                                                    iconBg: 'bg-amber-300/10 text-amber-500'
-                                                }
-                                            }[asg.inventory_ref_type as 'module' | 'chapter' | 'lesson'] || {
-                                                bg: 'bg-slate-500/[0.03]',
-                                                border: 'hover:border-slate-500/30 border-l-slate-500',
-                                                badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-                                                iconBg: 'bg-slate-100 text-slate-600'
-                                            };
-
+                            {/* Section 2: Student Horizontal Scroll Bar for Individual Override Mode */}
+                            {curriculumTab === 'individual' && (
+                                <div className="flex items-center gap-3 overflow-x-auto py-4 px-4 scrollbar-hide border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-3xl mb-8 shadow-sm">
+                                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider shrink-0">Select Student:</span>
+                                    {students.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic">No enrolled students in this classroom.</p>
+                                    ) : (
+                                        students.map(s => {
+                                            const isSelected = selectedStudentForCurriculum?.student_id === s.student_id;
                                             return (
-                                                <div 
-                                                    key={asg.id} 
-                                                    className={`group relative bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/70 dark:border-slate-800 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-lg ${typeColors.border} border-l-4 text-left`}
+                                                <button
+                                                    key={s.id}
+                                                    onClick={() => setSelectedStudentForCurriculum(s)}
+                                                    className={`flex items-center gap-2.5 px-4 py-2 rounded-full transition-all shrink-0 border ${
+                                                        isSelected 
+                                                            ? 'bg-[#ecb613]/10 border-[#ecb613]/30 text-[#ecb613] shadow-sm font-bold scale-[1.02]' 
+                                                            : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                    }`}
                                                 >
-                                                    {/* Tutorial Header */}
-                                                    <div className="px-6 py-5 bg-slate-50/50 dark:bg-slate-950/[0.15] border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-4">
-                                                        <div className="flex items-center gap-4 pl-2">
-                                                            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-sm ${typeColors.iconBg}`}>
-                                                                {asg.inventory_ref_type === 'module' ? (
-                                                                    <BookOpen className="size-5" />
-                                                                ) : asg.inventory_ref_type === 'chapter' ? (
-                                                                    <ClipboardList className="size-5" />
-                                                                ) : (
-                                                                    <Music className="size-5" />
-                                                                )}
-                                                            </div>
-                                                            <div className="space-y-1">
-                                                                <div className="flex items-center gap-2.5 flex-wrap">
-                                                                    <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
-                                                                        {asg.inventory_ref_title || asg.title}
-                                                                    </h3>
-                                                                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${typeColors.badge}`}>
-                                                                        {asg.inventory_ref_type}
-                                                                    </span>
-                                                                </div>
-                                                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
-                                                                    Assigned on {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <button 
-                                                            onClick={() => handleDeleteAssignment(asg.id)}
-                                                            disabled={isDeleting}
-                                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
-                                                            title="Unassign tutorial from class"
-                                                        >
-                                                            {isDeleting ? (
-                                                                <Loader2 className="size-3.5 animate-spin" />
-                                                            ) : (
-                                                                <Trash2 className="size-3.5" />
-                                                            )}
-                                                            <span>Remove</span>
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Tutorial Body */}
-                                                    <div className="p-6 md:p-8 space-y-8">
-                                                        {/* Description/Instructions */}
-                                                        {asg.description && (
-                                                            <div className="p-5 rounded-2xl bg-amber-500/[0.04] dark:bg-amber-500/[0.01] border border-amber-500/15 text-slate-700 dark:text-slate-355 flex items-start gap-4">
-                                                                <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
-                                                                    <Lightbulb className="size-4.5 text-amber-500" />
-                                                                </div>
-                                                                <div className="space-y-1.5 text-left">
-                                                                    <span className="text-[10px] font-black uppercase text-amber-500 tracking-widest font-mono">Teacher's Learning Instructions</span>
-                                                                    <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap">{asg.description}</p>
-                                                                </div>
-                                                            </div>
+                                                    <div className="w-6 h-6 rounded-full overflow-hidden bg-[#ecb613]/20 flex items-center justify-center shrink-0">
+                                                        {s.profile_pic_url ? (
+                                                            <img src={s.profile_pic_url} alt={s.name} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <span className="text-[10px] text-[#ecb613] font-black">{s.name.charAt(0)}</span>
                                                         )}
+                                                    </div>
+                                                    <span className="text-xs leading-none">{s.name}</span>
+                                                </button>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            )}
 
-                                                        {/* Render Module details */}
-                                                        {asg.inventory_ref_type === 'module' && (() => {
-                                                            const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
-                                                            if (!mod) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Level data could not be loaded.</p>;
-                                                            
-                                                            const chaptersInMod = courseChapters.filter(c => c.module_id === mod.id);
-                                                            return (
-                                                                <div className="space-y-5">
-                                                                    <div className="border-b border-slate-100 dark:border-slate-800/80 pb-3 flex items-center justify-between pl-2">
-                                                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Module Syllabus Outline</h4>
-                                                                        <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded">
-                                                                            {chaptersInMod.length} Chapters
-                                                                        </span>
-                                                                    </div>
-                                                                    {chaptersInMod.length === 0 ? (
-                                                                        <p className="text-xs text-slate-400 italic text-left pl-2">No chapters defined in this level.</p>
+                            {/* Two-Column Responsive Grid */}
+                            <div className="grid grid-cols-12 gap-8 items-start">
+                                <div className={`${curriculumTab === 'individual' && selectedStudentForCurriculum ? 'col-span-12 lg:col-span-8' : 'col-span-12'} space-y-6`}>
+                                    {assignedInventoryItems.length === 0 ? (
+                                        <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[400px]">
+                                            <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner animate-bounce duration-1000">
+                                                <BookOpen className="size-10 text-amber-500" />
+                                            </div>
+                                            <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">No Learning Path Set</h3>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center">
+                                                You haven't assigned any study materials yet. Open the Inventory Library to assign levels, chapters, or individual lessons.
+                                            </p>
+                                            <button 
+                                                onClick={() => setIsInventoryDrawerOpen(true)}
+                                                className="mt-8 inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 text-xs font-black rounded-xl shadow-lg hover:shadow-amber-500/10 transition-all hover:-translate-y-0.5 uppercase tracking-wider"
+                                            >
+                                                <Sparkles className="size-4" /> Explore Inventory Library
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-8">
+                                            {assignedInventoryItems.map((asg) => {
+                                                const isDeleting = deletingAssignmentId === asg.id;
+                                                
+                                                // Define beautiful styles based on reference type
+                                                const typeColors = {
+                                                    module: {
+                                                        bg: 'bg-amber-500/[0.01] dark:bg-amber-500/[0.005]',
+                                                        border: 'hover:border-amber-500/30 border-l-[#ecb613]',
+                                                        badge: 'bg-amber-550 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/10',
+                                                        iconBg: 'bg-[#ecb613]/10 text-[#ecb613]'
+                                                    },
+                                                    chapter: {
+                                                        bg: 'bg-amber-400/[0.01] dark:bg-amber-400/[0.005]',
+                                                        border: 'hover:border-amber-400/30 border-l-amber-400',
+                                                        badge: 'bg-amber-50/80 text-amber-600 dark:bg-amber-400/10 dark:text-amber-300 border border-amber-150 dark:border-amber-400/15',
+                                                        iconBg: 'bg-amber-400/10 text-amber-500'
+                                                    },
+                                                    lesson: {
+                                                        bg: 'bg-amber-300/[0.01] dark:bg-amber-300/[0.005]',
+                                                        border: 'hover:border-amber-300/30 border-l-amber-300',
+                                                        badge: 'bg-amber-550/50 text-amber-500 dark:bg-amber-300/10 dark:text-amber-300 border border-amber-100 dark:border-amber-300/10',
+                                                        iconBg: 'bg-amber-300/10 text-amber-500'
+                                                    }
+                                                }[asg.inventory_ref_type as 'module' | 'chapter' | 'lesson'] || {
+                                                    bg: 'bg-slate-500/[0.03]',
+                                                    border: 'hover:border-slate-500/30 border-l-slate-500',
+                                                    badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+                                                    iconBg: 'bg-slate-100 text-slate-600'
+                                                };
+
+                                                return (
+                                                    <div 
+                                                        key={asg.id} 
+                                                        className={`group relative bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/70 dark:border-slate-800 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-lg ${typeColors.border} border-l-4 text-left`}
+                                                    >
+                                                        {/* Tutorial Header */}
+                                                        <div className="px-6 py-5 bg-slate-50/50 dark:bg-slate-950/[0.15] border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-4">
+                                                            <div className="flex items-center gap-4 pl-2">
+                                                                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-sm ${typeColors.iconBg}`}>
+                                                                    {asg.inventory_ref_type === 'module' ? (
+                                                                        <BookOpen className="size-5" />
+                                                                    ) : asg.inventory_ref_type === 'chapter' ? (
+                                                                        <ClipboardList className="size-5" />
                                                                     ) : (
-                                                                        <div className="space-y-4">
-                                                                            {chaptersInMod.map(chap => {
-                                                                                const isExpanded = !!expandedChapters[chap.id];
-                                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                                                                                
-                                                                                return (
-                                                                                    <div 
-                                                                                        key={chap.id} 
-                                                                                        className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-950/[0.05] transition-all duration-300 hover:border-slate-300 dark:hover:border-slate-750"
-                                                                                    >
-                                                                                        {/* Chapter Header */}
-                                                                                        <div 
-                                                                                            onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isExpanded }))}
-                                                                                            className="px-5 py-4 bg-slate-50/50 dark:bg-slate-950/[0.2] hover:bg-slate-100/60 dark:hover:bg-slate-950/[0.3] transition-all flex items-center justify-between cursor-pointer select-none"
-                                                                                        >
-                                                                                            <div className="flex items-center gap-4">
-                                                                                                <div className="w-10 h-10 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/25 flex items-center justify-center text-[#ecb613] text-xs font-black font-mono">
-                                                                                                    Ch{chap.chapter_number}
-                                                                                                </div>
-                                                                                                <div className="text-left">
-                                                                                                    <h5 className="text-sm font-extrabold text-slate-800 dark:text-slate-100 leading-tight">
-                                                                                                        {chap.title}
-                                                                                                    </h5>
-                                                                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1 uppercase tracking-wider font-mono">
-                                                                                                        {chapLessons.length} STUDY UNITS
-                                                                                                    </p>
-                                                                                                </div>
-                                                                                            </div>
-                                                                                            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-900/60 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
-                                                                                                {isExpanded ? (
-                                                                                                    <ChevronUp className="size-4" />
-                                                                                                ) : (
-                                                                                                    <ChevronDown className="size-4" />
-                                                                                                )}
-                                                                                            </div>
-                                                                                        </div>
-                                                                                        
-                                                                                        {/* Chapter Lessons */}
-                                                                                        {isExpanded && (
-                                                                                            <div className="p-5 bg-white dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-800/80 space-y-4">
-                                                                                                {chapLessons.length === 0 ? (
-                                                                                                    <p className="text-xs text-slate-400 italic text-center py-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl">No lesson materials uploaded for this chapter.</p>
-                                                                                                ) : (
-                                                                                                    <div className="grid grid-cols-1 gap-3 relative pl-3 border-l border-slate-200/60 dark:border-slate-800">
-                                                                                                        {chapLessons.map(lesson => {
-                                                                                                             const stats = {
-                                                                                                                 completed: studentProgress.filter(p => p.lesson_id === lesson.id && p.status === 'completed').length,
-                                                                                                                 unlocked: studentProgress.filter(p => p.lesson_id === lesson.id && p.status === 'unlocked').length,
-                                                                                                                 total: students.length
-                                                                                                             };
-                                                                                                             return (
-                                                                                                                 <LessonRow key={lesson.id} lesson={lesson} onClick={() => setSelectedTopic(lesson)} stats={stats} />
-                                                                                                             );
-                                                                                                         })}
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                );
-                                                                            })}
-                                                                        </div>
+                                                                        <Music className="size-5" />
                                                                     )}
                                                                 </div>
-                                                            );
-                                                        })()}
-
-                                                        {/* Render Chapter details */}
-                                                        {asg.inventory_ref_type === 'chapter' && (() => {
-                                                            const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
-                                                            if (!chap) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Chapter data could not be loaded.</p>;
-                                                            
-                                                            const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                                                            return (
-                                                                <div className="space-y-4">
-                                                                    <div className="border-b border-slate-150 dark:border-slate-800 pb-3 flex items-center justify-between pl-2">
-                                                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Chapter Lesson Materials</h4>
-                                                                        <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded">
-                                                                            {chapLessons.length} Study Units
+                                                                <div className="space-y-1">
+                                                                    <div className="flex items-center gap-2.5 flex-wrap">
+                                                                        <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
+                                                                            {asg.inventory_ref_title || asg.title}
+                                                                        </h3>
+                                                                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${typeColors.badge}`}>
+                                                                            {asg.inventory_ref_type}
                                                                         </span>
                                                                     </div>
-                                                                    <div className="grid grid-cols-1 gap-3 pl-3 border-l border-slate-200/60 dark:border-slate-800">
-                                                                        {chapLessons.length === 0 ? (
-                                                                            <p className="text-xs text-slate-400 italic text-center py-6 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl w-full">No lesson materials defined in this chapter.</p>
-                                                                        ) : (
-                                                                            chapLessons.map(lesson => {
-                                                                                                                const stats = {
-                                                                                                                    completed: studentProgress.filter(p => p.lesson_id === lesson.id && p.status === 'completed').length,
-                                                                                                                    unlocked: studentProgress.filter(p => p.lesson_id === lesson.id && p.status === 'unlocked').length,
-                                                                                                                    total: students.length
-                                                                                                                };
-                                                                                                                return (
-                                                                                                                    <LessonRow key={lesson.id} lesson={lesson} onClick={() => setSelectedTopic(lesson)} stats={stats} />
-                                                                                                                );
-                                                                                                            })
-                                                                        )}
+                                                                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
+                                                                        Assigned on {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => handleDeleteAssignment(asg.id)}
+                                                                disabled={isDeleting}
+                                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
+                                                                title="Unassign tutorial from class"
+                                                            >
+                                                                {isDeleting ? (
+                                                                    <Loader2 className="size-3.5 animate-spin" />
+                                                                ) : (
+                                                                    <Trash2 className="size-3.5" />
+                                                                )}
+                                                                <span>Remove</span>
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Tutorial Body */}
+                                                        <div className="p-6 md:p-8 space-y-8">
+                                                            {/* Description/Instructions */}
+                                                            {asg.description && (
+                                                                <div className="p-5 rounded-2xl bg-amber-500/[0.04] dark:bg-amber-500/[0.01] border border-amber-500/15 text-slate-700 dark:text-slate-300 flex items-start gap-4">
+                                                                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+                                                                        <Lightbulb className="size-4.5 text-amber-500" />
+                                                                    </div>
+                                                                    <div className="space-y-1.5 text-left">
+                                                                        <span className="text-[10px] font-black uppercase text-amber-500 tracking-widest font-mono">Teacher's Learning Instructions</span>
+                                                                        <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap">{asg.description}</p>
                                                                     </div>
                                                                 </div>
-                                                            );
-                                                        })()}
+                                                            )}
 
-                                                        {/* Render Lesson details */}
-                                                        {asg.inventory_ref_type === 'lesson' && (() => {
-                                                            const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
-                                                            if (!lesson) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Lesson data could not be loaded.</p>;
-                                                            
-                                                            // Determine media icon and gradient base
-                                                            const isAudio = lesson.material_type === 'audio';
-                                                            const isVideo = lesson.material_type === 'video';
-                                                            const isPdf = lesson.material_type === 'pdf';
-                                                            
-                                                            const highlightBorder = isVideo 
-                                                                ? 'border-l-rose-500' 
-                                                                : isAudio 
-                                                                ? 'border-l-amber-500' 
-                                                                : isPdf 
-                                                                ? 'border-l-blue-500' 
-                                                                : 'border-l-emerald-500';
-
-                                                            const iconColor = isVideo 
-                                                                ? 'text-rose-500 bg-rose-500/10' 
-                                                                : isAudio 
-                                                                ? 'text-amber-500 bg-amber-500/10' 
-                                                                : isPdf 
-                                                                ? 'text-blue-500 bg-blue-500/10' 
-                                                                : 'text-emerald-500 bg-emerald-500/10';
-
-                                                            return (
-                                                                <div className="space-y-4">
-                                                                    <div className="border-b border-slate-100 dark:border-slate-800 pb-3 pl-2">
-                                                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono font-sans">Assigned Lesson Study Guide</h4>
-                                                                    </div>
-                                                                    <div 
-                                                                        onClick={() => setSelectedTopic(lesson)}
-                                                                        className={`p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 border-l-4 ${highlightBorder} bg-slate-50/20 dark:bg-slate-900/40 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all cursor-pointer hover:shadow-md active:scale-[0.995] hover:border-slate-350 dark:hover:border-slate-700`}
-                                                                    >
-                                                                        <div className="space-y-4 text-left max-w-xl">
-                                                                            <div className="flex items-center gap-3">
-                                                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColor}`}>
-                                                                                    {isVideo ? (
-                                                                                        <Film className="size-5" />
-                                                                                    ) : isAudio ? (
-                                                                                        <Music className="size-5 animate-pulse" />
-                                                                                    ) : isPdf ? (
-                                                                                        <FileText className="size-5" />
-                                                                                    ) : (
-                                                                                        <BookOpen className="size-5" />
-                                                                                    )}
-                                                                                </div>
-                                                                                <div>
-                                                                                    <h5 className="font-extrabold text-base text-slate-900 dark:text-white leading-snug">{lesson.title}</h5>
-                                                                                    <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 mt-1 inline-block">
-                                                                                        {lesson.material_type || 'Guide'} Content
-                                                                                    </span>
-                                                                                </div>
+                                                            {/* Render Module details */}
+                                                            {asg.inventory_ref_type === 'module' && (() => {
+                                                                const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
+                                                                if (!mod) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Level data could not be loaded.</p>;
+                                                                
+                                                                const chaptersInMod = courseChapters.filter(c => c.module_id === mod.id);
+                                                                return (
+                                                                    <div className="space-y-5">
+                                                                        <div className="border-b border-slate-100 dark:border-slate-800/80 pb-3 flex items-center justify-between pl-2">
+                                                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Module Syllabus Outline</h4>
+                                                                            <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded">
+                                                                                {chaptersInMod.length} Chapters
+                                                                            </span>
+                                                                        </div>
+                                                                        {chaptersInMod.length === 0 ? (
+                                                                            <p className="text-xs text-slate-400 italic text-left pl-2">No chapters defined in this level.</p>
+                                                                        ) : (
+                                                                            <div className="space-y-4">
+                                                                                {chaptersInMod.map(chap => {
+                                                                                    const isExpanded = !!expandedChapters[chap.id];
+                                                                                    const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                                    
+                                                                                    return (
+                                                                                        <div 
+                                                                                            key={chap.id} 
+                                                                                            className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-950/[0.05] transition-all duration-300 hover:border-slate-300 dark:hover:border-slate-700"
+                                                                                        >
+                                                                                            {/* Chapter Header */}
+                                                                                            <div 
+                                                                                                onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isExpanded }))}
+                                                                                                className="px-5 py-4 bg-slate-50/50 dark:bg-slate-955/[0.2] hover:bg-slate-100/60 dark:hover:bg-slate-955/[0.3] transition-all flex items-center justify-between cursor-pointer select-none"
+                                                                                            >
+                                                                                                <div className="flex items-center gap-4">
+                                                                                                    <div className="w-10 h-10 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/25 flex items-center justify-center text-[#ecb613] text-xs font-black font-mono">
+                                                                                                        Ch{chap.chapter_number}
+                                                                                                    </div>
+                                                                                                    <div className="text-left">
+                                                                                                        <h5 className="text-sm font-extrabold text-slate-800 dark:text-slate-100 leading-tight">
+                                                                                                            {chap.title}
+                                                                                                        </h5>
+                                                                                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1 uppercase tracking-wider font-mono">
+                                                                                                            {chapLessons.length} STUDY UNITS
+                                                                                                        </p>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-900/60 flex items-center justify-center text-slate-400 hover:text-slate-650 transition-colors">
+                                                                                                    {isExpanded ? (
+                                                                                                        <ChevronUp className="size-4" />
+                                                                                                    ) : (
+                                                                                                        <ChevronDown className="size-4" />
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            
+                                                                                            {/* Chapter Lessons */}
+                                                                                            {isExpanded && (
+                                                                                                <div className="p-5 bg-white dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-800/80 space-y-4">
+                                                                                                    {chapLessons.length === 0 ? (
+                                                                                                        <p className="text-xs text-slate-400 italic text-center py-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl">No lesson materials uploaded for this chapter.</p>
+                                                                                                    ) : (
+                                                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative pl-3 border-l border-slate-200/60 dark:border-slate-800">
+                                                                                                            {chapLessons.map(lesson => {
+                                                                                                                 const isUpdating = isUpdatingProgress === lesson.id;
+                                                                                                                 
+                                                                                                                 let isCompleted = false;
+                                                                                                                 let isUnlocked = false;
+                                                                                                                 let statusLabel = "Locked";
+                                                                                                                 let cardBorder = "border-slate-200 dark:border-slate-800 bg-slate-50/30 opacity-70";
+                                                                                                                 
+                                                                                                                 if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                                                     isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                                                                     isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                                                                     if (isCompleted) {
+                                                                                                                         statusLabel = "Completed";
+                                                                                                                         cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
+                                                                                                                     } else if (isUnlocked) {
+                                                                                                                         statusLabel = "Unlocked";
+                                                                                                                         cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
+                                                                                                                     }
+                                                                                                                 } else {
+                                                                                                                     const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
+                                                                                                                     const completedCount = progressForLesson.filter(p => p.status === 'completed').length;
+                                                                                                                     const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked').length;
+                                                                                                                     
+                                                                                                                     if (completedCount === students.length && students.length > 0) {
+                                                                                                                         statusLabel = "Completed";
+                                                                                                                         cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
+                                                                                                                     } else if (unlockedCount === students.length && students.length > 0) {
+                                                                                                                         statusLabel = "Unlocked";
+                                                                                                                         cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
+                                                                                                                     } else if (completedCount === 0 && unlockedCount === 0) {
+                                                                                                                         statusLabel = "Locked";
+                                                                                                                     } else {
+                                                                                                                         statusLabel = `${completedCount}/${students.length} Done`;
+                                                                                                                         cardBorder = "border-sky-500/50 bg-sky-500/[0.01] dark:bg-sky-500/[0.005]";
+                                                                                                                     }
+                                                                                                                 }
+                                                                                                                 
+                                                                                                                 return (
+                                                                                                                     <div key={lesson.id} className={`rounded-2xl p-4 border flex flex-col justify-between gap-4 transition-all hover:shadow-md ${cardBorder}`}>
+                                                                                                                         <div className="space-y-1">
+                                                                                                                             <div className="flex items-center justify-between gap-4">
+                                                                                                                                 <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
+                                                                                                                                     statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                                         ? 'text-emerald-600 dark:text-emerald-400' 
+                                                                                                                                         : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
+                                                                                                                                 }`}>
+                                                                                                                                     Topic {lesson.lesson_number} • {statusLabel}
+                                                                                                                                 </span>
+                                                                                                                                 {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                                                             </div>
+                                                                                                                             <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-tight truncate">{lesson.title}</h5>
+                                                                                                                             {lesson.description && (
+                                                                                                                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed font-semibold">{lesson.description}</p>
+                                                                                                                             )}
+                                                                                                                         </div>
+                                                                                                                         
+                                                                                                                         {/* Interactive toggle panel */}
+                                                                                                                         <div className="flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800/80 pt-3 select-none">
+                                                                                                                             <button
+                                                                                                                                 type="button"
+                                                                                                                                 disabled={isUpdating}
+                                                                                                                                 onClick={() => {
+                                                                                                                                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                                                                         handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'locked');
+                                                                                                                                     } else {
+                                                                                                                                         handleToggleTopicLockClasswide(lesson.id, 'locked');
+                                                                                                                                     }
+                                                                                                                                 }}
+                                                                                                                                 className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                                                                     statusLabel === 'Locked'
+                                                                                                                                         ? 'bg-slate-800 dark:bg-slate-800 text-white shadow-xs'
+                                                                                                                                         : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                                                                                 }`}
+                                                                                                                             >
+                                                                                                                                 <Lock className="size-3" />
+                                                                                                                                 <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Lock for ${selectedStudentForCurriculum.name}` : 'Lock Class-wide'}</span>
+                                                                                                                             </button>
+                                                                                                                             <button
+                                                                                                                                 type="button"
+                                                                                                                                 disabled={isUpdating}
+                                                                                                                                 onClick={() => {
+                                                                                                                                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                                                                         handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'unlocked');
+                                                                                                                                     } else {
+                                                                                                                                         handleToggleTopicLockClasswide(lesson.id, 'unlocked');
+                                                                                                                                     }
+                                                                                                                                 }}
+                                                                                                                                 className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                                                                     statusLabel === 'Unlocked'
+                                                                                                                                         ? 'bg-[#ecb613] text-white shadow-xs'
+                                                                                                                                         : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                                                                                 }`}
+                                                                                                                             >
+                                                                                                                                 <Unlock className="size-3" />
+                                                                                                                                 <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Unlock for ${selectedStudentForCurriculum.name}` : 'Unlock Class-wide'}</span>
+                                                                                                                             </button>
+                                                                                                                             <button
+                                                                                                                                 type="button"
+                                                                                                                                 disabled={isUpdating}
+                                                                                                                                 onClick={() => {
+                                                                                                                                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                                                                         handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'completed');
+                                                                                                                                     } else {
+                                                                                                                                         handleToggleTopicLockClasswide(lesson.id, 'completed');
+                                                                                                                                     }
+                                                                                                                                 }}
+                                                                                                                                 className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                                                                     statusLabel === 'Completed'
+                                                                                                                                         ? 'bg-emerald-600 text-white shadow-xs'
+                                                                                                                                         : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                                                                                 }`}
+                                                                                                                             >
+                                                                                                                                 <CheckCircle className="size-3" />
+                                                                                                                                 <span>Done</span>
+                                                                                                                             </button>
+                                                                                                                         </div>
+                                                                                                                     </div>
+                                                                                                                 );
+                                                                                                             })}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
                                                                             </div>
-                                                                            {lesson.description && (
-                                                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium pl-1">{lesson.description}</p>
-                                                                            )}
-                                                                            {lesson.bullet_points && lesson.bullet_points.length > 0 && (
-                                                                                <div className="space-y-2 bg-white dark:bg-slate-950/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 pl-4">
-                                                                                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider font-mono block">Learning Objectives</span>
-                                                                                    <ul className="space-y-1.5 pl-1.5 list-disc text-[11px] text-slate-600 dark:text-slate-400 font-bold">
-                                                                                        {lesson.bullet_points.map((pt: string, idx: number) => (
-                                                                                            <li key={idx} className="marker:text-amber-500">{pt}</li>
-                                                                                        ))}
-                                                                                    </ul>
-                                                                                </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
+
+                                                            {/* Render Chapter details */}
+                                                            {asg.inventory_ref_type === 'chapter' && (() => {
+                                                                const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
+                                                                if (!chap) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Chapter data could not be loaded.</p>;
+                                                                
+                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                return (
+                                                                    <div className="space-y-4">
+                                                                        <div className="border-b border-slate-150 dark:border-slate-800 pb-3 flex items-center justify-between pl-2">
+                                                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Chapter Lesson Materials</h4>
+                                                                            <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded">
+                                                                                {chapLessons.length} Study Units
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-3 border-l border-slate-200/60 dark:border-slate-800">
+                                                                            {chapLessons.length === 0 ? (
+                                                                                <p className="text-xs text-slate-400 italic text-center py-6 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl w-full">No lesson materials defined in this chapter.</p>
+                                                                            ) : (
+                                                                                chapLessons.map(lesson => {
+                                                                                     const isUpdating = isUpdatingProgress === lesson.id;
+                                                                                     
+                                                                                     let isCompleted = false;
+                                                                                     let isUnlocked = false;
+                                                                                     let statusLabel = "Locked";
+                                                                                     let cardBorder = "border-slate-200 dark:border-slate-800 bg-slate-50/30 opacity-70";
+                                                                                     
+                                                                                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                         isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                                         isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                                         if (isCompleted) {
+                                                                                             statusLabel = "Completed";
+                                                                                             cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
+                                                                                         } else if (isUnlocked) {
+                                                                                             statusLabel = "Unlocked";
+                                                                                             cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
+                                                                                         }
+                                                                                     } else {
+                                                                                         const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
+                                                                                         const completedCount = progressForLesson.filter(p => p.status === 'completed').length;
+                                                                                         const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked').length;
+                                                                                         
+                                                                                         if (completedCount === students.length && students.length > 0) {
+                                                                                             statusLabel = "Completed";
+                                                                                             cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
+                                                                                         } else if (unlockedCount === students.length && students.length > 0) {
+                                                                                             statusLabel = "Unlocked";
+                                                                                             cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
+                                                                                         } else if (completedCount === 0 && unlockedCount === 0) {
+                                                                                             statusLabel = "Locked";
+                                                                                         } else {
+                                                                                             statusLabel = `${completedCount}/${students.length} Done`;
+                                                                                             cardBorder = "border-sky-500/50 bg-sky-500/[0.01] dark:bg-sky-500/[0.005]";
+                                                                                         }
+                                                                                     }
+                                                                                     
+                                                                                     return (
+                                                                                         <div key={lesson.id} className={`rounded-2xl p-4 border flex flex-col justify-between gap-4 transition-all hover:shadow-md ${cardBorder}`}>
+                                                                                             <div className="space-y-1">
+                                                                                                 <div className="flex items-center justify-between gap-4">
+                                                                                                     <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
+                                                                                                         statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                             ? 'text-emerald-600 dark:text-emerald-400' 
+                                                                                                             : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
+                                                                                                     }`}>
+                                                                                                         Topic {lesson.lesson_number} • {statusLabel}
+                                                                                                     </span>
+                                                                                                     {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                                 </div>
+                                                                                                 <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-tight truncate">{lesson.title}</h5>
+                                                                                                 {lesson.description && (
+                                                                                                     <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed font-semibold">{lesson.description}</p>
+                                                                                                 )}
+                                                                                             </div>
+                                                                                             
+                                                                                             {/* Interactive toggle panel */}
+                                                                                             <div className="flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800/80 pt-3 select-none">
+                                                                                                 <button
+                                                                                                     type="button"
+                                                                                                     disabled={isUpdating}
+                                                                                                     onClick={() => {
+                                                                                                         if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                                             handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'locked');
+                                                                                                         } else {
+                                                                                                             handleToggleTopicLockClasswide(lesson.id, 'locked');
+                                                                                                         }
+                                                                                                     }}
+                                                                                                     className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                                         statusLabel === 'Locked'
+                                                                                                             ? 'bg-slate-800 dark:bg-slate-800 text-white shadow-xs'
+                                                                                                             : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                                                     }`}
+                                                                                                 >
+                                                                                                     <Lock className="size-3" />
+                                                                                                     <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Lock for ${selectedStudentForCurriculum.name}` : 'Lock Class-wide'}</span>
+                                                                                                 </button>
+                                                                                                 <button
+                                                                                                     type="button"
+                                                                                                     disabled={isUpdating}
+                                                                                                     onClick={() => {
+                                                                                                         if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                                             handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'unlocked');
+                                                                                                         } else {
+                                                                                                             handleToggleTopicLockClasswide(lesson.id, 'unlocked');
+                                                                                                         }
+                                                                                                     }}
+                                                                                                     className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                                         statusLabel === 'Unlocked'
+                                                                                                             ? 'bg-[#ecb613] text-white shadow-xs'
+                                                                                                             : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                                                     }`}
+                                                                                                 >
+                                                                                                     <Unlock className="size-3" />
+                                                                                                     <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Unlock for ${selectedStudentForCurriculum.name}` : 'Unlock Class-wide'}</span>
+                                                                                                 </button>
+                                                                                                 <button
+                                                                                                     type="button"
+                                                                                                     disabled={isUpdating}
+                                                                                                     onClick={() => {
+                                                                                                         if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                                             handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'completed');
+                                                                                                         } else {
+                                                                                                             handleToggleTopicLockClasswide(lesson.id, 'completed');
+                                                                                                         }
+                                                                                                     }}
+                                                                                                     className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                                         statusLabel === 'Completed'
+                                                                                                             ? 'bg-emerald-600 text-white shadow-xs'
+                                                                                                             : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                                                     }`}
+                                                                                                 >
+                                                                                                     <CheckCircle className="size-3" />
+                                                                                                     <span>{curriculumTab === 'individual' && selectedStudentForCurriculum ? `Done for ${selectedStudentForCurriculum.name}` : 'Done Class-wide'}</span>
+                                                                                                 </button>
+                                                                                             </div>
+                                                                                         </div>
+                                                                                     );
+                                                                                 })
                                                                             )}
                                                                         </div>
-                                                                        {lesson.material_url && (
-                                                                            <button 
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    setSelectedTopic(lesson);
-                                                                                }}
-                                                                                className="inline-flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black rounded-2xl text-xs transition-all hover:scale-[1.02] active:scale-[0.98] tracking-widest uppercase shrink-0 shadow-md shadow-amber-500/10"
-                                                                            >
-                                                                                <PlayCircle className="size-4 stroke-[2.5]" />
-                                                                                <span>View Details</span>
-                                                                            </button>
-                                                                        )}
                                                                     </div>
-                                                                </div>
-                                                            );
-                                                        })()}
+                                                                );
+                                                            })()}
+
+                                                            {/* Render Lesson details */}
+                                                            {asg.inventory_ref_type === 'lesson' && (() => {
+                                                                const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
+                                                                if (!lesson) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Lesson data could not be loaded.</p>;
+                                                                
+                                                                const isAudio = lesson.material_type === 'audio';
+                                                                const isVideo = lesson.material_type === 'video';
+                                                                const isPdf = lesson.material_type === 'pdf';
+                                                                
+                                                                const highlightBorder = isVideo 
+                                                                    ? 'border-l-rose-500' 
+                                                                    : isAudio 
+                                                                    ? 'border-l-amber-500' 
+                                                                    : isPdf 
+                                                                    ? 'border-l-blue-500' 
+                                                                    : 'border-l-emerald-500';
+
+                                                                const iconColor = isVideo 
+                                                                    ? 'text-rose-500 bg-rose-500/10' 
+                                                                    : isAudio 
+                                                                    ? 'text-amber-500 bg-amber-500/10' 
+                                                                    : isPdf 
+                                                                    ? 'text-blue-500 bg-blue-500/10' 
+                                                                    : 'text-emerald-500 bg-emerald-50/10';
+
+                                                                const isUpdating = isUpdatingProgress === lesson.id;
+                                                                
+                                                                let isCompleted = false;
+                                                                let isUnlocked = false;
+                                                                let statusLabel = "Locked";
+                                                                
+                                                                if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                    isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                    isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                    if (isCompleted) {
+                                                                        statusLabel = "Completed";
+                                                                    } else if (isUnlocked) {
+                                                                        statusLabel = "Unlocked";
+                                                                    }
+                                                                } else {
+                                                                    const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
+                                                                    const completedCount = progressForLesson.filter(p => p.status === 'completed').length;
+                                                                    const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked').length;
+                                                                    
+                                                                    if (completedCount === students.length && students.length > 0) {
+                                                                        statusLabel = "Completed";
+                                                                    } else if (unlockedCount === students.length && students.length > 0) {
+                                                                        statusLabel = "Unlocked";
+                                                                    } else if (completedCount === 0 && unlockedCount === 0) {
+                                                                        statusLabel = "Locked";
+                                                                    } else {
+                                                                        statusLabel = `${completedCount}/${students.length} Done`;
+                                                                    }
+                                                                }
+
+                                                                return (
+                                                                    <div className="space-y-4">
+                                                                        <div className="border-b border-slate-100 dark:border-slate-800 pb-3 pl-2 flex items-center justify-between">
+                                                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Assigned Lesson Study Guide</h4>
+                                                                            <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
+                                                                                statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                    ? 'text-emerald-600 dark:text-emerald-400' 
+                                                                                    : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
+                                                                            }`}>
+                                                                                {statusLabel}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div 
+                                                                            className={`p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 border-l-4 ${highlightBorder} bg-slate-50/20 dark:bg-slate-900/40 flex flex-col gap-6 transition-all hover:shadow-md hover:border-slate-350 dark:hover:border-slate-700`}
+                                                                        >
+                                                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                                                                <div className="space-y-4 text-left max-w-xl">
+                                                                                    <div className="flex items-center gap-3">
+                                                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColor}`}>
+                                                                                            {isVideo ? (
+                                                                                                <Film className="size-5" />
+                                                                                            ) : isAudio ? (
+                                                                                                <Music className="size-5 animate-pulse" />
+                                                                                            ) : isPdf ? (
+                                                                                                <FileText className="size-5" />
+                                                                                            ) : (
+                                                                                                <BookOpen className="size-5" />
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <h5 className="font-extrabold text-base text-slate-900 dark:text-white leading-snug">{lesson.title}</h5>
+                                                                                            <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 mt-1 inline-block">
+                                                                                                {lesson.material_type || 'Guide'} Content
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    {lesson.description && (
+                                                                                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium pl-1">{lesson.description}</p>
+                                                                                    )}
+                                                                                    {lesson.bullet_points && lesson.bullet_points.length > 0 && (
+                                                                                        <div className="space-y-2 bg-white dark:bg-slate-955/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 pl-4">
+                                                                                            <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider font-mono block">Learning Objectives</span>
+                                                                                            <ul className="space-y-1.5 pl-1.5 list-disc text-[11px] text-slate-600 dark:text-slate-400 font-bold">
+                                                                                                {lesson.bullet_points.map((pt: string, idx: number) => (
+                                                                                                    <li key={idx} className="marker:text-amber-500">{pt}</li>
+                                                                                                ))}
+                                                                                            </ul>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                                
+                                                                                {lesson.material_url && (
+                                                                                    <button 
+                                                                                        onClick={() => setSelectedTopic(lesson)}
+                                                                                        className="inline-flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-[#0f172a] font-black rounded-2xl text-xs transition-all hover:scale-[1.02] active:scale-[0.98] tracking-widest uppercase shrink-0 shadow-md shadow-amber-500/10 self-start md:self-center"
+                                                                                    >
+                                                                                        <PlayCircle className="size-4 stroke-[2.5]" />
+                                                                                        <span>View Details</span>
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {/* Pacing Override Controls for Lesson Level Assignment */}
+                                                                            <div className="flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800/80 pt-4 select-none">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    disabled={isUpdating}
+                                                                                    onClick={() => {
+                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                            handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'locked');
+                                                                                        } else {
+                                                                                            handleToggleTopicLockClasswide(lesson.id, 'locked');
+                                                                                        }
+                                                                                    }}
+                                                                                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                        statusLabel === 'Locked'
+                                                                                            ? 'bg-slate-800 dark:bg-slate-800 text-white shadow-xs'
+                                                                                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400'
+                                                                                    }`}
+                                                                                >
+                                                                                    <Lock className="size-3" />
+                                                                                    <span>Lock</span>
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    disabled={isUpdating}
+                                                                                    onClick={() => {
+                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                            handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'unlocked');
+                                                                                        } else {
+                                                                                            handleToggleTopicLockClasswide(lesson.id, 'unlocked');
+                                                                                        }
+                                                                                    }}
+                                                                                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                        statusLabel === 'Unlocked'
+                                                                                            ? 'bg-[#ecb613] text-white shadow-xs'
+                                                                                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400'
+                                                                                    }`}
+                                                                                >
+                                                                                    <Unlock className="size-3" />
+                                                                                    <span>Unlock</span>
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    disabled={isUpdating}
+                                                                                    onClick={() => {
+                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                                                            handleToggleTopicLock(selectedStudentForCurriculum.student_id, lesson.id, 'completed');
+                                                                                        } else {
+                                                                                            handleToggleTopicLockClasswide(lesson.id, 'completed');
+                                                                                        }
+                                                                                    }}
+                                                                                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                                                                                        statusLabel === 'Completed'
+                                                                                            ? 'bg-emerald-600 text-white shadow-xs'
+                                                                                            : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400'
+                                                                                    }`}
+                                                                                >
+                                                                                    <CheckCircle className="size-3" />
+                                                                                    <span>Done</span>
+                                                                                </button>
+                                                                                {isUpdating && <Loader2 className="w-4 h-4 animate-spin text-amber-500 ml-2" />}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Right Column Sticky Live Portal Simulation Card */}
+                                {curriculumTab === 'individual' && selectedStudentForCurriculum && (
+                                    <div className="col-span-12 lg:col-span-4 lg:sticky lg:top-20 space-y-6">
+                                        {livePreviewData ? (
+                                            <div className="bg-slate-950 border border-slate-800/80 rounded-3xl p-6 text-white shadow-xl shadow-amber-500/[0.02] flex flex-col gap-6 relative overflow-hidden text-left">
+                                                {/* Decorative glowing gradient sphere */}
+                                                <div className="absolute -right-24 -top-24 w-48 h-48 bg-gradient-to-tr from-amber-500/20 to-transparent rounded-full blur-2xl pointer-events-none"></div>
+
+                                                {/* Title / Status */}
+                                                <div className="flex items-center justify-between border-b border-slate-800/60 pb-4 relative z-10">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></div>
+                                                        <span className="text-[10px] font-black tracking-widest uppercase text-slate-400 font-mono">STUDENT VIEW PREVIEW (LIVE)</span>
+                                                    </div>
+                                                    <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                        Mobile Portal
+                                                    </span>
+                                                </div>
+
+                                                {/* Student Profile Info */}
+                                                <div className="flex items-center gap-4 relative z-10">
+                                                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-500/5 flex items-center justify-center overflow-hidden ring-2 ring-slate-800 shrink-0">
+                                                        {selectedStudentForCurriculum.profile_pic_url ? (
+                                                            <img src={selectedStudentForCurriculum.profile_pic_url} alt={selectedStudentForCurriculum.name} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <span className="text-[#ecb613] text-xl font-bold">{selectedStudentForCurriculum.name.charAt(0)}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <h4 className="font-extrabold text-sm text-slate-100 leading-snug truncate">{selectedStudentForCurriculum.name}</h4>
+                                                        <p className="text-[10px] text-slate-400 font-semibold leading-none mt-1 truncate">Syllabus Completion</p>
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
+
+                                                {/* Overall Syllabus Progress Bar */}
+                                                <div className="space-y-2 relative z-10">
+                                                    <div className="flex items-center justify-between text-xs font-bold">
+                                                        <span className="text-slate-400 font-mono">{livePreviewData.progressPercentage}% Completed</span>
+                                                        <span className="text-[#ecb613] font-mono">{syllabusLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length} / {syllabusLessons.length} units</span>
+                                                    </div>
+                                                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                        <div 
+                                                            className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-500 rounded-full"
+                                                            style={{ width: `${livePreviewData.progressPercentage}%` }}
+                                                        ></div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Currently Learning Section */}
+                                                <div className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 space-y-4 relative z-10">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[9px] font-black uppercase text-amber-500 tracking-wider font-mono">Currently Learning</span>
+                                                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                                                            Unlocked
+                                                        </span>
+                                                    </div>
+                                                    {livePreviewData.currentlyLearning ? (
+                                                        <div className="space-y-3">
+                                                            <h5 className="font-extrabold text-sm text-slate-100 leading-snug">{livePreviewData.currentlyLearning.title}</h5>
+                                                            {livePreviewData.currentlyLearning.description && (
+                                                                <p className="text-[11px] text-slate-400 font-medium leading-relaxed line-clamp-3">{livePreviewData.currentlyLearning.description}</p>
+                                                            )}
+                                                            
+                                                            {/* Media content indicator */}
+                                                            <div className="flex items-center gap-2 pt-2 border-t border-slate-800/50">
+                                                                <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300">
+                                                                    {livePreviewData.currentlyLearning.material_type === 'video' ? (
+                                                                        <Film className="size-3.5" />
+                                                                    ) : livePreviewData.currentlyLearning.material_type === 'audio' ? (
+                                                                        <Music className="size-3.5" />
+                                                                    ) : (
+                                                                        <FileText className="size-3.5" />
+                                                                    )}
+                                                                </div>
+                                                                <div>
+                                                                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider font-mono leading-none block">STUDY MATERIAL</span>
+                                                                    <span className="text-[10px] text-slate-200 font-bold capitalize mt-0.5 leading-none block">
+                                                                        {livePreviewData.currentlyLearning.material_type || 'Reading Guide'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-xs text-slate-500 italic text-center py-2">No active learning topic.</p>
+                                                    )}
+                                                </div>
+
+                                                {/* Next Locked Items */}
+                                                <div className="space-y-3 relative z-10">
+                                                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider font-mono block">NEXT SEQUENTIAL PATHWAY</span>
+                                                    {livePreviewData.nextLockedItems.length === 0 ? (
+                                                        <div className="p-3 bg-slate-900/30 border border-slate-800/40 rounded-xl text-center text-xs text-slate-500 italic">
+                                                            End of current learning roadmap.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-2">
+                                                            {livePreviewData.nextLockedItems.map((lesson, idx) => (
+                                                                <div key={lesson.id} className="flex items-center gap-3 p-3 bg-slate-900/40 border border-slate-800/40 rounded-xl select-none opacity-60">
+                                                                    <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-slate-500">
+                                                                        <Lock className="size-3" />
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <span className="text-[8px] font-black text-slate-500 tracking-wider font-mono block">LOCKED • STEP {idx + 1}</span>
+                                                                        <h6 className="text-[11px] font-bold text-slate-300 leading-tight truncate mt-0.5">{lesson.title}</h6>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-slate-950 border border-slate-800 rounded-3xl p-8 text-center text-slate-500 text-xs">
+                                                Select a student to initialize live student view simulation.
+                                            </div>
+                                        )}
                                     </div>
                                 )}
-                            </section>
+                            </div>
                         </div>
                     ) : activeTab === 'Students' ? (
                         <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -2698,7 +3447,7 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                                     <span className="text-amber-500">{lateCount}</span>
                                                 </h4>
                                             </div>
-                                            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                                            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:emerald-400 rounded-xl">
                                                 <CheckCircle className="w-5 h-5" />
                                             </div>
                                         </div>
@@ -2711,7 +3460,7 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                                     <span className="text-slate-500">{excusedCount}</span>
                                                 </h4>
                                             </div>
-                                            <div className="p-3 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-xl">
+                                            <div className="p-3 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:rose-400 rounded-xl">
                                                 <X className="w-5 h-5" />
                                             </div>
                                         </div>
@@ -3233,6 +3982,264 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                         </div>
                     );
                 })()}
+
+                {/* Import from Inventory Sliding Drawer */}
+                {isInventoryDrawerOpen && (
+                    <div className="fixed inset-0 z-[600] flex justify-end animate-in fade-in duration-300">
+                        {/* Backdrop */}
+                        <div 
+                            onClick={() => setIsInventoryDrawerOpen(false)}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs cursor-pointer"
+                        ></div>
+
+                        {/* Drawer Content */}
+                        <div className="relative w-full max-w-xl h-full bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
+                            {/* Drawer Header */}
+                            <div className="px-6 py-5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40">
+                                <div className="flex items-center gap-2.5 text-left">
+                                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+                                        <BookOpen className="size-4.5 text-amber-500" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-extrabold text-slate-900 dark:text-white text-base tracking-tight leading-none">Import from Inventory</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase font-mono tracking-wider mt-1">Classroom Learning Materials</p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setIsInventoryDrawerOpen(false)}
+                                    className="p-1.5 rounded-lg text-slate-450 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Search and Tab selectors */}
+                            <div className="p-5 border-b border-slate-150 dark:border-slate-855 space-y-4">
+                                <div className="relative">
+                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 size-4" />
+                                    <input
+                                        type="text"
+                                        value={inventorySearchQuery}
+                                        onChange={(e) => setInventorySearchQuery(e.target.value)}
+                                        placeholder="Search levels, chapters, or lessons..."
+                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-slate-100 transition-all"
+                                    />
+                                </div>
+
+                                {/* Tab Selectors */}
+                                <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
+                                    <button
+                                        onClick={() => setInventoryActiveTab('proficiency')}
+                                        className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+                                            inventoryActiveTab === 'proficiency'
+                                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                                        }`}
+                                    >
+                                        Proficiency Levels
+                                    </button>
+                                    <button
+                                        onClick={() => setInventoryActiveTab('specialized')}
+                                        className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+                                            inventoryActiveTab === 'specialized'
+                                                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                                        }`}
+                                    >
+                                        Specialized Modules
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* List Area */}
+                            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-left">
+                                {inventoryActiveTab === 'proficiency' ? (
+                                    // Proficiency Levels Tab
+                                    courseModules
+                                        .filter(m => m.module_number < 100)
+                                        .filter(m => m.title.toLowerCase().includes(inventorySearchQuery.toLowerCase()))
+                                        .map(mod => {
+                                            const isImporting = importingItemId === mod.id;
+                                            const isAssigned = assignments.some(a => a.inventory_ref_id === mod.id);
+
+                                            return (
+                                                <div 
+                                                    key={mod.id} 
+                                                    className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-4 transition-all hover:border-slate-300 dark:hover:border-slate-700"
+                                                >
+                                                    <div className="space-y-1.5 flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <h4 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight truncate">{mod.title}</h4>
+                                                            <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-550 border border-amber-555/20">
+                                                                Core Level
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-555 dark:text-slate-400 font-medium line-clamp-2 leading-relaxed">
+                                                            {mod.description || 'Core learning track syllabus containing basic practice exercises and songs.'}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        disabled={isImporting || isAssigned}
+                                                        onClick={() => handleImportItem('module', mod.id, mod.title, mod.description)}
+                                                        className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-2 shrink-0 ${
+                                                            isAssigned
+                                                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-450 border border-transparent dark:border-slate-750 cursor-not-allowed shadow-none'
+                                                                : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 hover:-translate-y-0.5'
+                                                        }`}
+                                                    >
+                                                        {isImporting ? (
+                                                            <Loader2 className="size-3.5 animate-spin" />
+                                                        ) : isAssigned ? (
+                                                            <CheckCircle className="size-3.5" />
+                                                        ) : (
+                                                            <Plus className="size-3.5 stroke-[3]" />
+                                                        )}
+                                                        <span>{isAssigned ? 'Assigned' : 'Import Level'}</span>
+                                                    </button>
+                                                </div>
+                                            );
+                                        })
+                                ) : (
+                                    // Specialized Modules Tab
+                                    courseModules
+                                        .filter(m => m.module_number >= 100)
+                                        .filter(m => {
+                                            const query = inventorySearchQuery.toLowerCase();
+                                            if (m.title.toLowerCase().includes(query)) return true;
+                                            const modChaps = courseChapters.filter(c => c.module_id === m.id);
+                                            const hasMatchingChap = modChaps.some(c => c.title.toLowerCase().includes(query));
+                                            if (hasMatchingChap) return true;
+                                            const chapIds = new Set(modChaps.map(c => c.id));
+                                            return courseLessons.filter(l => chapIds.has(l.chapter_id)).some(l => l.title.toLowerCase().includes(query));
+                                        })
+                                        .map(mod => {
+                                            const isExpanded = !!expandedInventoryModules[mod.id];
+                                            const modChapters = courseChapters.filter(c => c.module_id === mod.id);
+
+                                            return (
+                                                <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
+                                                    {/* Header Panel */}
+                                                    <div 
+                                                        onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
+                                                        className="px-5 py-4 bg-slate-50/50 dark:bg-slate-900/60 hover:bg-slate-100/60 dark:hover:bg-slate-900/80 transition-all flex items-center justify-between cursor-pointer select-none"
+                                                    >
+                                                        <div className="flex items-center gap-3 text-left">
+                                                            <div className="w-8.5 h-8.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 text-[10px] font-black uppercase font-mono">
+                                                                SP
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <h5 className="text-xs font-black text-slate-855 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
+                                                                <p className="text-[9px] text-slate-450 dark:text-slate-550 font-bold uppercase mt-1 tracking-wider font-mono">
+                                                                    {modChapters.length} CHAPTERS • Specialized
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                                                            {isExpanded ? (
+                                                                <ChevronUp className="size-4" />
+                                                            ) : (
+                                                                <ChevronDown className="size-4" />
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Specialized Chapters & Lessons */}
+                                                    {isExpanded && (
+                                                        <div className="p-4 bg-white dark:bg-slate-950/20 border-t border-slate-150 dark:border-slate-850 space-y-4">
+                                                            {modChapters.length === 0 ? (
+                                                                <p className="text-xs text-slate-400 italic text-center py-2">No chapters defined.</p>
+                                                            ) : (
+                                                                modChapters.map(chap => {
+                                                                    const isChapImporting = importingItemId === chap.id;
+                                                                    const isChapAssigned = assignments.some(a => a.inventory_ref_id === chap.id);
+                                                                    const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+
+                                                                    return (
+                                                                        <div key={chap.id} className="p-3.5 rounded-xl border border-slate-150 dark:border-slate-850 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
+                                                                            {/* Chapter header row */}
+                                                                            <div className="flex items-start justify-between gap-3">
+                                                                                <div className="text-left">
+                                                                                    <span className="text-[8px] font-black text-amber-550 font-mono uppercase tracking-widest leading-none">CHAPTER LEVEL</span>
+                                                                                    <h6 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">{chap.title}</h6>
+                                                                                </div>
+                                                                                <button
+                                                                                    disabled={isChapImporting || isChapAssigned}
+                                                                                    onClick={() => handleImportItem('chapter', chap.id, chap.title, chap.description)}
+                                                                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 ${
+                                                                                        isChapAssigned
+                                                                                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-450 cursor-not-allowed shadow-none'
+                                                                                            : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                    }`}
+                                                                                >
+                                                                                    {isChapImporting ? (
+                                                                                        <Loader2 className="size-3 animate-spin" />
+                                                                                    ) : isChapAssigned ? (
+                                                                                        <CheckCircle className="size-3" />
+                                                                                    ) : (
+                                                                                        <Plus className="size-3 stroke-[3]" />
+                                                                                    )}
+                                                                                    <span>{isChapAssigned ? 'Assigned' : 'Import'}</span>
+                                                                                </button>
+                                                                            </div>
+
+                                                                            {/* Chapter Lessons */}
+                                                                            {chapLessons.length > 0 && (
+                                                                                <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
+                                                                                    {chapLessons.map(lesson => {
+                                                                                        const isLessonImporting = importingItemId === lesson.id;
+                                                                                        const isLessonAssigned = assignments.some(a => a.inventory_ref_id === lesson.id);
+
+                                                                                        return (
+                                                                                            <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
+                                                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                                                    <div className="w-5.5 h-5.5 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                                                                                        {lesson.material_type === 'video' ? (
+                                                                                                            <Film className="size-3 text-amber-550" />
+                                                                                                        ) : lesson.material_type === 'audio' ? (
+                                                                                                            <Music className="size-3 text-amber-550" />
+                                                                                                        ) : (
+                                                                                                            <FileText className="size-3 text-slate-400" />
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                    <span className="text-[11px] font-bold text-slate-650 dark:text-slate-350 truncate leading-none mt-0.5">{lesson.title}</span>
+                                                                                                </div>
+                                                                                                <button
+                                                                                                    disabled={isLessonImporting || isLessonAssigned}
+                                                                                                    onClick={() => handleImportItem('lesson', lesson.id, lesson.title, lesson.description)}
+                                                                                                    className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 ${
+                                                                                                        isLessonAssigned
+                                                                                                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-450 cursor-not-allowed shadow-none'
+                                                                                                            : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                                    }`}
+                                                                                                >
+                                                                                                    {isLessonImporting ? (
+                                                                                                        <Loader2 className="size-2.5 animate-spin" />
+                                                                                                    ) : isLessonAssigned ? (
+                                                                                                        <CheckCircle className="size-2.5" />
+                                                                                                    ) : (
+                                                                                                        <Plus className="size-2.5 stroke-[3]" />
+                                                                                                    )}
+                                                                                                    <span>{isLessonAssigned ? 'Assigned' : 'Import'}</span>
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </main>
         </div>
     );
