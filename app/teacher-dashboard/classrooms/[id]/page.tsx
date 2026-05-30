@@ -1982,7 +1982,13 @@ export default function ClassroomDashboardPage() {
                                                                             {asg.inventory_ref_title || asg.title}
                                                                         </h3>
                                                                         <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${typeColors.badge}`}>
-                                                                            {asg.inventory_ref_type}
+                                                                            {asg.inventory_ref_type === 'module' ? (() => {
+                                                                                const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
+                                                                                if (mod) {
+                                                                                    return mod.module_number < 100 ? 'Proficiency Level' : 'Specialized Module';
+                                                                                }
+                                                                                return 'Module';
+                                                                            })() : asg.inventory_ref_type}
                                                                         </span>
                                                                     </div>
                                                                     <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
@@ -2029,7 +2035,9 @@ export default function ClassroomDashboardPage() {
                                                                 return (
                                                                     <div className="space-y-5">
                                                                         <div className="border-b border-slate-100 dark:border-slate-800/80 pb-3 flex items-center justify-between pl-2">
-                                                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Module Syllabus Outline</h4>
+                                                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
+                                                                                {mod.module_number < 100 ? 'Proficiency Level Syllabus Outline' : 'Specialized Module Syllabus Outline'}
+                                                                            </h4>
                                                                             <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded">
                                                                                 {chaptersInMod.length} Chapters
                                                                             </span>
