@@ -363,10 +363,16 @@ export default function ClassroomDashboardPage() {
                 setCourseLessons(dbLessonsData);
 
                 try {
-                    const { data: progressData } = await supabaseAuth
+                    const { data: progressData, error: progressError } = await supabaseAuth
                         .from('student_topic_progress')
                         .select('*')
                         .eq('classroom_id', classroomId);
+                    if (progressError) {
+                        console.warn('Could not fetch student_topic_progress:', progressError);
+                        if (progressError.code === 'PGRST205' || progressError.message?.includes('schema cache') || progressError.message?.includes('does not exist')) {
+                            setDbSetupError(true);
+                        }
+                    }
                     setStudentProgress(progressData || []);
                 } catch (pe) {
                     console.warn('Could not fetch student_topic_progress:', pe);
@@ -982,7 +988,11 @@ export default function ClassroomDashboardPage() {
     };
 
     const handleToggleTopicLockClasswide = async (lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
-        if (!classroomId || students.length === 0) return;
+        if (!classroomId) return;
+        if (students.length === 0) {
+            alert('Cannot manage class-wide pacing: No students are currently enrolled in this classroom. Please add students from the dashboard roster first.');
+            return;
+        }
         setIsUpdatingProgress(lessonId);
         try {
             const rows = students.map(s => ({
@@ -2992,7 +3002,7 @@ export default function ClassroomDashboardPage() {
                                         <div className="flex-1">
                                             <h4 className="font-bold text-rose-800 dark:text-rose-300 text-sm">Database setup required</h4>
                                             <p className="text-xs text-rose-700 dark:text-rose-400 mt-1 leading-relaxed">
-                                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code> and <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
+                                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-150 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
                                             </p>
                                             <p className="text-xs text-rose-700 dark:text-rose-400 mt-2">
                                                 Go to <strong>Supabase Dashboard → sevtycwrmhzyfxvxkkgc → SQL Editor → New Query</strong> and paste the SQL below, then click Run.
@@ -3022,12 +3032,25 @@ CREATE TABLE IF NOT EXISTS public.assignment_students (
   assignment_id UUID NOT NULL, student_id UUID NOT NULL,
   status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)
 );
+CREATE TABLE IF NOT EXISTS public.student_topic_progress (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  student_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,
+  lesson_id UUID NOT NULL REFERENCES public.course_lessons(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'locked',
+  unlocked_by TEXT NOT NULL DEFAULT 'system',
+  unlocked_at TIMESTAMPTZ DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  UNIQUE (student_id, lesson_id)
+);
 ALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);`}</pre>
+CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`}</pre>
                                         <button
                                             onClick={() => {
                                                 const sql = `CREATE TABLE IF NOT EXISTS public.class_notes (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, content TEXT, file_url TEXT,\n  file_name TEXT, file_size INTEGER, color TEXT DEFAULT 'yellow',\n  created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, description TEXT, due_date DATE,\n  target_type TEXT NOT NULL DEFAULT 'all',\n  file_url TEXT, file_name TEXT, file_size INTEGER,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignment_students (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  assignment_id UUID NOT NULL, student_id UUID NOT NULL,\n  status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)\n);\nCREATE TABLE IF NOT EXISTS public.student_topic_progress (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  student_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  lesson_id UUID NOT NULL REFERENCES public.course_lessons(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'locked',\n  unlocked_by TEXT NOT NULL DEFAULT 'system',\n  unlocked_at TIMESTAMPTZ DEFAULT now(),\n  completed_at TIMESTAMPTZ,\n  UNIQUE (student_id, lesson_id)\n);\nALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`;
@@ -3040,10 +3063,10 @@ CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR 
                                     </div>
                                     <div className="px-5 pb-4">
                                         <button
-                                            onClick={() => { setDbSetupError(false); fetchAssignments(); fetchClassNotes(); }}
+                                            onClick={() => { window.location.reload(); }}
                                             className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition-colors"
                                         >
-                                            <Loader2 className="w-3.5 h-3.5" /> Retry after running SQL
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Reload Page after running SQL
                                         </button>
                                     </div>
                                 </div>
