@@ -2119,32 +2119,86 @@ export default function ClassroomDashboardPage() {
                                         <div className="space-y-12">
                                             {groupedAssignments.map((group) => {
                                                 const isHeadlineExpanded = expandedHeadlines[group.categoryName] !== false;
+                                                const moduleAsg = group.modules.flatMap(m => m.assignments).find(a => a.inventory_ref_type === 'module');
+                                                const hasModuleAssignment = !!moduleAsg;
                                                 return (
                                                     <div key={group.categoryName} className="space-y-6">
                                                         {/* Category / Headline Header */}
-                                                        <div 
-                                                            onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
-                                                            className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 pl-1 cursor-pointer select-none group/headline hover:border-[#ecb613]/40 transition-colors"
-                                                        >
-                                                            <div className="flex items-center gap-3 text-left">
-                                                                <div className="w-2.5 h-6 rounded-full bg-[#ecb613]" />
-                                                                <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest font-mono group-hover/headline:text-[#ecb613] transition-colors">
-                                                                    {group.categoryName}
-                                                                </h3>
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-[10px] font-black uppercase tracking-wider font-mono bg-[#ecb613]/10 text-[#ecb613] px-3 py-1 rounded-full border border-[#ecb613]/25">
-                                                                    Headline
-                                                                </span>
-                                                                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover/headline:bg-[#ecb613]/10 group-hover/headline:text-[#ecb613] transition-all">
-                                                                    {isHeadlineExpanded ? (
-                                                                        <ChevronUp className="size-4" />
-                                                                    ) : (
-                                                                        <ChevronDown className="size-4" />
-                                                                    )}
+                                                        {hasModuleAssignment ? (
+                                                            <div 
+                                                                onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
+                                                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 shadow-md shadow-amber-500/[0.01] hover:border-[#ecb613]/55 cursor-pointer select-none transition-all text-left group/level-capsule animate-in fade-in duration-300"
+                                                            >
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="w-11 h-11 rounded-2xl bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613] shadow-sm shrink-0 transition-transform group-hover/level-capsule:scale-105">
+                                                                        <BookOpen className="size-5" />
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        <div className="flex items-center gap-2.5 flex-wrap">
+                                                                            <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
+                                                                                {group.categoryName}
+                                                                            </h3>
+                                                                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/10 text-[#ecb613] border border-[#ecb613]/20">
+                                                                                Level Assigned
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
+                                                                            Assigned on {new Date(moduleAsg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/80 pt-3 sm:pt-0">
+                                                                    <button 
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleDeleteAssignment(moduleAsg.id);
+                                                                        }}
+                                                                        disabled={deletingAssignmentId === moduleAsg.id}
+                                                                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
+                                                                        title="Unassign level from class"
+                                                                    >
+                                                                        {deletingAssignmentId === moduleAsg.id ? (
+                                                                            <Loader2 className="size-3.5 animate-spin" />
+                                                                        ) : (
+                                                                            <Trash2 className="size-3.5" />
+                                                                        )}
+                                                                        <span>Remove</span>
+                                                                    </button>
+                                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-550 transition-all">
+                                                                        {isHeadlineExpanded ? (
+                                                                            <ChevronUp className="size-4" />
+                                                                        ) : (
+                                                                            <ChevronDown className="size-4" />
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
+                                                        ) : (
+                                                            <div 
+                                                                onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
+                                                                className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 pl-1 cursor-pointer select-none group/headline hover:border-[#ecb613]/40 transition-colors"
+                                                            >
+                                                                <div className="flex items-center gap-3 text-left">
+                                                                    <div className="w-2.5 h-6 rounded-full bg-[#ecb613]" />
+                                                                    <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest font-mono group-hover/headline:text-[#ecb613] transition-colors">
+                                                                        {group.categoryName}
+                                                                    </h3>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] font-black uppercase tracking-wider font-mono bg-[#ecb613]/10 text-[#ecb613] px-3 py-1 rounded-full border border-[#ecb613]/25">
+                                                                        Headline
+                                                                    </span>
+                                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover/headline:bg-[#ecb613]/10 group-hover/headline:text-[#ecb613] transition-all">
+                                                                        {isHeadlineExpanded ? (
+                                                                            <ChevronUp className="size-4" />
+                                                                        ) : (
+                                                                            <ChevronDown className="size-4" />
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
 
                                                         {/* Modules Under This Category */}
                                                         {isHeadlineExpanded && (
@@ -2213,76 +2267,78 @@ export default function ClassroomDashboardPage() {
                                                                         return (
                                                                             <div 
                                                                                 key={asg.id} 
-                                                                                className={`group relative bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/70 dark:border-slate-800 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-lg ${typeColors.border} border-l-4 text-left`}
+                                                                                className={isAsgModule ? "space-y-6 text-left" : `group relative bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/70 dark:border-slate-800 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-lg ${typeColors.border} border-l-4 text-left`}
                                                                             >
                                                                                 {/* Tutorial Header */}
-                                                                                <div 
-                                                                                    onClick={isAsgModule ? () => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded })) : undefined}
-                                                                                    className={`px-6 py-5 bg-slate-50/50 dark:bg-slate-955/[0.15] border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-4 ${isAsgModule ? 'cursor-pointer select-none hover:bg-slate-100/60 dark:hover:bg-slate-850 transition-colors' : ''}`}
-                                                                                >
-                                                                                    <div className="flex items-center gap-4 pl-2">
-                                                                                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-sm ${typeColors.iconBg}`}>
-                                                                                            {asg.inventory_ref_type === 'module' ? (
-                                                                                                <BookOpen className="size-5" />
-                                                                                            ) : asg.inventory_ref_type === 'chapter' ? (
-                                                                                                <ClipboardList className="size-5" />
-                                                                                            ) : (
-                                                                                                <Music className="size-5" />
-                                                                                            )}
-                                                                                        </div>
-                                                                                        <div className="space-y-1">
-                                                                                            <div className="flex items-center gap-2.5 flex-wrap">
-                                                                                                <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
-                                                                                                    {asg.inventory_ref_title || asg.title}
-                                                                                                </h3>
-                                                                                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${typeColors.badge}`}>
-                                                                                                    {asg.inventory_ref_type === 'module' ? (() => {
-                                                                                                        const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
-                                                                                                        if (mod) {
-                                                                                                            return parseModuleCategory(mod).category;
-                                                                                                        }
-                                                                                                        return 'Module';
-                                                                                                    })() : asg.inventory_ref_type}
-                                                                                                </span>
-                                                                                            </div>
-                                                                                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
-                                                                                                Assigned on {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                                                            </p>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                    <div className="flex items-center gap-3">
-                                                                                        <button 
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                handleDeleteAssignment(asg.id);
-                                                                                            }}
-                                                                                            disabled={isDeleting}
-                                                                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
-                                                                                            title="Unassign tutorial from class"
-                                                                                        >
-                                                                                            {isDeleting ? (
-                                                                                                <Loader2 className="size-3.5 animate-spin" />
-                                                                                            ) : (
-                                                                                                <Trash2 className="size-3.5" />
-                                                                                            )}
-                                                                                            <span>Remove</span>
-                                                                                        </button>
-                                                                                        
-                                                                                        {isAsgModule && (
-                                                                                            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-550 transition-all">
-                                                                                                {isModuleExpanded ? (
-                                                                                                    <ChevronUp className="size-4" />
+                                                                                {!isAsgModule && (
+                                                                                    <div 
+                                                                                        onClick={isAsgModule ? () => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded })) : undefined}
+                                                                                        className={`px-6 py-5 bg-slate-50/50 dark:bg-slate-955/[0.15] border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-4 ${isAsgModule ? 'cursor-pointer select-none hover:bg-slate-100/60 dark:hover:bg-slate-850 transition-colors' : ''}`}
+                                                                                    >
+                                                                                        <div className="flex items-center gap-4 pl-2">
+                                                                                            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-sm ${typeColors.iconBg}`}>
+                                                                                                {asg.inventory_ref_type === 'module' ? (
+                                                                                                    <BookOpen className="size-5" />
+                                                                                                ) : asg.inventory_ref_type === 'chapter' ? (
+                                                                                                    <ClipboardList className="size-5" />
                                                                                                 ) : (
-                                                                                                    <ChevronDown className="size-4" />
+                                                                                                    <Music className="size-5" />
                                                                                                 )}
                                                                                             </div>
-                                                                                        )}
+                                                                                            <div className="space-y-1">
+                                                                                                <div className="flex items-center gap-2.5 flex-wrap">
+                                                                                                    <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
+                                                                                                        {asg.inventory_ref_title || asg.title}
+                                                                                                    </h3>
+                                                                                                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${typeColors.badge}`}>
+                                                                                                        {asg.inventory_ref_type === 'module' ? (() => {
+                                                                                                            const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
+                                                                                                            if (mod) {
+                                                                                                                return parseModuleCategory(mod).category;
+                                                                                                            }
+                                                                                                            return 'Module';
+                                                                                                        })() : asg.inventory_ref_type}
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
+                                                                                                    Assigned on {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                                                </p>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div className="flex items-center gap-3">
+                                                                                            <button 
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    handleDeleteAssignment(asg.id);
+                                                                                                }}
+                                                                                                disabled={isDeleting}
+                                                                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
+                                                                                                title="Unassign tutorial from class"
+                                                                                            >
+                                                                                                {isDeleting ? (
+                                                                                                    <Loader2 className="size-3.5 animate-spin" />
+                                                                                                ) : (
+                                                                                                    <Trash2 className="size-3.5" />
+                                                                                                )}
+                                                                                                <span>Remove</span>
+                                                                                            </button>
+                                                                                            
+                                                                                            {isAsgModule && (
+                                                                                                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-550 transition-all">
+                                                                                                    {isModuleExpanded ? (
+                                                                                                        <ChevronUp className="size-4" />
+                                                                                                    ) : (
+                                                                                                        <ChevronDown className="size-4" />
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
                                                                                     </div>
-                                                                                </div>
+                                                                                )}
 
                                                                                 {/* Tutorial Body */}
                                                                                 {(!isAsgModule || isModuleExpanded) && (
-                                                                                    <div className="p-6 md:p-8 space-y-8">
+                                                                                    <div className={isAsgModule ? "space-y-6" : "p-6 md:p-8 space-y-8"}>
                                                                                     {/* Description/Instructions */}
                                                                                     {asg.description && (
                                                                                         <div className="p-5 rounded-2xl bg-amber-500/[0.04] dark:bg-amber-500/[0.01] border border-amber-500/15 text-slate-700 dark:text-slate-300 flex items-start gap-4">
@@ -2881,24 +2937,24 @@ export default function ClassroomDashboardPage() {
                                 {curriculumTab === 'individual' && selectedStudentForCurriculum && (
                                     <div className="col-span-12 lg:col-span-4 lg:sticky lg:top-20 space-y-6">
                                         {livePreviewData ? (
-                                            <div className="bg-slate-950 border border-slate-800/80 rounded-3xl p-6 text-white shadow-xl shadow-amber-500/[0.02] flex flex-col gap-6 relative overflow-hidden text-left">
-                                                {/* Decorative glowing gradient sphere */}
-                                                <div className="absolute -right-24 -top-24 w-48 h-48 bg-gradient-to-tr from-amber-500/20 to-transparent rounded-full blur-2xl pointer-events-none"></div>
+                                            <div className="bg-stone-50 border border-stone-200/80 rounded-[32px] p-6 text-stone-850 shadow-2xl ring-8 ring-stone-100/50 flex flex-col gap-6 relative overflow-hidden text-left animate-in fade-in duration-300">
+                                                {/* Decorative subtle gradient background mesh */}
+                                                <div className="absolute -right-24 -top-24 w-48 h-48 bg-gradient-to-tr from-[#ecb613]/10 via-emerald-500/5 to-rose-500/5 rounded-full blur-2xl pointer-events-none"></div>
 
                                                 {/* Title / Status */}
-                                                <div className="flex items-center justify-between border-b border-slate-800/60 pb-4 relative z-10">
+                                                <div className="flex items-center justify-between border-b border-stone-200/80 pb-4 relative z-10">
                                                     <div className="flex items-center gap-2">
-                                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></div>
-                                                        <span className="text-[10px] font-black tracking-widest uppercase text-slate-400 font-mono">STUDENT VIEW PREVIEW (LIVE)</span>
+                                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></div>
+                                                        <span className="text-[10px] font-black tracking-widest uppercase text-stone-550 font-mono">STUDENT VIEW PREVIEW (LIVE)</span>
                                                     </div>
-                                                    <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                    <span className="bg-[#ecb613]/15 text-amber-800 border border-[#ecb613]/20 text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider font-mono">
                                                         Mobile Portal
                                                     </span>
                                                 </div>
 
                                                 {/* Student Profile Info */}
                                                 <div className="flex items-center gap-4 relative z-10">
-                                                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-500/5 flex items-center justify-center overflow-hidden ring-2 ring-slate-800 shrink-0">
+                                                    <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center overflow-hidden ring-2 ring-stone-200 shadow-sm shrink-0">
                                                         {selectedStudentForCurriculum.profile_pic_url ? (
                                                             <img src={selectedStudentForCurriculum.profile_pic_url} alt={selectedStudentForCurriculum.name} className="w-full h-full object-cover" />
                                                         ) : (
@@ -2906,43 +2962,43 @@ export default function ClassroomDashboardPage() {
                                                         )}
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <h4 className="font-extrabold text-sm text-slate-100 leading-snug truncate">{selectedStudentForCurriculum.name}</h4>
-                                                        <p className="text-[10px] text-slate-400 font-semibold leading-none mt-1 truncate">Syllabus Completion</p>
+                                                        <h4 className="font-extrabold text-sm text-stone-900 leading-snug truncate">{selectedStudentForCurriculum.name}</h4>
+                                                        <p className="text-[10px] text-stone-500 font-semibold leading-none mt-1 truncate">Syllabus Completion</p>
                                                     </div>
                                                 </div>
 
                                                 {/* Overall Syllabus Progress Bar */}
                                                 <div className="space-y-2 relative z-10">
                                                     <div className="flex items-center justify-between text-xs font-bold">
-                                                        <span className="text-slate-400 font-mono">{livePreviewData.progressPercentage}% Completed</span>
-                                                        <span className="text-[#ecb613] font-mono">{syllabusLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length} / {syllabusLessons.length} units</span>
+                                                        <span className="text-stone-500 font-mono">{livePreviewData.progressPercentage}% Completed</span>
+                                                        <span className="text-amber-705 font-mono">{syllabusLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length} / {syllabusLessons.length} units</span>
                                                     </div>
-                                                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className="w-full h-2.5 bg-stone-200 rounded-full overflow-hidden shadow-inner">
                                                         <div 
-                                                            className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-500 rounded-full"
+                                                            className="h-full bg-gradient-to-r from-emerald-500 to-[#ecb613] transition-all duration-500 rounded-full"
                                                             style={{ width: `${livePreviewData.progressPercentage}%` }}
                                                         ></div>
                                                     </div>
                                                 </div>
 
-                                                {/* Currently Learning Section */}
-                                                <div className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 space-y-4 relative z-10">
+                                                {/* Currently Learning Section (Green/White Accent) */}
+                                                <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-5 space-y-4 relative z-10 shadow-sm transition-all hover:bg-emerald-50/80">
                                                     <div className="flex items-center justify-between">
-                                                        <span className="text-[9px] font-black uppercase text-amber-500 tracking-wider font-mono">Currently Learning</span>
-                                                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                                                        <span className="text-[9px] font-black uppercase text-emerald-800 tracking-wider font-mono">Currently Learning</span>
+                                                        <span className="bg-emerald-100 text-emerald-805 border border-emerald-200 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
                                                             Unlocked
                                                         </span>
                                                     </div>
                                                     {livePreviewData.currentlyLearning ? (
                                                         <div className="space-y-3">
-                                                            <h5 className="font-extrabold text-sm text-slate-100 leading-snug">{livePreviewData.currentlyLearning.title}</h5>
+                                                            <h5 className="font-extrabold text-sm text-emerald-950 leading-snug">{livePreviewData.currentlyLearning.title}</h5>
                                                             {livePreviewData.currentlyLearning.description && (
-                                                                <p className="text-[11px] text-slate-400 font-medium leading-relaxed line-clamp-3">{livePreviewData.currentlyLearning.description}</p>
+                                                                <p className="text-[11px] text-emerald-900/80 font-medium leading-relaxed line-clamp-3">{livePreviewData.currentlyLearning.description}</p>
                                                             )}
                                                             
                                                             {/* Media content indicator */}
-                                                            <div className="flex items-center gap-2 pt-2 border-t border-slate-800/50">
-                                                                <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300">
+                                                            <div className="flex items-center gap-2 pt-2.5 border-t border-emerald-100">
+                                                                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shadow-xs">
                                                                     {livePreviewData.currentlyLearning.material_type === 'video' ? (
                                                                         <Film className="size-3.5" />
                                                                     ) : livePreviewData.currentlyLearning.material_type === 'audio' ? (
@@ -2952,35 +3008,35 @@ export default function ClassroomDashboardPage() {
                                                                     )}
                                                                 </div>
                                                                 <div>
-                                                                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider font-mono leading-none block">STUDY MATERIAL</span>
-                                                                    <span className="text-[10px] text-slate-200 font-bold capitalize mt-0.5 leading-none block">
+                                                                    <span className="text-[9px] font-black uppercase text-emerald-700/85 tracking-wider font-mono leading-none block font-semibold">STUDY MATERIAL</span>
+                                                                    <span className="text-[10px] text-emerald-900 font-extrabold capitalize mt-0.5 leading-none block">
                                                                         {livePreviewData.currentlyLearning.material_type || 'Reading Guide'}
                                                                     </span>
                                                                 </div>
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        <p className="text-xs text-slate-500 italic text-center py-2">No active learning topic.</p>
+                                                        <p className="text-xs text-emerald-700 italic text-center py-2">No active learning topic.</p>
                                                     )}
                                                 </div>
 
-                                                {/* Next Locked Items */}
+                                                {/* Next Locked Items (Red/White Accent) */}
                                                 <div className="space-y-3 relative z-10">
-                                                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider font-mono block">NEXT SEQUENTIAL PATHWAY</span>
+                                                    <span className="text-[9px] font-black uppercase text-stone-500 tracking-wider font-mono block">NEXT SEQUENTIAL PATHWAY</span>
                                                     {livePreviewData.nextLockedItems.length === 0 ? (
-                                                        <div className="p-3 bg-slate-900/30 border border-slate-800/40 rounded-xl text-center text-xs text-slate-500 italic">
+                                                        <div className="p-3 bg-stone-100 border border-stone-200/60 rounded-xl text-center text-xs text-stone-400 italic">
                                                             End of current learning roadmap.
                                                         </div>
                                                     ) : (
                                                         <div className="space-y-2">
                                                             {livePreviewData.nextLockedItems.map((lesson, idx) => (
-                                                                <div key={lesson.id} className="flex items-center gap-3 p-3 bg-slate-900/40 border border-slate-800/40 rounded-xl select-none opacity-60">
-                                                                    <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-slate-500">
+                                                                <div key={lesson.id} className="flex items-center gap-3 p-3 bg-rose-50/50 border border-rose-100 rounded-xl shadow-xs transition-all hover:bg-rose-50/80">
+                                                                    <div className="w-6 h-6 rounded-lg bg-rose-100 flex items-center justify-center shrink-0 text-rose-700">
                                                                         <Lock className="size-3" />
                                                                     </div>
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <span className="text-[8px] font-black text-slate-500 tracking-wider font-mono block">LOCKED • STEP {idx + 1}</span>
-                                                                        <h6 className="text-[11px] font-bold text-slate-300 leading-tight truncate mt-0.5">{lesson.title}</h6>
+                                                                    <div className="min-w-0 flex-1 text-left">
+                                                                        <span className="text-[8px] font-black text-rose-600 tracking-wider font-mono block">LOCKED • STEP {idx + 1}</span>
+                                                                        <h6 className="text-[11px] font-bold text-rose-950 leading-tight truncate mt-0.5">{lesson.title}</h6>
                                                                     </div>
                                                                 </div>
                                                             ))}
@@ -2989,8 +3045,9 @@ export default function ClassroomDashboardPage() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="bg-slate-950 border border-slate-800 rounded-3xl p-8 text-center text-slate-500 text-xs">
-                                                Select a student to initialize live student view simulation.
+                                            <div className="bg-white border border-stone-200 rounded-[32px] p-8 text-center text-stone-400 text-xs shadow-sm flex flex-col items-center justify-center min-h-[250px] border-dashed">
+                                                <UserPlus className="size-8 text-stone-300 mb-3 animate-pulse" />
+                                                <span>Select a student to initialize live student view simulation.</span>
                                             </div>
                                         )}
                                     </div>
