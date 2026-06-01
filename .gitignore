@@ -36,3 +36,5 @@ out/
 scratch/
 test_upsert.cjs
 
+# TypeScript build info
+*.tsbuildinfo
