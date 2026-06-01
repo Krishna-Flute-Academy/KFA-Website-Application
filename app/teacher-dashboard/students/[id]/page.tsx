@@ -116,7 +116,7 @@ export default function StudentProfilePage() {
                         level, 
                         notes,
                         profile_pic_url,
-                        classroom_students(classrooms(name))
+                        classroom_students(classroom_id, classrooms(name))
                     `)
                     .eq('id', studentId)
                     .eq('role', 'student')
@@ -127,8 +127,11 @@ export default function StudentProfilePage() {
                     return;
                 }
 
-                const studentClassroom = userData.classroom_students?.[0]?.classrooms as any;
+                const studentClassroomRef = userData.classroom_students?.[0] as any;
+                const studentClassroom = studentClassroomRef?.classrooms;
                 const batch_name = Array.isArray(studentClassroom) ? studentClassroom[0]?.name : studentClassroom?.name;
+                const studentClassroomId = studentClassroomRef?.classroom_id || null;
+                setClassroomId(studentClassroomId);
 
                 setStudentInfo({
                     id: userData.id,
@@ -142,6 +145,40 @@ export default function StudentProfilePage() {
                     profile_pic_url: userData.profile_pic_url,
                     batch_name: batch_name || 'Unassigned'
                 });
+
+                if (studentClassroomId) {
+                    // Fetch static course curriculum data
+                    const { data: dbModulesData } = await supabaseAuth
+                        .from('course_modules')
+                        .select('*')
+                        .order('module_number', { ascending: true });
+                    const { data: dbChaptersData } = await supabaseAuth
+                        .from('course_chapters')
+                        .select('*')
+                        .order('chapter_number', { ascending: true });
+                    const { data: dbLessonsData } = await supabaseAuth
+                        .from('course_lessons')
+                        .select('*')
+                        .order('lesson_number', { ascending: true });
+
+                    setCourseModules(dbModulesData || []);
+                    setCourseChapters(dbChaptersData || []);
+                    setCourseLessons(dbLessonsData || []);
+
+                    // Fetch student progress overrides
+                    const { data: progressData } = await supabaseAuth
+                        .from('student_topic_progress')
+                        .select('*')
+                        .eq('student_id', studentId);
+                    setStudentProgress(progressData || []);
+                    
+                    // Fetch classroom assignments to check sequential unlocks/visual indicator permissions
+                    const { data: assignmentsData } = await supabaseAuth
+                        .from('assignments')
+                        .select('*')
+                        .eq('classroom_id', studentClassroomId);
+                    setAssignments(assignmentsData || []);
+                }
 
                 // 4. Fetch Submissions
                 const { data: subData } = await supabaseAuth

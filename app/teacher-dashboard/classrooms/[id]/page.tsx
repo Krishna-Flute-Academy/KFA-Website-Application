@@ -1307,15 +1307,25 @@ export default function ClassroomDashboardPage() {
 
                 const rows = students.map(s => {
                     const isSelected = allocationSelectedStudents.includes(s.student_id);
-                    const status = isSelected ? allocationStatus : 'locked';
+                    const existingRow = studentProgress.find(p => p.student_id === s.student_id && p.lesson_id === lessonId);
+                    const existingStatus = existingRow ? existingRow.status : 'locked';
+                    
+                    let status = 'locked';
+                    if (isSelected) {
+                        // Preserve completed status to avoid accidental downgrades to 'unlocked'
+                        status = (existingStatus === 'completed' && allocationStatus === 'unlocked') 
+                            ? 'completed' 
+                            : allocationStatus;
+                    }
+
                     return {
                         student_id: s.student_id,
                         classroom_id: classroomId,
                         lesson_id: lessonId,
                         status: status,
                         unlocked_by: 'manual',
-                        unlocked_at: status !== 'locked' ? new Date().toISOString() : null,
-                        completed_at: status === 'completed' ? new Date().toISOString() : null
+                        unlocked_at: status !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
+                        completed_at: status === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
                     };
                 });
 
