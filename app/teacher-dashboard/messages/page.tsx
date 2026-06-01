@@ -10,7 +10,7 @@ import {
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
     Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe,
-    FolderPlus
+    FolderPlus, Edit
 } from 'lucide-react';
 
 interface Broadcast {
@@ -102,6 +102,17 @@ export default function MessagesDashboardPage() {
     const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
     const [newTemplateName, setNewTemplateName] = useState('');
     const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+    const [templateSearchQuery, setTemplateSearchQuery] = useState('');
+
+    const filteredTemplates = useMemo(() => {
+        const query = templateSearchQuery.toLowerCase().trim();
+        if (!query) return customTemplates;
+        return customTemplates.filter(t => 
+            t.name.toLowerCase().includes(query) || 
+            t.subject.toLowerCase().includes(query) || 
+            t.content.toLowerCase().includes(query)
+        );
+    }, [customTemplates, templateSearchQuery]);
 
     // ── Broadcast states ───────────────────────────────────────────────────────
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
@@ -229,15 +240,67 @@ export default function MessagesDashboardPage() {
                             setDbSetupErrorTemplates(true);
                         }
                         const local = localStorage.getItem('kfa_local_templates');
-                        setCustomTemplates(local ? JSON.parse(local) : []);
+                        if (local) {
+                            setCustomTemplates(JSON.parse(local));
+                        } else {
+                            // Seed local storage with system defaults
+                            const seedLocal = QUICK_TEMPLATES.map(t => ({
+                                id: `local-tpl-${t.id}`,
+                                name: t.name,
+                                subject: t.subject,
+                                content: t.content,
+                                created_at: new Date().toISOString()
+                            }));
+                            setCustomTemplates(seedLocal);
+                            localStorage.setItem('kfa_local_templates', JSON.stringify(seedLocal));
+                        }
                     } else {
-                        setCustomTemplates(tplData || []);
+                        if (!tplData || tplData.length === 0) {
+                            // Seed database with system defaults
+                            const seedData = QUICK_TEMPLATES.map(t => ({
+                                teacher_id: profile.id,
+                                name: t.name,
+                                subject: t.subject,
+                                content: t.content
+                            }));
+                            const { data: insertedData, error: insertError } = await supabaseAuth
+                                .from('message_templates')
+                                .insert(seedData)
+                                .select('*');
+                            
+                            if (!insertError && insertedData) {
+                                setCustomTemplates(insertedData);
+                            } else {
+                                const fallbackLocal = QUICK_TEMPLATES.map(t => ({
+                                    id: `local-tpl-${t.id}`,
+                                    name: t.name,
+                                    subject: t.subject,
+                                    content: t.content,
+                                    created_at: new Date().toISOString()
+                                }));
+                                setCustomTemplates(fallbackLocal);
+                            }
+                        } else {
+                            setCustomTemplates(tplData);
+                        }
                         setDbSetupErrorTemplates(false);
                     }
                 } catch (te) {
                     console.warn('[Messages] Exception querying templates:', te);
                     const local = localStorage.getItem('kfa_local_templates');
-                    setCustomTemplates(local ? JSON.parse(local) : []);
+                    if (local) {
+                        setCustomTemplates(JSON.parse(local));
+                    } else {
+                        const fallbackLocal = QUICK_TEMPLATES.map(t => ({
+                            id: `local-tpl-${t.id}`,
+                            name: t.name,
+                            subject: t.subject,
+                            content: t.content,
+                            created_at: new Date().toISOString()
+                        }));
+                        setCustomTemplates(fallbackLocal);
+                        localStorage.setItem('kfa_local_templates', JSON.stringify(fallbackLocal));
+                    }
                 }
 
             } catch (err) {
@@ -408,16 +471,24 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
         setTimeout(() => setSqlGroupsCopied(false), 3000);
     };
 
-    // ── Quick Templates Click Handler ──────────────────────────────────────────
-    const handleApplyTemplate = (tpl: typeof QUICK_TEMPLATES[0]) => {
-        setSubject(tpl.subject);
-        setContent(tpl.content);
-    };
-
     const handleApplyCustomTemplate = (tpl: any) => {
         setSubject(tpl.subject);
         setContent(tpl.content);
         alert(`Applied template "${tpl.name}"!`);
+    };
+
+    const handleLoadForResend = (bc: Broadcast) => {
+        setSubject(bc.subject);
+        setContent(bc.content);
+        setActiveChannel(bc.channel);
+        setSelectedRecipients(bc.recipients);
+        
+        // Scroll smoothly to composer form
+        const composerElement = document.querySelector('form');
+        if (composerElement) {
+            composerElement.scrollIntoView({ behavior: 'smooth' });
+        }
+        alert('Broadcast loaded into the composer! You can now edit and resend it.');
     };
 
     const handleSaveTemplate = async (name: string) => {
@@ -890,42 +961,43 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                             </div>
                                         </div>
 
-                                        {/* Quick Templates block */}
-                                        <div className="space-y-2.5 pt-2">
-                                            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Quick Templates</span>
-                                            <div className="space-y-2">
-                                                {QUICK_TEMPLATES.map((tpl) => {
-                                                    const IconComponent = tpl.icon;
-                                                    return (
-                                                        <button 
-                                                            key={tpl.id} 
-                                                            type="button" 
-                                                            onClick={() => handleApplyTemplate(tpl)}
-                                                            className="w-full flex items-center gap-3 p-2.5 bg-white hover:bg-stone-50 rounded-xl border border-stone-200 hover:border-stone-300 transition-all text-left group"
-                                                        >
-                                                            <div className="p-1.5 bg-stone-100 group-hover:bg-[#0e5f59]/10 rounded-lg text-stone-600 group-hover:text-[#0e5f59] transition-colors shrink-0">
-                                                                <IconComponent className="w-4 h-4" />
-                                                            </div>
-                                                            <span className="text-[11px] font-bold text-stone-700">{tpl.name}</span>
-                                                        </button>
-                                                    );
-                                                })}
+                                        {/* Templates block */}
+                                        <div className="space-y-3 pt-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Message Templates</span>
+                                                {customTemplates.length > 0 && (
+                                                    <span className="text-[9px] font-bold text-[#ecb613] bg-[#ecb613]/10 px-2 py-0.5 rounded-full">
+                                                        {filteredTemplates.length} of {customTemplates.length}
+                                                    </span>
+                                                )}
                                             </div>
-                                        </div>
+                                            
+                                            {/* Template Search Input */}
+                                            <div className="relative">
+                                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 w-3.5 h-3.5" />
+                                                <input 
+                                                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-stone-200 rounded-lg text-[10px] outline-none focus:ring-1 focus:ring-[#ecb613] font-semibold text-stone-700 placeholder:text-stone-300"
+                                                    placeholder="Search templates..."
+                                                    type="text"
+                                                    value={templateSearchQuery}
+                                                    onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                                                />
+                                            </div>
 
-                                        {/* Custom Templates block */}
-                                        {customTemplates.length > 0 && (
-                                            <div className="space-y-2.5 pt-2">
-                                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Your Saved Templates</span>
-                                                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                                                    {customTemplates.map((tpl) => (
+                                            {filteredTemplates.length === 0 ? (
+                                                <p className="text-[10px] text-stone-400 italic text-center py-4 bg-stone-50 rounded-xl border border-dashed border-stone-200">
+                                                    No templates found matching "{templateSearchQuery}"
+                                                </p>
+                                            ) : (
+                                                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                                    {filteredTemplates.map((tpl) => (
                                                         <div key={tpl.id} className="flex items-center gap-2">
                                                             <button 
                                                                 type="button" 
                                                                 onClick={() => handleApplyCustomTemplate(tpl)}
-                                                                className="flex-1 flex items-center gap-3 p-2.5 bg-white hover:bg-[#0e5f59]/5 rounded-xl border border-stone-200 hover:border-[#0e5f59]/30 transition-all text-left group"
+                                                                className="flex-1 flex items-center gap-3 p-2.5 bg-white hover:bg-stone-50 rounded-xl border border-stone-200 hover:border-stone-300 transition-all text-left group"
                                                             >
-                                                                <div className="p-1.5 bg-stone-100 group-hover:bg-[#0e5f59]/10 rounded-lg text-stone-600 group-hover:text-[#0e5f59] transition-colors shrink-0">
+                                                                <div className="p-1.5 bg-stone-100 group-hover:bg-[#ecb613]/10 rounded-lg text-stone-600 group-hover:text-[#ecb613] transition-colors shrink-0">
                                                                     <FileText className="w-4 h-4" />
                                                                 </div>
                                                                 <span className="text-[11px] font-bold text-stone-700 truncate">{tpl.name}</span>
@@ -941,8 +1013,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         </div>
                                                     ))}
                                                 </div>
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Right inputs column: subject & body content editor */}
@@ -1037,9 +1109,19 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         ))}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-1.5 md:justify-end text-[10px] font-bold text-stone-500">
-                                                    <Globe className="w-3.5 h-3.5 text-emerald-500" />
-                                                    <span>Active</span>
+                                                <div className="flex flex-col gap-1 items-end">
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-stone-500">
+                                                        <Globe className="w-3.5 h-3.5 text-emerald-500" />
+                                                        <span>Active</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleLoadForResend(bc)}
+                                                        className="mt-1 text-[10px] font-extrabold text-[#ecb613] hover:text-[#d49f0e] transition-colors flex items-center gap-1 hover:underline"
+                                                    >
+                                                        <Edit className="w-3 h-3" />
+                                                        Edit & Resend
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
