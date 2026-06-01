@@ -102,6 +102,23 @@ export default function ClassroomDashboardPage() {
     const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
     const [activeTab, setActiveTab] = useState('Overview');
     const [currentPage, setCurrentPage] = useState(1);
+
+    // Restore active tab from sessionStorage on mount
+    useEffect(() => {
+        if (typeof window !== 'undefined' && classroomId) {
+            const savedTab = sessionStorage.getItem(`classroom_tab_${classroomId}`);
+            if (savedTab && ['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Settings'].includes(savedTab)) {
+                setActiveTab(savedTab);
+            }
+        }
+    }, [classroomId]);
+
+    // Save active tab to sessionStorage when it changes
+    useEffect(() => {
+        if (typeof window !== 'undefined' && classroomId && activeTab) {
+            sessionStorage.setItem(`classroom_tab_${classroomId}`, activeTab);
+        }
+    }, [activeTab, classroomId]);
     const PAGE_SIZE = 10;
 
     // New schedule form state
@@ -480,6 +497,35 @@ export default function ClassroomDashboardPage() {
                 } catch (pe) {
                     console.warn('Could not fetch student_topic_progress:', pe);
                     setStudentProgress([]);
+                }
+
+                // Fetch assignments immediately on mount so progress summary calculates correctly
+                try {
+                    const { data: asgData, error: asgError } = await supabaseAuth
+                        .from('assignments')
+                        .select('*')
+                        .eq('classroom_id', classroomId)
+                        .order('created_at', { ascending: false });
+
+                    if (!asgError && asgData) {
+                        const enriched = await Promise.all(asgData.map(async (a: Assignment) => {
+                            if (a.target_type === 'individual') {
+                                const { data: asData } = await supabaseAuth
+                                    .from('assignment_students')
+                                    .select('*')
+                                    .eq('assignment_id', a.id);
+                                const enrichedStudents = (asData || []).map((as: AssignmentStudent) => {
+                                    const match = formattedRoster.find(s => s.student_id === as.student_id);
+                                    return { ...as, student_name: match?.name || 'Unknown', student_pic: match?.profile_pic_url || null };
+                                });
+                                return { ...a, assignment_students: enrichedStudents };
+                            }
+                            return { ...a, assignment_students: [] };
+                        }));
+                        setAssignments(enriched);
+                    }
+                } catch (ae) {
+                    console.warn('Could not pre-fetch assignments on mount:', ae);
                 }
 
             } catch (err) {

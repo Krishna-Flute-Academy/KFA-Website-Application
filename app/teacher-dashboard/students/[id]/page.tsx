@@ -50,6 +50,23 @@ export default function StudentProfilePage() {
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     const [viewDate, setViewDate] = useState(new Date()); // Calendar view month
     const [activeTab, setActiveTab] = useState('profile'); // profile, history, attendance, curriculum
+
+    // Restore active tab from sessionStorage on mount
+    useEffect(() => {
+        if (typeof window !== 'undefined' && studentId) {
+            const savedTab = sessionStorage.getItem(`student_tab_${studentId}`);
+            if (savedTab && ['profile', 'history', 'attendance', 'curriculum'].includes(savedTab)) {
+                setActiveTab(savedTab);
+            }
+        }
+    }, [studentId]);
+
+    // Save active tab to sessionStorage when it changes
+    useEffect(() => {
+        if (typeof window !== 'undefined' && studentId && activeTab) {
+            sessionStorage.setItem(`student_tab_${studentId}`, activeTab);
+        }
+    }, [activeTab, studentId]);
     
     // Curriculum dynamic states
     const [classroomId, setClassroomId] = useState<string | null>(null);
