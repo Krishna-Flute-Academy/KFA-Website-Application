@@ -279,16 +279,43 @@ export default function MessagesDashboardPage() {
         }
     };
 
-    // Start recording audio
+    // Start recording audio using default device drivers (computers/laptops/mobiles)
     const startRecording = async () => {
         try {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 throw new Error('navigator.mediaDevices is not supported');
             }
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Standard media constraints to pick the default active audio drive with high-fidelity filtering
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                } 
+            });
             audioChunksRef.current = [];
             
-            const mediaRecorder = new MediaRecorder(stream);
+            // Determine optimal MIME type supported by the computer/laptop/mobile OS audio driver
+            let mimeType = 'audio/webm';
+            let options = {};
+            if (typeof MediaRecorder !== 'undefined') {
+                if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    mimeType = 'audio/webm';
+                    options = { mimeType };
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    mimeType = 'audio/mp4'; // Standard iOS Safari drive format
+                    options = { mimeType };
+                } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+                    mimeType = 'audio/ogg';
+                    options = { mimeType };
+                } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+                    mimeType = 'audio/wav';
+                    options = { mimeType };
+                }
+            }
+            
+            const mediaRecorder = new MediaRecorder(stream, options);
             mediaRecorderRef.current = mediaRecorder;
             
             mediaRecorder.ondataavailable = (event) => {
@@ -298,7 +325,7 @@ export default function MessagesDashboardPage() {
             };
             
             mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
                 try {
                     const base64Url = await convertBlobToBase64(audioBlob);
                     setRecordedBlob(audioBlob);
@@ -321,7 +348,7 @@ export default function MessagesDashboardPage() {
                 setRecordingTime(prev => prev + 1);
             }, 1000);
             
-            showToast('Recording flute sample...', 'info');
+            showToast('Recording via default audio drive...', 'info');
         } catch (err) {
             console.error('Error starting audio recorder:', err);
             setIsMicUnavailable(true);
