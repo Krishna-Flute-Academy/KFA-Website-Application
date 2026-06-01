@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
+import TeacherHeader from '../../../src/components/TeacherHeader';
 import { 
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
@@ -589,61 +590,30 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
 
     if (loading) {
         return (
-            <div className="flex h-screen w-screen bg-[#faf8f5] items-center justify-center">
-                <div className="text-center flex flex-col items-center">
-                    <Loader2 className="animate-spin text-[#0e5f59] w-10 h-10 mb-4" />
-                    <p className="font-semibold text-slate-600 tracking-wider text-sm uppercase">Loading Messages Workspace...</p>
-                </div>
+            <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6] dark:bg-[#1a1608]">
+                <Loader2 className="w-10 h-10 animate-spin text-[#ecb613] mb-4" />
+                <p className="font-medium text-slate-600 dark:text-slate-400">Loading Messages Workspace...</p>
             </div>
         );
     }
 
     return (
-        <div className="flex bg-[#faf8f5] min-h-screen text-stone-850 select-none">
-            {/* Sidebar Navigation */}
-            <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
+        <div className="bg-[#f8f8f6] dark:bg-[#1a1608] text-slate-900 dark:text-slate-100 font-sans min-h-screen">
+            <div className="flex min-h-screen">
+                {/* Sidebar Navigation */}
+                <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-            {/* Main Application Window */}
-            <main className="flex-1 flex flex-col h-screen overflow-hidden">
-                {/* Modern Workspace Header */}
-                <header className="px-8 py-5 border-b border-stone-200 bg-white flex justify-between items-center shrink-0">
-                    <div className="relative w-96">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 w-4.5 h-4.5" />
-                        <input 
-                            className="w-full pl-10 pr-4 py-2 bg-stone-50 border border-stone-200/80 rounded-full text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] transition-all placeholder:text-stone-400" 
-                            placeholder="Search messages, students, or broadcasts..." 
-                            type="text" 
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                    <div className="flex items-center gap-6">
-                        <button className="text-stone-500 hover:text-[#0e5f59] transition-colors relative">
-                            <Bell className="w-5 h-5" />
-                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-amber-500 rounded-full"></span>
-                        </button>
-                        <button className="text-stone-500 hover:text-[#0e5f59] transition-colors">
-                            <HelpCircle className="w-5 h-5" />
-                        </button>
-                        
-                        <div className="flex items-center gap-2 border-l border-stone-200 pl-6 select-none">
-                            <span className="text-xs font-bold text-stone-800 tracking-wide text-right">
-                                {teacherProfile?.name || 'Guruji Krishna'}
-                                <span className="block text-[9px] font-semibold text-stone-400 uppercase tracking-widest mt-0.5">Master Instructor</span>
-                            </span>
-                            <div className="size-8.5 rounded-full overflow-hidden border border-stone-200 shadow-xs">
-                                <img 
-                                    src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80" 
-                                    alt="Guruji" 
-                                    className="w-full h-full object-cover" 
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </header>
+                {/* Main Application Window */}
+                <main className="flex-1 flex flex-col h-screen overflow-hidden">
+                    <TeacherHeader 
+                        title="Messages & Broadcasts" 
+                        searchQuery={searchQuery}
+                        onSearchChange={setSearchQuery}
+                        placeholder="Search messages, students, or broadcasts..."
+                    />
 
-                {/* Sub-body workspace flow */}
-                <div className="flex-1 overflow-y-auto px-8 py-8 flex flex-col gap-8 bg-[#faf8f5]">
+                    {/* Sub-body workspace flow */}
+                    <div className="flex-1 overflow-y-auto px-8 py-8 flex flex-col gap-8 bg-[#f8f8f6] dark:bg-[#1a1608]/50">
                     
                     {/* Database Setup Banner Warning */}
                     {(dbSetupError || dbSetupErrorGroups || dbSetupErrorTemplates) && (
@@ -1094,6 +1064,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                     </div>
                 </div>
             </main>
+        </div>
 
             {/* Interactive Overlay Target Selector Modal */}
             {isModalOpen && (
