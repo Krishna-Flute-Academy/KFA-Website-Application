@@ -8,7 +8,8 @@ import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import { 
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
-    Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe
+    Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe,
+    FolderPlus
 } from 'lucide-react';
 
 interface Broadcast {
@@ -84,6 +85,15 @@ export default function MessagesDashboardPage() {
     // Live Database Lists (Roster & Classrooms)
     const [classrooms, setClassrooms] = useState<any[]>([]);
     const [students, setStudents] = useState<any[]>([]);
+
+    // Custom Recipient Groups states
+    const [customGroups, setCustomGroups] = useState<any[]>([]);
+    const [dbSetupErrorGroups, setDbSetupErrorGroups] = useState(false);
+    const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
+    const [newGroupName, setNewGroupName] = useState('');
+    const [newGroupDesc, setNewGroupDesc] = useState('');
+    const [isSavingGroup, setIsSavingGroup] = useState(false);
+    const [sqlGroupsCopied, setSqlGroupsCopied] = useState(false);
 
     // ── Broadcast states ───────────────────────────────────────────────────────
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
@@ -168,6 +178,34 @@ export default function MessagesDashboardPage() {
                     console.warn('[Messages] Exception querying broadcasts:', pe);
                     const local = localStorage.getItem('kfa_local_broadcasts');
                     setBroadcasts(local ? JSON.parse(local) : INITIAL_MOCK_BROADCASTS);
+                }
+
+                // 4. Test/Query Custom Recipient Groups Table
+                try {
+                    const { data: grpData, error: grpError } = await supabaseAuth
+                        .from('custom_recipient_groups')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+
+                    if (grpError) {
+                        console.warn('[Messages] Custom recipient groups table check failed:', grpError.message);
+                        if (grpError.code === '42P01' || grpError.code === 'PGRST205' || grpError.message?.includes('schema cache') || grpError.message?.includes('does not exist')) {
+                            setDbSetupErrorGroups(true);
+                        }
+                        const local = localStorage.getItem('kfa_local_custom_groups');
+                        setCustomGroups(local ? JSON.parse(local) : [
+                            { id: 'mock-group-1', name: 'Saturday Flute Performers', description: 'Advanced weekly workshop flute players', recipients: [{ id: 'class-1', name: 'All Beginners (A1)', type: 'class' }] }
+                        ]);
+                    } else {
+                        setCustomGroups(grpData || []);
+                        setDbSetupErrorGroups(false);
+                    }
+                } catch (ge) {
+                    console.warn('[Messages] Exception querying custom groups:', ge);
+                    const local = localStorage.getItem('kfa_local_custom_groups');
+                    setCustomGroups(local ? JSON.parse(local) : [
+                        { id: 'mock-group-1', name: 'Saturday Flute Performers', description: 'Advanced weekly workshop flute players', recipients: [{ id: 'class-1', name: 'All Beginners (A1)', type: 'class' }] }
+                    ]);
                 }
 
             } catch (err) {
@@ -263,6 +301,79 @@ export default function MessagesDashboardPage() {
         } finally {
             setIsSending(false);
         }
+    };
+
+    // ── Save Custom Group Handler ──────────────────────────────────────────────
+    const handleSaveCustomGroup = async (name: string, description: string, recipients: any[]) => {
+        if (!teacherProfile || !name.trim()) return;
+        setIsSavingGroup(true);
+
+        const newGroup = {
+            teacher_id: teacherProfile.id,
+            name: name.trim(),
+            description: description.trim(),
+            recipients: recipients,
+            created_at: new Date().toISOString()
+        };
+
+        try {
+            if (dbSetupErrorGroups) {
+                const updatedList = [
+                    { id: `local-group-${Date.now()}`, ...newGroup },
+                    ...customGroups
+                ];
+                setCustomGroups(updatedList);
+                localStorage.setItem('kfa_local_custom_groups', JSON.stringify(updatedList));
+                alert('Group saved in-memory and cached locally!');
+            } else {
+                const { data, error } = await supabaseAuth
+                    .from('custom_recipient_groups')
+                    .insert(newGroup)
+                    .select('*');
+
+                if (error) {
+                    console.error('Error saving custom group to database:', error);
+                    alert(`Database write failed. Saving in-memory: ${error.message}`);
+                    const updatedList = [
+                        { id: `local-group-${Date.now()}`, ...newGroup },
+                        ...customGroups
+                    ];
+                    setCustomGroups(updatedList);
+                    localStorage.setItem('kfa_local_custom_groups', JSON.stringify(updatedList));
+                } else {
+                    setCustomGroups(prev => [data[0], ...prev]);
+                    alert('Custom Group saved successfully to your database!');
+                }
+            }
+
+            // Reset modal inputs
+            setNewGroupName('');
+            setNewGroupDesc('');
+            setIsCreateGroupModalOpen(false);
+        } catch (err: any) {
+            console.error('Exception saving custom group:', err);
+            alert('An unexpected error occurred.');
+        } finally {
+            setIsSavingGroup(false);
+        }
+    };
+
+    const handleCopyGroupsSQL = () => {
+        const sql = `CREATE TABLE IF NOT EXISTS public.custom_recipient_groups (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  recipients JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.custom_recipient_groups ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all custom_recipient_groups" ON public.custom_recipient_groups;
+CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_groups FOR ALL USING (true) WITH CHECK (true);`;
+        
+        navigator.clipboard.writeText(sql);
+        setSqlGroupsCopied(true);
+        setTimeout(() => setSqlGroupsCopied(false), 3000);
     };
 
     // ── Quick Templates Click Handler ──────────────────────────────────────────
@@ -417,21 +528,23 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
                 <div className="flex-1 overflow-y-auto px-8 py-8 flex flex-col gap-8 bg-[#faf8f5]">
                     
                     {/* Database Setup Banner Warning */}
-                    {dbSetupError && (
+                    {(dbSetupError || dbSetupErrorGroups) && (
                         <div className="bg-rose-50 border border-rose-200/80 p-5 rounded-2xl flex flex-col gap-4 shadow-sm select-text">
                             <div className="flex gap-3">
                                 <Info className="text-rose-500 w-5 h-5 shrink-0 mt-0.5" />
                                 <div>
-                                    <h4 className="text-sm font-extrabold text-rose-900">Broadcasts Table Not Found in Supabase</h4>
+                                    <h4 className="text-sm font-extrabold text-rose-900">
+                                        {dbSetupError && dbSetupErrorGroups ? 'Supabase Message Tables Not Found' : 
+                                         dbSetupError ? 'Broadcasts Table Not Found' : 'Custom Recipient Groups Table Not Found'}
+                                    </h4>
                                     <p className="text-xs text-rose-700 font-medium leading-relaxed mt-1">
-                                        The <code className="font-mono bg-rose-100 px-1 rounded">broadcasts</code> table doesn't exist yet in your <strong>auth Supabase project</strong> (<code>sevtycwrmhzyfxvxkkgc</code>). 
-                                        To enable permanent backend storage for sent messages, open your Supabase SQL Editor and run the script below.
+                                        To enable permanent backend storage for your messaging features, open your Supabase SQL Editor and run the script below.
                                     </p>
                                 </div>
                             </div>
                             <div className="relative">
                                 <pre className="text-[10px] font-mono bg-rose-950/5 text-rose-800 p-4 rounded-xl max-h-32 overflow-y-auto border border-rose-200/60 leading-relaxed">
-{`CREATE TABLE IF NOT EXISTS public.broadcasts (
+{dbSetupError && `CREATE TABLE IF NOT EXISTS public.broadcasts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   channel TEXT NOT NULL DEFAULT 'announcements',
@@ -441,18 +554,41 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
   created_at TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE public.broadcasts ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) WITH CHECK (true);`}
+CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) WITH CHECK (true);
+`}
+{dbSetupErrorGroups && `CREATE TABLE IF NOT EXISTS public.custom_recipient_groups (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  recipients JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.custom_recipient_groups ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_groups FOR ALL USING (true) WITH CHECK (true);
+`}
                                 </pre>
                                 <button 
-                                    onClick={handleCopySQL}
+                                    onClick={() => {
+                                        let sql = '';
+                                        if (dbSetupError) {
+                                            sql += `CREATE TABLE IF NOT EXISTS public.broadcasts (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  channel TEXT NOT NULL DEFAULT 'announcements',\n  recipients JSONB NOT NULL DEFAULT '[]',\n  subject TEXT NOT NULL,\n  content TEXT NOT NULL,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.broadcasts ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all broadcasts" ON public.broadcasts;\nCREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) WITH CHECK (true);\n\n`;
+                                        }
+                                        if (dbSetupErrorGroups) {
+                                            sql += `CREATE TABLE IF NOT EXISTS public.custom_recipient_groups (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT,\n  recipients JSONB NOT NULL DEFAULT '[]',\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.custom_recipient_groups ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all custom_recipient_groups" ON public.custom_recipient_groups;\nCREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_groups FOR ALL USING (true) WITH CHECK (true);`;
+                                        }
+                                        navigator.clipboard.writeText(sql);
+                                        setSqlGroupsCopied(true);
+                                        setTimeout(() => setSqlGroupsCopied(false), 3050);
+                                    }}
                                     className="absolute right-3 top-3 px-3 py-1.5 bg-rose-900/10 hover:bg-rose-900/20 text-rose-800 text-[10px] font-bold rounded-lg border border-rose-300 transition-all flex items-center gap-1.5"
                                 >
-                                    {sqlCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                                    {sqlCopied ? 'Copied!' : 'Copy SQL'}
+                                    {sqlGroupsCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                    {sqlGroupsCopied ? 'Copy SQL' : 'Copy SQL'}
                                 </button>
                             </div>
                             <p className="text-[10px] font-semibold text-rose-600 uppercase tracking-widest">
-                                💡 App is safely running in local fallback mode. Messages will be preserved temporarily in localStorage.
+                                💡 App is safely running in local fallback mode. Groups and broadcasts will be preserved temporarily in localStorage.
                             </p>
                         </div>
                     )}
@@ -498,6 +634,56 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
                                     })}
                                 </div>
                             </div>
+
+                            {/* Saved Custom Groups Card */}
+                            {activeChannel === 'custom_groups' && (
+                                <div className="bg-white p-5 rounded-2xl shadow-xs border border-stone-200/60 flex flex-col gap-3">
+                                    <div className="flex justify-between items-center border-b border-stone-100 pb-2.5">
+                                        <span className="text-[10px] font-extrabold text-[#0e5f59] uppercase tracking-widest">Saved Custom Groups</span>
+                                        <button 
+                                            type="button"
+                                            onClick={() => {
+                                                setNewGroupName('');
+                                                setNewGroupDesc('');
+                                                setIsCreateGroupModalOpen(true);
+                                            }}
+                                            className="text-[10px] text-[#0e5f59] hover:underline font-extrabold flex items-center gap-1 transition-colors"
+                                        >
+                                            <Plus className="w-3 h-3" /> Create Group
+                                        </button>
+                                    </div>
+
+                                    {customGroups.length === 0 ? (
+                                        <p className="text-[11px] text-stone-400 italic text-center py-4">No custom groups created yet.</p>
+                                    ) : (
+                                        <div className="space-y-2 max-h-56 overflow-y-auto">
+                                            {customGroups.map((grp) => (
+                                                <button 
+                                                    key={grp.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedRecipients(grp.recipients);
+                                                        alert(`Loaded group "${grp.name}" into composer recipients!`);
+                                                    }}
+                                                    className="w-full flex flex-col p-3 bg-stone-50 hover:bg-[#0e5f59]/5 border border-stone-200 hover:border-[#0e5f59]/30 rounded-xl text-left transition-all group"
+                                                >
+                                                    <span className="text-xs font-bold text-stone-850 truncate group-hover:text-[#0e5f59] transition-colors">{grp.name}</span>
+                                                    {grp.description && (
+                                                        <span className="text-[9px] text-stone-400 font-medium truncate mt-0.5">{grp.description}</span>
+                                                    )}
+                                                    <div className="flex flex-wrap gap-1 mt-2">
+                                                        {grp.recipients.map((rec: any, idx: number) => (
+                                                            <span key={idx} className="px-1.5 py-0.5 bg-stone-100 text-[8px] font-bold text-stone-500 rounded border border-stone-200">
+                                                                {rec.name}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Insight card */}
                             <div className="bg-[#eef2f6]/60 border border-blue-100 p-5 rounded-2xl shadow-2xs select-none">
@@ -570,6 +756,21 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
                                                     <Plus className="w-3 h-3" />
                                                     Add Classes/Tags
                                                 </button>
+
+                                                {selectedRecipients.length > 0 && (
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => {
+                                                            setNewGroupName('');
+                                                            setNewGroupDesc('');
+                                                            setIsCreateGroupModalOpen(true);
+                                                        }}
+                                                        className="px-3 py-1 bg-white hover:bg-[#0e5f59]/5 border border-stone-200 text-[#0e5f59] text-[10px] font-bold rounded-full transition-all flex items-center gap-1"
+                                                    >
+                                                        <FolderPlus className="w-3.5 h-3.5" />
+                                                        Save Selection as Group
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
 
@@ -824,6 +1025,89 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
                                 className="px-5 py-2 bg-[#0e5f59] hover:bg-[#0c4e49] text-white text-xs font-bold rounded-full transition-all shadow-xs"
                             >
                                 Apply Targets
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Create Custom Group Modal */}
+            {isCreateGroupModalOpen && (
+                <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-stone-200/60 flex flex-col max-h-[500px]">
+                        
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-stone-100 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-base font-extrabold text-stone-900">Create Custom Group</h3>
+                                <p className="text-[11px] text-stone-400 font-semibold mt-0.5">Save targeted lists for instant future broadcasts</p>
+                            </div>
+                            <button 
+                                onClick={() => setIsCreateGroupModalOpen(false)}
+                                className="text-stone-400 hover:text-stone-600 transition-colors hover:bg-stone-50 p-1.5 rounded-full"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Modal Fields */}
+                        <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Group Name</label>
+                                <input 
+                                    className="px-4 py-2 border border-stone-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-stone-800 bg-white placeholder:text-stone-300"
+                                    placeholder="e.g. Advanced Flautists, Saturday Performers" 
+                                    type="text" 
+                                    value={newGroupName}
+                                    onChange={(e) => setNewGroupName(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Group Description (Optional)</label>
+                                <input 
+                                    className="px-4 py-2 border border-stone-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-stone-800 bg-white placeholder:text-stone-300"
+                                    placeholder="e.g. Students in the weekend morning masterclass" 
+                                    type="text" 
+                                    value={newGroupDesc}
+                                    onChange={(e) => setNewGroupDesc(e.target.value)}
+                                />
+                            </div>
+
+                            {/* Recipients preview summary */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Selected Members ({selectedRecipients.length})</label>
+                                {selectedRecipients.length === 0 ? (
+                                    <div className="p-3.5 bg-amber-50/50 rounded-xl border border-dashed border-amber-200 text-center">
+                                        <p className="text-[10px] text-amber-700 font-semibold leading-relaxed">
+                                            No members selected. Close this dialog, choose targeted classes/students in the composer first, and click "Save Selection as Group"!
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 bg-stone-50 rounded-xl border border-stone-200">
+                                        {selectedRecipients.map((rec) => (
+                                            <span key={rec.id} className="px-2 py-0.5 bg-white border border-stone-200 text-[9px] font-bold text-stone-600 rounded">
+                                                {rec.name}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer actions */}
+                        <div className="p-6 border-t border-stone-100 flex justify-end gap-3 shrink-0">
+                            <button 
+                                onClick={() => setIsCreateGroupModalOpen(false)}
+                                className="px-4 py-2 hover:bg-stone-50 border border-stone-200 text-stone-600 text-xs font-bold rounded-full transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={() => handleSaveCustomGroup(newGroupName, newGroupDesc, selectedRecipients)}
+                                disabled={selectedRecipients.length === 0 || !newGroupName.trim() || isSavingGroup}
+                                className="px-5 py-2 bg-[#0e5f59] hover:bg-[#0c4e49] text-white text-xs font-bold rounded-full transition-all shadow-xs disabled:bg-stone-300 disabled:cursor-not-allowed"
+                            >
+                                {isSavingGroup ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save Group'}
                             </button>
                         </div>
                     </div>
