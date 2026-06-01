@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
@@ -127,6 +127,270 @@ export default function MessagesDashboardPage() {
             return () => clearTimeout(timer);
         }
     }, [toast]);
+
+    // Audio Recorder states
+    const [audioRecorderOpen, setAudioRecorderOpen] = useState(false);
+    const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+    const [audioUrl, setAudioUrl] = useState<string | null>(null);
+    const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+    const [attachedAudioNote, setAttachedAudioNote] = useState<string | null>(null);
+    
+    // Synthesizer Fallback States
+    const [isMicUnavailable, setIsMicUnavailable] = useState(false);
+    const [selectedPreset, setSelectedPreset] = useState<string>('d5');
+    const [isSynthesizing, setIsSynthesizing] = useState(false);
+
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    // Convert Blob to persistent Base64 Data URL
+    const convertBlobToBase64 = (blob: Blob): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    };
+
+    // Synthesize organic flute note using browser Web Audio API
+    const synthesizeFluteSound = async (preset: string): Promise<{ blob: Blob; url: string }> => {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContext) {
+            throw new Error('Web Audio API not supported');
+        }
+
+        const ctx = new AudioContext();
+        let dest: MediaStreamAudioDestinationNode;
+        try {
+            dest = ctx.createMediaStreamDestination();
+        } catch (e) {
+            throw new Error('MediaStreamDestination not supported');
+        }
+
+        const chunks: Blob[] = [];
+        const recorder = new MediaRecorder(dest.stream);
+        recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+        };
+
+        return new Promise((resolve, reject) => {
+            recorder.onstop = () => {
+                const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+                const url = URL.createObjectURL(audioBlob);
+                ctx.close();
+                resolve({ blob: audioBlob, url });
+            };
+
+            recorder.onerror = (e) => reject(e);
+            recorder.start();
+
+            const now = ctx.currentTime;
+
+            if (preset === 'd5') {
+                playFluteTone(ctx, dest, 587.33, now, 1.5);
+            } else if (preset === 'a5') {
+                playFluteTone(ctx, dest, 880.00, now, 1.5);
+            } else if (preset === 'kfa') {
+                const notes = [587.33, 698.46, 880.00, 1174.66];
+                const offsets = [0, 0.35, 0.7, 1.05];
+                notes.forEach((freq, i) => {
+                    playFluteTone(ctx, dest, freq, now + offsets[i], 0.6);
+                });
+            }
+
+            const totalDuration = preset === 'kfa' ? 1.85 * 1000 : 1.7 * 1000;
+            setTimeout(() => {
+                try {
+                    recorder.stop();
+                } catch (err) {
+                    reject(err);
+                }
+            }, totalDuration);
+        });
+    };
+
+    const playFluteTone = (
+        ctx: AudioContext, 
+        dest: MediaStreamAudioDestinationNode, 
+        freq: number, 
+        startTime: number, 
+        duration: number
+    ) => {
+        const osc = ctx.createOscillator();
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        const gainNode = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        lfo.frequency.value = 5.8;
+        lfoGain.gain.value = 6;
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+
+        filter.type = 'lowpass';
+        filter.frequency.value = freq * 1.8;
+
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+
+        const attack = 0.12;
+        const decay = 0.15;
+        const sustain = 0.75;
+        const release = 0.22;
+
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.25, startTime + attack);
+        gainNode.gain.setValueAtTime(0.25, startTime + attack);
+        gainNode.gain.linearRampToValueAtTime(0.25 * sustain, startTime + attack + decay);
+        gainNode.gain.setValueAtTime(0.25 * sustain, startTime + duration - release);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+        osc.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(dest);
+        gainNode.connect(ctx.destination);
+
+        lfo.start(startTime);
+        osc.start(startTime);
+
+        lfo.stop(startTime + duration);
+        osc.stop(startTime + duration);
+    };
+
+    const handleSynthesizeFlute = async () => {
+        setIsSynthesizing(true);
+        showToast('Synthesizing flute note...', 'info');
+        try {
+            const { blob } = await synthesizeFluteSound(selectedPreset);
+            const base64Url = await convertBlobToBase64(blob);
+            setRecordedBlob(blob);
+            setAudioUrl(base64Url);
+            showToast('Flute note synthesized successfully!', 'success');
+        } catch (err: any) {
+            console.error('Synthesis failed:', err);
+            showToast('Web Audio synthesis not supported in this browser.', 'error');
+        } finally {
+            setIsSynthesizing(false);
+        }
+    };
+
+    // Start recording audio
+    const startRecording = async () => {
+        try {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('navigator.mediaDevices is not supported');
+            }
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunksRef.current = [];
+            
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+            
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                try {
+                    const base64Url = await convertBlobToBase64(audioBlob);
+                    setRecordedBlob(audioBlob);
+                    setAudioUrl(base64Url);
+                    showToast('Audio recording captured successfully!', 'success');
+                } catch (base64Err) {
+                    console.error('Base64 conversion failed:', base64Err);
+                    const tempUrl = URL.createObjectURL(audioBlob);
+                    setRecordedBlob(audioBlob);
+                    setAudioUrl(tempUrl);
+                    showToast('Audio recording captured (local playback URL)!', 'info');
+                }
+            };
+            
+            mediaRecorder.start();
+            setIsRecordingAudio(true);
+            setRecordingTime(0);
+            
+            timerRef.current = setInterval(() => {
+                setRecordingTime(prev => prev + 1);
+            }, 1000);
+            
+            showToast('Recording flute sample...', 'info');
+        } catch (err) {
+            console.error('Error starting audio recorder:', err);
+            setIsMicUnavailable(true);
+            showToast('Microphone unavailable. Loading synthesizer fallback...', 'info');
+        }
+    };
+
+    // Stop recording audio
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecordingAudio) {
+            mediaRecorderRef.current.stop();
+            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            setIsRecordingAudio(false);
+            
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        }
+    };
+
+    // Toggle playback of the recorded preview
+    const togglePlayback = () => {
+        if (!audioUrl) return;
+        
+        if (isPlayingAudio && audioRef.current) {
+            audioRef.current.pause();
+            setIsPlayingAudio(false);
+            return;
+        }
+
+        // Always recreate Audio for robust playback of Base64 or standard URLs
+        audioRef.current = new Audio(audioUrl);
+        audioRef.current.onended = () => {
+            setIsPlayingAudio(false);
+        };
+        
+        audioRef.current.play()
+            .then(() => {
+                setIsPlayingAudio(true);
+            })
+            .catch(playErr => {
+                console.error('Audio playback failed:', playErr);
+                showToast('Unable to play audio in this browser.', 'error');
+                setIsPlayingAudio(false);
+            });
+    };
+
+    // Discard current audio note
+    const discardAudioNote = () => {
+        stopRecording();
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current = null;
+        }
+        setAudioUrl(null);
+        setRecordedBlob(null);
+        setIsPlayingAudio(false);
+        setAttachedAudioNote(null);
+        setRecordingTime(0);
+        showToast('Audio note discarded.', 'info');
+    };
+
+    // Attach current audio note to compose form
+    const attachAudioNote = () => {
+        if (!audioUrl) return;
+        setAttachedAudioNote(audioUrl);
+        showToast('Flute voice note attached to notification!', 'success');
+    };
 
     // ── Broadcast states ───────────────────────────────────────────────────────
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
@@ -360,7 +624,8 @@ export default function MessagesDashboardPage() {
             recipients: selectedRecipients,
             subject: subject.trim(),
             content: content.trim(),
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            audio_attachment: attachedAudioNote
         };
 
         try {
@@ -378,6 +643,7 @@ export default function MessagesDashboardPage() {
                 setSubject('');
                 setContent('');
                 setSelectedRecipients([]);
+                setAttachedAudioNote(null);
             } else {
                 // Supabase insert
                 const { data, error } = await supabaseAuth
@@ -403,6 +669,7 @@ export default function MessagesDashboardPage() {
                 setSubject('');
                 setContent('');
                 setSelectedRecipients([]);
+                setAttachedAudioNote(null);
             }
         } catch (err: any) {
             console.error('Exception during broadcast save:', err);
@@ -1033,6 +1300,31 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                                     {/* Right inputs column: subject & body content editor */}
                                     <div className="col-span-12 md:col-span-7 flex flex-col gap-4">
+                                        {attachedAudioNote && (
+                                            <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 p-3 rounded-xl animate-in fade-in slide-in-from-top-2">
+                                                <div className="flex items-center gap-2 text-xs font-bold text-amber-850 dark:text-amber-300">
+                                                    <Mic className="w-4 h-4 text-amber-600 animate-pulse" />
+                                                    <span>🎙️ Flute Voice Note Attached Preview</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={togglePlayback}
+                                                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold rounded-lg transition-all"
+                                                    >
+                                                        {isPlayingAudio ? 'Pause' : 'Listen'}
+                                                    </button>
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={discardAudioNote}
+                                                        className="text-stone-400 hover:text-red-500 transition-colors"
+                                                        title="Remove attachment"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Broadcast Subject</label>
                                             <input 
@@ -1110,6 +1402,22 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 </div>
                                                 <h4 className="text-sm font-extrabold text-stone-900">{bc.subject}</h4>
                                                 <p className="text-xs font-medium text-stone-600 leading-relaxed max-w-2xl">{bc.content}</p>
+                                                {(bc as any).audio_attachment && (
+                                                    <div className="flex items-center gap-2 mt-3 select-none">
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const audio = new Audio((bc as any).audio_attachment);
+                                                                audio.play();
+                                                                showToast('Playing attached flute note...', 'info');
+                                                            }}
+                                                            className="flex items-center gap-1.5 px-3 py-1 bg-stone-50 dark:bg-slate-800 hover:bg-[#ecb613]/10 hover:text-[#ecb613] text-stone-600 dark:text-slate-350 text-[10px] font-bold rounded-full border border-stone-200 dark:border-slate-700 transition-all"
+                                                        >
+                                                            <Mic className="w-3.5 h-3.5 text-[#ecb613]" />
+                                                            Play Attached Flute Note
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <div className="shrink-0 flex flex-col gap-3 min-w-44 text-right justify-between md:h-full">
@@ -1144,18 +1452,175 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                             </div>
 
                             {/* Floating mic tip card on the right (Col-span 4) */}
-                            <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-2xl border border-stone-200/60 shadow-2xs flex items-center gap-4 select-none">
-                                <div className="p-3 bg-amber-800 text-white rounded-full shrink-0 shadow-sm animate-pulse">
-                                    <Mic className="w-6 h-6" />
+                            {audioRecorderOpen ? (
+                                <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-2xl border border-stone-200/60 shadow-xs flex flex-col gap-4 select-none animate-in zoom-in-95 duration-200">
+                                    <div className="flex justify-between items-center border-b border-stone-100 pb-2">
+                                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#ecb613]">Interactive Recorder</span>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setAudioRecorderOpen(false)}
+                                            className="text-stone-400 hover:text-stone-600 transition-colors"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-center py-4 flex-col gap-3">
+                                        {isRecordingAudio ? (
+                                            <>
+                                                <div className="flex items-center gap-1 h-8">
+                                                    <span className="w-1.5 bg-red-500 rounded-full animate-bounce h-4 duration-300"></span>
+                                                    <span className="w-1.5 bg-red-500 rounded-full animate-bounce h-6 duration-200 delay-75"></span>
+                                                    <span className="w-1.5 bg-red-500 rounded-full animate-bounce h-8 duration-300 delay-150"></span>
+                                                    <span className="w-1.5 bg-red-500 rounded-full animate-bounce h-5 duration-200 delay-100"></span>
+                                                    <span className="w-1.5 bg-red-500 rounded-full animate-bounce h-3 duration-300 delay-75"></span>
+                                                </div>
+                                                <span className="text-xs font-bold text-red-500 animate-pulse">
+                                                    Recording: {Math.floor(recordingTime / 60).toString().padStart(2, '0')}:{(recordingTime % 60).toString().padStart(2, '0')}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={stopRecording}
+                                                    className="px-4 py-1.5 bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold rounded-lg transition-all shadow-sm"
+                                                >
+                                                    Stop Recording
+                                                </button>
+                                            </>
+                                        ) : audioUrl ? (
+                                            <>
+                                                <div className="flex items-center gap-3 justify-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={togglePlayback}
+                                                        className="p-3 bg-[#ecb613] text-slate-900 rounded-full hover:scale-105 transition-all shadow-sm flex items-center justify-center"
+                                                        title={isPlayingAudio ? 'Pause' : 'Play'}
+                                                     >
+                                                        <Mic className={`w-5 h-5 ${isPlayingAudio ? 'animate-pulse' : ''}`} />
+                                                    </button>
+                                                    <div className="text-left">
+                                                        <h6 className="text-[10px] font-extrabold text-stone-850">Recording Finished</h6>
+                                                        <p className="text-[9px] text-stone-400 mt-0.5">Size: ~{(recordedBlob?.size ? (recordedBlob.size / 1024).toFixed(1) : 0)} KB</p>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="flex items-center gap-2 mt-2 w-full justify-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={attachAudioNote}
+                                                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg transition-all shadow-xs"
+                                                    >
+                                                        Attach Note
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={discardAudioNote}
+                                                        className="px-3 py-1 bg-stone-100 hover:bg-stone-200 text-stone-600 text-[10px] font-bold rounded-lg transition-all shadow-xs"
+                                                    >
+                                                        Discard
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : isMicUnavailable ? (
+                                            <>
+                                                <div className="p-3 bg-amber-50 dark:bg-amber-950/20 text-[#ecb613] rounded-full shrink-0 shadow-xs border border-amber-200/30">
+                                                    <Sparkles className="w-8 h-8 text-[#ecb613]" />
+                                                </div>
+                                                <div className="text-center space-y-1 w-full animate-in fade-in duration-300">
+                                                    <h6 className="text-xs font-bold text-stone-850">Synthesizer Fallback</h6>
+                                                    <p className="text-[9px] text-stone-400 max-w-[200px] mx-auto">
+                                                        Microphone unavailable. Dynamically generate high-fidelity simulated flute notes!
+                                                    </p>
+                                                    
+                                                    <div className="mt-3 text-left w-full space-y-1.5 px-2">
+                                                        <label className="text-[9px] font-extrabold text-stone-400 uppercase tracking-wide">Select Tone / Melody</label>
+                                                        <select
+                                                            value={selectedPreset}
+                                                            onChange={(e) => setSelectedPreset(e.target.value)}
+                                                            className="w-full text-xs font-bold px-3 py-1.5 border border-stone-200 rounded-lg outline-none bg-stone-50 text-stone-800 focus:ring-1 focus:ring-[#ecb613] select-none"
+                                                        >
+                                                            <option value="d5">D5 Pure Flute Note (Warm & Clear)</option>
+                                                            <option value="a5">A5 High Flute Note (Bright & Airy)</option>
+                                                            <option value="kfa">KFA Signature Flute Arpeggio (Ascending Scale)</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="flex gap-2 w-full px-2 mt-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleSynthesizeFlute}
+                                                        disabled={isSynthesizing}
+                                                        className="flex-1 px-4 py-1.5 bg-[#ecb613] hover:bg-[#d49f0e] disabled:bg-stone-200 disabled:text-stone-400 text-slate-900 text-xs font-bold rounded-lg transition-all shadow-xs flex items-center justify-center gap-1.5"
+                                                    >
+                                                        {isSynthesizing ? (
+                                                            <>
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                <span>Synthesizing...</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Sparkles className="w-3.5 h-3.5" />
+                                                                <span>Generate Note</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsMicUnavailable(false)}
+                                                        className="px-3 py-1.5 border border-stone-200 hover:bg-stone-50 text-stone-600 text-xs font-bold rounded-lg transition-all"
+                                                    >
+                                                        Retry Mic
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="p-3 bg-amber-50 dark:bg-amber-950/20 text-[#ecb613] rounded-full shrink-0 shadow-xs border border-amber-200/30">
+                                                    <Mic className="w-8 h-8" />
+                                                </div>
+                                                <div className="text-center space-y-1">
+                                                    <h6 className="text-xs font-bold text-stone-850">Microphone Ready</h6>
+                                                    <p className="text-[9px] text-stone-400 max-w-[200px] mx-auto">Press button to record a live flute sample and attach it</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={startRecording}
+                                                    className="px-4 py-1.5 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 text-xs font-bold rounded-lg transition-all shadow-xs"
+                                                >
+                                                    Start Recording
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsMicUnavailable(true)}
+                                                    className="mt-2 text-[9px] font-bold text-stone-400 hover:text-[#ecb613] transition-colors"
+                                                >
+                                                    Or switch to virtual synthesizer fallback &rarr;
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="min-w-0">
-                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-amber-700">Live Tip</span>
-                                    <h5 className="text-xs font-extrabold text-stone-850 mt-0.5">Record Flute Notes</h5>
-                                    <p className="text-[10px] font-bold leading-relaxed text-stone-500 mt-1">
-                                        Teachers can record and broadcast dynamic flute audio samples directly to inspire student practice checklists!
-                                    </p>
+                            ) : (
+                                <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-2xl border border-stone-200/60 shadow-2xs flex items-center gap-4 select-none animate-in fade-in duration-200">
+                                    <div className="p-3 bg-amber-800 text-white rounded-full shrink-0 shadow-sm animate-pulse">
+                                        <Mic className="w-6 h-6" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-amber-700">Live Tip</span>
+                                        <h5 className="text-xs font-extrabold text-stone-850 mt-0.5">Record Flute Notes</h5>
+                                        <p className="text-[10px] font-bold leading-relaxed text-stone-500 mt-1">
+                                            Teachers can record and broadcast dynamic flute audio samples directly to inspire student practice checklists!
+                                        </p>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setAudioRecorderOpen(true)}
+                                            className="mt-2 text-[10px] font-extrabold text-[#ecb613] hover:text-[#d49f0e] hover:underline flex items-center gap-0.5"
+                                        >
+                                            Try recorder now &rarr;
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 </div>
