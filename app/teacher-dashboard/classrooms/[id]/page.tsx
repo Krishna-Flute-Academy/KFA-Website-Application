@@ -2150,34 +2150,38 @@ export default function ClassroomDashboardPage() {
                                                         {isHeadlineExpanded && (
                                                             <div className="space-y-8 pl-3 md:pl-6 border-l-2 border-slate-150 dark:border-slate-800 text-left">
                                                                 {group.modules.map((modGroup) => {
+                                                                    const hasModuleAssignment = modGroup.assignments.some(a => a.inventory_ref_type === 'module');
                                                                     const isModuleExpanded = expandedModules[modGroup.id] !== false;
                                                                     return (
                                                                         <div key={modGroup.id} className="space-y-4">
-                                                                            {/* Module Header */}
-                                                                            <div 
-                                                                                onClick={() => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded }))}
-                                                                                className="flex items-center justify-between cursor-pointer select-none group/module bg-slate-100/50 hover:bg-slate-200/50 dark:bg-slate-800/20 dark:hover:bg-slate-800/40 p-3 rounded-2xl transition-all"
-                                                                            >
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <BookOpen className="size-4 text-[#ecb613]" />
-                                                                                    <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">
-                                                                                        {modGroup.moduleName}
-                                                                                    </h4>
+                                                                            {/* Module Header - Only render if there is NO module-level assignment */}
+                                                                            {!hasModuleAssignment && (
+                                                                                <div 
+                                                                                    onClick={() => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded }))}
+                                                                                    className="flex items-center justify-between cursor-pointer select-none group/module bg-slate-100/50 hover:bg-slate-200/50 dark:bg-slate-800/20 dark:hover:bg-slate-800/40 p-3 rounded-2xl transition-all"
+                                                                                >
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <BookOpen className="size-4 text-[#ecb613]" />
+                                                                                        <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                                                                            {modGroup.moduleName}
+                                                                                        </h4>
+                                                                                    </div>
+                                                                                    <div className="w-6 h-6 rounded-md bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover/module:text-[#ecb613] transition-all">
+                                                                                        {isModuleExpanded ? (
+                                                                                            <ChevronUp className="size-3.5" />
+                                                                                        ) : (
+                                                                                            <ChevronDown className="size-3.5" />
+                                                                                        )}
+                                                                                    </div>
                                                                                 </div>
-                                                                                <div className="w-6 h-6 rounded-md bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover/module:text-[#ecb613] transition-all">
-                                                                                    {isModuleExpanded ? (
-                                                                                        <ChevronUp className="size-3.5" />
-                                                                                    ) : (
-                                                                                        <ChevronDown className="size-3.5" />
-                                                                                    )}
-                                                                                </div>
-                                                                            </div>
+                                                                            )}
 
                                                                             {/* Assignments Under This Module */}
-                                                                            {isModuleExpanded && (
+                                                                            {(isModuleExpanded || hasModuleAssignment) && (
                                                                                 <div className="space-y-6">
                                                                     {modGroup.assignments.map((asg) => {
                                                                         const isDeleting = deletingAssignmentId === asg.id;
+                                                                        const isAsgModule = asg.inventory_ref_type === 'module';
                                                                         
                                                                         // Define beautiful styles based on reference type
                                                                         const typeColors = {
@@ -2212,7 +2216,10 @@ export default function ClassroomDashboardPage() {
                                                                                 className={`group relative bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/70 dark:border-slate-800 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-lg ${typeColors.border} border-l-4 text-left`}
                                                                             >
                                                                                 {/* Tutorial Header */}
-                                                                                <div className="px-6 py-5 bg-slate-50/50 dark:bg-slate-955/[0.15] border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-4">
+                                                                                <div 
+                                                                                    onClick={isAsgModule ? () => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded })) : undefined}
+                                                                                    className={`px-6 py-5 bg-slate-50/50 dark:bg-slate-955/[0.15] border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-4 ${isAsgModule ? 'cursor-pointer select-none hover:bg-slate-100/60 dark:hover:bg-slate-850 transition-colors' : ''}`}
+                                                                                >
                                                                                     <div className="flex items-center gap-4 pl-2">
                                                                                         <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-sm ${typeColors.iconBg}`}>
                                                                                             {asg.inventory_ref_type === 'module' ? (
@@ -2243,23 +2250,39 @@ export default function ClassroomDashboardPage() {
                                                                                             </p>
                                                                                         </div>
                                                                                     </div>
-                                                                                    <button 
-                                                                                        onClick={() => handleDeleteAssignment(asg.id)}
-                                                                                        disabled={isDeleting}
-                                                                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
-                                                                                        title="Unassign tutorial from class"
-                                                                                    >
-                                                                                        {isDeleting ? (
-                                                                                            <Loader2 className="size-3.5 animate-spin" />
-                                                                                        ) : (
-                                                                                            <Trash2 className="size-3.5" />
+                                                                                    <div className="flex items-center gap-3">
+                                                                                        <button 
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleDeleteAssignment(asg.id);
+                                                                                            }}
+                                                                                            disabled={isDeleting}
+                                                                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
+                                                                                            title="Unassign tutorial from class"
+                                                                                        >
+                                                                                            {isDeleting ? (
+                                                                                                <Loader2 className="size-3.5 animate-spin" />
+                                                                                            ) : (
+                                                                                                <Trash2 className="size-3.5" />
+                                                                                            )}
+                                                                                            <span>Remove</span>
+                                                                                        </button>
+                                                                                        
+                                                                                        {isAsgModule && (
+                                                                                            <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-550 transition-all">
+                                                                                                {isModuleExpanded ? (
+                                                                                                    <ChevronUp className="size-4" />
+                                                                                                ) : (
+                                                                                                    <ChevronDown className="size-4" />
+                                                                                                )}
+                                                                                            </div>
                                                                                         )}
-                                                                                        <span>Remove</span>
-                                                                                    </button>
+                                                                                    </div>
                                                                                 </div>
 
                                                                                 {/* Tutorial Body */}
-                                                                                <div className="p-6 md:p-8 space-y-8">
+                                                                                {(!isAsgModule || isModuleExpanded) && (
+                                                                                    <div className="p-6 md:p-8 space-y-8">
                                                                                     {/* Description/Instructions */}
                                                                                     {asg.description && (
                                                                                         <div className="p-5 rounded-2xl bg-amber-500/[0.04] dark:bg-amber-500/[0.01] border border-amber-500/15 text-slate-700 dark:text-slate-300 flex items-start gap-4">
@@ -2836,6 +2859,7 @@ export default function ClassroomDashboardPage() {
                                                                                         );
                                                                                     })()}
                                                                                 </div>
+                                                                            )}
                                                                             </div>
                                                                         );
                                                                     })}
