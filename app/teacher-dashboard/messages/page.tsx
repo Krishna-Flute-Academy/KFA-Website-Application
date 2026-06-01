@@ -114,6 +114,20 @@ export default function MessagesDashboardPage() {
         );
     }, [customTemplates, templateSearchQuery]);
 
+    // Toast Notifications states
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+    const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+        setToast({ message, type });
+    }, []);
+
+    useEffect(() => {
+        if (toast) {
+            const timer = setTimeout(() => setToast(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [toast]);
+
     // ── Broadcast states ───────────────────────────────────────────────────────
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
     const [activeChannel, setActiveChannel] = useState<string>('announcements'); // announcements, classroom, custom_groups, new_joiners, fee_management
@@ -326,15 +340,15 @@ export default function MessagesDashboardPage() {
         if (!teacherProfile || isSending) return;
 
         if (selectedRecipients.length === 0) {
-            alert('Please select at least one recipient/target audience first!');
+            showToast('Please select at least one recipient first!', 'error');
             return;
         }
         if (!subject.trim()) {
-            alert('Please specify a broadcast subject!');
+            showToast('Please specify a broadcast subject!', 'error');
             return;
         }
         if (!content.trim()) {
-            alert('Please compose your broadcast message!');
+            showToast('Please compose your broadcast message!', 'error');
             return;
         }
 
@@ -358,7 +372,7 @@ export default function MessagesDashboardPage() {
                 ];
                 setBroadcasts(localList);
                 localStorage.setItem('kfa_local_broadcasts', JSON.stringify(localList));
-                alert('Broadcast broadcasted in-memory and cached locally!');
+                showToast('Notification saved locally!', 'success');
                 
                 // Clear Composer Form
                 setSubject('');
@@ -373,7 +387,7 @@ export default function MessagesDashboardPage() {
 
                 if (error) {
                     console.error('Database write error:', error);
-                    alert(`Failed to save to database. Broadcasting in-memory: ${error.message}`);
+                    showToast(`Failed to save to database. Saved locally instead.`, 'error');
                     const localList = [
                         { id: `local-${Date.now()}`, ...newBroadcast },
                         ...broadcasts
@@ -382,7 +396,7 @@ export default function MessagesDashboardPage() {
                     localStorage.setItem('kfa_local_broadcasts', JSON.stringify(localList));
                 } else {
                     setBroadcasts(prev => [data[0], ...prev]);
-                    alert('Broadcast sent & saved to database successfully!');
+                    showToast('Notification sent & saved successfully!', 'success');
                 }
 
                 // Clear Composer Form
@@ -392,7 +406,7 @@ export default function MessagesDashboardPage() {
             }
         } catch (err: any) {
             console.error('Exception during broadcast save:', err);
-            alert('An unexpected issue occurred while sending.');
+            showToast('An unexpected issue occurred while sending.', 'error');
         } finally {
             setIsSending(false);
         }
@@ -419,7 +433,7 @@ export default function MessagesDashboardPage() {
                 ];
                 setCustomGroups(updatedList);
                 localStorage.setItem('kfa_local_custom_groups', JSON.stringify(updatedList));
-                alert('Group saved in-memory and cached locally!');
+                showToast('Group saved locally!', 'success');
             } else {
                 const { data, error } = await supabaseAuth
                     .from('custom_recipient_groups')
@@ -428,7 +442,7 @@ export default function MessagesDashboardPage() {
 
                 if (error) {
                     console.error('Error saving custom group to database:', error);
-                    alert(`Database write failed. Saving in-memory: ${error.message}`);
+                    showToast('Failed to save to database. Saved locally.', 'error');
                     const updatedList = [
                         { id: `local-group-${Date.now()}`, ...newGroup },
                         ...customGroups
@@ -437,7 +451,7 @@ export default function MessagesDashboardPage() {
                     localStorage.setItem('kfa_local_custom_groups', JSON.stringify(updatedList));
                 } else {
                     setCustomGroups(prev => [data[0], ...prev]);
-                    alert('Custom Group saved successfully to your database!');
+                    showToast('Custom Group saved successfully!', 'success');
                 }
             }
 
@@ -447,7 +461,7 @@ export default function MessagesDashboardPage() {
             setIsCreateGroupModalOpen(false);
         } catch (err: any) {
             console.error('Exception saving custom group:', err);
-            alert('An unexpected error occurred.');
+            showToast('An unexpected error occurred.', 'error');
         } finally {
             setIsSavingGroup(false);
         }
@@ -474,7 +488,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
     const handleApplyCustomTemplate = (tpl: any) => {
         setSubject(tpl.subject);
         setContent(tpl.content);
-        alert(`Applied template "${tpl.name}"!`);
+        showToast(`Applied template "${tpl.name}"!`, 'success');
     };
 
     const handleLoadForResend = (bc: Broadcast) => {
@@ -488,7 +502,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
         if (composerElement) {
             composerElement.scrollIntoView({ behavior: 'smooth' });
         }
-        alert('Broadcast loaded into the composer! You can now edit and resend it.');
+        showToast('Previous message loaded into the composer!', 'info');
     };
 
     const handleSaveTemplate = async (name: string) => {
@@ -511,7 +525,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
                 ];
                 setCustomTemplates(updatedList);
                 localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
-                alert('Template saved in-memory and cached locally!');
+                showToast('Template saved locally!', 'success');
             } else {
                 const { data, error } = await supabaseAuth
                     .from('message_templates')
@@ -520,7 +534,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
 
                 if (error) {
                     console.error('Error saving template to database:', error);
-                    alert(`Database write failed. Saving in-memory: ${error.message}`);
+                    showToast('Failed to save to database. Saved locally.', 'error');
                     const updatedList = [
                         { id: `local-tpl-${Date.now()}`, ...newTemplate },
                         ...customTemplates
@@ -529,7 +543,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
                     localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
                 } else {
                     setCustomTemplates(prev => [data[0], ...prev]);
-                    alert('Template saved successfully to your database!');
+                    showToast('Template saved successfully!', 'success');
                 }
             }
 
@@ -537,7 +551,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
             setIsCreateTemplateModalOpen(false);
         } catch (err: any) {
             console.error('Exception saving template:', err);
-            alert('An unexpected error occurred.');
+            showToast('An unexpected error occurred.', 'error');
         } finally {
             setIsSavingTemplate(false);
         }
@@ -551,7 +565,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
                 const updatedList = customTemplates.filter(t => t.id !== id);
                 setCustomTemplates(updatedList);
                 localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
-                alert('Template deleted locally!');
+                showToast('Template deleted locally!', 'success');
             } else {
                 const { error } = await supabaseAuth
                     .from('message_templates')
@@ -560,15 +574,15 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
 
                 if (error) {
                     console.error('Error deleting template:', error);
-                    alert(`Database deletion failed: ${error.message}`);
+                    showToast(`Database deletion failed.`, 'error');
                 } else {
                     setCustomTemplates(prev => prev.filter(t => t.id !== id));
-                    alert('Template deleted successfully!');
+                    showToast('Template deleted successfully!', 'success');
                 }
             }
         } catch (err: any) {
             console.error('Exception deleting template:', err);
-            alert('An unexpected error occurred.');
+            showToast('An unexpected error occurred.', 'error');
         }
     };
 
@@ -838,7 +852,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     type="button"
                                                     onClick={() => {
                                                         setSelectedRecipients(grp.recipients);
-                                                        alert(`Loaded group "${grp.name}" into composer recipients!`);
+                                                        showToast(`Loaded group "${grp.name}"!`, 'info');
                                                     }}
                                                     className="w-full flex flex-col p-3 bg-stone-50 hover:bg-[#0e5f59]/5 border border-stone-200 hover:border-[#0e5f59]/30 rounded-xl text-left transition-all group"
                                                 >
@@ -877,8 +891,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                             <form onSubmit={handleSendBroadcast} className="bg-white p-6 rounded-2xl border border-stone-200/60 shadow-xs flex flex-col gap-6">
                                 <div className="flex justify-between items-center border-b border-stone-100 pb-4">
                                     <div>
-                                        <h2 className="text-lg font-bold text-stone-900">Enhanced Broadcast</h2>
-                                        <p className="text-xs text-stone-400 mt-0.5">Targeted content distribution console</p>
+                                        <h2 className="text-lg font-bold text-stone-900">Compose Notification</h2>
+                                        <p className="text-xs text-stone-400 mt-0.5">Targeted messages & push notification panel</p>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <button 
@@ -902,10 +916,10 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                         <button 
                                             type="submit" 
                                             disabled={isSending}
-                                            className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-full transition-all flex items-center gap-2 shadow-sm disabled:bg-stone-300 disabled:cursor-not-allowed"
+                                            className="px-5 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 text-xs font-bold rounded-full transition-all flex items-center gap-2 shadow-md hover:shadow-lg disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0"
                                         >
                                             {isSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                                            Send Broadcast
+                                            Send Notification
                                         </button>
                                     </div>
                                 </div>
@@ -1060,7 +1074,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         <div className="flex justify-between items-center border-b border-stone-200/80 pb-3">
                             <h3 className="text-base font-extrabold text-stone-900">Recent Broadcasts</h3>
                             <button 
-                                onClick={() => alert('Viewing complete message logs history...')}
+                                onClick={() => showToast('Viewing complete message logs history...', 'info')}
                                 className="text-amber-600 hover:text-amber-700 text-xs font-bold transition-colors"
                             >
                                 View All History
@@ -1405,6 +1419,19 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+            {/* Custom Toast Notification */}
+            {toast && (
+                <div className="fixed bottom-6 right-6 z-50 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-800 dark:border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-sm select-text">
+                    {toast.type === 'success' ? (
+                        <Check className="w-5 h-5 text-emerald-500 shrink-0" />
+                    ) : toast.type === 'error' ? (
+                        <Info className="w-5 h-5 text-red-500 shrink-0" />
+                    ) : (
+                        <Info className="w-5 h-5 text-blue-500 shrink-0" />
+                    )}
+                    <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
                 </div>
             )}
         </div>
