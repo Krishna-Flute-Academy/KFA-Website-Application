@@ -141,6 +141,7 @@ export default function MessagesDashboardPage() {
     const [isMicUnavailable, setIsMicUnavailable] = useState(false);
     const [selectedPreset, setSelectedPreset] = useState<string>('d5');
     const [isSynthesizing, setIsSynthesizing] = useState(false);
+    const [micPermissionDenied, setMicPermissionDenied] = useState(false);
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -282,6 +283,7 @@ export default function MessagesDashboardPage() {
     // Start recording audio using default device drivers (computers/laptops/mobiles)
     const startRecording = async () => {
         try {
+            setMicPermissionDenied(false);
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 throw new Error('navigator.mediaDevices is not supported');
             }
@@ -349,10 +351,15 @@ export default function MessagesDashboardPage() {
             }, 1000);
             
             showToast('Recording via default audio drive...', 'info');
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error starting audio recorder:', err);
             setIsMicUnavailable(true);
-            showToast('Microphone unavailable. Loading synthesizer fallback...', 'info');
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.message?.toLowerCase().includes('permission') || err.message?.toLowerCase().includes('allow')) {
+                setMicPermissionDenied(true);
+                showToast('Microphone access denied! See address bar settings.', 'error');
+            } else {
+                showToast('Microphone unavailable. Loading synthesizer fallback...', 'info');
+            }
         }
     };
 
@@ -1549,7 +1556,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                             </>
                                         ) : isMicUnavailable ? (
                                             <>
-                                                <div className="p-3 bg-amber-50 dark:bg-amber-950/20 text-[#ecb613] rounded-full shrink-0 shadow-xs border border-amber-200/30">
+                                                <div className="p-3 bg-amber-50 dark:bg-amber-950/20 text-[#ecb613] rounded-full shrink-0 shadow-xs border border-amber-200/30 animate-bounce">
                                                     <Sparkles className="w-8 h-8 text-[#ecb613]" />
                                                 </div>
                                                 <div className="text-center space-y-1 w-full animate-in fade-in duration-300">
@@ -1558,6 +1565,20 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         Microphone unavailable. Dynamically generate high-fidelity simulated flute notes!
                                                     </p>
                                                     
+                                                    {micPermissionDenied && (
+                                                        <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 rounded-xl text-left flex flex-col gap-1.5 animate-in slide-in-from-top duration-300 select-none">
+                                                            <div className="flex gap-1.5 items-center">
+                                                                <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                                <span className="text-[9.5px] font-extrabold text-amber-800 dark:text-amber-300 uppercase tracking-wider">How to Fix Mic Access:</span>
+                                                            </div>
+                                                            <ol className="list-decimal pl-4 text-[9px] text-stone-650 dark:text-slate-400 space-y-1 font-semibold leading-relaxed">
+                                                                <li>Click the <strong>padlock/camera icon</strong> in your browser's URL bar (top of screen).</li>
+                                                                <li>Change <strong>Microphone</strong> permission from <em>Block</em> to <strong>Allow</strong>.</li>
+                                                                <li>Click <strong>Retry Mic</strong> below to re-verify hardware settings.</li>
+                                                            </ol>
+                                                        </div>
+                                                    )}
+
                                                     <div className="mt-3 text-left w-full space-y-1.5 px-2">
                                                         <label className="text-[9px] font-extrabold text-stone-400 uppercase tracking-wide">Select Tone / Melody</label>
                                                         <select
@@ -1593,7 +1614,10 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        onClick={() => setIsMicUnavailable(false)}
+                                                        onClick={() => {
+                                                            setIsMicUnavailable(false);
+                                                            startRecording();
+                                                        }}
                                                         className="px-3 py-1.5 border border-stone-200 hover:bg-stone-50 text-stone-600 text-xs font-bold rounded-lg transition-all"
                                                     >
                                                         Retry Mic
