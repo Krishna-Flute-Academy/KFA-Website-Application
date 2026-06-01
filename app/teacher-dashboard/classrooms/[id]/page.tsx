@@ -2494,22 +2494,8 @@ export default function ClassroomDashboardPage() {
                                                                                                                                              <div 
                                                                                                                                                  key={lesson.id} 
                                                                                                                                                  onClick={() => {
-                                                                                                                                                     if (isUpdating) return;
-                                                                                                                                                     setAllocationTargetLesson(lesson);
-                                                                                                                                                     setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                                                                     let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                                                                     if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
-                                                                                                                                                         initialStatus = 'completed';
-                                                                                                                                                     } else if (statusLabel === 'Unlocked') {
-                                                                                                                                                         initialStatus = 'unlocked';
-                                                                                                                                                     }
-                                                                                                                                                     setAllocationStatus(initialStatus);
-                                                                                                                                                     const currentSelected = studentProgress
-                                                                                                                                                         .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                                                                         .map(p => p.student_id);
-                                                                                                                                                     setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
-                                                                                                                                                     setIsAllocationDrawerOpen(true);
-                                                                                                                                                 }}
+                                                                                                                          setSelectedTopic(lesson);
+                                                                                                                      }}
                                                                                                                                                  className={`group rounded-2xl p-4 border flex items-center justify-between gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md ${cardBorder}`}
                                                                                                                                              >
                                                                                                                                                  {/* Left side: Material Type Icon */}
@@ -2567,9 +2553,31 @@ export default function ClassroomDashboardPage() {
                                                                                                                                                          )}
                                                                                                                                                          <span>{statusLabel}</span>
                                                                                                                                                      </div>
-                                                                                                                                                     <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-455 border border-transparent group-hover:border-[#ecb613]/30 transition-all">
-                                                                                                                                                         <Sliders className="size-3.5" />
-                                                                                                                                                     </div>
+                                                                                                                                                     <button
+                                                                                              type="button"
+                                                                                              title="Manage pacing overrides"
+                                                                                              onClick={(e) => {
+                                                                                                  e.stopPropagation();
+                                                                                                  if (isUpdating) return;
+                                                                                                  setAllocationTargetLesson(lesson);
+                                                                                                  setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                                  let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
+                                                                                                  if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                      initialStatus = 'completed';
+                                                                                                  } else if (statusLabel === 'Unlocked') {
+                                                                                                      initialStatus = 'unlocked';
+                                                                                                  }
+                                                                                                  setAllocationStatus(initialStatus);
+                                                                                                  const currentSelected = studentProgress
+                                                                                                      .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                                      .map(p => p.student_id);
+                                                                                                  setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                  setIsAllocationDrawerOpen(true);
+                                                                                              }}
+                                                                                              className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
+                                                                                          >
+                                                                                              <Sliders className="size-3.5" />
+                                                                                          </button>
                                                                                                                                                  </div>
                                                                                                                                              </div>
                                                                                                                                          );
@@ -2663,22 +2671,8 @@ export default function ClassroomDashboardPage() {
                                                                                                                  <div 
                                                                                                                      key={lesson.id} 
                                                                                                                      onClick={() => {
-                                                                                                                         if (isUpdating) return;
-                                                                                                                         setAllocationTargetLesson(lesson);
-                                                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                                         if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
-                                                                                                                             initialStatus = 'completed';
-                                                                                                                         } else if (statusLabel === 'Unlocked') {
-                                                                                                                             initialStatus = 'unlocked';
-                                                                                                                         }
-                                                                                                                         setAllocationStatus(initialStatus);
-                                                                                                                         const currentSelected = studentProgress
-                                                                                                                             .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                                             .map(p => p.student_id);
-                                                                                                                         setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
-                                                                                                                         setIsAllocationDrawerOpen(true);
-                                                                                                                     }}
+                                                                                                                          setSelectedTopic(lesson);
+                                                                                                                      }}
                                                                                                                      className={`group rounded-2xl p-4 border flex items-center justify-between gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md ${cardBorder}`}
                                                                                                                  >
                                                                                                                      {/* Left side: Material Type Icon */}
@@ -2736,9 +2730,31 @@ export default function ClassroomDashboardPage() {
                                                                                                                              )}
                                                                                                                              <span>{statusLabel}</span>
                                                                                                                          </div>
-                                                                                                                         <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-750 flex items-center justify-center text-slate-400 dark:text-slate-455 border border-transparent group-hover:border-[#ecb613]/30 transition-all">
-                                                                                                                             <Sliders className="size-3.5" />
-                                                                                                                         </div>
+                                                                                                                         <button
+                                                                                              type="button"
+                                                                                              title="Manage pacing overrides"
+                                                                                              onClick={(e) => {
+                                                                                                  e.stopPropagation();
+                                                                                                  if (isUpdating) return;
+                                                                                                  setAllocationTargetLesson(lesson);
+                                                                                                  setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
+                                                                                                  let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
+                                                                                                  if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                      initialStatus = 'completed';
+                                                                                                  } else if (statusLabel === 'Unlocked') {
+                                                                                                      initialStatus = 'unlocked';
+                                                                                                  }
+                                                                                                  setAllocationStatus(initialStatus);
+                                                                                                  const currentSelected = studentProgress
+                                                                                                      .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
+                                                                                                      .map(p => p.student_id);
+                                                                                                  setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                  setIsAllocationDrawerOpen(true);
+                                                                                              }}
+                                                                                              className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
+                                                                                          >
+                                                                                              <Sliders className="size-3.5" />
+                                                                                          </button>
                                                                                                                      </div>
                                                                                                                  </div>
                                                                                                              );
