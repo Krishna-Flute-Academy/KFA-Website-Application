@@ -35,6 +35,7 @@ interface EnrolledStudent {
     mock_attendance: number;
     mock_milestone: string;
     mock_status: 'Consistent' | 'Improving' | 'At Risk';
+    level?: string;
 }
 
 // Lightweight record from the teacher's student directory
@@ -362,7 +363,7 @@ export default function ClassroomDashboardPage() {
                         id,
                         student_id,
                         joined_at,
-                        users!student_id(name, profile_pic_url)
+                        users!student_id(name, profile_pic_url, level)
                     `)
                     .eq('classroom_id', classroomId);
 
@@ -374,11 +375,17 @@ export default function ClassroomDashboardPage() {
                 
                 const formattedRoster = (roster || []).map((r: any, idx) => {
                     const seed = parseInt(r.id.substring(0, 8), 16) || idx; // Pseudo-random determinism
+                    const rawLevel = r.users?.level || 'Level 1';
+                    const formattedLevel = rawLevel.toLowerCase().startsWith('level')
+                        ? (rawLevel.charAt(0).toUpperCase() + rawLevel.slice(1))
+                        : (rawLevel.charAt(0).toUpperCase() + rawLevel.slice(1));
+
                     return {
                         id: r.id,
                         student_id: r.student_id,
                         name: r.users?.name || 'Unknown',
                         profile_pic_url: r.users?.profile_pic_url || null,
+                        level: formattedLevel,
                         joined_at: r.joined_at,
                         mock_score: 6 + ((seed % 40) / 10), // 6.0 to 9.9
                         mock_progress: 50 + (seed % 50), // 50 to 99
@@ -1808,12 +1815,16 @@ export default function ClassroomDashboardPage() {
                                                         <div className="flex-1">
                                                             <div className="flex justify-between mb-1">
                                                                 <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</span>
-                                                                <span className={`text-xs font-bold ${
-                                                                    student.mock_status === 'Consistent' ? 'text-emerald-500' : (student.mock_status === 'Improving' ? 'text-[#ecb613]' : 'text-rose-500')
-                                                                }`}>{student.mock_milestone}</span>
+                                                                <span className="text-[10px] font-black tracking-wider uppercase text-amber-600 dark:text-[#ecb613] bg-amber-500/10 dark:bg-[#ecb613]/10 px-2 py-0.5 rounded-lg font-mono">
+                                                                    {student.level}
+                                                                </span>
                                                             </div>
                                                             <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                                                                <div className={`h-full ${getProgressBarColor(student.mock_status)}`} style={{ width: `${realProgress}%` }}></div>
+                                                                <div className={`h-full transition-all duration-500 ${
+                                                                    realProgress >= 80 
+                                                                        ? 'bg-emerald-500' 
+                                                                        : (realProgress >= 40 ? 'bg-[#ecb613]' : 'bg-rose-500')
+                                                                }`} style={{ width: `${realProgress}%` }}></div>
                                                             </div>
                                                         </div>
                                                         <span className="text-xs font-bold text-slate-400 w-8 text-right">{realProgress}%</span>
