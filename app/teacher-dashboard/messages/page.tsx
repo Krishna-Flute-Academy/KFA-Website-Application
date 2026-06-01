@@ -95,6 +95,13 @@ export default function MessagesDashboardPage() {
     const [isSavingGroup, setIsSavingGroup] = useState(false);
     const [sqlGroupsCopied, setSqlGroupsCopied] = useState(false);
 
+    // Message Templates states
+    const [customTemplates, setCustomTemplates] = useState<any[]>([]);
+    const [dbSetupErrorTemplates, setDbSetupErrorTemplates] = useState(false);
+    const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
+    const [newTemplateName, setNewTemplateName] = useState('');
+    const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
     // ── Broadcast states ───────────────────────────────────────────────────────
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
     const [activeChannel, setActiveChannel] = useState<string>('announcements'); // announcements, classroom, custom_groups, new_joiners, fee_management
@@ -206,6 +213,30 @@ export default function MessagesDashboardPage() {
                     setCustomGroups(local ? JSON.parse(local) : [
                         { id: 'mock-group-1', name: 'Saturday Flute Performers', description: 'Advanced weekly workshop flute players', recipients: [{ id: 'class-1', name: 'All Beginners (A1)', type: 'class' }] }
                     ]);
+                }
+
+                // 5. Test/Query Message Templates Table
+                try {
+                    const { data: tplData, error: tplError } = await supabaseAuth
+                        .from('message_templates')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+
+                    if (tplError) {
+                        console.warn('[Messages] Message templates table check failed:', tplError.message);
+                        if (tplError.code === '42P01' || tplError.code === 'PGRST205' || tplError.message?.includes('schema cache') || tplError.message?.includes('does not exist')) {
+                            setDbSetupErrorTemplates(true);
+                        }
+                        const local = localStorage.getItem('kfa_local_templates');
+                        setCustomTemplates(local ? JSON.parse(local) : []);
+                    } else {
+                        setCustomTemplates(tplData || []);
+                        setDbSetupErrorTemplates(false);
+                    }
+                } catch (te) {
+                    console.warn('[Messages] Exception querying templates:', te);
+                    const local = localStorage.getItem('kfa_local_templates');
+                    setCustomTemplates(local ? JSON.parse(local) : []);
                 }
 
             } catch (err) {
@@ -382,6 +413,93 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
         setContent(tpl.content);
     };
 
+    const handleApplyCustomTemplate = (tpl: any) => {
+        setSubject(tpl.subject);
+        setContent(tpl.content);
+        alert(`Applied template "${tpl.name}"!`);
+    };
+
+    const handleSaveTemplate = async (name: string) => {
+        if (!teacherProfile || !name.trim()) return;
+        setIsSavingTemplate(true);
+
+        const newTemplate = {
+            teacher_id: teacherProfile.id,
+            name: name.trim(),
+            subject: subject.trim(),
+            content: content.trim(),
+            created_at: new Date().toISOString()
+        };
+
+        try {
+            if (dbSetupErrorTemplates) {
+                const updatedList = [
+                    { id: `local-tpl-${Date.now()}`, ...newTemplate },
+                    ...customTemplates
+                ];
+                setCustomTemplates(updatedList);
+                localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
+                alert('Template saved in-memory and cached locally!');
+            } else {
+                const { data, error } = await supabaseAuth
+                    .from('message_templates')
+                    .insert(newTemplate)
+                    .select('*');
+
+                if (error) {
+                    console.error('Error saving template to database:', error);
+                    alert(`Database write failed. Saving in-memory: ${error.message}`);
+                    const updatedList = [
+                        { id: `local-tpl-${Date.now()}`, ...newTemplate },
+                        ...customTemplates
+                    ];
+                    setCustomTemplates(updatedList);
+                    localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
+                } else {
+                    setCustomTemplates(prev => [data[0], ...prev]);
+                    alert('Template saved successfully to your database!');
+                }
+            }
+
+            setNewTemplateName('');
+            setIsCreateTemplateModalOpen(false);
+        } catch (err: any) {
+            console.error('Exception saving template:', err);
+            alert('An unexpected error occurred.');
+        } finally {
+            setIsSavingTemplate(false);
+        }
+    };
+
+    const handleDeleteTemplate = async (id: string) => {
+        if (!confirm('Are you sure you want to delete this template?')) return;
+
+        try {
+            if (dbSetupErrorTemplates || id.startsWith('local-')) {
+                const updatedList = customTemplates.filter(t => t.id !== id);
+                setCustomTemplates(updatedList);
+                localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
+                alert('Template deleted locally!');
+            } else {
+                const { error } = await supabaseAuth
+                    .from('message_templates')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) {
+                    console.error('Error deleting template:', error);
+                    alert(`Database deletion failed: ${error.message}`);
+                } else {
+                    setCustomTemplates(prev => prev.filter(t => t.id !== id));
+                    alert('Template deleted successfully!');
+                }
+            }
+        } catch (err: any) {
+            console.error('Exception deleting template:', err);
+            alert('An unexpected error occurred.');
+        }
+    };
+
     // ── Recipients Selection Modal Controls ────────────────────────────────────
     const openRecipientsModal = () => {
         // Hydrate initial checked targets
@@ -528,17 +646,19 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
                 <div className="flex-1 overflow-y-auto px-8 py-8 flex flex-col gap-8 bg-[#faf8f5]">
                     
                     {/* Database Setup Banner Warning */}
-                    {(dbSetupError || dbSetupErrorGroups) && (
+                    {(dbSetupError || dbSetupErrorGroups || dbSetupErrorTemplates) && (
                         <div className="bg-rose-50 border border-rose-200/80 p-5 rounded-2xl flex flex-col gap-4 shadow-sm select-text">
                             <div className="flex gap-3">
                                 <Info className="text-rose-500 w-5 h-5 shrink-0 mt-0.5" />
                                 <div>
                                     <h4 className="text-sm font-extrabold text-rose-900">
-                                        {dbSetupError && dbSetupErrorGroups ? 'Supabase Message Tables Not Found' : 
-                                         dbSetupError ? 'Broadcasts Table Not Found' : 'Custom Recipient Groups Table Not Found'}
+                                        {dbSetupError && dbSetupErrorGroups && dbSetupErrorTemplates ? 'Supabase Message & Template Tables Not Found' : 
+                                         (dbSetupError ? 'Broadcasts Table Not Found. ' : '') + 
+                                         (dbSetupErrorGroups ? 'Custom Recipient Groups Table Not Found. ' : '') + 
+                                         (dbSetupErrorTemplates ? 'Message Templates Table Not Found.' : '')}
                                     </h4>
                                     <p className="text-xs text-rose-700 font-medium leading-relaxed mt-1">
-                                        To enable permanent backend storage for your messaging features, open your Supabase SQL Editor and run the script below.
+                                        To enable permanent backend storage for your messaging and template features, open your Supabase SQL Editor and run the script below.
                                     </p>
                                 </div>
                             </div>
@@ -567,6 +687,17 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
 ALTER TABLE public.custom_recipient_groups ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_groups FOR ALL USING (true) WITH CHECK (true);
 `}
+{dbSetupErrorTemplates && `CREATE TABLE IF NOT EXISTS public.message_templates (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE public.message_templates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL USING (true) WITH CHECK (true);
+`}
                                 </pre>
                                 <button 
                                     onClick={() => {
@@ -575,7 +706,10 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
                                             sql += `CREATE TABLE IF NOT EXISTS public.broadcasts (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  channel TEXT NOT NULL DEFAULT 'announcements',\n  recipients JSONB NOT NULL DEFAULT '[]',\n  subject TEXT NOT NULL,\n  content TEXT NOT NULL,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.broadcasts ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all broadcasts" ON public.broadcasts;\nCREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) WITH CHECK (true);\n\n`;
                                         }
                                         if (dbSetupErrorGroups) {
-                                            sql += `CREATE TABLE IF NOT EXISTS public.custom_recipient_groups (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT,\n  recipients JSONB NOT NULL DEFAULT '[]',\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.custom_recipient_groups ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all custom_recipient_groups" ON public.custom_recipient_groups;\nCREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_groups FOR ALL USING (true) WITH CHECK (true);`;
+                                            sql += `CREATE TABLE IF NOT EXISTS public.custom_recipient_groups (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT,\n  recipients JSONB NOT NULL DEFAULT '[]',\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.custom_recipient_groups ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all custom_recipient_groups" ON public.custom_recipient_groups;\nCREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_groups FOR ALL USING (true) WITH CHECK (true);\n\n`;
+                                        }
+                                        if (dbSetupErrorTemplates) {
+                                            sql += `CREATE TABLE IF NOT EXISTS public.message_templates (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  subject TEXT NOT NULL,\n  content TEXT NOT NULL,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.message_templates ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all message_templates" ON public.message_templates;\nCREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL USING (true) WITH CHECK (true);`;
                                         }
                                         navigator.clipboard.writeText(sql);
                                         setSqlGroupsCopied(true);
@@ -588,7 +722,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
                                 </button>
                             </div>
                             <p className="text-[10px] font-semibold text-rose-600 uppercase tracking-widest">
-                                💡 App is safely running in local fallback mode. Groups and broadcasts will be preserved temporarily in localStorage.
+                                💡 App is safely running in local fallback mode. Groups, templates, and broadcasts will be preserved temporarily in localStorage.
                             </p>
                         </div>
                     )}
@@ -713,6 +847,18 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
                                             View Analytics
                                         </button>
                                         <button 
+                                            type="button"
+                                            onClick={() => {
+                                                setNewTemplateName('');
+                                                setIsCreateTemplateModalOpen(true);
+                                            }}
+                                            disabled={!subject.trim() || !content.trim()}
+                                            className="px-4 py-2 hover:bg-stone-50 border border-stone-200 text-stone-650 text-xs font-bold rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                        >
+                                            <FolderPlus className="w-3.5 h-3.5 text-stone-550" />
+                                            Save as Template
+                                        </button>
+                                        <button 
                                             type="submit" 
                                             disabled={isSending}
                                             className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-full transition-all flex items-center gap-2 shadow-sm disabled:bg-stone-300 disabled:cursor-not-allowed"
@@ -796,6 +942,37 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
                                                 })}
                                             </div>
                                         </div>
+
+                                        {/* Custom Templates block */}
+                                        {customTemplates.length > 0 && (
+                                            <div className="space-y-2.5 pt-2">
+                                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Your Saved Templates</span>
+                                                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                                    {customTemplates.map((tpl) => (
+                                                        <div key={tpl.id} className="flex items-center gap-2">
+                                                            <button 
+                                                                type="button" 
+                                                                onClick={() => handleApplyCustomTemplate(tpl)}
+                                                                className="flex-1 flex items-center gap-3 p-2.5 bg-white hover:bg-[#0e5f59]/5 rounded-xl border border-stone-200 hover:border-[#0e5f59]/30 transition-all text-left group"
+                                                            >
+                                                                <div className="p-1.5 bg-stone-100 group-hover:bg-[#0e5f59]/10 rounded-lg text-stone-600 group-hover:text-[#0e5f59] transition-colors shrink-0">
+                                                                    <FileText className="w-4 h-4" />
+                                                                </div>
+                                                                <span className="text-[11px] font-bold text-stone-700 truncate">{tpl.name}</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteTemplate(tpl.id)}
+                                                                className="p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-100 transition-colors shrink-0"
+                                                                title="Delete Template"
+                                                            >
+                                                                <X className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Right inputs column: subject & body content editor */}
@@ -1108,6 +1285,70 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
                                 className="px-5 py-2 bg-[#0e5f59] hover:bg-[#0c4e49] text-white text-xs font-bold rounded-full transition-all shadow-xs disabled:bg-stone-300 disabled:cursor-not-allowed"
                             >
                                 {isSavingGroup ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save Group'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Create Custom Template Modal */}
+            {isCreateTemplateModalOpen && (
+                <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-stone-200/60 flex flex-col max-h-[500px]">
+                        
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-stone-100 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-base font-extrabold text-stone-900">Save Message as Template</h3>
+                                <p className="text-[11px] text-stone-400 font-semibold mt-0.5">Give your composed message a reusable template name</p>
+                            </div>
+                            <button 
+                                onClick={() => setIsCreateTemplateModalOpen(false)}
+                                className="text-stone-400 hover:text-stone-600 transition-colors hover:bg-stone-50 p-1.5 rounded-full"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Modal Fields */}
+                        <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Template Name</label>
+                                <input 
+                                    className="px-4 py-2 border border-stone-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-stone-800 bg-white placeholder:text-stone-300"
+                                    placeholder="e.g. Student Progress Update, Saturday Reschedule" 
+                                    type="text" 
+                                    value={newTemplateName}
+                                    onChange={(e) => setNewTemplateName(e.target.value)}
+                                />
+                            </div>
+
+                            {/* Template Preview */}
+                            <div className="flex flex-col gap-2 bg-stone-50 p-4 rounded-2xl border border-stone-200">
+                                <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#0e5f59]">Template Content Preview</span>
+                                <div className="space-y-1">
+                                    <h5 className="text-xs font-bold text-stone-900 truncate">Subject: {subject}</h5>
+                                    <p className="text-[11px] font-medium text-stone-600 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                        {content}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer actions */}
+                        <div className="p-6 border-t border-stone-100 flex justify-end gap-3 shrink-0">
+                            <button 
+                                onClick={() => setIsCreateTemplateModalOpen(false)}
+                                className="px-4 py-2 hover:bg-stone-50 border border-stone-200 text-stone-600 text-xs font-bold rounded-full transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={() => handleSaveTemplate(newTemplateName)}
+                                disabled={!newTemplateName.trim() || isSavingTemplate}
+                                className="px-5 py-2 bg-[#0e5f59] hover:bg-[#0c4e49] text-white text-xs font-bold rounded-full transition-all shadow-xs disabled:bg-stone-300 disabled:cursor-not-allowed"
+                            >
+                                {isSavingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save Template'}
                             </button>
                         </div>
                     </div>
