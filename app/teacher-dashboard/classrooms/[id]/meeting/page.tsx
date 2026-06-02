@@ -56,13 +56,34 @@ export default function MeetingPage() {
                 setTeacherProfile(profile);
 
                 const { data: classroom } = await supabaseAuth
-                    .from('classrooms').select('name').eq('id', classroomId).single();
-                if (classroom) setClassroomName(classroom.name);
+                    .from('classrooms').select('name, type').eq('id', classroomId).single();
+                
+                let roster: any[] = [];
+                if (classroom) {
+                    setClassroomName(classroom.name);
 
-                const { data: roster } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('student_id, users!student_id(name, profile_pic_url)')
-                    .eq('classroom_id', classroomId);
+                    if (classroom.type === 'temporary') {
+                        const { data: tempClassData } = await supabaseAuth
+                            .from('temporary_classes')
+                            .select('id')
+                            .eq('classroom_id', classroomId)
+                            .maybeSingle();
+
+                        if (tempClassData) {
+                            const { data: tempRoster } = await supabaseAuth
+                                .from('temporary_class_students')
+                                .select('student_id, users!student_id(name, profile_pic_url)')
+                                .eq('temporary_class_id', tempClassData.id);
+                            roster = tempRoster || [];
+                        }
+                    } else {
+                        const { data: permRoster } = await supabaseAuth
+                            .from('classroom_students')
+                            .select('student_id, users!student_id(name, profile_pic_url)')
+                            .eq('classroom_id', classroomId);
+                        roster = permRoster || [];
+                    }
+                }
 
                 const formatted: SessionStudent[] = (roster || []).map((r: any) => ({
                     id: r.student_id,
