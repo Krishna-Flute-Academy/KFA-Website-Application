@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink, Unlock, Sliders } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink, Unlock, Sliders, MessageSquare, Share2, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { CourseCategory, INITIAL_CATEGORIES, INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
@@ -90,10 +90,23 @@ interface AssignmentStudent {
     student_pic?: string | null;
 }
 
-export default function ClassroomDashboardPage() {
+export default function ClassroomDashboardPage({
+    isMeetingView = false,
+    sessionType = 'online',
+    sessionDate = '',
+    secondsElapsed = 0,
+    onEndSession = () => {}
+}: {
+    isMeetingView?: boolean;
+    sessionType?: 'online' | 'offline';
+    sessionDate?: string;
+    secondsElapsed?: number;
+    onEndSession?: () => void;
+} = {}) {
     const router = useRouter();
     const params = useParams();
     const classroomId = params.id as string;
+
 
     const [loading, setLoading] = useState(true);
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
@@ -102,6 +115,83 @@ export default function ClassroomDashboardPage() {
     const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
     const [activeTab, setActiveTab] = useState('Overview');
     const [currentPage, setCurrentPage] = useState(1);
+
+    // ── Live session broadcast states ──────────────────────────────────────────
+    const [messageSubject, setMessageSubject] = useState('');
+    const [messageContent, setMessageContent] = useState('');
+    const [isSendingMessage, setIsSendingMessage] = useState(false);
+    const [classBroadcasts, setClassBroadcasts] = useState<any[]>([]);
+
+    // Prefill broadcast subject
+    useEffect(() => {
+        if (classroom?.name && !messageSubject) {
+            setMessageSubject(`Live Session Announcement - ${classroom.name}`);
+        }
+    }, [classroom, messageSubject]);
+
+    // Fetch broadcasts for this class in meeting view
+    useEffect(() => {
+        if (!isMeetingView || !teacherProfile || !classroomId) return;
+        const fetchMeetingBroadcasts = async () => {
+            try {
+                const { data: broadcastsData } = await supabaseAuth
+                    .from('broadcasts')
+                    .select('*')
+                    .eq('teacher_id', teacherProfile.id)
+                    .order('created_at', { ascending: false });
+                
+                if (broadcastsData) {
+                    const classroomBroads = broadcastsData.filter((b: any) => 
+                        Array.isArray(b.recipients) && b.recipients.some((r: any) => r.id === classroomId)
+                    );
+                    setClassBroadcasts(classroomBroads);
+                }
+            } catch (e) {
+                console.error('Failed to load meeting broadcasts:', e);
+            }
+        };
+        fetchMeetingBroadcasts();
+    }, [isMeetingView, teacherProfile, classroomId]);
+
+    // Send broadcast handler
+    const handleSendClassMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!messageContent.trim() || !teacherProfile || !classroom) return;
+        setIsSendingMessage(true);
+        try {
+            const payload = {
+                teacher_id: teacherProfile.id,
+                channel: 'classroom',
+                recipients: [{ id: classroomId, name: classroom.name, type: 'class' }],
+                subject: messageSubject.trim() || `Class Update - ${classroom.name}`,
+                content: messageContent.trim(),
+                created_at: new Date().toISOString()
+            };
+            const { data, error } = await supabaseAuth
+                .from('broadcasts')
+                .insert(payload)
+                .select();
+            if (error) throw error;
+            
+            if (data && data.length > 0) {
+                setClassBroadcasts(prev => [data[0], ...prev]);
+            }
+            setMessageContent('');
+            alert('Message successfully broadcast to all students in this class!');
+        } catch (err: any) {
+            console.error('Error broadcasting message:', err);
+            alert(`Failed to send message: ${err.message}`);
+        } finally {
+            setIsSendingMessage(false);
+        }
+    };
+
+    const formatDuration = (sec: number) => {
+        const mins = Math.floor(sec / 60);
+        const secs = sec % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
 
     // Restore active tab from sessionStorage on mount
     useEffect(() => {
@@ -1782,38 +1872,85 @@ export default function ClassroomDashboardPage() {
                 </div>
             )}
 
-            <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
+            {!isMeetingView && (
+                <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
+            )}
 
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col min-w-0">
-                {/* TopAppBar */}
-                <header className="flex justify-between items-center px-8 h-16 w-full max-w-full mx-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30">
-                    <div className="flex items-center gap-4">
-                        <Link href="/teacher-dashboard/classrooms" className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                            <ArrowLeft className="w-5 h-5" />
-                        </Link>
-                        <h2 className="text-xl font-bold text-[#ecb613] dark:text-[#ecb613]">{classroom.name}</h2>
-                        <span className="px-2 py-1 bg-[#ecb613]/10 text-[#ecb613] dark:bg-[#ecb613]/20 dark:text-[#ecb613] text-[10px] font-bold rounded uppercase tracking-wider">{classroom.status}</span>
-                    </div>
-                    <div className="flex items-center gap-6">
-                        <div className="relative hidden md:block">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                            <input 
-                                className="pl-10 pr-4 py-1.5 bg-slate-100 dark:bg-slate-800 border-none rounded-full text-sm w-64 focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400" 
-                                placeholder="Search students, tasks..." 
-                                type="text" 
-                            />
+                {/* Header */}
+                {isMeetingView ? (
+                    <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between px-8 py-4 gap-4 flex-shrink-0 shadow-sm">
+                        <div className="flex items-center gap-3 text-left">
+                            <button onClick={onEndSession} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <ArrowLeft size={18} />
+                            </button>
+                            <div className="text-left">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest text-left">Active Class Session</span>
+                                    {sessionType === 'online' ? (
+                                        <div className="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                                            <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Live Online</span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                            <span className="text-[10px] font-bold text-[#ecb613] uppercase tracking-wider">In-Person</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <h2 className="text-xl font-extrabold text-slate-900 dark:text-white mt-0.5 text-left">{classroom?.name || 'Classroom'}</h2>
+                            </div>
                         </div>
+
+                        {/* Live Timer and End Session */}
                         <div className="flex items-center gap-4">
-                            <button className="text-slate-500 hover:text-[#ecb613] transition-colors">
-                                <Bell className="w-5 h-5" />
-                            </button>
-                            <button className="text-slate-500 hover:text-[#ecb613] transition-colors">
-                                <HelpCircle className="w-5 h-5" />
+                            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800">
+                                <Clock className="w-4 h-4 text-[#ecb613] animate-spin" style={{ animationDuration: '6s' }} />
+                                <div className="text-xs text-left">
+                                    <span className="text-slate-400 font-medium mr-1">Session Duration:</span>
+                                    <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{formatDuration(secondsElapsed)}</span>
+                                </div>
+                            </div>
+                            <button
+                                onClick={onEndSession}
+                                className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-red-200 dark:shadow-none hover:scale-[1.02] active:scale-98"
+                            >
+                                <LogOut size={14} /> End Active Class
                             </button>
                         </div>
-                    </div>
-                </header>
+                    </header>
+                ) : (
+                    <header className="flex justify-between items-center px-8 h-16 w-full max-w-full mx-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30">
+                        <div className="flex items-center gap-4">
+                            <Link href="/teacher-dashboard/classrooms" className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
+                                <ArrowLeft className="w-5 h-5" />
+                            </Link>
+                            <h2 className="text-xl font-bold text-[#ecb613] dark:text-[#ecb613]">{classroom?.name || 'Classroom'}</h2>
+                            <span className="px-2 py-1 bg-[#ecb613]/10 text-[#ecb613] dark:bg-[#ecb613]/20 dark:text-[#ecb613] text-[10px] font-bold rounded uppercase tracking-wider">{classroom?.status || 'Active'}</span>
+                        </div>
+                        <div className="flex items-center gap-6">
+                            <div className="relative hidden md:block">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                                <input 
+                                    className="pl-10 pr-4 py-1.5 bg-slate-100 dark:bg-slate-800 border-none rounded-full text-sm w-64 focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400" 
+                                    placeholder="Search students, tasks..." 
+                                    type="text" 
+                                />
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <button className="text-slate-500 hover:text-[#ecb613] transition-colors">
+                                    <Bell className="w-5 h-5" />
+                                </button>
+                                <button className="text-slate-500 hover:text-[#ecb613] transition-colors">
+                                    <HelpCircle className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+                )}
+
 
                 <div className="p-8 max-w-7xl mx-auto w-full flex-1 overflow-y-auto">
                     {/* Row-wise Tabs (Contextual Navigation) */}
@@ -1834,7 +1971,102 @@ export default function ClassroomDashboardPage() {
                     </div>
 
                     {activeTab === 'Overview' ? (
-                        <div className="grid grid-cols-12 gap-6">
+                        <div className="flex flex-col gap-6">
+                            {isMeetingView && (
+                                <div className="grid grid-cols-12 gap-6">
+                                    {/* Broadcast Composer */}
+                                    <div className="col-span-12 lg:col-span-8">
+                                        <form onSubmit={handleSendClassMessage} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-6 hover:shadow-md transition-shadow text-left">
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="font-extrabold text-slate-900 dark:text-white text-lg flex items-center gap-2">
+                                                    <MessageSquare className="text-[#ecb613] size-5" />
+                                                    Broadcast to Class
+                                                </h3>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const meetLink = "Join Google Meet: https://meet.google.com/abc-defg-hij";
+                                                        setMessageContent(prev => prev ? `${prev}\n\n${meetLink}` : meetLink);
+                                                    }}
+                                                    className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 hover:scale-[1.02] border border-blue-200/50 dark:border-blue-900/30"
+                                                >
+                                                    <Video size={14} /> 🔗 Share Meet Link
+                                                </button>
+                                            </div>
+
+                                            <div className="space-y-4 text-left">
+                                                <div>
+                                                    <label className="block text-xs font-black text-slate-500 uppercase tracking-wide mb-2 text-left">Subject</label>
+                                                    <input
+                                                        type="text"
+                                                        value={messageSubject}
+                                                        onChange={(e) => setMessageSubject(e.target.value)}
+                                                        placeholder="e.g. Google Meet URL - Classroom Session"
+                                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#ecb613] focus:border-[#ecb613] outline-none transition-all placeholder:text-slate-400"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-xs font-black text-slate-500 uppercase tracking-wide mb-2 text-left">Message Content</label>
+                                                    <textarea
+                                                        rows={4}
+                                                        value={messageContent}
+                                                        onChange={(e) => setMessageContent(e.target.value)}
+                                                        placeholder="Hi Class, please join today's session via this link or prepare the A1 scale exercise..."
+                                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#ecb613] focus:border-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-medium"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                type="submit"
+                                                disabled={isSendingMessage || !messageContent.trim()}
+                                                className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all ${
+                                                    messageContent.trim()
+                                                        ? 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 shadow-[#ecb613]/25 hover:scale-[1.01]'
+                                                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                                }`}
+                                            >
+                                                {isSendingMessage ? (
+                                                    <><Loader2 className="w-5 h-5 animate-spin" /> Broadcasting...</>
+                                                ) : (
+                                                    <><Send className="w-5 h-5" /> Send Announcement to Class</>
+                                                )}
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                    {/* Broadcast History */}
+                                    <div className="col-span-12 lg:col-span-4">
+                                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 hover:shadow-md transition-shadow h-full flex flex-col min-h-[385px] max-h-[385px] overflow-hidden text-left">
+                                            <h4 className="font-extrabold text-slate-900 dark:text-white text-md mb-4 flex items-center gap-2 flex-shrink-0">
+                                                <Share2 size={16} className="text-amber-500" />
+                                                Recently Sent
+                                            </h4>
+                                            <div className="space-y-3.5 overflow-y-auto pr-1 flex-1">
+                                                {classBroadcasts.map((b, i) => (
+                                                    <div key={b.id || i} className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800 text-xs hover:border-[#ecb613] transition-colors relative text-left">
+                                                        <div className="flex justify-between items-center gap-2 mb-1.5 text-left">
+                                                            <span className="font-bold text-slate-900 dark:text-white truncate">{b.subject}</span>
+                                                            <span className="text-[10px] text-slate-400 font-semibold shrink-0">
+                                                                {new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-slate-600 dark:text-slate-400 leading-relaxed font-medium line-clamp-3 whitespace-pre-wrap text-left">{b.content}</p>
+                                                    </div>
+                                                ))}
+                                                {classBroadcasts.length === 0 && (
+                                                    <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-8 italic font-semibold">
+                                                        No broadcasts sent to this class yet.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-12 gap-6">
                             {/* Progress Summary Card */}
                             <div className="col-span-12 lg:col-span-8 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
                                 <div className="flex justify-between items-start mb-6">
@@ -1930,25 +2162,27 @@ export default function ClassroomDashboardPage() {
                                     </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">Quick Actions</h4>
-                                        <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
+                                {!isMeetingView && (
+                                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">Quick Actions</h4>
+                                            <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center">
+                                                <Mail className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
+                                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Email All</span>
+                                            </button>
+                                            <Link 
+                                                href={`/teacher-dashboard/classrooms/${classroomId}/meeting`}
+                                                className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center"
+                                            >
+                                                <Video className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
+                                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Start Session</span>
+                                            </Link>
+                                        </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center">
-                                            <Mail className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
-                                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Email All</span>
-                                        </button>
-                                        <Link 
-                                            href={`/teacher-dashboard/classrooms/${classroomId}/meeting`}
-                                            className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center"
-                                        >
-                                            <Video className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
-                                            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Start Session</span>
-                                        </Link>
-                                    </div>
-                                </div>
+                                )}
                             </div>
 
                             {/* Student Roster Table */}
@@ -2067,7 +2301,8 @@ export default function ClassroomDashboardPage() {
                                 </div>
                             </div>
                         </div>
-                    ) : activeTab === 'Curriculum' ? (
+                    </div>
+                ) : activeTab === 'Curriculum' ? (
                         <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
                             {/* Section 1: Dashboard Header */}
                             <section className="mb-8">
