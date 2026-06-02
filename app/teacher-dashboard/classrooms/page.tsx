@@ -43,6 +43,28 @@ export default function ClassroomsPage() {
     const [viewDate, setViewDate] = useState(new Date());
     const [searchQuery, setSearchQuery] = useState('');
     const [rawSchedules, setRawSchedules] = useState<any[]>([]);
+    const [activeSession, setActiveSession] = useState<{ classroomId: string } | null>(null);
+
+    useEffect(() => {
+        const checkActiveSession = () => {
+            if (typeof window !== 'undefined') {
+                const sessionStr = localStorage.getItem('active_class_session');
+                if (sessionStr) {
+                    try {
+                        const session = JSON.parse(sessionStr);
+                        setActiveSession(session);
+                    } catch (e) {
+                        console.error(e);
+                    }
+                } else {
+                    setActiveSession(null);
+                }
+            }
+        };
+        checkActiveSession();
+        const interval = setInterval(checkActiveSession, 2000);
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -448,10 +470,14 @@ export default function ClassroomsPage() {
                                         ];
                                         const styleConfig = iconColors[idx % iconColors.length];
                                         const IconComponent = styleConfig.icon;
-                                        const isOnline = idx % 2 !== 0;
+                                        const isOngoing = activeSession && activeSession.classroomId === room.id;
 
                                         return (
-                                            <div key={`${room.id}-${idx}`} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group">
+                                            <div key={`${room.id}-${idx}`} className={`p-6 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group ${
+                                                isOngoing
+                                                    ? 'bg-rose-50/15 dark:bg-rose-950/10 border-rose-250 dark:border-rose-800 shadow-md shadow-rose-500/5'
+                                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
+                                            }`}>
                                                 <div className="flex items-center gap-4">
                                                     <div className={`w-12 h-12 rounded-xl ${styleConfig.bg} flex items-center justify-center ${styleConfig.text}`}>
                                                         <IconComponent className="size-6" />
@@ -461,6 +487,12 @@ export default function ClassroomsPage() {
                                                             <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-lg text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
                                                                 {room.name}
                                                             </Link>
+                                                            {isOngoing && (
+                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-500 text-white tracking-wider animate-pulse shadow-md shadow-rose-500/25">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+                                                                    Live Session
+                                                                </span>
+                                                            )}
                                                             {room.type === 'temporary' ? (
                                                                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
                                                                     Temporary
@@ -484,17 +516,17 @@ export default function ClassroomsPage() {
                                                             Manage
                                                         </button>
                                                     </Link>
-                                                    {isOnline ? (
+                                                    {isOngoing ? (
                                                         <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                            <button className="px-4 py-2.5 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 text-xs font-bold rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors flex items-center gap-2">
-                                                                <LinkIcon className="size-4" />
-                                                                Join Link
+                                                            <button className="px-4 py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center gap-1.5 animate-pulse">
+                                                                <Activity className="size-3.5 animate-spin" />
+                                                                Resume
                                                             </button>
                                                         </Link>
                                                     ) : (
                                                         <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                             <button className="px-4 py-2.5 bg-[#0d5a5e] text-white text-xs font-bold rounded-lg hover:bg-[#115e59] transition-colors shadow-sm">
-                                                                Start Session
+                                                                Start
                                                             </button>
                                                         </Link>
                                                     )}
@@ -578,10 +610,15 @@ export default function ClassroomsPage() {
                                                 const mockTime = room.schedule && room.schedule.includes('•') ? room.schedule.split('•') : [room.schedule || 'Days Not Set', '09:00 AM - 10:30 AM'];
                                                 const days = mockTime[0]?.trim() || 'Mon, Wed';
                                                 const times = mockTime[1]?.trim() || '10:00 AM - 11:30 AM';
+                                                const isOngoing = activeSession && activeSession.classroomId === room.id;
 
                                                 return (
-                                                    <tr key={room.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 even:bg-slate-50/30 dark:even:bg-slate-800/20 transition-colors group">
-                                                        <td className="px-6 py-6 border-b border-slate-100 dark:border-slate-800/50">
+                                                    <tr key={room.id} className={`transition-colors group border-b border-slate-100 dark:border-slate-800/50 ${
+                                                        isOngoing
+                                                            ? 'bg-rose-50/15 dark:bg-rose-950/10 hover:bg-rose-50/20 dark:hover:bg-rose-950/15'
+                                                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 even:bg-slate-50/30 dark:even:bg-slate-800/20'
+                                                    }`}>
+                                                        <td className="px-6 py-6">
                                                             <div className="flex items-center gap-4">
                                                                 <div className={`w-10 h-10 rounded-lg ${styleConfig.bg} flex items-center justify-center ${styleConfig.text}`}>
                                                                     <IconComponent className="size-5" />
@@ -591,6 +628,12 @@ export default function ClassroomsPage() {
                                                                         <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
                                                                             {room.name}
                                                                         </Link>
+                                                                        {isOngoing && (
+                                                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-500 text-white tracking-wider animate-pulse shadow-md shadow-rose-500/25">
+                                                                                <span className="w-1 h-1 rounded-full bg-white animate-ping"></span>
+                                                                                Live Session
+                                                                            </span>
+                                                                        )}
                                                                         {room.type === 'temporary' ? (
                                                                             <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400 tracking-wider">
                                                                                 ⚡ Temporary
@@ -605,7 +648,7 @@ export default function ClassroomsPage() {
                                                                 </div>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-6 border-b border-slate-100 dark:border-slate-800/50">
+                                                        <td className="px-6 py-6">
                                                             <div className="flex items-center gap-3">
                                                                 <div className="flex -space-x-2">
                                                                     <div className="size-8 rounded-full border-2 border-white dark:border-slate-900 bg-slate-200 bg-cover bg-center" style={{ backgroundImage: "url('https://avatar.iran.liara.run/public/boy')" }}></div>
@@ -617,7 +660,7 @@ export default function ClassroomsPage() {
                                                                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{room.student_count} Enrolled</p>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-6 border-b border-slate-100 dark:border-slate-800/50">
+                                                        <td className="px-6 py-6">
                                                             <div className="flex flex-col">
                                                                 <span className="text-sm font-bold text-slate-900 dark:text-white">{days}</span>
                                                                 <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2.5 py-0.5 rounded-full inline-block w-fit mt-1">
@@ -625,7 +668,7 @@ export default function ClassroomsPage() {
                                                                 </span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-6 border-b border-slate-100 dark:border-slate-800/50">
+                                                        <td className="px-6 py-6">
                                                             {isOnline ? (
                                                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                                                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
@@ -638,24 +681,24 @@ export default function ClassroomsPage() {
                                                                 </span>
                                                             )}
                                                         </td>
-                                                        <td className="px-6 py-6 text-right border-b border-slate-100 dark:border-slate-800/50">
+                                                        <td className="px-6 py-6 text-right">
                                                             <div className="flex items-center justify-end gap-2">
                                                                 <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`}>
                                                                     <button className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
                                                                         Manage
                                                                     </button>
                                                                 </Link>
-                                                                {isOnline ? (
+                                                                {isOngoing ? (
                                                                     <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                        <button className="px-4 py-2 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 text-xs font-bold rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors flex items-center gap-2">
-                                                                            <LinkIcon className="size-4" />
-                                                                            Join Link
+                                                                        <button className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center gap-1.5 animate-pulse">
+                                                                            <Activity className="size-3.5 animate-spin" />
+                                                                            Resume
                                                                         </button>
                                                                     </Link>
                                                                 ) : (
                                                                     <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                                         <button className="px-4 py-2 bg-[#0d5a5e] text-white text-xs font-bold rounded-lg hover:bg-[#115e59] transition-colors shadow-sm">
-                                                                            Start Session
+                                                                            Start
                                                                         </button>
                                                                     </Link>
                                                                 )}
