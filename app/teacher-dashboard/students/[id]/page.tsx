@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -77,6 +77,7 @@ export default function StudentProfilePage() {
     const [assignments, setAssignments] = useState<any[]>([]);
     const [isUpdatingProgress, setIsUpdatingProgress] = useState<string | null>(null);
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+    const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
 
     const formatDate = (date: Date) => {
         const d = new Date(date);
@@ -592,6 +593,7 @@ export default function StudentProfilePage() {
                                         {courseModules.map(mod => {
                                             const modChapters = courseChapters.filter(c => c.module_id === mod.id).sort((a,b) => a.chapter_number - b.chapter_number);
                                             const isModVisible = computedPermissions.visibleModules.has(mod.id);
+                                            const isModExpanded = expandedModules[mod.id] !== false;
                                             
                                             return (
                                                 <div key={mod.id} className={`rounded-3xl border transition-all duration-300 bg-white shadow-sm overflow-hidden ${
@@ -600,7 +602,10 @@ export default function StudentProfilePage() {
                                                         : 'border-slate-100 opacity-60'
                                                 }`}>
                                                     {/* Module Title Bar */}
-                                                    <div className="px-6 py-5 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between gap-4">
+                                                    <div 
+                                                        onClick={() => setExpandedModules(prev => ({ ...prev, [mod.id]: !isModExpanded }))}
+                                                        className="px-6 py-5 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between gap-4 cursor-pointer select-none hover:bg-slate-100/80 transition-colors"
+                                                    >
                                                         <div className="flex items-center gap-4">
                                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center border font-extrabold text-sm ${
                                                                 isModVisible 
@@ -620,11 +625,19 @@ export default function StudentProfilePage() {
                                                             <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 px-2.5 py-1 rounded-full">
                                                                 {modChapters.length} Chapters
                                                             </span>
+                                                            <div className="w-8 h-8 rounded-lg bg-white/80 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 transition-colors shrink-0">
+                                                                {isModExpanded ? (
+                                                                    <ChevronUp className="size-4" />
+                                                                ) : (
+                                                                    <ChevronDown className="size-4" />
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
 
                                                     {/* Module Chapters accordions */}
-                                                    <div className="p-6 space-y-4">
+                                                    {isModExpanded && (
+                                                        <div className="p-6 space-y-4">
                                                         {modChapters.length === 0 ? (
                                                             <p className="text-xs text-slate-400 italic text-center py-4">No chapters created for this level.</p>
                                                         ) : (
@@ -768,6 +781,7 @@ export default function StudentProfilePage() {
                                                             })
                                                         )}
                                                     </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}

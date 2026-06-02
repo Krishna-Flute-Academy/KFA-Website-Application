@@ -2902,97 +2902,105 @@ export default function ClassroomDashboardPage({
                                         <div className="space-y-12">
                                             {groupedAssignments.map((group) => {
                                                 const isHeadlineExpanded = expandedHeadlines[group.categoryName] !== false;
-                                                const moduleAsg = group.modules.flatMap(m => m.assignments).find(a => a.inventory_ref_type === 'module');
-                                                const hasModuleAssignment = !!moduleAsg;
                                                 return (
                                                     <div key={group.categoryName} className="space-y-6">
                                                         {/* Category / Headline Header */}
-                                                        {hasModuleAssignment ? (
-                                                            <div 
-                                                                onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
-                                                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 shadow-md shadow-amber-500/[0.01] hover:border-[#ecb613]/55 cursor-pointer select-none transition-all text-left group/level-capsule animate-in fade-in duration-300"
-                                                            >
-                                                                <div className="flex items-center gap-4">
-                                                                    <div className="w-11 h-11 rounded-2xl bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613] shadow-sm shrink-0 transition-transform group-hover/level-capsule:scale-105">
-                                                                        <BookOpen className="size-5" />
-                                                                    </div>
-                                                                    <div className="space-y-1">
-                                                                        <div className="flex items-center gap-2.5 flex-wrap">
-                                                                            <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
-                                                                                {group.categoryName}
-                                                                            </h3>
-                                                                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/10 text-[#ecb613] border border-[#ecb613]/20">
-                                                                                Level Assigned
-                                                                            </span>
-                                                                        </div>
-                                                                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
-                                                                            Assigned on {new Date(moduleAsg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/80 pt-3 sm:pt-0">
-                                                                    <button 
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleDeleteAssignment(moduleAsg.id);
-                                                                        }}
-                                                                        disabled={deletingAssignmentId === moduleAsg.id}
-                                                                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
-                                                                        title="Unassign level from class"
-                                                                    >
-                                                                        {deletingAssignmentId === moduleAsg.id ? (
-                                                                            <Loader2 className="size-3.5 animate-spin" />
-                                                                        ) : (
-                                                                            <Trash2 className="size-3.5" />
-                                                                        )}
-                                                                        <span>Remove</span>
-                                                                    </button>
-                                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-550 transition-all">
-                                                                        {isHeadlineExpanded ? (
-                                                                            <ChevronUp className="size-4" />
-                                                                        ) : (
-                                                                            <ChevronDown className="size-4" />
-                                                                        )}
-                                                                    </div>
+                                                        <div 
+                                                            onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
+                                                            className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 pl-1 cursor-pointer select-none group/headline hover:border-[#ecb613]/40 transition-colors"
+                                                        >
+                                                            <div className="flex items-center gap-3 text-left">
+                                                                <div className="w-2.5 h-6 rounded-full bg-[#ecb613]" />
+                                                                <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest font-mono group-hover/headline:text-[#ecb613] transition-colors">
+                                                                    {group.categoryName}
+                                                                </h3>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] font-black uppercase tracking-wider font-mono bg-[#ecb613]/10 text-[#ecb613] px-3 py-1 rounded-full border border-[#ecb613]/25">
+                                                                    Section
+                                                                </span>
+                                                                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover/headline:bg-[#ecb613]/10 group-hover/headline:text-[#ecb613] transition-all">
+                                                                    {isHeadlineExpanded ? (
+                                                                        <ChevronUp className="size-4" />
+                                                                    ) : (
+                                                                        <ChevronDown className="size-4" />
+                                                                    )}
                                                                 </div>
                                                             </div>
-                                                        ) : (
-                                                            <div 
-                                                                onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
-                                                                className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 pl-1 cursor-pointer select-none group/headline hover:border-[#ecb613]/40 transition-colors"
-                                                            >
-                                                                <div className="flex items-center gap-3 text-left">
-                                                                    <div className="w-2.5 h-6 rounded-full bg-[#ecb613]" />
-                                                                    <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest font-mono group-hover/headline:text-[#ecb613] transition-colors">
-                                                                        {group.categoryName}
-                                                                    </h3>
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-[10px] font-black uppercase tracking-wider font-mono bg-[#ecb613]/10 text-[#ecb613] px-3 py-1 rounded-full border border-[#ecb613]/25">
-                                                                        Headline
-                                                                    </span>
-                                                                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover/headline:bg-[#ecb613]/10 group-hover/headline:text-[#ecb613] transition-all">
-                                                                        {isHeadlineExpanded ? (
-                                                                            <ChevronUp className="size-4" />
-                                                                        ) : (
-                                                                            <ChevronDown className="size-4" />
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        )}
+                                                        </div>
 
                                                         {/* Modules Under This Category */}
                                                         {isHeadlineExpanded && (
                                                             <div className="space-y-8 pl-3 md:pl-6 border-l-2 border-slate-150 dark:border-slate-800 text-left">
                                                                 {group.modules.map((modGroup) => {
-                                                                    const hasModuleAssignment = modGroup.assignments.some(a => a.inventory_ref_type === 'module');
+                                                                    const moduleAsg = modGroup.assignments.find(a => a.inventory_ref_type === 'module');
+                                                                    const hasModuleAssignment = !!moduleAsg;
                                                                     const isModuleExpanded = expandedModules[modGroup.id] !== false;
                                                                     return (
                                                                         <div key={modGroup.id} className="space-y-4">
-                                                                            {/* Module Header - Only render if there is NO module-level assignment */}
-                                                                            {!hasModuleAssignment && (
+                                                                            {/* Collapsible Module/Level Header */}
+                                                                            {hasModuleAssignment ? (
+                                                                                <div 
+                                                                                    onClick={() => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded }))}
+                                                                                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md shadow-amber-500/[0.01] hover:border-[#ecb613]/55 cursor-pointer select-none transition-all text-left group/level-capsule animate-in fade-in duration-300"
+                                                                                >
+                                                                                    <div className="flex items-center gap-4">
+                                                                                        <div className="w-11 h-11 rounded-2xl bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613] shadow-sm shrink-0 transition-transform group-hover/level-capsule:scale-105">
+                                                                                            <BookOpen className="size-5" />
+                                                                                        </div>
+                                                                                        <div className="space-y-1 text-left">
+                                                                                            <div className="flex items-center gap-2.5 flex-wrap">
+                                                                                                <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
+                                                                                                    {modGroup.moduleName}
+                                                                                                </h3>
+                                                                                                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/10 text-[#ecb613] border border-[#ecb613]/20">
+                                                                                                    Level Assigned
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            {moduleAsg && (
+                                                                                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
+                                                                                                    Assigned on {new Date(moduleAsg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                                                </p>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/80 pt-3 sm:pt-0" onClick={e => e.stopPropagation()}>
+                                                                                        {moduleAsg && (
+                                                                                            <button 
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    handleDeleteAssignment(moduleAsg.id);
+                                                                                                }}
+                                                                                                disabled={deletingAssignmentId === moduleAsg.id}
+                                                                                                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
+                                                                                                title="Unassign level from class"
+                                                                                                type="button"
+                                                                                            >
+                                                                                                {deletingAssignmentId === moduleAsg.id ? (
+                                                                                                    <Loader2 className="size-3.5 animate-spin" />
+                                                                                                ) : (
+                                                                                                    <Trash2 className="size-3.5" />
+                                                                                                )}
+                                                                                                <span>Remove</span>
+                                                                                            </button>
+                                                                                        )}
+                                                                                        <div 
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded }));
+                                                                                            }}
+                                                                                            className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:bg-[#ecb613]/15 hover:text-[#ecb613] transition-all cursor-pointer"
+                                                                                        >
+                                                                                            {isModuleExpanded ? (
+                                                                                                <ChevronUp className="size-4" />
+                                                                                            ) : (
+                                                                                                <ChevronDown className="size-4" />
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ) : (
                                                                                 <div 
                                                                                     onClick={() => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded }))}
                                                                                     className="flex items-center justify-between cursor-pointer select-none group/module bg-slate-100/50 hover:bg-slate-200/50 dark:bg-slate-800/20 dark:hover:bg-slate-800/40 p-3 rounded-2xl transition-all"
@@ -3002,6 +3010,9 @@ export default function ClassroomDashboardPage({
                                                                                         <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">
                                                                                             {modGroup.moduleName}
                                                                                         </h4>
+                                                                                        <span className="px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-slate-200 text-slate-500 dark:bg-slate-850 dark:text-slate-400 border border-slate-300/30">
+                                                                                            Custom Pacing
+                                                                                        </span>
                                                                                     </div>
                                                                                     <div className="w-6 h-6 rounded-md bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover/module:text-[#ecb613] transition-all">
                                                                                         {isModuleExpanded ? (
