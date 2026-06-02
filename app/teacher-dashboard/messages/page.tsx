@@ -652,15 +652,18 @@ export default function MessagesDashboardPage() {
 
         setIsSending(true);
 
-        const newBroadcast = {
+        const newBroadcast: any = {
             teacher_id: teacherProfile.id,
             channel: activeChannel,
             recipients: selectedRecipients,
             subject: subject.trim(),
             content: content.trim(),
-            created_at: new Date().toISOString(),
-            audio_attachment: attachedAudioNote
+            created_at: new Date().toISOString()
         };
+
+        if (attachedAudioNote) {
+            newBroadcast.audio_attachment = attachedAudioNote;
+        }
 
         try {
             if (dbSetupError) {
@@ -953,6 +956,7 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
   recipients JSONB NOT NULL DEFAULT '[]',
   subject TEXT NOT NULL,
   content TEXT NOT NULL,
+  audio_attachment TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE public.broadcasts ENABLE ROW LEVEL SECURITY;
@@ -1027,6 +1031,7 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
   recipients JSONB NOT NULL DEFAULT '[]',
   subject TEXT NOT NULL,
   content TEXT NOT NULL,
+  audio_attachment TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 ALTER TABLE public.broadcasts ENABLE ROW LEVEL SECURITY;
