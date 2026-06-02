@@ -118,6 +118,15 @@ export default function ClassroomDashboardPage({
     const [activeTab, setActiveTab] = useState('Overview');
     const [currentPage, setCurrentPage] = useState(1);
 
+    // ── Temporary session overrides (Makeup Classes) states ─────────────────────
+    const [sessionOverrides, setSessionOverrides] = useState<any[]>([]);
+    const [showOverrideModal, setShowOverrideModal] = useState(false);
+    const [overrideForm, setOverrideForm] = useState({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '' });
+    const [isSavingOverride, setIsSavingOverride] = useState(false);
+    const [isDeletingOverrideId, setIsDeletingOverrideId] = useState<string | null>(null);
+    const [directoryStudentsForOverride, setDirectoryStudentsForOverride] = useState<any[]>([]);
+    const [isOverrideRosterLoading, setIsOverrideRosterLoading] = useState(false);
+
     // ── Live session broadcast states ──────────────────────────────────────────
     const [messageSubject, setMessageSubject] = useState('');
     const [messageContent, setMessageContent] = useState('');
@@ -547,6 +556,25 @@ export default function ClassroomDashboardPage({
 
                 setStudents(formattedRoster);
 
+                // 5b. Fetch Temporary Session Overrides
+                try {
+                    const { data: overridesData } = await supabaseAuth
+                        .from('session_student_overrides')
+                        .select(`
+                            id,
+                            student_id,
+                            override_date,
+                            reason,
+                            users!student_id(name, profile_pic_url, level)
+                        `)
+                        .eq('target_classroom_id', classroomId)
+                        .order('override_date', { ascending: true });
+                    
+                    setSessionOverrides(overridesData || []);
+                } catch (e) {
+                    console.error('Failed to load session overrides:', e);
+                }
+
                 // 6. Fetch Schedules
                 const { data: scheduleData } = await supabaseAuth
                     .from('batch_schedules')
@@ -815,6 +843,91 @@ export default function ClassroomDashboardPage({
             fetchClassroomAttendance();
         } finally {
             setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: false }));
+        }
+    };
+
+    // ── Temporary session overrides (Makeup Classes) handlers ──────────────────
+    const openMakeupModal = async () => {
+        if (!teacherProfile) return;
+        setShowOverrideModal(true);
+        setIsOverrideRosterLoading(true);
+        setOverrideForm({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '' });
+        try {
+            const enrolledIds = new Set(students.map(s => s.student_id));
+            const { data, error } = await supabaseAuth
+                .from('users')
+                .select('id, name, profile_pic_url, level')
+                .eq('role', 'student')
+                .eq('teacher_id', teacherProfile.id)
+                .order('name', { ascending: true });
+
+            if (error) throw error;
+            // Only show students who are not already permanently enrolled in this classroom
+            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id));
+            setDirectoryStudentsForOverride(available);
+            if (available.length > 0) {
+                setOverrideForm(prev => ({ ...prev, studentId: available[0].id }));
+            }
+        } catch (err) {
+            console.error('Error fetching directory for override:', err);
+        } finally {
+            setIsOverrideRosterLoading(false);
+        }
+    };
+
+    const handleSaveOverride = async () => {
+        if (!overrideForm.studentId || !overrideForm.date) {
+            alert('Please select a student and date.');
+            return;
+        }
+        setIsSavingOverride(true);
+        try {
+            const { data, error } = await supabaseAuth
+                .from('session_student_overrides')
+                .insert([{
+                    student_id: overrideForm.studentId,
+                    target_classroom_id: classroomId,
+                    override_date: overrideForm.date,
+                    reason: overrideForm.reason || null
+                }])
+                .select(`
+                    id,
+                    student_id,
+                    override_date,
+                    reason,
+                    users!student_id(name, profile_pic_url, level)
+                `)
+                .single();
+
+            if (error) throw error;
+
+            setSessionOverrides(prev => [...prev, data].sort((a, b) => a.override_date.localeCompare(b.override_date)));
+            setShowOverrideModal(false);
+        } catch (err: any) {
+            console.error('Error creating override:', err);
+            alert(`Failed to save makeup: ${err.message || err}`);
+        } finally {
+            setIsSavingOverride(false);
+        }
+    };
+
+    const handleDeleteOverride = async (overrideId: string) => {
+        if (!window.confirm('Are you sure you want to cancel this temporary makeup class allocation?')) return;
+        setIsDeletingOverrideId(overrideId);
+        try {
+            const { error } = await supabaseAuth
+                .from('session_student_overrides')
+                .delete()
+                .eq('id', overrideId);
+
+            if (error) throw error;
+
+            setSessionOverrides(prev => prev.filter(o => o.id !== overrideId));
+        } catch (err: any) {
+            console.error('Error deleting override:', err);
+            alert(`Failed to cancel makeup: ${err.message || err}`);
+        } finally {
+            setIsDeletingOverrideId(null);
         }
     };
 
@@ -1910,6 +2023,97 @@ export default function ClassroomDashboardPage({
                                     {isAddingStudents ? 'Adding...' : `Add ${selectedToAdd.size > 0 ? selectedToAdd.size : ''} to Class`}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Schedule Makeup Modal ─────────────────────────────────────────── */}
+            {showOverrideModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 flex items-center justify-center text-emerald-600">
+                                    <Calendar className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Schedule Makeup Allocation</h3>
+                                    <p className="text-xs text-slate-500">Allocate a temporary student for a specific date</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowOverrideModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-650 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        {/* Body */}
+                        <div className="p-6 space-y-4">
+                            {isOverrideRosterLoading ? (
+                                <div className="flex flex-col items-center justify-center py-8">
+                                    <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mb-2" />
+                                    <p className="text-xs text-slate-500 font-bold">Loading available students...</p>
+                                </div>
+                            ) : directoryStudentsForOverride.length === 0 ? (
+                                <div className="text-center py-6">
+                                    <p className="text-sm font-medium text-slate-500">No other students available.</p>
+                                    <p className="text-xs text-slate-400 mt-1">All your students are already permanently enrolled in this classroom.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Student Selector */}
+                                    <div className="text-left">
+                                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Select Student</label>
+                                        <select
+                                            value={overrideForm.studentId}
+                                            onChange={e => setOverrideForm(f => ({ ...f, studentId: e.target.value }))}
+                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all cursor-pointer"
+                                        >
+                                            {directoryStudentsForOverride.map(s => (
+                                                <option key={s.id} value={s.id}>{s.name} ({s.level || 'Beginner'})</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {/* Override Date */}
+                                    <div className="text-left">
+                                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Class Session Date</label>
+                                        <input
+                                            type="date"
+                                            value={overrideForm.date}
+                                            onChange={e => setOverrideForm(f => ({ ...f, date: e.target.value }))}
+                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                                        />
+                                    </div>
+                                    {/* Reason / Notes */}
+                                    <div className="text-left">
+                                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Reason / Private Notes</label>
+                                        <textarea
+                                            value={overrideForm.reason}
+                                            onChange={e => setOverrideForm(f => ({ ...f, reason: e.target.value }))}
+                                            placeholder="e.g. Makeup session for missed class on Monday"
+                                            rows={3}
+                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-medium focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none"
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowOverrideModal(false)}
+                                className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-350 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveOverride}
+                                disabled={isSavingOverride || directoryStudentsForOverride.length === 0}
+                                className="px-5 py-2 text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/25 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                            >
+                                {isSavingOverride ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                {isSavingOverride ? 'Saving...' : 'Confirm Makeup'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -3658,6 +3862,13 @@ export default function ClassroomDashboardPage({
                                     <p className="text-slate-500 dark:text-slate-400 mt-1">Managing {students.length} students in {classroom.name}</p>
                                 </div>
                                 <div className="flex gap-3">
+                                    <button
+                                        onClick={openMakeupModal}
+                                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition-all shadow-md shadow-emerald-600/20"
+                                    >
+                                        <Calendar className="w-5 h-5" />
+                                        Schedule Makeup
+                                    </button>
                                     <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm">
                                         <Mail className="w-5 h-5" />
                                         Message All
@@ -3777,6 +3988,87 @@ export default function ClassroomDashboardPage({
                                             Next
                                         </button>
                                     </div>
+                                </div>
+                            </div>
+
+                            {/* Temporary Session overrides (Makeup Classes) Section */}
+                            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-6">
+                                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                                    <div>
+                                        <h4 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                            <Calendar className="w-5 h-5 text-emerald-600" />
+                                            Temporary Session Allocations / Makeups
+                                        </h4>
+                                        <p className="text-xs text-slate-500 mt-1">Students assigned to this classroom for a single class date (e.g. makeup sessions).</p>
+                                    </div>
+                                    <button
+                                        onClick={openMakeupModal}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:hover:bg-emerald-950/40 font-bold text-xs transition-colors"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" />
+                                        Add Makeup
+                                    </button>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                                                <th className="px-6 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Student</th>
+                                                <th className="px-6 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Class Date</th>
+                                                <th className="px-6 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Reason / Notes</th>
+                                                <th className="px-6 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                            {sessionOverrides.map(override => (
+                                                <tr key={override.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden border border-slate-200 dark:border-slate-600 flex items-center justify-center">
+                                                                {override.users?.profile_pic_url ? (
+                                                                    <img alt={override.users?.name} className="w-full h-full object-cover" src={override.users?.profile_pic_url} loading="lazy" />
+                                                                ) : (
+                                                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{override.users?.name?.charAt(0) || 'U'}</span>
+                                                                )}
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-sm font-bold text-slate-900 dark:text-white">{override.users?.name || 'Unknown'}</span>
+                                                                <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">{override.users?.level || 'Beginner'}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                                                            {new Date(override.override_date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm font-medium text-slate-600 dark:text-slate-400 italic">
+                                                        {override.reason || 'No details provided'}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <button
+                                                            onClick={() => handleDeleteOverride(override.id)}
+                                                            disabled={isDeletingOverrideId === override.id}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50"
+                                                            title="Cancel temporary allocation"
+                                                        >
+                                                            {isDeletingOverrideId === override.id
+                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                : <Trash2 className="w-3.5 h-3.5" />}
+                                                            Cancel Roster Booking
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {sessionOverrides.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={4} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
+                                                        <p className="text-slate-500 dark:text-slate-400 text-xs italic">No temporary overrides or makeup bookings scheduled for this class.</p>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
 

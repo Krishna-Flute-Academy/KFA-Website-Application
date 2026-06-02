@@ -81,7 +81,23 @@ export default function MeetingPage() {
                             .from('classroom_students')
                             .select('student_id, users!student_id(name, profile_pic_url)')
                             .eq('classroom_id', classroomId);
-                        roster = permRoster || [];
+                        const permList = permRoster || [];
+
+                        const { data: overrideRoster } = await supabaseAuth
+                            .from('session_student_overrides')
+                            .select('student_id, users!student_id(name, profile_pic_url)')
+                            .eq('target_classroom_id', classroomId)
+                            .eq('override_date', sessionDate);
+                        
+                        const overrideList = (overrideRoster || []).map((row: any) => ({
+                            ...row,
+                            users: {
+                                ...row.users,
+                                name: `${row.users?.name || 'Unknown'} (Makeup)`
+                            }
+                        }));
+
+                        roster = [...permList, ...overrideList];
                     }
                 }
 

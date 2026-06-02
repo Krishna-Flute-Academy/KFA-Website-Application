@@ -321,17 +321,30 @@ export default function TeacherDashboard() {
             const results: { [key: string]: PanelStudent[] } = {};
             await Promise.all(evts.map(async (evt) => {
                 if (evt.type === 'recurring' && evt.classroom_id) {
-                    const { data } = await supabaseAuth
+                    const { data: enrolledData } = await supabaseAuth
                         .from('classroom_students')
                         .select('users!student_id(id, name, profile_pic_url)')
                         .eq('classroom_id', evt.classroom_id);
-                    if (data) {
-                        results[evt.id] = (data as any[]).map(d => ({
-                            id: d.users?.id || '',
-                            name: d.users?.name || 'Unknown',
-                            profile_pic_url: d.users?.profile_pic_url
-                        }));
-                    }
+                    
+                    const { data: overrideData } = await supabaseAuth
+                        .from('session_student_overrides')
+                        .select('users!student_id(id, name, profile_pic_url)')
+                        .eq('target_classroom_id', evt.classroom_id)
+                        .eq('override_date', dateStr);
+
+                    const enrolledList = (enrolledData as any[] || []).map(d => ({
+                        id: d.users?.id || '',
+                        name: d.users?.name || 'Unknown',
+                        profile_pic_url: d.users?.profile_pic_url
+                    }));
+
+                    const overrideList = (overrideData as any[] || []).map(d => ({
+                        id: d.users?.id || '',
+                        name: `${d.users?.name || 'Unknown'} (Makeup)`,
+                        profile_pic_url: d.users?.profile_pic_url
+                    }));
+
+                    results[evt.id] = [...enrolledList, ...overrideList];
                 } else if (evt.type === 'temporary' && evt.id) {
                     const { data } = await supabaseAuth
                         .from('temporary_class_students')

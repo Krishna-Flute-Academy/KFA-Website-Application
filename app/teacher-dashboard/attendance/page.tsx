@@ -261,11 +261,18 @@ export default function AttendancePage() {
                     // Fetch roster counts
                     let total = 0;
                     if (batch.type === 'permanent') {
-                        const { count } = await supabaseAuth
+                        const { count: enrolledCount } = await supabaseAuth
                             .from('classroom_students')
                             .select('*', { count: 'exact', head: true })
                             .eq('classroom_id', batch.id);
-                        total = count || 0;
+                        
+                        const { count: overrideCount } = await supabaseAuth
+                            .from('session_student_overrides')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('target_classroom_id', batch.id)
+                            .eq('override_date', selectedDate);
+                        
+                        total = (enrolledCount || 0) + (overrideCount || 0);
                     } else {
                         const tempClass = temporaryClasses.find(tc => tc.classroom_id === batch.id || tc.id === batch.id);
                         const tempId = tempClass?.id || batch.id;
@@ -340,11 +347,26 @@ export default function AttendancePage() {
                         .select('student_id, users!student_id(name, profile_pic_url)')
                         .eq('classroom_id', batchId);
                     
-                    roster = (permanentStudents || []).map((row: any) => ({
+                    const permRoster = (permanentStudents || []).map((row: any) => ({
                         id: row.student_id,
                         name: row.users?.name || 'Unknown Student',
                         profile_pic_url: row.users?.profile_pic_url
                     }));
+
+                    // Fetch temporary session override (makeup) students for this date
+                    const { data: overrideStudents } = await supabaseAuth
+                        .from('session_student_overrides')
+                        .select('student_id, users!student_id(name, profile_pic_url)')
+                        .eq('target_classroom_id', batchId)
+                        .eq('override_date', selectedDate);
+
+                    const tempRoster = (overrideStudents || []).map((row: any) => ({
+                        id: row.student_id,
+                        name: `${row.users?.name || 'Unknown Student'} (Makeup)`,
+                        profile_pic_url: row.users?.profile_pic_url
+                    }));
+
+                    roster = [...permRoster, ...tempRoster];
                 } else {
                     const tempClass = temporaryClasses.find(tc => tc.classroom_id === batchId || tc.id === batchId);
                     const tempId = tempClass?.id || batchId;
