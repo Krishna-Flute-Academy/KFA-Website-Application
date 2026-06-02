@@ -95,13 +95,15 @@ export default function ClassroomDashboardPage({
     sessionType = 'online',
     sessionDate = '',
     secondsElapsed = 0,
-    onEndSession = () => {}
+    onEndSession = () => {},
+    onMinimizeSession = () => {}
 }: {
     isMeetingView?: boolean;
     sessionType?: 'online' | 'offline';
     sessionDate?: string;
     secondsElapsed?: number;
     onEndSession?: () => void;
+    onMinimizeSession?: () => void;
 } = {}) {
     const router = useRouter();
     const params = useParams();
@@ -2064,7 +2066,7 @@ export default function ClassroomDashboardPage({
                 {isMeetingView ? (
                     <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between px-8 py-4 gap-4 flex-shrink-0 shadow-sm">
                         <div className="flex items-center gap-3 text-left">
-                            <button onClick={onEndSession} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <button onClick={onMinimizeSession || onEndSession} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Minimize and go back to dashboard">
                                 <ArrowLeft size={18} />
                             </button>
                             <div className="text-left">

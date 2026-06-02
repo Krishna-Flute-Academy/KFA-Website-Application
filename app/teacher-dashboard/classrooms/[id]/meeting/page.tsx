@@ -98,6 +98,25 @@ export default function MeetingPage() {
         init();
     }, [classroomId, router]);
 
+    // Restore active session details from localStorage if present
+    useEffect(() => {
+        const activeSessionStr = localStorage.getItem('active_class_session');
+        if (activeSessionStr) {
+            try {
+                const activeSession = JSON.parse(activeSessionStr);
+                if (activeSession.classroomId === classroomId) {
+                    setSessionType(activeSession.sessionType);
+                    setSessionDate(activeSession.sessionDate);
+                    const elapsed = Math.floor((Date.now() - activeSession.startedAt) / 1000);
+                    setSecondsElapsed(elapsed > 0 ? elapsed : 0);
+                    setStep(3);
+                }
+            } catch (e) {
+                console.error('Failed to parse active session from localStorage:', e);
+            }
+        }
+    }, [classroomId]);
+
     // ── Update attendance when date changes ──────────────────────────────
     useEffect(() => {
         if (isFirstRender.current) {
@@ -180,6 +199,16 @@ export default function MeetingPage() {
                 .upsert(rows, { onConflict: 'student_id, classroom_id, date' });
 
             if (error) throw error;
+
+            // Save active session info to localStorage for floating PIP widget support
+            localStorage.setItem('active_class_session', JSON.stringify({
+                classroomId,
+                classroomName,
+                sessionType: sessionType || 'online',
+                sessionDate,
+                startedAt: Date.now()
+            }));
+
             setStep(3);
         } catch (err: any) {
             console.error('Error saving attendance:', err);
@@ -204,7 +233,11 @@ export default function MeetingPage() {
                 sessionType={sessionType || 'online'}
                 sessionDate={sessionDate}
                 secondsElapsed={secondsElapsed}
-                onEndSession={() => router.push(`/teacher-dashboard/classrooms/${classroomId}`)}
+                onMinimizeSession={() => router.push(`/teacher-dashboard/classrooms/${classroomId}`)}
+                onEndSession={() => {
+                    localStorage.removeItem('active_class_session');
+                    router.push(`/teacher-dashboard/classrooms/${classroomId}`);
+                }}
             />
         );
     }
