@@ -129,10 +129,10 @@ export default function ClassroomDashboardPage({
         }
     }, [classroom, messageSubject]);
 
-    // Fetch broadcasts for this class in meeting view
+    // Fetch broadcasts for this class
     useEffect(() => {
-        if (!isMeetingView || !teacherProfile || !classroomId) return;
-        const fetchMeetingBroadcasts = async () => {
+        if (!teacherProfile || !classroomId) return;
+        const fetchClassroomBroadcasts = async () => {
             try {
                 const { data: broadcastsData } = await supabaseAuth
                     .from('broadcasts')
@@ -147,11 +147,11 @@ export default function ClassroomDashboardPage({
                     setClassBroadcasts(classroomBroads);
                 }
             } catch (e) {
-                console.error('Failed to load meeting broadcasts:', e);
+                console.error('Failed to load classroom broadcasts:', e);
             }
         };
-        fetchMeetingBroadcasts();
-    }, [isMeetingView, teacherProfile, classroomId]);
+        fetchClassroomBroadcasts();
+    }, [teacherProfile, classroomId]);
 
     // Send broadcast handler
     const handleSendClassMessage = async (e: React.FormEvent) => {
@@ -221,6 +221,7 @@ export default function ClassroomDashboardPage({
 
     // ── Add-from-Directory modal ──────────────────────────────────────────────
     const [showDirectoryModal, setShowDirectoryModal] = useState(false);
+    const [showMessageModal, setShowMessageModal] = useState(false);
     const [directoryStudents, setDirectoryStudents] = useState<DirectoryStudent[]>([]);
     const [directorySearch, setDirectorySearch] = useState('');
     const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
@@ -1872,6 +1873,78 @@ export default function ClassroomDashboardPage({
                 </div>
             )}
 
+            {/* ── Message to Class Modal ─────────────────────────────────────────── */}
+            {showMessageModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200 text-left">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-[#ecb613]/10 flex items-center justify-center">
+                                    <MessageSquare className="w-5 h-5 text-[#ecb613]" />
+                                </div>
+                                <div className="text-left">
+                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Message All Students</h3>
+                                    <p className="text-xs text-slate-500">Send an announcement broadcast to <span className="font-semibold">{classroom?.name}</span></p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowMessageModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Composer Form */}
+                        <form onSubmit={async (e) => {
+                            e.preventDefault();
+                            await handleSendClassMessage(e);
+                            setShowMessageModal(false);
+                        }} className="p-6 space-y-4 overflow-y-auto">
+                            <div>
+                                <label className="block text-xs font-black text-slate-500 uppercase tracking-wide mb-2">Subject</label>
+                                <input
+                                    type="text"
+                                    value={messageSubject}
+                                    onChange={(e) => setMessageSubject(e.target.value)}
+                                    placeholder="e.g. Important Class Update"
+                                    required
+                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#ecb613] focus:border-[#ecb613] outline-none transition-all placeholder:text-slate-400"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-black text-slate-500 uppercase tracking-wide mb-2">Message Content</label>
+                                <textarea
+                                    rows={5}
+                                    value={messageContent}
+                                    onChange={(e) => setMessageContent(e.target.value)}
+                                    placeholder="Type your message here... All enrolled students will see this in their Portal."
+                                    required
+                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#ecb613] focus:border-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-medium"
+                                />
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMessageModal(false)}
+                                    className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSendingMessage || !messageContent.trim() || !messageSubject.trim()}
+                                    className="px-5 py-2 rounded-lg text-sm font-bold bg-[#ecb613] text-slate-900 hover:bg-[#ecb613]/90 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                >
+                                    {isSendingMessage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                    {isSendingMessage ? 'Sending...' : 'Send Message'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {!isMeetingView && (
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
             )}
@@ -2119,6 +2192,53 @@ export default function ClassroomDashboardPage({
                                 </div>
                             </div>
 
+                            {/* Classroom Announcements & Messages Card */}
+                            {!isMeetingView && (
+                                <div className="col-span-12 lg:col-span-8 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <div className="text-left">
+                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Classroom Announcements</h3>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Broadcast log of messages kept in Messages Center</p>
+                                        </div>
+                                        <button 
+                                            onClick={() => router.push('/teacher-dashboard/messages')} 
+                                            className="text-[#ecb613] text-sm font-semibold hover:underline flex items-center gap-1 shrink-0"
+                                        >
+                                            Open Messages Center <ExternalLink size={14} />
+                                        </button>
+                                    </div>
+                                    <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                                        {classBroadcasts.map((bc, idx) => (
+                                            <div key={bc.id || idx} className="p-4 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800/60 text-xs hover:border-[#ecb613] transition-colors relative text-left">
+                                                <div className="flex justify-between items-center gap-2 mb-1.5 text-left">
+                                                    <span className="font-bold text-sm text-slate-900 dark:text-white truncate">{bc.subject}</span>
+                                                    <span className="text-[10px] text-slate-400 font-semibold shrink-0">
+                                                        {new Date(bc.created_at).toLocaleDateString('en-US', {
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit'
+                                                        })}
+                                                    </span>
+                                                </div>
+                                                <p className="text-slate-650 dark:text-slate-450 leading-relaxed font-medium whitespace-pre-wrap text-left">{bc.content}</p>
+                                            </div>
+                                        ))}
+                                        {classBroadcasts.length === 0 && (
+                                            <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                                                <p className="text-slate-500 text-sm font-medium">No messages sent to this class yet.</p>
+                                                <button 
+                                                    onClick={() => setShowMessageModal(true)} 
+                                                    className="mt-2 text-xs font-bold text-[#ecb613] hover:underline"
+                                                >
+                                                    Send your first message
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Stats Card */}
                             <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
                                 <div className="bg-[#ecb613] dark:bg-[#ecb613]/90 p-6 rounded-2xl text-slate-900 relative overflow-hidden shadow-lg shadow-[#ecb613]/20">
@@ -2169,9 +2289,12 @@ export default function ClassroomDashboardPage({
                                             <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
-                                            <button className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center">
-                                                <Mail className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
-                                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Email All</span>
+                                            <button 
+                                                onClick={() => setShowMessageModal(true)}
+                                                className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center"
+                                            >
+                                                <MessageSquare className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
+                                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Message All</span>
                                             </button>
                                             <Link 
                                                 href={`/teacher-dashboard/classrooms/${classroomId}/meeting`}
