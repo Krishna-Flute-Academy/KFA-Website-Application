@@ -36,6 +36,14 @@ function calculateDuration(startTime: string, endTime: string) {
     return `${mins} mins`;
 }
 
+function getCleanDescription(desc: string) {
+    if (!desc) return '';
+    return desc
+        .replace(/\[delivery_format:(online|offline)\]/g, '')
+        .replace(/\[class_logs:[\s\S]*?\]/g, '')
+        .trim();
+}
+
 interface Classroom {
     id: string;
     name: string;
@@ -85,6 +93,8 @@ export default function ClassroomsPage() {
 
     const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [isDeletingMultiple, setIsDeletingMultiple] = useState(false);
 
     // Auto-dismiss toast notification after 3 seconds
     useEffect(() => {
@@ -127,6 +137,55 @@ export default function ClassroomsPage() {
             });
         } finally {
             setIsDeletingId(null);
+        }
+    };
+
+    const handleDeleteMultiple = async () => {
+        const count = selectedIds.length;
+        if (count === 0) return;
+        const confirmMsg = `Are you sure you want to delete the ${count} selected classrooms? This will permanently delete the classes and all associated schedule/student data.`;
+        if (!window.confirm(confirmMsg)) return;
+
+        setIsDeletingMultiple(true);
+        try {
+            // Find which selected IDs are permanent and which are temporary
+            const permanentIds = classrooms.filter(c => selectedIds.includes(c.id)).map(c => c.id);
+            const temporaryIds = tempClassrooms.filter(tc => selectedIds.includes(tc.id)).map(tc => tc.id);
+
+            // Trigger deletes using Promise.all or direct queries
+            if (permanentIds.length > 0) {
+                const { error: permErr } = await supabaseAuth
+                    .from('classrooms')
+                    .delete()
+                    .in('id', permanentIds);
+                if (permErr) throw permErr;
+            }
+
+            if (temporaryIds.length > 0) {
+                const { error: tempErr } = await supabaseAuth
+                    .from('temporary_classes')
+                    .delete()
+                    .in('id', temporaryIds);
+                if (tempErr) throw tempErr;
+            }
+
+            // Sync local React states
+            setClassrooms(prev => prev.filter(c => !selectedIds.includes(c.id)));
+            setTempClassrooms(prev => prev.filter(tc => !selectedIds.includes(tc.id)));
+
+            setToast({
+                type: 'success',
+                message: `Successfully deleted ${count} classrooms!`
+            });
+            setSelectedIds([]);
+        } catch (err: any) {
+            console.error('Error deleting multiple classrooms:', err);
+            setToast({
+                type: 'error',
+                message: `Failed to delete classrooms: ${err.message || err}`
+            });
+        } finally {
+            setIsDeletingMultiple(false);
         }
     };
 
@@ -198,7 +257,7 @@ export default function ClassroomsPage() {
                         schedule: scheduleMap[room.id] || room.schedule || 'No schedule set',
                         student_count: count || 0,
                         status: 'Active',
-                        type: 'permanent' as const
+                        type: room.type || 'permanent'
                     };
                 }));
 
@@ -552,6 +611,18 @@ export default function ClassroomsPage() {
                                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
                                             }`}>
                                                 <div className="flex items-center gap-4">
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={selectedIds.includes(room.id)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setSelectedIds(prev => [...prev, room.id]);
+                                                            } else {
+                                                                setSelectedIds(prev => prev.filter(id => id !== room.id));
+                                                            }
+                                                        }}
+                                                        className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 mr-2"
+                                                    />
                                                     <div className={`w-12 h-12 rounded-xl ${styleConfig.bg} flex items-center justify-center ${styleConfig.text}`}>
                                                         <IconComponent className="size-6" />
                                                     </div>
@@ -576,7 +647,7 @@ export default function ClassroomsPage() {
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{room.description}</p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{getCleanDescription(room.description)}</p>
                                                         <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
                                                             <span className="flex items-center gap-1"><Users className="size-4 text-slate-400" /> {room.student_count} Enrolled</span>
                                                             <span className="flex items-center gap-1">
@@ -672,6 +743,20 @@ export default function ClassroomsPage() {
                                     <table className="w-full text-left border-collapse min-w-[800px]">
                                         <thead>
                                             <tr className="bg-slate-100/50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                                                <th className="px-6 py-4 w-12 text-center">
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={displayedClassrooms.length > 0 && selectedIds.length === displayedClassrooms.length}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setSelectedIds(displayedClassrooms.map(c => c.id));
+                                                            } else {
+                                                                setSelectedIds([]);
+                                                            }
+                                                        }}
+                                                        className="rounded border-slate-350 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
+                                                    />
+                                                </th>
                                                 <th className="px-6 py-4 text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Class Name</th>
                                                 <th className="px-6 py-4 text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Enrollment</th>
                                                 <th className="px-6 py-4 text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Schedule</th>
@@ -689,7 +774,7 @@ export default function ClassroomsPage() {
                                                 ];
                                                 const styleConfig = iconColors[idx % iconColors.length];
                                                 const IconComponent = styleConfig.icon;
-                                                const isOnline = idx % 2 !== 0;
+                                                const isOnline = room.description?.includes('[delivery_format:online]');
 
                                                 const mockTime = room.schedule && room.schedule.includes('•') ? room.schedule.split('•') : [room.schedule || 'Days Not Set', '09:00 AM - 10:30 AM'];
                                                 const days = mockTime[0]?.trim() || 'Mon, Wed';
@@ -702,6 +787,20 @@ export default function ClassroomsPage() {
                                                             ? 'bg-rose-50/15 dark:bg-rose-950/10 hover:bg-rose-50/20 dark:hover:bg-rose-950/15'
                                                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 even:bg-slate-50/30 dark:even:bg-slate-800/20'
                                                     }`}>
+                                                        <td className="px-6 py-6 w-12 text-center">
+                                                            <input 
+                                                                type="checkbox"
+                                                                checked={selectedIds.includes(room.id)}
+                                                                onChange={(e) => {
+                                                                    if (e.target.checked) {
+                                                                        setSelectedIds(prev => [...prev, room.id]);
+                                                                    } else {
+                                                                        setSelectedIds(prev => prev.filter(id => id !== room.id));
+                                                                    }
+                                                                }}
+                                                                className="rounded border-slate-350 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
+                                                            />
+                                                        </td>
                                                         <td className="px-6 py-6">
                                                             <div className="flex items-center gap-4">
                                                                 <div className={`w-10 h-10 rounded-lg ${styleConfig.bg} flex items-center justify-center ${styleConfig.text}`}>
@@ -837,7 +936,7 @@ export default function ClassroomsPage() {
                                             })}
                                             {displayedClassrooms.length === 0 && (
                                                 <tr>
-                                                    <td colSpan={5} className="px-6 py-12 text-center">
+                                                    <td colSpan={6} className="px-6 py-12 text-center">
                                                         {activeView === 'today' ? (
                                                             <div className="flex flex-col items-center justify-center py-6">
                                                                 <div className="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-950/20 flex items-center justify-center text-[#ecb613] mb-3">
@@ -941,6 +1040,35 @@ export default function ClassroomsPage() {
                         </>
                     )}
                 </div>
+                {/* Floating bulk actions bar */}
+                {selectedIds.length > 0 && (
+                    <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[250] bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-2xl px-6 py-4 rounded-full flex items-center gap-6 animate-in fade-in slide-in-from-bottom-6 duration-300 backdrop-blur-md">
+                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                            <span className="text-[#ecb613] font-black mr-1">{selectedIds.length}</span> classes selected
+                        </span>
+                        <div className="h-5 w-px bg-slate-200 dark:bg-slate-700"></div>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={handleDeleteMultiple}
+                                disabled={isDeletingMultiple}
+                                className="px-4 py-2 bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white text-xs font-bold rounded-full transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                            >
+                                {isDeletingMultiple ? (
+                                    <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                    <Trash2 className="size-3.5" />
+                                )}
+                                Delete Selected
+                            </button>
+                            <button
+                                onClick={() => setSelectedIds([])}
+                                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold rounded-full transition-all active:scale-95"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {/* Global floating toast notification */}
                 {toast && (
                     <div className="fixed bottom-6 right-6 z-[300] bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-800 dark:border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-sm select-text">
