@@ -587,10 +587,21 @@ export default function ClassroomsPage() {
                                                                     <IconComponent className="size-5" />
                                                                 </div>
                                                                 <div>
-                                                                    <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
-                                                                        {room.name}
-                                                                    </Link>
-                                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">ID: {room.id.substring(0, 8).toUpperCase()}</p>
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
+                                                                            {room.name}
+                                                                        </Link>
+                                                                        {room.type === 'temporary' ? (
+                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400 tracking-wider">
+                                                                                ⚡ Temporary
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400 tracking-wider">
+                                                                                👥 Permanent
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">ID: {room.id.substring(0, 8).toUpperCase()}</p>
                                                                 </div>
                                                             </div>
                                                         </td>
