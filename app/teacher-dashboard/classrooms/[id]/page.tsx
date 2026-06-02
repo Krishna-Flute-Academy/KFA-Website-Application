@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink, Unlock, Sliders, MessageSquare, Share2, LogOut } from 'lucide-react';
+import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, TrendingUp, Zap, Star, MoreVertical, Lightbulb, Edit3, PlusCircle, PlayCircle, FileUp, Plus, Clock, Trash2, Calendar, GripVertical, CheckCircle, Circle, FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, BarChart2, X, BookOpen, Upload, StickyNote, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Filter, Tag, User, UsersRound, Paperclip, Send, NotebookPen, ClipboardList, Download, ExternalLink, Unlock, Sliders, MessageSquare, Share2, LogOut, Check, Info } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { CourseCategory, INITIAL_CATEGORIES, INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
@@ -242,6 +242,16 @@ export default function ClassroomDashboardPage({
     const [showDirectoryModal, setShowDirectoryModal] = useState(false);
     const [showMessageModal, setShowMessageModal] = useState(false);
     const [messageNotification, setMessageNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    // Auto-dismiss notification toast after 3 seconds
+    useEffect(() => {
+        if (messageNotification) {
+            const timer = setTimeout(() => {
+                setMessageNotification(null);
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [messageNotification]);
     const [selectedAnnouncement, setSelectedAnnouncement] = useState<any | null>(null);
     const [announcementSearchQuery, setAnnouncementSearchQuery] = useState('');
 
@@ -1958,12 +1968,6 @@ export default function ClassroomDashboardPage({
                                 />
                             </div>
 
-                            {messageNotification && messageNotification.type === 'error' && (
-                                <div className="p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 animate-in fade-in duration-200">
-                                    <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
-                                    <span>{messageNotification.text}</span>
-                                </div>
-                            )}
 
                             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                                 <button
@@ -2218,20 +2222,7 @@ export default function ClassroomDashboardPage({
                                                 )}
                                             </button>
 
-                                            {messageNotification && (
-                                                <div className={`p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 mt-3 ${
-                                                    messageNotification.type === 'success'
-                                                        ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400'
-                                                        : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400'
-                                                } animate-in fade-in duration-200`}>
-                                                    {messageNotification.type === 'success' ? (
-                                                        <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-                                                    ) : (
-                                                        <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
-                                                    )}
-                                                    <span>{messageNotification.text}</span>
-                                                </div>
-                                            )}
+                                            
                                         </form>
                                     </div>
 
@@ -5640,25 +5631,13 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
 
                 {/* Global floating message notification toast */}
                 {messageNotification && (
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] max-w-md w-full px-4 animate-in fade-in slide-in-from-bottom-5 duration-300">
-                        <div className={`p-4 rounded-xl shadow-xl flex items-center gap-3 border ${
-                            messageNotification.type === 'success'
-                                ? 'bg-emerald-50/90 dark:bg-emerald-950/90 border-emerald-250 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-                                : 'bg-rose-50/90 dark:bg-rose-950/90 border-rose-250 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-                        } backdrop-blur-md`}>
-                            {messageNotification.type === 'success' ? (
-                                <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
-                            ) : (
-                                <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
-                            )}
-                            <span className="text-xs font-bold text-left flex-1 leading-snug">{messageNotification.text}</span>
-                            <button 
-                                onClick={() => setMessageNotification(null)}
-                                className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-current/60 hover:text-current transition-colors"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
+                    <div className="fixed bottom-6 right-6 z-[300] bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-800 dark:border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-sm select-text">
+                        {messageNotification.type === 'success' ? (
+                            <Check className="w-5 h-5 text-emerald-500 shrink-0" />
+                        ) : (
+                            <Info className="w-5 h-5 text-red-500 shrink-0" />
+                        )}
+                        <p className="text-xs font-bold leading-relaxed">{messageNotification.text}</p>
                     </div>
                 )}
             </main>
