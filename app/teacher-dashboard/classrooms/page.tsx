@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, Search, ChevronLeft, ChevronRight, PlusCircle, Filter, Calendar, List, MapPin, Activity, Link as LinkIcon, Mic, Disc, Music } from 'lucide-react';
+import { Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, Search, ChevronLeft, ChevronRight, PlusCircle, Filter, Calendar, List, MapPin, Activity, Link as LinkIcon, Mic, Disc, Music, Trash2, Check, Info } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
@@ -17,6 +17,23 @@ function formatTime12hr(time24: string) {
     hours = hours ? hours : 12;
     const hStr = hours.toString().padStart(2, '0');
     return `${hStr}:${m} ${ampm}`;
+}
+
+function calculateDuration(startTime: string, endTime: string) {
+    if (!startTime || !endTime) return '';
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [eh, em] = endTime.split(':').map(Number);
+    if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return '';
+    let diffMins = (eh * 60 + em) - (sh * 60 + sm);
+    if (diffMins < 0) diffMins += 24 * 60; // handle overnight transition
+    
+    const hrs = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    
+    if (hrs > 0) {
+        return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+    }
+    return `${mins} mins`;
 }
 
 interface Classroom {
@@ -65,6 +82,53 @@ export default function ClassroomsPage() {
         const interval = setInterval(checkActiveSession, 2000);
         return () => clearInterval(interval);
     }, []);
+
+    const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+
+    // Auto-dismiss toast notification after 3 seconds
+    useEffect(() => {
+        if (toast) {
+            const timer = setTimeout(() => setToast(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [toast]);
+
+    const handleDeleteClassroom = async (room: any) => {
+        const confirmMsg = `Are you sure you want to delete the ${room.type === 'permanent' ? 'permanent class' : 'temporary session'} "${room.name}"? This will permanently delete the class and all associated data.`;
+        if (!window.confirm(confirmMsg)) return;
+
+        setIsDeletingId(room.id);
+        try {
+            const table = room.type === 'permanent' ? 'classrooms' : 'temporary_classes';
+            const { error } = await supabaseAuth
+                .from(table)
+                .delete()
+                .eq('id', room.id);
+
+            if (error) throw error;
+
+            // Remove from local state
+            if (room.type === 'permanent') {
+                setClassrooms(prev => prev.filter(c => c.id !== room.id));
+            } else {
+                setTempClassrooms(prev => prev.filter(c => c.id !== room.id));
+            }
+
+            setToast({
+                type: 'success',
+                message: `Classroom "${room.name}" deleted successfully!`
+            });
+        } catch (err: any) {
+            console.error('Error deleting classroom:', err);
+            setToast({
+                type: 'error',
+                message: `Failed to delete classroom: ${err.message || err}`
+            });
+        } finally {
+            setIsDeletingId(null);
+        }
+    };
 
     useEffect(() => {
         const fetchData = async () => {
@@ -282,6 +346,15 @@ export default function ClassroomsPage() {
             (room.description && room.description.toLowerCase().includes(lowerQ))
         );
     }
+
+    // Sort active ongoing classes above all others
+    displayedClassrooms = [...displayedClassrooms].sort((a, b) => {
+        const isOngoingA = activeSession && activeSession.classroomId === a.id;
+        const isOngoingB = activeSession && activeSession.classroomId === b.id;
+        if (isOngoingA && !isOngoingB) return -1;
+        if (!isOngoingA && isOngoingB) return 1;
+        return 0;
+    });
 
     return (
         <div className="flex min-h-screen bg-[#f8f8f6] dark:bg-[#221d10] text-[#0f172a] dark:text-slate-100 font-sans">
@@ -506,7 +579,10 @@ export default function ClassroomsPage() {
                                                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{room.description}</p>
                                                         <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
                                                             <span className="flex items-center gap-1"><Users className="size-4 text-slate-400" /> {room.student_count} Enrolled</span>
-                                                            <span className="flex items-center gap-1"><Clock className="size-4 text-slate-400" /> {room.displayTime}</span>
+                                                            <span className="flex items-center gap-1">
+                                                                <Clock className="size-4 text-slate-400" />
+                                                                {room.displayTime} {room.start_time && room.end_time && `(${calculateDuration(room.start_time, room.end_time)})`}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -530,6 +606,14 @@ export default function ClassroomsPage() {
                                                             </button>
                                                         </Link>
                                                     )}
+                                                    <button
+                                                        onClick={() => handleDeleteClassroom(room)}
+                                                        disabled={isDeletingId === room.id}
+                                                        className="p-2.5 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed animate-in fade-in"
+                                                        title="Delete class"
+                                                    >
+                                                        <Trash2 className="size-4" />
+                                                    </button>
                                                 </div>
                                             </div>
                                         );
@@ -661,12 +745,48 @@ export default function ClassroomsPage() {
                                                             </div>
                                                         </td>
                                                         <td className="px-6 py-6">
-                                                            <div className="flex flex-col">
-                                                                <span className="text-sm font-bold text-slate-900 dark:text-white">{days}</span>
-                                                                <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2.5 py-0.5 rounded-full inline-block w-fit mt-1">
-                                                                    {times}
-                                                                </span>
-                                                            </div>
+                                                             {activeView === 'today' ? (
+                                                                 <div className="flex flex-col bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 min-w-[150px] text-left">
+                                                                     <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Today</span>
+                                                                     <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">
+                                                                         {room.start_time ? formatTime12hr(room.start_time.slice(0, 5)) : ''} - {room.end_time ? formatTime12hr(room.end_time.slice(0, 5)) : ''}
+                                                                     </span>
+                                                                     <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">
+                                                                         Duration: {room.start_time && room.end_time ? calculateDuration(room.start_time, room.end_time) : ''}
+                                                                     </span>
+                                                                 </div>
+                                                             ) : room.type === 'temporary' ? (
+                                                                 <div className="flex flex-col bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 min-w-[150px] text-left">
+                                                                     <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wide">
+                                                                         {new Date(room.class_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                                     </span>
+                                                                     <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">
+                                                                         {room.start_time ? formatTime12hr(room.start_time.slice(0, 5)) : ''} - {room.end_time ? formatTime12hr(room.end_time.slice(0, 5)) : ''}
+                                                                     </span>
+                                                                     <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">
+                                                                         Duration: {room.start_time && room.end_time ? calculateDuration(room.start_time, room.end_time) : ''}
+                                                                     </span>
+                                                                 </div>
+                                                             ) : (
+                                                                 <div className="flex flex-col gap-1.5 min-w-[150px]">
+                                                                     {rawSchedules.filter(s => s.classroom_id === room.id).map((sched, sIdx) => {
+                                                                         const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][sched.day_of_week];
+                                                                         const start = formatTime12hr(sched.start_time.slice(0, 5));
+                                                                         const end = formatTime12hr(sched.end_time.slice(0, 5));
+                                                                         const duration = calculateDuration(sched.start_time, sched.end_time);
+                                                                         return (
+                                                                             <div key={sIdx} className="flex flex-col bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 text-left">
+                                                                                 <span className="text-[10px] font-black text-[#b45309] dark:text-[#ecb613] uppercase tracking-wide">{dayName}</span>
+                                                                                 <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">{start} - {end}</span>
+                                                                                 <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">Duration: {duration}</span>
+                                                                             </div>
+                                                                         );
+                                                                     })}
+                                                                     {rawSchedules.filter(s => s.classroom_id === room.id).length === 0 && (
+                                                                         <span className="text-slate-400 dark:text-slate-600 text-xs font-semibold">No schedule set</span>
+                                                                     )}
+                                                                 </div>
+                                                             )}
                                                         </td>
                                                         <td className="px-6 py-6">
                                                             {isOnline ? (
@@ -702,6 +822,14 @@ export default function ClassroomsPage() {
                                                                         </button>
                                                                     </Link>
                                                                 )}
+                                                                <button
+                                                                    onClick={() => handleDeleteClassroom(room)}
+                                                                    disabled={isDeletingId === room.id}
+                                                                    className="p-2 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed animate-in fade-in"
+                                                                    title="Delete class"
+                                                                >
+                                                                    <Trash2 className="size-4" />
+                                                                </button>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -808,15 +936,22 @@ export default function ClassroomsPage() {
                                             </button>
                                         </div>
                                     </div>
-                                    <div className="mt-8 rounded-xl overflow-hidden bg-slate-900 relative">
-                                        <div className="absolute inset-0 bg-[#ecb613]/20 mix-blend-overlay"></div>
-                                        <img alt="Music background" className="w-full h-24 object-cover grayscale opacity-50 contrast-125 hover:scale-105 transition-transform duration-700" src="https://images.unsplash.com/photo-1511192336575-5a79af67a629?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"/>
                                     </div>
                                 </div>
-                            </div>
                         </>
                     )}
                 </div>
+                {/* Global floating toast notification */}
+                {toast && (
+                    <div className="fixed bottom-6 right-6 z-[300] bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-800 dark:border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-sm select-text">
+                        {toast.type === 'success' ? (
+                            <Check className="w-5 h-5 text-emerald-500 shrink-0" />
+                        ) : (
+                            <Info className="w-5 h-5 text-red-500 shrink-0" />
+                        )}
+                        <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
+                    </div>
+                )}
             </main>
         </div>
     );
