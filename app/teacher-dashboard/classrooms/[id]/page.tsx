@@ -221,6 +221,7 @@ export default function ClassroomDashboardPage({
 
     const [showDirectoryModal, setShowDirectoryModal] = useState(false);
     const [showMessageModal, setShowMessageModal] = useState(false);
+    const [selectedAnnouncement, setSelectedAnnouncement] = useState<any | null>(null);
     const [announcementSearchQuery, setAnnouncementSearchQuery] = useState('');
 
     const filteredAnnouncements = useMemo(() => {
@@ -1955,6 +1956,75 @@ export default function ClassroomDashboardPage({
                 </div>
             )}
 
+            {/* ── Announcement Details Modal ────────────────────────────────────── */}
+            {selectedAnnouncement && (
+                <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200 text-left">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-[#ecb613]/10 flex items-center justify-center">
+                                    <MessageSquare className="w-5 h-5 text-[#ecb613]" />
+                                </div>
+                                <div className="text-left">
+                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Announcement Details</h3>
+                                    <p className="text-xs text-slate-500">Sent on {new Date(selectedAnnouncement.created_at).toLocaleString()}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setSelectedAnnouncement(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                            <div className="text-left">
+                                <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest block mb-1">Subject</span>
+                                <h4 className="text-md font-extrabold text-slate-900 dark:text-white leading-snug">{selectedAnnouncement.subject}</h4>
+                            </div>
+
+                            <div className="text-left">
+                                <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest block mb-2">Message Body</span>
+                                <div className="p-4 bg-slate-50 dark:bg-slate-850 border border-slate-100 dark:border-slate-800 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-350 leading-relaxed whitespace-pre-wrap select-text">
+                                    {selectedAnnouncement.content}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 flex-shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedAnnouncement(null)}
+                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                            >
+                                Close
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setMessageSubject(selectedAnnouncement.subject);
+                                    setMessageContent(selectedAnnouncement.content);
+                                    setSelectedAnnouncement(null);
+                                    if (isMeetingView) {
+                                        const textarea = document.querySelector('textarea[placeholder*="Hi Class"]');
+                                        if (textarea) {
+                                            (textarea as HTMLElement).focus();
+                                        }
+                                    } else {
+                                        setShowMessageModal(true);
+                                    }
+                                }}
+                                className="px-5 py-2 rounded-lg text-sm font-bold bg-[#ecb613] text-slate-900 hover:bg-[#ecb613]/90 transition-colors shadow-sm flex items-center gap-2"
+                            >
+                                <Edit3 className="w-4 h-4" />
+                                Edit & Resend
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {!isMeetingView && (
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
             )}
@@ -2128,9 +2198,13 @@ export default function ClassroomDashboardPage({
                                             </h4>
                                             <div className="space-y-3.5 overflow-y-auto pr-1 flex-1">
                                                 {classBroadcasts.map((b, i) => (
-                                                    <div key={b.id || i} className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800 text-xs hover:border-[#ecb613] transition-colors relative text-left">
+                                                    <div 
+                                                        key={b.id || i} 
+                                                        onClick={() => setSelectedAnnouncement(b)}
+                                                        className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800 text-xs hover:border-[#ecb613] transition-colors relative cursor-pointer text-left group"
+                                                    >
                                                         <div className="flex justify-between items-center gap-2 mb-1.5 text-left">
-                                                            <span className="font-bold text-slate-900 dark:text-white truncate">{b.subject}</span>
+                                                            <span className="font-bold text-slate-900 dark:text-white truncate group-hover:text-[#ecb613] transition-colors">{b.subject}</span>
                                                             <span className="text-[10px] text-slate-400 font-semibold shrink-0">
                                                                 {new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                             </span>
@@ -2202,53 +2276,7 @@ export default function ClassroomDashboardPage({
                                 </div>
                             </div>
 
-                            {/* Classroom Announcements & Messages Card */}
-                            {!isMeetingView && (
-                                <div className="col-span-12 lg:col-span-8 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                        <div className="text-left">
-                                            <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Announcements</h3>
-                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">Recent highlights broadcasted to this class</p>
-                                        </div>
-                                        <div className="relative w-full sm:w-60">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
-                                            <input 
-                                                className="pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 rounded-xl text-xs w-full focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-bold" 
-                                                placeholder="Search announcements..." 
-                                                type="text" 
-                                                value={announcementSearchQuery}
-                                                onChange={(e) => setAnnouncementSearchQuery(e.target.value)}
-                                            />
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                                        {filteredAnnouncements.map((bc, idx) => (
-                                            <div key={bc.id || idx} className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-[#ecb613]/55 transition-colors relative text-left">
-                                                <div className="flex-1 min-w-0 text-left">
-                                                    <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate block">{bc.subject}</span>
-                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 mt-0.5">{bc.content}</p>
-                                                </div>
-                                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">
-                                                    {new Date(bc.created_at).toLocaleDateString('en-US', {
-                                                        month: 'short',
-                                                        day: 'numeric',
-                                                        hour: '2-digit',
-                                                        minute: '2-digit'
-                                                    })}
-                                                </span>
-                                            </div>
-                                        ))}
-                                        {filteredAnnouncements.length === 0 && (
-                                            <div className="py-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-250 dark:border-slate-700">
-                                                <p className="text-slate-400 text-xs font-semibold">
-                                                    {announcementSearchQuery ? 'No announcements match your search.' : 'No announcements sent yet.'}
-                                                </p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
+
 
                             {/* Stats Card */}
                             <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
@@ -2314,6 +2342,58 @@ export default function ClassroomDashboardPage({
                                                 <Video className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
                                                 <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Start Session</span>
                                             </Link>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Classroom Announcements & Messages Card */}
+                                {!isMeetingView && (
+                                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
+                                        <div className="flex flex-col gap-3">
+                                            <div className="text-left">
+                                                <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Announcements</h3>
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">Recent highlights broadcasted to this class</p>
+                                            </div>
+                                            <div className="relative w-full">
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                                                <input 
+                                                    className="pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 rounded-xl text-xs w-full focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-bold" 
+                                                    placeholder="Search announcements..." 
+                                                    type="text" 
+                                                    value={announcementSearchQuery}
+                                                    onChange={(e) => setAnnouncementSearchQuery(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                                            {filteredAnnouncements.map((bc, idx) => (
+                                                <div 
+                                                    key={bc.id || idx} 
+                                                    onClick={() => setSelectedAnnouncement(bc)}
+                                                    className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-[#ecb613] transition-colors relative cursor-pointer text-left group"
+                                                >
+                                                    <div className="flex-1 min-w-0 text-left">
+                                                        <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate block group-hover:text-[#ecb613] transition-colors">{bc.subject}</span>
+                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 mt-0.5">{bc.content}</p>
+                                                    </div>
+                                                    <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">
+                                                        {new Date(bc.created_at).toLocaleDateString('en-US', {
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit'
+                                                        })}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                            {filteredAnnouncements.length === 0 && (
+                                                <div className="py-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-250 dark:border-slate-700">
+                                                    <p className="text-slate-400 text-xs font-semibold">
+                                                        {announcementSearchQuery ? 'No announcements match your search.' : 'No announcements sent yet.'}
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
