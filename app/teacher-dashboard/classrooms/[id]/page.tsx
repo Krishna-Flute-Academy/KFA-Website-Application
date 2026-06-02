@@ -2223,298 +2223,324 @@ export default function ClassroomDashboardPage({
                                 </div>
                             )}
 
-                            <div className="grid grid-cols-12 gap-6">
-                            {/* Progress Summary Card */}
-                            <div className="col-span-12 lg:col-span-8 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
-                                <div className="flex justify-between items-start mb-6">
-                                    <div>
-                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Individual Progress Summary</h3>
-                                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Milestone tracking for the current week</p>
+                            {!isMeetingView && (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                                    {/* Stat 1: Active Enrollment */}
+                                    <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm relative overflow-hidden group hover:shadow-md transition-all duration-300">
+                                        <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-violet-500/5 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-500"></div>
+                                        <div className="space-y-1.5 text-left relative z-10">
+                                            <span className="text-2xl font-black text-slate-900 dark:text-white">{students.length}</span>
+                                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Enrolled Students</p>
+                                            <p className="text-[10px] text-slate-400 font-semibold">Active members of this class</p>
+                                        </div>
+                                        <div className="w-12 h-12 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500 shrink-0 relative z-10">
+                                            <Users className="w-6 h-6" />
+                                        </div>
                                     </div>
-                                    <button className="text-[#ecb613] text-sm font-semibold hover:underline">View Detailed Analytics</button>
+
+                                    {/* Stat 2: Consistency Index */}
+                                    <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm relative overflow-hidden group hover:shadow-md transition-all duration-300">
+                                        <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-500"></div>
+                                        <div className="space-y-1.5 text-left relative z-10">
+                                            <span className="text-2xl font-black text-slate-900 dark:text-white">{avgAttendance}%</span>
+                                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Average Attendance</p>
+                                            <p className="text-[10px] text-slate-400 font-semibold">Consistent engagement rate</p>
+                                        </div>
+                                        <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 shrink-0 relative z-10">
+                                            <TrendingUp className="w-6 h-6" />
+                                        </div>
+                                    </div>
+
+                                    {/* Stat 3: Weekly Sessions */}
+                                    <div className="bg-white dark:bg-slate-900/50 backdrop-blur-xl p-6 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm relative overflow-hidden group hover:shadow-md transition-all duration-300">
+                                        <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/5 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-500"></div>
+                                        <div className="space-y-1.5 text-left relative z-10">
+                                            <span className="text-2xl font-black text-slate-900 dark:text-white">{schedules.length} Session(s)</span>
+                                            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Weekly Sessions</p>
+                                            <p className="text-[10px] text-slate-400 font-semibold">Scheduled lesson slots</p>
+                                        </div>
+                                        <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0 relative z-10">
+                                            <Clock className="w-6 h-6" />
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="space-y-6">
-                                    {students.slice(0, 4).map(student => (
-                                        <div key={student.id} className="flex items-center gap-4 group">
-                                            <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700">
-                                                {student.profile_pic_url ? (
-                                                    <img alt={student.name} className="w-full h-full object-cover" src={student.profile_pic_url} loading="lazy" />
-                                                ) : (
-                                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{student.name.charAt(0)}</span>
+                            )}
+
+                            <div className="grid grid-cols-12 gap-6">
+                                {/* Left Column: Progress & Student Roster */}
+                                <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
+                                    {/* Progress Summary Card */}
+                                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
+                                        <div className="flex justify-between items-start mb-6">
+                                            <div>
+                                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Individual Progress Summary</h3>
+                                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Milestone tracking for the current week</p>
+                                            </div>
+                                            <button className="text-[#ecb613] text-sm font-semibold hover:underline">View Detailed Analytics</button>
+                                        </div>
+                                        <div className="space-y-6">
+                                            {students.slice(0, 4).map(student => (
+                                                <div key={student.id} className="flex items-center gap-4 group">
+                                                    <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700">
+                                                        {student.profile_pic_url ? (
+                                                            <img alt={student.name} className="w-full h-full object-cover" src={student.profile_pic_url} loading="lazy" />
+                                                        ) : (
+                                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{student.name.charAt(0)}</span>
+                                                        )}
+                                                    </div>
+                                                    {(() => {
+                                                        const realProgress = getRealStudentProgress(student.student_id, student.mock_progress);
+                                                        return (
+                                                            <>
+                                                                <div className="flex-1">
+                                                                    <div className="flex justify-between mb-1">
+                                                                        <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</span>
+                                                                        <span className="text-[10px] font-black tracking-wider uppercase text-amber-600 dark:text-[#ecb613] bg-amber-500/10 dark:bg-[#ecb613]/10 px-2 py-0.5 rounded-lg font-mono">
+                                                                            {student.level}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                                                                        <div className={`h-full transition-all duration-500 ${
+                                                                            realProgress >= 80 
+                                                                                ? 'bg-emerald-500' 
+                                                                                : (realProgress >= 40 ? 'bg-[#ecb613]' : 'bg-rose-500')
+                                                                        }`} style={{ width: `${realProgress}%` }}></div>
+                                                                    </div>
+                                                                </div>
+                                                                <span className="text-xs font-bold text-slate-400 w-8 text-right">{realProgress}%</span>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            ))}
+                                            {students.length === 0 && (
+                                                <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                                                    <p className="text-slate-500 text-sm font-medium">No students enrolled yet.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Student Roster Table */}
+                                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Student Roster</h3>
+                                            <div className="flex gap-3">
+                                                <button className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm">Export PDF</button>
+                                                <button
+                                                    onClick={openDirectoryModal}
+                                                    className="flex items-center gap-1.5 px-4 py-2 bg-[#ecb613] shadow-md shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 text-slate-900 rounded-xl text-xs font-bold transition-colors"
+                                                >
+                                                    <UserPlus className="w-3.5 h-3.5" />
+                                                    Add from Directory
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                                                    <tr>
+                                                        <th className="px-6 py-4">Student Name</th>
+                                                        <th className="px-6 py-4">Status</th>
+                                                        <th className="px-6 py-4">Avg. Score</th>
+                                                        <th className="px-6 py-4">Attendance</th>
+                                                        <th className="px-6 py-4">Joined Date</th>
+                                                        <th className="px-6 py-4 text-right">Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                    {paginatedStudents.map(student => (
+                                                        <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-600">
+                                                                        {student.profile_pic_url ? (
+                                                                            <img alt={student.name} className="w-full h-full object-cover" src={student.profile_pic_url} loading="lazy" />
+                                                                        ) : (
+                                                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{student.name.charAt(0)}</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div>
+                                                                        <Link href={`/teacher-dashboard/students/${student.student_id}`} className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</Link>
+                                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">ID: {student.student_id.substring(0, 8)}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full uppercase tracking-wide inline-block border ${getStatusColor(student.mock_status)} border-transparent dark:border-current/20`}>
+                                                                    {student.mock_status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-sm font-bold text-slate-900 dark:text-white">{student.mock_score.toFixed(1)}</span>
+                                                                    <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-sm font-bold text-slate-600 dark:text-slate-300">
+                                                                {student.mock_attendance}%
+                                                            </td>
+                                                            <td className="px-6 py-4 text-xs font-medium text-slate-500 dark:text-slate-400">
+                                                                {new Date(student.joined_at).toLocaleDateString()}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <button
+                                                                    onClick={() => handleRemoveStudent(student)}
+                                                                    disabled={removingStudentId === student.id}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50"
+                                                                    title="Remove from this classroom"
+                                                                >
+                                                                    {removingStudentId === student.id
+                                                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                        : <Trash2 className="w-3.5 h-3.5" />}
+                                                                    Remove
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                    {paginatedStudents.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan={6} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
+                                                                <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-3">No students enrolled yet.</p>
+                                                                <button
+                                                                    onClick={openDirectoryModal}
+                                                                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#ecb613]/90 transition-colors shadow-sm"
+                                                                >
+                                                                    <UserPlus className="w-4 h-4" /> Add from Directory
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div className="p-4 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center rounded-b-2xl">
+                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                Showing {paginatedStudents.length > 0 ? (currentPage - 1) * PAGE_SIZE + 1 : 0} - {Math.min(currentPage * PAGE_SIZE, students.length)} of {students.length} students
+                                            </span>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                                    disabled={currentPage === 1}
+                                                    className="px-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50"
+                                                >
+                                                    Previous
+                                                </button>
+                                                <button 
+                                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                                    disabled={currentPage === totalPages || totalPages === 0}
+                                                    className="px-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50"
+                                                >
+                                                    Next
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right Column: Quick Actions, Schedules, and Announcements */}
+                                <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+                                    {!isMeetingView && (
+                                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+                                            <div className="flex justify-between items-center mb-4">
+                                                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Quick Actions</h4>
+                                                <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <button 
+                                                    onClick={() => setShowMessageModal(true)}
+                                                    className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center"
+                                                >
+                                                    <MessageSquare className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
+                                                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Message All</span>
+                                                </button>
+                                                <Link 
+                                                    href={`/teacher-dashboard/classrooms/${classroomId}/meeting`}
+                                                    className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center"
+                                                >
+                                                    <Video className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
+                                                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Start Session</span>
+                                                </Link>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Schedule</h4>
+                                            <Clock className="w-5 h-5 text-[#ecb613]" />
+                                        </div>
+                                        <div className="space-y-3">
+                                            {schedules.length === 0 ? (
+                                                <p className="text-xs text-slate-400 italic">No schedule set</p>
+                                            ) : (
+                                                schedules.slice(0, 3).map(slot => (
+                                                    <div key={slot.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{DAY_NAMES[slot.day_of_week]}</span>
+                                                        <span className="text-xs font-medium text-[#ecb613]">{formatTime12hr(slot.start_time)} - {formatTime12hr(slot.end_time)}</span>
+                                                    </div>
+                                                ))
+                                            )}
+                                            {schedules.length > 3 && (
+                                                <button onClick={() => setActiveTab('Settings')} className="text-[10px] font-bold text-[#ecb613] hover:underline w-full text-center mt-2">
+                                                    View all {schedules.length} slots
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {!isMeetingView && (
+                                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
+                                            <div className="flex flex-col gap-3">
+                                                <div className="text-left">
+                                                    <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Announcements</h3>
+                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">Recent highlights broadcasted to this class</p>
+                                                </div>
+                                                <div className="relative w-full">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                                                    <input 
+                                                        className="pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 rounded-xl text-xs w-full focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-bold" 
+                                                        placeholder="Search announcements..." 
+                                                        type="text" 
+                                                        value={announcementSearchQuery}
+                                                        onChange={(e) => setAnnouncementSearchQuery(e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                                                {filteredAnnouncements.map((bc, idx) => (
+                                                    <div 
+                                                        key={bc.id || idx} 
+                                                        onClick={() => setSelectedAnnouncement(bc)}
+                                                        className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-[#ecb613] transition-colors relative cursor-pointer text-left group"
+                                                    >
+                                                        <div className="flex-1 min-w-0 text-left">
+                                                            <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate block group-hover:text-[#ecb613] transition-colors">{bc.subject}</span>
+                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 mt-0.5">{bc.content}</p>
+                                                        </div>
+                                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">
+                                                            {new Date(bc.created_at).toLocaleDateString('en-US', {
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                                {filteredAnnouncements.length === 0 && (
+                                                    <div className="py-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-250 dark:border-slate-700">
+                                                        <p className="text-slate-400 text-xs font-semibold">
+                                                            {announcementSearchQuery ? 'No announcements match your search.' : 'No announcements sent yet.'}
+                                                        </p>
+                                                    </div>
                                                 )}
                                             </div>
-                                            {(() => {
-                                                const realProgress = getRealStudentProgress(student.student_id, student.mock_progress);
-                                                return (
-                                                    <>
-                                                        <div className="flex-1">
-                                                            <div className="flex justify-between mb-1">
-                                                                <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</span>
-                                                                <span className="text-[10px] font-black tracking-wider uppercase text-amber-600 dark:text-[#ecb613] bg-amber-500/10 dark:bg-[#ecb613]/10 px-2 py-0.5 rounded-lg font-mono">
-                                                                    {student.level}
-                                                                </span>
-                                                            </div>
-                                                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                                                                <div className={`h-full transition-all duration-500 ${
-                                                                    realProgress >= 80 
-                                                                        ? 'bg-emerald-500' 
-                                                                        : (realProgress >= 40 ? 'bg-[#ecb613]' : 'bg-rose-500')
-                                                                }`} style={{ width: `${realProgress}%` }}></div>
-                                                            </div>
-                                                        </div>
-                                                        <span className="text-xs font-bold text-slate-400 w-8 text-right">{realProgress}%</span>
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
-                                    ))}
-                                    {students.length === 0 && (
-                                        <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                                            <p className="text-slate-500 text-sm font-medium">No students enrolled yet.</p>
                                         </div>
                                     )}
                                 </div>
                             </div>
-
-
-
-                            {/* Stats Card */}
-                            <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
-                                <div className="bg-[#ecb613] dark:bg-[#ecb613]/90 p-6 rounded-2xl text-slate-900 relative overflow-hidden shadow-lg shadow-[#ecb613]/20">
-                                    <div className="absolute -right-4 -bottom-4 opacity-10">
-                                        <Users className="w-32 h-32" />
-                                    </div>
-                                    <h4 className="text-slate-900/70 text-sm font-black uppercase tracking-wider mb-2">Class Attendance</h4>
-                                    <div className="flex items-end gap-2 relative z-10">
-                                        <span className="text-4xl font-black">{avgAttendance}%</span>
-                                        <span className="text-slate-900/80 text-sm font-bold mb-1 pb-1 flex items-center">
-                                            <TrendingUp className="w-4 h-4 mr-1 stroke-[3]" />
-                                            +2.1%
-                                        </span>
-                                    </div>
-                                    <p className="mt-4 text-xs text-slate-900/80 leading-relaxed font-semibold relative z-10">
-                                        Average attendance across recent sessions. Overall class consistency is looking good!
-                                    </p>
-                                </div>
-
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Schedule</h4>
-                                        <Clock className="w-5 h-5 text-[#ecb613]" />
-                                    </div>
-                                    <div className="space-y-3">
-                                        {schedules.length === 0 ? (
-                                            <p className="text-xs text-slate-400 italic">No schedule set</p>
-                                        ) : (
-                                            schedules.slice(0, 3).map(slot => (
-                                                <div key={slot.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-700">
-                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{DAY_NAMES[slot.day_of_week]}</span>
-                                                    <span className="text-xs font-medium text-[#ecb613]">{formatTime12hr(slot.start_time)} - {formatTime12hr(slot.end_time)}</span>
-                                                </div>
-                                            ))
-                                        )}
-                                        {schedules.length > 3 && (
-                                            <button onClick={() => setActiveTab('Settings')} className="text-[10px] font-bold text-[#ecb613] hover:underline w-full text-center mt-2">
-                                                View all {schedules.length} slots
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {!isMeetingView && (
-                                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">Quick Actions</h4>
-                                            <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <button 
-                                                onClick={() => setShowMessageModal(true)}
-                                                className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center"
-                                            >
-                                                <MessageSquare className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
-                                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Message All</span>
-                                            </button>
-                                            <Link 
-                                                href={`/teacher-dashboard/classrooms/${classroomId}/meeting`}
-                                                className="p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/10 rounded-xl text-center transition-all group border border-slate-200 dark:border-slate-700 hover:border-[#ecb613]/30 flex flex-col items-center justify-center"
-                                            >
-                                                <Video className="w-6 h-6 text-[#ecb613] mb-2 group-hover:scale-110 transition-transform" />
-                                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white uppercase tracking-wide">Start Session</span>
-                                            </Link>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Classroom Announcements & Messages Card */}
-                                {!isMeetingView && (
-                                    <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
-                                        <div className="flex flex-col gap-3">
-                                            <div className="text-left">
-                                                <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Announcements</h3>
-                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">Recent highlights broadcasted to this class</p>
-                                            </div>
-                                            <div className="relative w-full">
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
-                                                <input 
-                                                    className="pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 rounded-xl text-xs w-full focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-bold" 
-                                                    placeholder="Search announcements..." 
-                                                    type="text" 
-                                                    value={announcementSearchQuery}
-                                                    onChange={(e) => setAnnouncementSearchQuery(e.target.value)}
-                                                />
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                                            {filteredAnnouncements.map((bc, idx) => (
-                                                <div 
-                                                    key={bc.id || idx} 
-                                                    onClick={() => setSelectedAnnouncement(bc)}
-                                                    className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-[#ecb613] transition-colors relative cursor-pointer text-left group"
-                                                >
-                                                    <div className="flex-1 min-w-0 text-left">
-                                                        <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate block group-hover:text-[#ecb613] transition-colors">{bc.subject}</span>
-                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 mt-0.5">{bc.content}</p>
-                                                    </div>
-                                                    <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">
-                                                        {new Date(bc.created_at).toLocaleDateString('en-US', {
-                                                            month: 'short',
-                                                            day: 'numeric',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit'
-                                                        })}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                            {filteredAnnouncements.length === 0 && (
-                                                <div className="py-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-250 dark:border-slate-700">
-                                                    <p className="text-slate-400 text-xs font-semibold">
-                                                        {announcementSearchQuery ? 'No announcements match your search.' : 'No announcements sent yet.'}
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Student Roster Table */}
-                            <div className="col-span-12 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden mt-2">
-                                <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
-                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Student Roster</h3>
-                                    <div className="flex gap-3">
-                                        <button className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm">Export PDF</button>
-                                        <button
-                                            onClick={openDirectoryModal}
-                                            className="flex items-center gap-1.5 px-4 py-2 bg-[#ecb613] shadow-md shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 text-slate-900 rounded-xl text-xs font-bold transition-colors"
-                                        >
-                                            <UserPlus className="w-3.5 h-3.5" />
-                                            Add from Directory
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left">
-                                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                                            <tr>
-                                                <th className="px-6 py-4">Student Name</th>
-                                                <th className="px-6 py-4">Status</th>
-                                                <th className="px-6 py-4">Avg. Score</th>
-                                                <th className="px-6 py-4">Attendance</th>
-                                                <th className="px-6 py-4">Joined Date</th>
-                                                <th className="px-6 py-4 text-right">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                            {paginatedStudents.map(student => (
-                                                <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-600">
-                                                                {student.profile_pic_url ? (
-                                                                    <img alt={student.name} className="w-full h-full object-cover" src={student.profile_pic_url} loading="lazy" />
-                                                                ) : (
-                                                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{student.name.charAt(0)}</span>
-                                                                )}
-                                                            </div>
-                                                            <div>
-                                                                <Link href={`/teacher-dashboard/students/${student.student_id}`} className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</Link>
-                                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">ID: {student.student_id.substring(0, 8)}</p>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full uppercase tracking-wide inline-block border ${getStatusColor(student.mock_status)} border-transparent dark:border-current/20`}>
-                                                            {student.mock_status}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="text-sm font-bold text-slate-900 dark:text-white">{student.mock_score.toFixed(1)}</span>
-                                                            <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-sm font-bold text-slate-600 dark:text-slate-300">
-                                                        {student.mock_attendance}%
-                                                    </td>
-                                                    <td className="px-6 py-4 text-xs font-medium text-slate-500 dark:text-slate-400">
-                                                        {new Date(student.joined_at).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="px-6 py-4 text-right">
-                                                        <button
-                                                            onClick={() => handleRemoveStudent(student)}
-                                                            disabled={removingStudentId === student.id}
-                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50"
-                                                            title="Remove from this classroom"
-                                                        >
-                                                            {removingStudentId === student.id
-                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                                : <Trash2 className="w-3.5 h-3.5" />}
-                                                            Remove
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            {paginatedStudents.length === 0 && (
-                                                <tr>
-                                                    <td colSpan={6} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
-                                                        <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-3">No students enrolled yet.</p>
-                                                        <button
-                                                            onClick={openDirectoryModal}
-                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#ecb613]/90 transition-colors shadow-sm"
-                                                        >
-                                                            <UserPlus className="w-4 h-4" /> Add from Directory
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div className="p-4 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center rounded-b-2xl">
-                                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                        Showing {paginatedStudents.length > 0 ? (currentPage - 1) * PAGE_SIZE + 1 : 0} - {Math.min(currentPage * PAGE_SIZE, students.length)} of {students.length} students
-                                    </span>
-                                    <div className="flex gap-2">
-                                        <button 
-                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                            disabled={currentPage === 1}
-                                            className="px-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50"
-                                        >
-                                            Previous
-                                        </button>
-                                        <button 
-                                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                            disabled={currentPage === totalPages || totalPages === 0}
-                                            className="px-4 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm disabled:opacity-50"
-                                        >
-                                            Next
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 ) : activeTab === 'Curriculum' ? (
                         <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
