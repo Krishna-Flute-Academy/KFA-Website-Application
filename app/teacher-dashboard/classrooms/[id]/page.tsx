@@ -219,9 +219,19 @@ export default function ClassroomDashboardPage({
     });
     const [isSavingSchedule, setIsSavingSchedule] = useState(false);
 
-    // ── Add-from-Directory modal ──────────────────────────────────────────────
     const [showDirectoryModal, setShowDirectoryModal] = useState(false);
     const [showMessageModal, setShowMessageModal] = useState(false);
+    const [announcementSearchQuery, setAnnouncementSearchQuery] = useState('');
+
+    const filteredAnnouncements = useMemo(() => {
+        const query = announcementSearchQuery.toLowerCase().trim();
+        if (!query) return classBroadcasts;
+        return classBroadcasts.filter(b => 
+            b.subject.toLowerCase().includes(query) || 
+            (b.content && b.content.toLowerCase().includes(query))
+        );
+    }, [classBroadcasts, announcementSearchQuery]);
+
     const [directoryStudents, setDirectoryStudents] = useState<DirectoryStudent[]>([]);
     const [directorySearch, setDirectorySearch] = useState('');
     const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
@@ -2194,45 +2204,46 @@ export default function ClassroomDashboardPage({
 
                             {/* Classroom Announcements & Messages Card */}
                             {!isMeetingView && (
-                                <div className="col-span-12 lg:col-span-8 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col">
-                                    <div className="flex justify-between items-center mb-6">
+                                <div className="col-span-12 lg:col-span-8 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                         <div className="text-left">
-                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Classroom Announcements</h3>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Broadcast log of messages kept in Messages Center</p>
+                                            <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Announcements</h3>
+                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">Recent highlights broadcasted to this class</p>
                                         </div>
-                                        <button 
-                                            onClick={() => router.push('/teacher-dashboard/messages')} 
-                                            className="text-[#ecb613] text-sm font-semibold hover:underline flex items-center gap-1 shrink-0"
-                                        >
-                                            Open Messages Center <ExternalLink size={14} />
-                                        </button>
+                                        <div className="relative w-full sm:w-60">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                                            <input 
+                                                className="pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 rounded-xl text-xs w-full focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-bold" 
+                                                placeholder="Search announcements..." 
+                                                type="text" 
+                                                value={announcementSearchQuery}
+                                                onChange={(e) => setAnnouncementSearchQuery(e.target.value)}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
-                                        {classBroadcasts.map((bc, idx) => (
-                                            <div key={bc.id || idx} className="p-4 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800/60 text-xs hover:border-[#ecb613] transition-colors relative text-left">
-                                                <div className="flex justify-between items-center gap-2 mb-1.5 text-left">
-                                                    <span className="font-bold text-sm text-slate-900 dark:text-white truncate">{bc.subject}</span>
-                                                    <span className="text-[10px] text-slate-400 font-semibold shrink-0">
-                                                        {new Date(bc.created_at).toLocaleDateString('en-US', {
-                                                            month: 'short',
-                                                            day: 'numeric',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit'
-                                                        })}
-                                                    </span>
+                                    
+                                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                                        {filteredAnnouncements.map((bc, idx) => (
+                                            <div key={bc.id || idx} className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-[#ecb613]/55 transition-colors relative text-left">
+                                                <div className="flex-1 min-w-0 text-left">
+                                                    <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate block">{bc.subject}</span>
+                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 mt-0.5">{bc.content}</p>
                                                 </div>
-                                                <p className="text-slate-650 dark:text-slate-450 leading-relaxed font-medium whitespace-pre-wrap text-left">{bc.content}</p>
+                                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold shrink-0">
+                                                    {new Date(bc.created_at).toLocaleDateString('en-US', {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })}
+                                                </span>
                                             </div>
                                         ))}
-                                        {classBroadcasts.length === 0 && (
-                                            <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                                                <p className="text-slate-500 text-sm font-medium">No messages sent to this class yet.</p>
-                                                <button 
-                                                    onClick={() => setShowMessageModal(true)} 
-                                                    className="mt-2 text-xs font-bold text-[#ecb613] hover:underline"
-                                                >
-                                                    Send your first message
-                                                </button>
+                                        {filteredAnnouncements.length === 0 && (
+                                            <div className="py-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-250 dark:border-slate-700">
+                                                <p className="text-slate-400 text-xs font-semibold">
+                                                    {announcementSearchQuery ? 'No announcements match your search.' : 'No announcements sent yet.'}
+                                                </p>
                                             </div>
                                         )}
                                     </div>
