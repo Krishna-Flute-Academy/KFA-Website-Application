@@ -153,11 +153,11 @@ export default function ClassroomDashboardPage({
         fetchClassroomBroadcasts();
     }, [teacherProfile, classroomId]);
 
-    // Send broadcast handler
-    const handleSendClassMessage = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!messageContent.trim() || !teacherProfile || !classroom) return;
+    // Action handler to broadcast class messages
+    const handleSendClassMessageAction = async () => {
+        if (!messageContent.trim() || !teacherProfile || !classroom) return false;
         setIsSendingMessage(true);
+        setMessageNotification(null);
         try {
             const payload = {
                 teacher_id: teacherProfile.id,
@@ -177,13 +177,31 @@ export default function ClassroomDashboardPage({
                 setClassBroadcasts(prev => [data[0], ...prev]);
             }
             setMessageContent('');
-            alert('Message successfully broadcast to all students in this class!');
+            setMessageSubject('');
+            setMessageNotification({
+                type: 'success',
+                text: 'Message successfully broadcast to all students in this class!'
+            });
+            setTimeout(() => {
+                setMessageNotification(null);
+            }, 4000);
+            return true;
         } catch (err: any) {
             console.error('Error broadcasting message:', err);
-            alert(`Failed to send message: ${err.message}`);
+            setMessageNotification({
+                type: 'error',
+                text: `Failed to send message: ${err.message || err}`
+            });
+            return false;
         } finally {
             setIsSendingMessage(false);
         }
+    };
+
+    // Send broadcast handler (backward compatible)
+    const handleSendClassMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await handleSendClassMessageAction();
     };
 
     const formatDuration = (sec: number) => {
@@ -221,6 +239,7 @@ export default function ClassroomDashboardPage({
 
     const [showDirectoryModal, setShowDirectoryModal] = useState(false);
     const [showMessageModal, setShowMessageModal] = useState(false);
+    const [messageNotification, setMessageNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [selectedAnnouncement, setSelectedAnnouncement] = useState<any | null>(null);
     const [announcementSearchQuery, setAnnouncementSearchQuery] = useState('');
 
@@ -1907,8 +1926,11 @@ export default function ClassroomDashboardPage({
                         {/* Composer Form */}
                         <form onSubmit={async (e) => {
                             e.preventDefault();
-                            await handleSendClassMessage(e);
-                            setShowMessageModal(false);
+                            if (!messageContent.trim() || !messageSubject.trim()) return;
+                            const success = await handleSendClassMessageAction();
+                            if (success) {
+                                setShowMessageModal(false);
+                            }
                         }} className="p-6 space-y-4 overflow-y-auto">
                             <div>
                                 <label className="block text-xs font-black text-slate-500 uppercase tracking-wide mb-2">Subject</label>
@@ -1933,6 +1955,13 @@ export default function ClassroomDashboardPage({
                                     className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#ecb613] focus:border-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-medium"
                                 />
                             </div>
+
+                            {messageNotification && messageNotification.type === 'error' && (
+                                <div className="p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 animate-in fade-in duration-200">
+                                    <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                                    <span>{messageNotification.text}</span>
+                                </div>
+                            )}
 
                             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                                 <button
@@ -2186,6 +2215,21 @@ export default function ClassroomDashboardPage({
                                                     <><Send className="w-5 h-5" /> Send Announcement to Class</>
                                                 )}
                                             </button>
+
+                                            {messageNotification && (
+                                                <div className={`p-3.5 rounded-xl border text-xs font-bold flex items-center gap-2 mt-3 ${
+                                                    messageNotification.type === 'success'
+                                                        ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400'
+                                                        : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400'
+                                                } animate-in fade-in duration-200`}>
+                                                    {messageNotification.type === 'success' ? (
+                                                        <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+                                                    ) : (
+                                                        <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                                                    )}
+                                                    <span>{messageNotification.text}</span>
+                                                </div>
+                                            )}
                                         </form>
                                     </div>
 
@@ -5588,6 +5632,30 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                 </button>
                             </div>
 
+                        </div>
+                    </div>
+                )}
+
+                {/* Global floating message notification toast */}
+                {messageNotification && (
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] max-w-md w-full px-4 animate-in fade-in slide-in-from-bottom-5 duration-300">
+                        <div className={`p-4 rounded-xl shadow-xl flex items-center gap-3 border ${
+                            messageNotification.type === 'success'
+                                ? 'bg-emerald-50/90 dark:bg-emerald-950/90 border-emerald-250 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                                : 'bg-rose-50/90 dark:bg-rose-950/90 border-rose-250 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                        } backdrop-blur-md`}>
+                            {messageNotification.type === 'success' ? (
+                                <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
+                            ) : (
+                                <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+                            )}
+                            <span className="text-xs font-bold text-left flex-1 leading-snug">{messageNotification.text}</span>
+                            <button 
+                                onClick={() => setMessageNotification(null)}
+                                className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-current/60 hover:text-current transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
                         </div>
                     </div>
                 )}
