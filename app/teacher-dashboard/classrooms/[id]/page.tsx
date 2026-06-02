@@ -1259,8 +1259,21 @@ export default function ClassroomDashboardPage({
     }, [assignments, assignmentFilter]);
 
     const assignedInventoryItems = useMemo(() => {
-        return assignments.filter(a => a.inventory_ref_type);
-    }, [assignments]);
+        const inventoryItems = assignments.filter(a => a.inventory_ref_type);
+        if (curriculumTab === 'classwide') {
+            // Class-wide: Only show assignments targeted to all students
+            return inventoryItems.filter(a => a.target_type === 'all');
+        } else {
+            // Individual pacing: Filter to only show assignments active for the selected student
+            if (!selectedStudentForCurriculum) return [];
+            return inventoryItems.filter(a => {
+                if (a.target_type === 'all') return true;
+                return a.assignment_students?.some(
+                    s => s.student_id === selectedStudentForCurriculum.student_id
+                );
+            });
+        }
+    }, [assignments, curriculumTab, selectedStudentForCurriculum]);
 
     const groupedAssignments = useMemo(() => {
         const categoriesMap: Record<string, {
