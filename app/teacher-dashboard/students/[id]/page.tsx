@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -49,13 +49,15 @@ export default function StudentProfilePage() {
     const [submissions, setSubmissions] = useState<Submission[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     const [viewDate, setViewDate] = useState(new Date()); // Calendar view month
-    const [activeTab, setActiveTab] = useState('profile'); // profile, history, attendance, curriculum
+    const [activeTab, setActiveTab] = useState('profile'); // profile, tasks, history, attendance, curriculum
+    const [studentTasks, setStudentTasks] = useState<any[]>([]);
+    const [selectedStudentTask, setSelectedStudentTask] = useState<any | null>(null);
 
     // Restore active tab from sessionStorage on mount
     useEffect(() => {
         if (typeof window !== 'undefined' && studentId) {
             const savedTab = sessionStorage.getItem(`student_tab_${studentId}`);
-            if (savedTab && ['profile', 'history', 'attendance', 'curriculum'].includes(savedTab)) {
+            if (savedTab && ['profile', 'tasks', 'history', 'attendance', 'curriculum'].includes(savedTab)) {
                 setActiveTab(savedTab);
             }
         }
@@ -196,6 +198,53 @@ export default function StudentProfilePage() {
                         .select('*')
                         .eq('classroom_id', studentClassroomId);
                     setAssignments(assignmentsData || []);
+
+                    // Fetch student assignment mapping statuses (grades, feedback, submissions)
+                    const { data: studentAssignmentsData } = await supabaseAuth
+                        .from('assignment_students')
+                        .select(`
+                            id,
+                            status,
+                            score,
+                            proficiency_level,
+                            feedback_text,
+                            video_url,
+                            submitted_at,
+                            assignment_id
+                        `)
+                        .eq('student_id', studentId);
+
+                    // Merge classroom assignments and student assignments status
+                    const mappedTasks = (assignmentsData || [])
+                        .filter((asg: any) => !asg.inventory_ref_type) // Hide curriculum pacing assignments from Tasks tab
+                        .map((asg: any) => {
+                            const studentMapping = (studentAssignmentsData || []).find((s: any) => s.assignment_id === asg.id);
+                            
+                            // If target_type is 'individual' and there is no student mapping, then this assignment is not for this student.
+                            if (asg.target_type === 'individual' && !studentMapping) {
+                                return null;
+                            }
+                            
+                            return {
+                                id: asg.id,
+                                title: asg.title,
+                                description: asg.description,
+                                due_date: asg.due_date,
+                                created_at: asg.created_at,
+                                file_url: asg.file_url,
+                                file_name: asg.file_name,
+                                file_size: asg.file_size,
+                                status: studentMapping?.status || 'pending',
+                                score: studentMapping?.score,
+                                proficiency_level: studentMapping?.proficiency_level,
+                                feedback_text: studentMapping?.feedback_text,
+                                video_url: studentMapping?.video_url,
+                                submitted_at: studentMapping?.submitted_at,
+                                student_mapping_id: studentMapping?.id
+                            };
+                        })
+                        .filter(Boolean);
+                    setStudentTasks(mappedTasks);
                 }
 
                 // 4. Fetch Submissions
@@ -527,13 +576,18 @@ export default function StudentProfilePage() {
                         </div>
                     </div>
 
-                    {/* Navigation Tabs */}
                     <div className="flex border-b border-slate-200 gap-8 mb-8 overflow-x-auto scrollbar-hide">
                         <button
                             onClick={() => setActiveTab('profile')}
                             className={`pb-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'profile' ? 'border-[#ecb613] text-[#ecb613]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
                         >
                             Profile Info
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('tasks')}
+                            className={`pb-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'tasks' ? 'border-[#ecb613] text-[#ecb613]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                        >
+                            Assignments & Tasks
                         </button>
                         <button
                             onClick={() => setActiveTab('history')}
@@ -556,6 +610,67 @@ export default function StudentProfilePage() {
                     </div>
 
                     <div className="space-y-10">
+                        {/* Assignments & Tasks Section */}
+                        {activeTab === 'tasks' && (
+                            <section className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <span className="w-1.5 h-6 bg-[#ecb613] rounded-full"></span>
+                                    <h3 className="text-lg font-bold text-slate-800 tracking-tight">Assignments & Tasks</h3>
+                                </div>
+                                {studentTasks.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {studentTasks.map((task) => (
+                                            <div 
+                                                key={task.id} 
+                                                onClick={() => setSelectedStudentTask(task)}
+                                                className="bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-md hover:border-[#ecb613]/50 transition-all shadow-sm cursor-pointer flex flex-col justify-between gap-4 text-left"
+                                            >
+                                                <div>
+                                                    <div className="flex items-center justify-between gap-4 mb-2">
+                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                                                            task.status === 'submitted' ? 'bg-amber-105 text-amber-800 border-amber-205' :
+                                                            task.status === 'reviewed' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                                            task.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                                            'bg-slate-100 text-slate-600 border-slate-200'
+                                                        }`}>
+                                                            {task.status}
+                                                        </span>
+                                                        {task.due_date && (
+                                                            <span className="text-[10px] text-slate-400 font-extrabold uppercase flex items-center gap-1 font-mono">
+                                                                <Clock className="size-3" /> Due: {new Date(task.due_date).toLocaleDateString()}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <h4 className="font-extrabold text-slate-900 text-base leading-tight truncate">{task.title}</h4>
+                                                    <p className="text-xs text-slate-500 line-clamp-2 mt-2 leading-relaxed font-semibold">
+                                                        {task.description || 'No detailed instructions provided.'}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono">
+                                                        {task.file_url ? '📎 Attachment included' : 'No attachment'}
+                                                    </span>
+                                                    {task.score !== undefined && task.score !== null && (
+                                                        <span className="text-xs font-black text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-md font-mono">
+                                                            Score: {task.score}/10
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+                                        <div className="size-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                                            <ClipboardList className="text-slate-400 size-8" />
+                                        </div>
+                                        <h4 className="font-bold text-slate-900">No tasks assigned</h4>
+                                        <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto font-medium">This student hasn't been assigned any tasks yet.</p>
+                                    </div>
+                                )}
+                            </section>
+                        )}
+
                         {/* Curriculum Progress Section */}
                         {activeTab === 'curriculum' && (
                             <section className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
@@ -590,17 +705,24 @@ export default function StudentProfilePage() {
                                     </div>
                                 ) : (
                                     <div className="space-y-8">
-                                        {courseModules.map(mod => {
-                                            const modChapters = courseChapters.filter(c => c.module_id === mod.id).sort((a,b) => a.chapter_number - b.chapter_number);
-                                            const isModVisible = computedPermissions.visibleModules.has(mod.id);
-                                            const isModExpanded = expandedModules[mod.id] !== false;
-                                            
-                                            return (
-                                                <div key={mod.id} className={`rounded-3xl border transition-all duration-300 bg-white shadow-sm overflow-hidden ${
-                                                    isModVisible 
-                                                        ? 'border-slate-200/80 dark:border-slate-800' 
-                                                        : 'border-slate-100 opacity-60'
-                                                }`}>
+                                        {courseModules.filter(mod => computedPermissions.visibleModules.has(mod.id)).length === 0 ? (
+                                            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+                                                <Award className="size-12 text-slate-300 mx-auto mb-4" />
+                                                <h4 className="font-bold text-slate-900">No curriculum content unlocked or completed yet</h4>
+                                                <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto font-medium">This student does not have any active assignments or unlocked curriculum progress path items.</p>
+                                            </div>
+                                        ) : (
+                                            courseModules
+                                                .filter(mod => computedPermissions.visibleModules.has(mod.id))
+                                                .map(mod => {
+                                                    const modChapters = courseChapters
+                                                        .filter(c => c.module_id === mod.id && computedPermissions.visibleChapters.has(c.id))
+                                                        .sort((a,b) => a.chapter_number - b.chapter_number);
+                                                    const isModExpanded = expandedModules[mod.id] !== false;
+                                                    const isModVisible = true;
+                                                    
+                                                    return (
+                                                        <div key={mod.id} className="rounded-3xl border transition-all duration-300 bg-white shadow-sm overflow-hidden border-slate-200/80 dark:border-slate-800">
                                                     {/* Module Title Bar */}
                                                     <div 
                                                         onClick={() => setExpandedModules(prev => ({ ...prev, [mod.id]: !isModExpanded }))}
@@ -643,16 +765,14 @@ export default function StudentProfilePage() {
                                                         ) : (
                                                             modChapters.map(chap => {
                                                                 const isChapExpanded = !!expandedChapters[chap.id];
-                                                                const isChapVisible = computedPermissions.visibleChapters.has(chap.id);
-                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id).sort((a,b) => a.lesson_number - b.lesson_number);
+                                                                const isChapVisible = true;
+                                                                const chapLessons = courseLessons
+                                                                    .filter(l => l.chapter_id === chap.id && (computedPermissions.unlockedLessons.has(l.id) || computedPermissions.completedLessons.has(l.id)))
+                                                                    .sort((a,b) => a.lesson_number - b.lesson_number);
                                                                 const completedCount = chapLessons.filter(l => computedPermissions.completedLessons.has(l.id)).length;
                                                                 
                                                                 return (
-                                                                    <div key={chap.id} className={`rounded-2xl border transition-all ${
-                                                                        isChapVisible
-                                                                            ? 'border-slate-200 hover:border-slate-300'
-                                                                            : 'border-slate-100 opacity-60'
-                                                                    }`}>
+                                                                    <div key={chap.id} className="rounded-2xl border transition-all border-slate-200 hover:border-slate-300">
                                                                         {/* Chapter Accordion Header */}
                                                                         <div 
                                                                             onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapExpanded }))}
@@ -674,11 +794,9 @@ export default function StudentProfilePage() {
                                                                                 </div>
                                                                             </div>
                                                                             <div className="flex items-center gap-2">
-                                                                                {isChapVisible && (
-                                                                                    <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 mr-2 font-mono">
-                                                                                        Unlocked
-                                                                                    </span>
-                                                                                )}
+                                                                                <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 mr-2 font-mono">
+                                                                                    Unlocked
+                                                                                </span>
                                                                                 <div className="w-8 h-8 rounded-lg bg-slate-100/80 flex items-center justify-center text-slate-400">
                                                                                     {isChapExpanded ? (
                                                                                         <Award className="size-4 rotate-180 transition-all text-amber-500" />
@@ -784,13 +902,13 @@ export default function StudentProfilePage() {
                                                     )}
                                                 </div>
                                             );
-                                        })}
+                                        }))}
                                     </div>
                                 )}
                             </section>
                         )}
 
-                        {/* Profile Info Section *}
+                        {/* Profile Info Section */}
                         {activeTab === 'profile' && (
                             <section>
                                 <div className="flex items-center gap-2 mb-4">
@@ -1077,6 +1195,135 @@ export default function StudentProfilePage() {
                     </div>
                 </div>
             </main>
+
+            {/* Task Details Dialog Modal */}
+            {selectedStudentTask && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto flex flex-col animate-in zoom-in-95 duration-200 text-left">
+                        {/* Header */}
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between bg-slate-50 dark:bg-slate-800/40 rounded-t-3xl">
+                            <div className="space-y-1">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                                    selectedStudentTask.status === 'submitted' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                                    selectedStudentTask.status === 'reviewed' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                    selectedStudentTask.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                    'bg-slate-100 text-slate-650 border-slate-200'
+                                }`}>
+                                    {selectedStudentTask.status}
+                                </span>
+                                <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight mt-1.5">{selectedStudentTask.title}</h2>
+                            </div>
+                            <button 
+                                onClick={() => setSelectedStudentTask(null)} 
+                                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-full text-slate-400 dark:text-slate-500 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        
+                        {/* Body Content */}
+                        <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                            {/* Task Brief */}
+                            <div className="space-y-2">
+                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">Task Instructions</h3>
+                                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/20 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 whitespace-pre-line font-semibold">
+                                    {selectedStudentTask.description || 'No detailed instructions provided.'}
+                                </p>
+                            </div>
+
+                            {/* Attachments if present */}
+                            {selectedStudentTask.file_url && (
+                                <div className="space-y-2">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">Attachments</h3>
+                                    <div className="p-4 bg-slate-50 dark:bg-slate-800/20 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-500 shrink-0 border border-red-105 dark:border-transparent">
+                                                <FileText className="w-5 h-5" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="font-extrabold text-sm text-slate-800 dark:text-slate-200 truncate">{selectedStudentTask.file_name || 'Learning Material'}</p>
+                                                {selectedStudentTask.file_size && (
+                                                    <p className="text-xs text-slate-400 dark:text-slate-500 font-bold font-mono uppercase mt-0.5">{selectedStudentTask.file_size}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <a 
+                                            href={selectedStudentTask.file_url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-slate-750 dark:text-slate-200 text-xs font-extrabold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all flex items-center gap-1.5 shrink-0"
+                                        >
+                                            <Download className="w-4 h-4" /> Download
+                                        </a>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Student Submission Video URL */}
+                            {selectedStudentTask.video_url && (
+                                <div className="space-y-2">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">Student Submission</h3>
+                                    <div className="p-4 bg-slate-50 dark:bg-slate-800/20 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-10 h-10 rounded-xl bg-green-50 dark:bg-green-955/20 flex items-center justify-center text-green-500 shrink-0 border border-green-105 dark:border-transparent">
+                                                <PlayCircle className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <p className="font-extrabold text-sm text-slate-850 dark:text-slate-200">Practice Video Recording</p>
+                                                {selectedStudentTask.submitted_at && (
+                                                    <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-0.5">Submitted: {new Date(selectedStudentTask.submitted_at).toLocaleDateString()}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <a 
+                                            href={selectedStudentTask.video_url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="px-4 py-2.5 bg-emerald-600 text-white text-xs font-extrabold rounded-xl hover:bg-emerald-700 shadow-md shadow-emerald-650/10 transition-all flex items-center gap-1.5 shrink-0"
+                                        >
+                                            <PlayCircle className="w-4 h-4" /> View Video
+                                        </a>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Grading & Feedback */}
+                            {(selectedStudentTask.feedback_text || selectedStudentTask.score !== undefined) && (
+                                <div className="space-y-3 p-5 bg-amber-50/40 dark:bg-amber-950/10 rounded-2xl border border-amber-100 dark:border-amber-900/20 font-sans">
+                                    <div className="flex justify-between items-center gap-4">
+                                        <h3 className="text-xs font-black text-amber-800 dark:text-amber-400 uppercase tracking-widest font-mono">Teacher Review & Grades</h3>
+                                        {selectedStudentTask.score !== undefined && selectedStudentTask.score !== null && (
+                                            <span className="text-sm font-black text-amber-900 dark:text-amber-100 bg-amber-100/60 dark:bg-amber-950 px-3 py-1 rounded-lg border border-amber-200/50 font-mono">
+                                                Score: {selectedStudentTask.score}/10
+                                            </span>
+                                        )}
+                                    </div>
+                                    {selectedStudentTask.proficiency_level && (
+                                        <p className="text-xs text-slate-550 dark:text-slate-400 font-bold">
+                                            Proficiency: <span className="text-amber-800 dark:text-amber-450 font-black">{selectedStudentTask.proficiency_level}</span>
+                                        </p>
+                                    )}
+                                    {selectedStudentTask.feedback_text && (
+                                        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-105/50 dark:border-slate-800/80 whitespace-pre-line font-semibold">
+                                            {selectedStudentTask.feedback_text}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end bg-slate-50 dark:bg-slate-800/40 rounded-b-3xl">
+                            <button 
+                                onClick={() => setSelectedStudentTask(null)}
+                                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-extrabold rounded-xl transition-all text-xs"
+                            >
+                                Close Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
