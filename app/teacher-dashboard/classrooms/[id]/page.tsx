@@ -1582,15 +1582,25 @@ export default function ClassroomDashboardPage({
             return;
         }
 
-        const rows = students.map(s => ({
-            student_id: s.student_id,
-            classroom_id: classroomId,
-            lesson_id: lessonId,
-            status: newStatus,
-            unlocked_by: 'manual',
-            unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
-            completed_at: newStatus === 'completed' ? new Date().toISOString() : null
-        }));
+        const rows = students.map(s => {
+            const existingRow = studentProgress.find(p => p.student_id === s.student_id && p.lesson_id === lessonId);
+            const existingStatus = existingRow ? existingRow.status : 'locked';
+            
+            let status = newStatus;
+            if (newStatus === 'unlocked' && existingStatus === 'completed') {
+                status = 'completed';
+            }
+
+            return {
+                student_id: s.student_id,
+                classroom_id: classroomId,
+                lesson_id: lessonId,
+                status: status,
+                unlocked_by: 'manual',
+                unlocked_at: status !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
+                completed_at: status === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
+            };
+        });
 
         try {
             console.log(`[Pacing Debug] Upserting ${rows.length} rows to student_topic_progress:`, rows);
@@ -1679,8 +1689,8 @@ export default function ClassroomDashboardPage({
                                 if (isSelected) {
                                     status = 'completed';
                                 } else {
-                                    // Revert to unlocked if they were completed but now unchecked, otherwise keep their status
-                                    status = (existingStatus === 'completed') ? 'unlocked' : existingStatus;
+                                    // Preserve existing status for unselected students
+                                    status = existingStatus;
                                 }
                             } else if (allocationStatus === 'locked') {
                                 if (isSelected) {
