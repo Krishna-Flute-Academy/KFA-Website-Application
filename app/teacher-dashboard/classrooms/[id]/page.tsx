@@ -1376,50 +1376,6 @@ export default function ClassroomDashboardPage({
         return sortedCategories;
     }, [assignedInventoryItems, courseModules, courseChapters, courseLessons, categories]);
 
-    const syllabusLessons = useMemo(() => {
-        const lessonsSet = new Set<string>();
-        const uniqueLessons: any[] = [];
-
-        assignedInventoryItems.forEach(item => {
-            if (item.inventory_ref_type === 'module') {
-                const chapters = courseChapters.filter(c => c.module_id === item.inventory_ref_id);
-                const chapterIds = new Set(chapters.map(c => c.id));
-                const lessons = courseLessons.filter(l => chapterIds.has(l.chapter_id));
-                lessons.forEach(l => {
-                    if (!lessonsSet.has(l.id)) {
-                        lessonsSet.add(l.id);
-                        uniqueLessons.push(l);
-                    }
-                });
-            } else if (item.inventory_ref_type === 'chapter') {
-                const lessons = courseLessons.filter(l => l.chapter_id === item.inventory_ref_id);
-                lessons.forEach(l => {
-                    if (!lessonsSet.has(l.id)) {
-                        lessonsSet.add(l.id);
-                        uniqueLessons.push(l);
-                    }
-                });
-            } else if (item.inventory_ref_type === 'lesson') {
-                const lesson = courseLessons.find(l => l.id === item.inventory_ref_id);
-                if (lesson && !lessonsSet.has(lesson.id)) {
-                    lessonsSet.add(lesson.id);
-                    uniqueLessons.push(lesson);
-                }
-            }
-        });
-
-        return uniqueLessons.sort((a, b) => a.lesson_number - b.lesson_number);
-    }, [assignedInventoryItems, courseChapters, courseLessons]);
-
-    const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
-        if (syllabusLessons.length === 0) return defaultMockVal;
-        const completedCount = syllabusLessons.filter(lesson => {
-            const row = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lesson.id);
-            return row && row.status === 'completed';
-        }).length;
-        return Math.round((completedCount / syllabusLessons.length) * 100);
-    }, [syllabusLessons, studentProgress]);
-
     const selectedStudentPermissions = useMemo(() => {
         const completed = new Set<string>();
         const unlocked = new Set<string>();
@@ -1443,6 +1399,62 @@ export default function ClassroomDashboardPage({
             unlockedLessons: unlocked
         };
     }, [selectedStudentForCurriculum, studentProgress]);
+
+    const syllabusLessons = useMemo(() => {
+        const lessonsSet = new Set<string>();
+        const uniqueLessons: any[] = [];
+
+        assignedInventoryItems.forEach(item => {
+            const isIndividualMode = curriculumTab === 'individual';
+            const isClasswideAssignment = item.target_type === 'all';
+            
+            const filterLesson = (lessonId: string) => {
+                if (isIndividualMode && isClasswideAssignment && selectedStudentForCurriculum) {
+                    const isCompleted = selectedStudentPermissions.completedLessons.has(lessonId);
+                    const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lessonId);
+                    return isCompleted || isUnlocked;
+                }
+                return true;
+            };
+
+            if (item.inventory_ref_type === 'module') {
+                const chapters = courseChapters.filter(c => c.module_id === item.inventory_ref_id);
+                const chapterIds = new Set(chapters.map(c => c.id));
+                const lessons = courseLessons.filter(l => chapterIds.has(l.chapter_id));
+                lessons.forEach(l => {
+                    if (!lessonsSet.has(l.id) && filterLesson(l.id)) {
+                        lessonsSet.add(l.id);
+                        uniqueLessons.push(l);
+                    }
+                });
+            } else if (item.inventory_ref_type === 'chapter') {
+                const lessons = courseLessons.filter(l => l.chapter_id === item.inventory_ref_id);
+                lessons.forEach(l => {
+                    if (!lessonsSet.has(l.id) && filterLesson(l.id)) {
+                        lessonsSet.add(l.id);
+                        uniqueLessons.push(l);
+                    }
+                });
+            } else if (item.inventory_ref_type === 'lesson') {
+                const lesson = courseLessons.find(l => l.id === item.inventory_ref_id);
+                if (lesson && !lessonsSet.has(lesson.id) && filterLesson(lesson.id)) {
+                    lessonsSet.add(lesson.id);
+                    uniqueLessons.push(lesson);
+                }
+            }
+        });
+
+        return uniqueLessons.sort((a, b) => a.lesson_number - b.lesson_number);
+    }, [assignedInventoryItems, courseChapters, courseLessons, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions]);
+
+    const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
+        if (syllabusLessons.length === 0) return defaultMockVal;
+        const completedCount = syllabusLessons.filter(lesson => {
+            const row = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lesson.id);
+            return row && row.status === 'completed';
+        }).length;
+        return Math.round((completedCount / syllabusLessons.length) * 100);
+    }, [syllabusLessons, studentProgress]);
 
     const livePreviewData = useMemo(() => {
         if (!selectedStudentForCurriculum || syllabusLessons.length === 0) return null;
@@ -1472,6 +1484,39 @@ export default function ClassroomDashboardPage({
             nextLockedItems: nextLockedItems.slice(0, 3)
         };
     }, [selectedStudentForCurriculum, syllabusLessons, selectedStudentPermissions]);
+
+    const hasAnyVisibleModule = useMemo(() => {
+        if (curriculumTab === 'classwide') return true;
+        if (!selectedStudentForCurriculum) return false;
+        
+        return groupedAssignments.some(group => 
+            group.modules.some(modGroup => 
+                modGroup.assignments.some(asg => {
+                    if (asg.target_type === 'individual') return true;
+                    if (asg.inventory_ref_type === 'module') {
+                        const modChapters = courseChapters.filter(c => c.module_id === asg.inventory_ref_id);
+                        return modChapters.some(chap => {
+                            const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                            return chapLessons.some(lesson => 
+                                selectedStudentPermissions.completedLessons.has(lesson.id) ||
+                                selectedStudentPermissions.unlockedLessons.has(lesson.id)
+                            );
+                        });
+                    } else if (asg.inventory_ref_type === 'chapter') {
+                        const chapLessons = courseLessons.filter(l => l.chapter_id === asg.inventory_ref_id);
+                        return chapLessons.some(lesson => 
+                            selectedStudentPermissions.completedLessons.has(lesson.id) ||
+                            selectedStudentPermissions.unlockedLessons.has(lesson.id)
+                        );
+                    } else if (asg.inventory_ref_type === 'lesson') {
+                        return selectedStudentPermissions.completedLessons.has(asg.inventory_ref_id) ||
+                               selectedStudentPermissions.unlockedLessons.has(asg.inventory_ref_id);
+                    }
+                    return false;
+                })
+            )
+        );
+    }, [curriculumTab, selectedStudentForCurriculum, groupedAssignments, courseChapters, courseLessons, selectedStudentPermissions]);
 
     const handleToggleTopicLock = async (studentId: string, lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
         if (!classroomId) return;
@@ -2911,9 +2956,53 @@ export default function ClassroomDashboardPage({
                                                 <Sparkles className="size-4" /> Explore Inventory Library
                                             </button>
                                         </div>
+                                    ) : !hasAnyVisibleModule ? (
+                                        <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[400px] border-dashed">
+                                            <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner animate-pulse">
+                                                <Sliders className="size-10 text-amber-500" />
+                                            </div>
+                                            <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-105">No Allocated Topics</h3>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center font-medium">
+                                                This student has no active or unlocked study materials in their personalized learning path yet.
+                                            </p>
+                                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-2.5 max-w-sm text-center leading-normal">
+                                                You can switch to the <strong>Class-wide Roster Lock</strong> tab to unlock specific topics for them, or assign specialized materials individually from the Inventory Library.
+                                            </p>
+                                        </div>
                                     ) : (
                                         <div className="space-y-12">
                                             {groupedAssignments.map((group) => {
+                                                const visibleModules = group.modules.filter(modGroup => {
+                                                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                                                        return modGroup.assignments.some(asg => {
+                                                            if (asg.target_type === 'individual') return true;
+                                                            if (asg.inventory_ref_type === 'module') {
+                                                                const modChapters = courseChapters.filter(c => c.module_id === asg.inventory_ref_id);
+                                                                return modChapters.some(chap => {
+                                                                    const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                    return chapLessons.some(lesson => 
+                                                                        selectedStudentPermissions.completedLessons.has(lesson.id) ||
+                                                                        selectedStudentPermissions.unlockedLessons.has(lesson.id)
+                                                                    );
+                                                                });
+                                                            } else if (asg.inventory_ref_type === 'chapter') {
+                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === asg.inventory_ref_id);
+                                                                return chapLessons.some(lesson => 
+                                                                    selectedStudentPermissions.completedLessons.has(lesson.id) ||
+                                                                    selectedStudentPermissions.unlockedLessons.has(lesson.id)
+                                                                );
+                                                            } else if (asg.inventory_ref_type === 'lesson') {
+                                                                return selectedStudentPermissions.completedLessons.has(asg.inventory_ref_id) ||
+                                                                       selectedStudentPermissions.unlockedLessons.has(asg.inventory_ref_id);
+                                                            }
+                                                            return false;
+                                                        });
+                                                    }
+                                                    return true;
+                                                });
+
+                                                if (visibleModules.length === 0) return null;
+
                                                 const isHeadlineExpanded = expandedHeadlines[group.categoryName] !== false;
                                                 return (
                                                     <div key={group.categoryName} className="space-y-6">
@@ -2941,11 +3030,11 @@ export default function ClassroomDashboardPage({
                                                                 </div>
                                                             </div>
                                                         </div>
-
+ 
                                                         {/* Modules Under This Category */}
                                                         {isHeadlineExpanded && (
                                                             <div className="space-y-8 pl-3 md:pl-6 border-l-2 border-slate-150 dark:border-slate-800 text-left">
-                                                                {group.modules.map((modGroup) => {
+                                                                {visibleModules.map((modGroup) => {
                                                                     const moduleAsg = modGroup.assignments.find(a => a.inventory_ref_type === 'module');
                                                                     const hasModuleAssignment = !!moduleAsg;
                                                                     const isModuleExpanded = expandedModules[modGroup.id] !== false;
@@ -3164,7 +3253,18 @@ export default function ClassroomDashboardPage({
                                                                                         const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
                                                                                         if (!mod) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Level data could not be loaded.</p>;
                                                                                         
-                                                                                        const chaptersInMod = courseChapters.filter(c => c.module_id === mod.id);
+                                                                                        const rawChapters = courseChapters.filter(c => c.module_id === mod.id);
+                                                                                        const chaptersInMod = rawChapters.filter(chap => {
+                                                                                            if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
+                                                                                                const lessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                                                return lessons.some(lesson => {
+                                                                                                    const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                                                    const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                                                    return isCompleted || isUnlocked;
+                                                                                                });
+                                                                                            }
+                                                                                            return true;
+                                                                                        });
                                                                                         return (
                                                                                             <div className="space-y-5">
                                                                                                 <div className="border-b border-slate-100 dark:border-slate-800/80 pb-3 flex items-center justify-between pl-2">
@@ -3181,7 +3281,15 @@ export default function ClassroomDashboardPage({
                                                                                                     <div className="space-y-4">
                                                                                                         {chaptersInMod.map(chap => {
                                                                                                             const isExpanded = !!expandedChapters[chap.id];
-                                                                                                            const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                                                            const rawLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                                                            const chapLessons = rawLessons.filter(lesson => {
+                                                                                                                if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
+                                                                                                                    const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                                                                    const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                                                                    return isCompleted || isUnlocked;
+                                                                                                                }
+                                                                                                                return true;
+                                                                                                            });
                                                                                                             
                                                                                                             return (
                                                                                                                 <div 
@@ -3386,7 +3494,15 @@ export default function ClassroomDashboardPage({
                                                                                         const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
                                                                                         if (!chap) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Chapter data could not be loaded.</p>;
                                                                                         
-                                                                                        const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                                        const rawLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                                        const chapLessons = rawLessons.filter(lesson => {
+                                                                                            if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
+                                                                                                const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                                                const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                                                return isCompleted || isUnlocked;
+                                                                                            }
+                                                                                            return true;
+                                                                                        });
                                                                                         return (
                                                                                             <div className="space-y-4">
                                                                                                 <div className="border-b border-slate-150 dark:border-slate-800 pb-3 flex items-center justify-between pl-2">
@@ -3555,6 +3671,13 @@ export default function ClassroomDashboardPage({
                                                                                     {asg.inventory_ref_type === 'lesson' && (() => {
                                                                                         const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
                                                                                         if (!lesson) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Lesson data could not be loaded.</p>;
+                                                                                        
+                                                                                        // Filter out locked class-wide lessons in individual mode
+                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
+                                                                                            const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                                            const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                                            if (!isCompleted && !isUnlocked) return null;
+                                                                                        }
                                                                                         
                                                                                         const isAudio = lesson.material_type === 'audio';
                                                                                         const isVideo = lesson.material_type === 'video';
