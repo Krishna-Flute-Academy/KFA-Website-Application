@@ -1662,44 +1662,54 @@ export default function ClassroomDashboardPage({
                     return;
                 }
 
-                const rows = students.map(s => {
-                    const isSelected = allocationSelectedStudents.includes(s.student_id);
-                    const existingRow = studentProgress.find(p => p.student_id === s.student_id && p.lesson_id === lessonId);
-                    const existingStatus = existingRow ? existingRow.status : 'locked';
-                    
-                    let status = existingStatus;
-                    if (allocationStatus === 'unlocked') {
-                        if (isSelected) {
-                            // Preserve completed status to avoid accidental downgrades to 'unlocked'
-                            status = (existingStatus === 'completed') ? 'completed' : 'unlocked';
-                        } else {
-                            status = 'locked';
-                        }
-                    } else if (allocationStatus === 'completed') {
-                        if (isSelected) {
-                            status = 'completed';
-                        } else {
-                            // Revert to unlocked if they were completed but now unchecked, otherwise keep their status
-                            status = (existingStatus === 'completed') ? 'unlocked' : existingStatus;
-                        }
-                    } else if (allocationStatus === 'locked') {
-                        if (isSelected) {
-                            status = 'locked';
-                        } else {
-                            status = existingStatus;
-                        }
-                    }
+                const targetStudentIds = (curriculumTab === 'individual' && selectedStudentForCurriculum)
+                    ? [selectedStudentForCurriculum.student_id]
+                    : students.map(s => s.student_id);
 
-                    return {
-                        student_id: s.student_id,
-                        classroom_id: classroomId,
-                        lesson_id: lessonId,
-                        status: status,
-                        unlocked_by: 'manual',
-                        unlocked_at: status !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
-                        completed_at: status === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
-                    };
-                });
+                const rows = students
+                    .filter(s => targetStudentIds.includes(s.student_id))
+                    .map(s => {
+                        const isSelected = allocationSelectedStudents.includes(s.student_id);
+                        const existingRow = studentProgress.find(p => p.student_id === s.student_id && p.lesson_id === lessonId);
+                        const existingStatus = existingRow ? existingRow.status : 'locked';
+                        
+                        let status = existingStatus;
+                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                            status = allocationStatus;
+                        } else {
+                            if (allocationStatus === 'unlocked') {
+                                if (isSelected) {
+                                    // Preserve completed status to avoid accidental downgrades to 'unlocked'
+                                    status = (existingStatus === 'completed') ? 'completed' : 'unlocked';
+                                } else {
+                                    status = 'locked';
+                                }
+                            } else if (allocationStatus === 'completed') {
+                                if (isSelected) {
+                                    status = 'completed';
+                                } else {
+                                    // Revert to unlocked if they were completed but now unchecked, otherwise keep their status
+                                    status = (existingStatus === 'completed') ? 'unlocked' : existingStatus;
+                                }
+                            } else if (allocationStatus === 'locked') {
+                                if (isSelected) {
+                                    status = 'locked';
+                                } else {
+                                    status = existingStatus;
+                                }
+                            }
+                        }
+
+                        return {
+                            student_id: s.student_id,
+                            classroom_id: classroomId,
+                            lesson_id: lessonId,
+                            status: status,
+                            unlocked_by: 'manual',
+                            unlocked_at: status !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
+                            completed_at: status === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
+                        };
+                    });
 
                 const { error } = await supabaseAuth
                     .from('student_topic_progress')
@@ -3400,14 +3410,12 @@ export default function ClassroomDashboardPage({
                                                                                                                                                  if (completedCount === students.length) {
                                                                                                                                                      statusLabel = "Completed";
                                                                                                                                                      cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
-                                                                                                                                                 } else if (unlockedCount === students.length) {
-                                                                                                                                                     statusLabel = "Unlocked";
+                                                                                                                                                 } else if (completedCount > 0 || unlockedCount > 0) {
+                                                                                                                                                     statusLabel = completedCount > 0 ? `Unlocked (${completedCount}/${students.length} Done)` : "Unlocked";
                                                                                                                                                      cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
-                                                                                                                                                 } else if (completedCount === 0 && unlockedCount === 0) {
-                                                                                                                                                     statusLabel = "Locked";
                                                                                                                                                  } else {
-                                                                                                                                                     statusLabel = `${completedCount}/${students.length} Done`;
-                                                                                                                                                     cardBorder = "border-sky-500/50 bg-sky-500/[0.01] dark:bg-sky-500/[0.005]";
+                                                                                                                                                     statusLabel = "Locked";
+                                                                                                                                                     cardBorder = "border-slate-200 dark:border-slate-800 bg-slate-50/30 opacity-70";
                                                                                                                                                  }
                                                                                                                                              }
                                                                                                                                          }
@@ -3495,7 +3503,7 @@ export default function ClassroomDashboardPage({
                                                                                                   const currentSelected = studentProgress
                                                                                                       .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
                                                                                                       .map(p => p.student_id);
-                                                                                                  setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                  setAllocationSelectedStudents((curriculumTab === 'individual' && selectedStudentForCurriculum) ? [selectedStudentForCurriculum.student_id] : (currentSelected.length > 0 ? currentSelected : []));
                                                                                                   setIsAllocationDrawerOpen(true);
                                                                                               }}
                                                                                               className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
@@ -3682,7 +3690,7 @@ export default function ClassroomDashboardPage({
                                                                                                   const currentSelected = studentProgress
                                                                                                       .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
                                                                                                       .map(p => p.student_id);
-                                                                                                  setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                  setAllocationSelectedStudents((curriculumTab === 'individual' && selectedStudentForCurriculum) ? [selectedStudentForCurriculum.student_id] : (currentSelected.length > 0 ? currentSelected : []));
                                                                                                   setIsAllocationDrawerOpen(true);
                                                                                               }}
                                                                                               className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
@@ -3844,7 +3852,7 @@ export default function ClassroomDashboardPage({
                                                                                                                         const currentSelected = studentProgress
                                                                                                                             .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
                                                                                                                             .map(p => p.student_id);
-                                                                                                                        setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                                        setAllocationSelectedStudents((curriculumTab === 'individual' && selectedStudentForCurriculum) ? [selectedStudentForCurriculum.student_id] : (currentSelected.length > 0 ? currentSelected : []));
                                                                                                                         setIsAllocationDrawerOpen(true);
                                                                                                                     }}
                                                                                                                     className={`flex items-center gap-1.5 px-4.5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider border transition-all cursor-pointer ${
@@ -3882,7 +3890,7 @@ export default function ClassroomDashboardPage({
                                                                                                                         const currentSelected = studentProgress
                                                                                                                             .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
                                                                                                                             .map(p => p.student_id);
-                                                                                                                        setAllocationSelectedStudents(currentSelected.length > 0 ? currentSelected : (selectedStudentForCurriculum ? [selectedStudentForCurriculum.student_id] : []));
+                                                                                                                        setAllocationSelectedStudents((curriculumTab === 'individual' && selectedStudentForCurriculum) ? [selectedStudentForCurriculum.student_id] : (currentSelected.length > 0 ? currentSelected : []));
                                                                                                                         setIsAllocationDrawerOpen(true);
                                                                                                                     }}
                                                                                                                     className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-500 dark:text-slate-455 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
