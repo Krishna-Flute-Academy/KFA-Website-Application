@@ -1667,12 +1667,27 @@ export default function ClassroomDashboardPage({
                     const existingRow = studentProgress.find(p => p.student_id === s.student_id && p.lesson_id === lessonId);
                     const existingStatus = existingRow ? existingRow.status : 'locked';
                     
-                    let status = 'locked';
-                    if (isSelected) {
-                        // Preserve completed status to avoid accidental downgrades to 'unlocked'
-                        status = (existingStatus === 'completed' && allocationStatus === 'unlocked') 
-                            ? 'completed' 
-                            : allocationStatus;
+                    let status = existingStatus;
+                    if (allocationStatus === 'unlocked') {
+                        if (isSelected) {
+                            // Preserve completed status to avoid accidental downgrades to 'unlocked'
+                            status = (existingStatus === 'completed') ? 'completed' : 'unlocked';
+                        } else {
+                            status = 'locked';
+                        }
+                    } else if (allocationStatus === 'completed') {
+                        if (isSelected) {
+                            status = 'completed';
+                        } else {
+                            // Revert to unlocked if they were completed but now unchecked, otherwise keep their status
+                            status = (existingStatus === 'completed') ? 'unlocked' : existingStatus;
+                        }
+                    } else if (allocationStatus === 'locked') {
+                        if (isSelected) {
+                            status = 'locked';
+                        } else {
+                            status = existingStatus;
+                        }
                     }
 
                     return {
