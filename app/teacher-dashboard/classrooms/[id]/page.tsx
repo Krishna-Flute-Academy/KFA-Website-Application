@@ -1406,10 +1406,9 @@ export default function ClassroomDashboardPage({
 
         assignedInventoryItems.forEach(item => {
             const isIndividualMode = curriculumTab === 'individual';
-            const isClasswideAssignment = item.target_type === 'all';
             
             const filterLesson = (lessonId: string) => {
-                if (isIndividualMode && isClasswideAssignment && selectedStudentForCurriculum) {
+                if (isIndividualMode && selectedStudentForCurriculum) {
                     const isCompleted = selectedStudentPermissions.completedLessons.has(lessonId);
                     const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lessonId);
                     return isCompleted || isUnlocked;
@@ -1457,31 +1456,23 @@ export default function ClassroomDashboardPage({
     }, [syllabusLessons, studentProgress]);
 
     const livePreviewData = useMemo(() => {
-        if (!selectedStudentForCurriculum || syllabusLessons.length === 0) return null;
+        if (!selectedStudentForCurriculum) return null;
 
+        const totalLessons = syllabusLessons.length;
         const completedCount = syllabusLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length;
-        const progressPercentage = Math.round((completedCount / syllabusLessons.length) * 100);
+        const progressPercentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
 
-        let currentlyLearning = syllabusLessons.find(l => 
+        const currentlyLearning = syllabusLessons.find(l => 
             selectedStudentPermissions.unlockedLessons.has(l.id) && 
             !selectedStudentPermissions.completedLessons.has(l.id)
         );
-        if (!currentlyLearning) {
-            currentlyLearning = syllabusLessons.find(l => 
-                !selectedStudentPermissions.completedLessons.has(l.id)
-            );
-        }
 
-        const nextLockedItems = syllabusLessons.filter(l => 
-            !selectedStudentPermissions.completedLessons.has(l.id) && 
-            !selectedStudentPermissions.unlockedLessons.has(l.id) &&
-            l.id !== currentlyLearning?.id
-        );
+        const allocatedTopics = syllabusLessons;
 
         return {
             progressPercentage,
             currentlyLearning,
-            nextLockedItems: nextLockedItems.slice(0, 3)
+            allocatedTopics
         };
     }, [selectedStudentForCurriculum, syllabusLessons, selectedStudentPermissions]);
 
@@ -4010,26 +4001,49 @@ export default function ClassroomDashboardPage({
                                                     )}
                                                 </div>
 
-                                                {/* Next Locked Items (Red/White Accent) */}
+                                                {/* Allocated Curriculum Pathway */}
                                                 <div className="space-y-3 relative z-10">
-                                                    <span className="text-[9px] font-black uppercase text-stone-500 tracking-wider font-mono block">NEXT SEQUENTIAL PATHWAY</span>
-                                                    {livePreviewData.nextLockedItems.length === 0 ? (
-                                                        <div className="p-3 bg-stone-100 border border-stone-200/60 rounded-xl text-center text-xs text-stone-400 italic">
-                                                            End of current learning roadmap.
+                                                    <span className="text-[9px] font-black uppercase text-stone-500 tracking-wider font-mono block">YOUR LEARNING PATHWAY</span>
+                                                    {!livePreviewData.allocatedTopics || livePreviewData.allocatedTopics.length === 0 ? (
+                                                        <div className="p-4 bg-stone-100 border border-stone-200/60 rounded-2xl text-center text-xs text-stone-400 font-medium italic">
+                                                            No topics allocated yet.
                                                         </div>
                                                     ) : (
-                                                        <div className="space-y-2">
-                                                            {livePreviewData.nextLockedItems.map((lesson, idx) => (
-                                                                <div key={lesson.id} className="flex items-center gap-3 p-3 bg-rose-50/50 border border-rose-100 rounded-xl shadow-xs transition-all hover:bg-rose-50/80">
-                                                                    <div className="w-6 h-6 rounded-lg bg-rose-100 flex items-center justify-center shrink-0 text-rose-700">
-                                                                        <Lock className="size-3" />
+                                                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                                                            {livePreviewData.allocatedTopics.map((lesson, idx) => {
+                                                                const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                return (
+                                                                    <div key={lesson.id} className={`flex items-center gap-3 p-3 border rounded-xl shadow-xs transition-all ${
+                                                                        isCompleted 
+                                                                            ? "bg-emerald-50/30 border-emerald-100 hover:bg-emerald-50/50" 
+                                                                            : "bg-white border-stone-200 hover:border-amber-400"
+                                                                    }`}>
+                                                                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                                                                            isCompleted 
+                                                                                ? "bg-emerald-100 text-emerald-700" 
+                                                                                : "bg-amber-100 text-amber-700"
+                                                                        }`}>
+                                                                            {isCompleted ? (
+                                                                                <Check className="size-4" />
+                                                                            ) : lesson.material_type === 'video' ? (
+                                                                                <Film className="size-3.5" />
+                                                                            ) : lesson.material_type === 'audio' ? (
+                                                                                <Music className="size-3.5" />
+                                                                            ) : (
+                                                                                <FileText className="size-3.5" />
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="min-w-0 flex-1 text-left">
+                                                                            <span className={`text-[8px] font-black tracking-wider font-mono block ${
+                                                                                isCompleted ? "text-emerald-700" : "text-amber-700"
+                                                                            }`}>
+                                                                                {isCompleted ? "COMPLETED • DONE" : `UNLOCKED • TOPIC ${idx + 1}`}
+                                                                            </span>
+                                                                            <h6 className="text-[11px] font-bold text-stone-900 leading-tight truncate mt-0.5">{lesson.title}</h6>
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="min-w-0 flex-1 text-left">
-                                                                        <span className="text-[8px] font-black text-rose-600 tracking-wider font-mono block">LOCKED • STEP {idx + 1}</span>
-                                                                        <h6 className="text-[11px] font-bold text-rose-950 leading-tight truncate mt-0.5">{lesson.title}</h6>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
+                                                                );
+                                                            })}
                                                         </div>
                                                     )}
                                                 </div>
