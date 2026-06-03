@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircle, Save, X, ClipboardList, Plus, ChevronLeft, ChevronRight, Trash2, ChevronDown, ChevronUp, Edit2, Download, Upload, Library, Paperclip, Send, FileText } from 'lucide-react';
+import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircle, Save, X, ClipboardList, Plus, ChevronLeft, ChevronRight, Trash2, ChevronDown, ChevronUp, Edit2, Download, Upload, Library, Paperclip, Send, FileText, Clock } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -42,6 +42,7 @@ interface TaskSubmission {
     file_url?: string;
     file_name?: string;
     file_size?: string | null;
+    due_date?: string | null;
 }
 
 export default function TaskReviewPage() {
@@ -132,6 +133,7 @@ export default function TaskReviewPage() {
     // Inventory selection sub-modal state
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
     const [inventoryLessons, setInventoryLessons] = useState<any[]>([]);
+    const [selectedOverviewTask, setSelectedOverviewTask] = useState<TaskSubmission | null>(null);
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     
@@ -290,7 +292,8 @@ export default function TaskReviewPage() {
                         proficiency_level: '',
                         student_notes: '',
                         classroom_id: asg.classroom_id,
-                        classroom_name: className
+                        classroom_name: className,
+                        due_date: asg.due_date || null
                     });
                     return;
                 }
@@ -322,7 +325,8 @@ export default function TaskReviewPage() {
                             classroom_name: studentClassName,
                             file_url: asg.file_url || '',
                             file_name: asg.file_name || '',
-                            file_size: asg.file_size || null
+                            file_size: asg.file_size || null,
+                            due_date: asg.due_date || null
                         });
                     });
                 } else {
@@ -350,7 +354,8 @@ export default function TaskReviewPage() {
                             classroom_name: className,
                             file_url: asg.file_url || '',
                             file_name: asg.file_name || '',
-                            file_size: asg.file_size || null
+                            file_size: asg.file_size || null,
+                            due_date: asg.due_date || null
                         });
                     });
                 }
@@ -526,13 +531,12 @@ export default function TaskReviewPage() {
                 setPreviousTasks(prevTasks);
             }
 
-            // Fetch curriculum lessons with materials for Inventory Library
+            // Fetch curriculum lessons for Inventory Library
             const { data: lessonsData } = await supabaseAuth
                 .from('course_lessons')
-                .select('id, title, material_url, file_name, file_size')
-                .not('material_url', 'is', null);
+                .select('id, title, material_url, file_name, file_size, link_url');
             if (lessonsData) {
-                setInventoryLessons(lessonsData.filter(l => l.material_url));
+                setInventoryLessons(lessonsData);
             }
 
             // Fetch all students enrolled in teacher's classrooms
@@ -887,8 +891,9 @@ export default function TaskReviewPage() {
             setCreateFileSize(null);
             setSelectedPreviousTaskId(null);
             
-            // Refresh submissions list
+            // Refresh submissions list and dropdown previous tasks list
             await fetchSubmissions(session.user.id);
+            await loadCreationData(session.user.id);
 
         } catch (error: any) {
             console.error('Error assigning/saving task:', error);
@@ -933,6 +938,7 @@ export default function TaskReviewPage() {
                 // Update local state by removing all submissions related to this task
                 const updatedSubmissions = submissions.filter(s => s.task_id !== taskId);
                 setSubmissions(updatedSubmissions);
+                setPreviousTasks(prev => prev.filter(t => t.id !== taskId));
                 
                 if (selectedSub?.task_id === taskId) {
                     setSelectedSub(null);
@@ -982,6 +988,7 @@ export default function TaskReviewPage() {
                 // Update local state
                 const updatedSubmissions = submissions.filter(s => !uniqueTaskIds.includes(s.task_id));
                 setSubmissions(updatedSubmissions);
+                setPreviousTasks(prev => prev.filter(t => !uniqueTaskIds.includes(t.id)));
                 
                 if (selectedSub && uniqueTaskIds.includes(selectedSub.task_id)) {
                     setSelectedSub(null);
@@ -1167,7 +1174,7 @@ export default function TaskReviewPage() {
                                     >
                                         {/* Task Accordion Header */}
                                         <header 
-                                            onClick={() => toggleTaskCollapse(group.taskTitle)}
+                                            onClick={() => setSelectedOverviewTask(group.submissions[0])}
                                             className="px-6 py-4 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100/50 dark:hover:bg-slate-800/60 transition-colors"
                                         >
                                             <div className="flex items-center gap-3">
@@ -1176,7 +1183,7 @@ export default function TaskReviewPage() {
                                                 </div>
                                                 <div>
                                                     <div className="flex items-center gap-2">
-                                                        <h3 className="font-bold text-slate-800 dark:text-white text-base leading-tight">{group.taskTitle}</h3>
+                                                        <h3 className="font-bold text-slate-800 dark:text-white text-base leading-tight hover:text-[#ecb613] transition-colors">{group.taskTitle}</h3>
                                                         {isDraft && (
                                                             <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 tracking-wider">
                                                                 Draft
@@ -1197,7 +1204,14 @@ export default function TaskReviewPage() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                                            <div 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleTaskCollapse(group.taskTitle);
+                                                }}
+                                                className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors cursor-pointer"
+                                                title={isCollapsed ? "Show students list" : "Hide students list"}
+                                            >
                                                 {isCollapsed ? (
                                                     <ChevronDown className="w-5 h-5 text-slate-500" />
                                                 ) : (
@@ -1841,9 +1855,9 @@ export default function TaskReviewPage() {
                                         key={lesson.id}
                                         type="button"
                                         onClick={() => {
-                                            setCreateFileUrl(lesson.material_url);
+                                            setCreateFileUrl(lesson.material_url || lesson.link_url || '');
                                             setCreateFileName(lesson.file_name || lesson.title);
-                                            setCreateFileSize(lesson.file_size || 'Material');
+                                            setCreateFileSize(lesson.file_size || (lesson.material_url ? 'File' : lesson.link_url ? 'Link' : 'Curriculum Topic'));
                                             setIsInventoryOpen(false);
                                         }}
                                         className="w-full text-left p-3.5 hover:bg-amber-50/40 dark:hover:bg-amber-900/10 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-amber-200 dark:hover:border-amber-900/40 transition-all flex items-center gap-3"
@@ -1854,13 +1868,17 @@ export default function TaskReviewPage() {
                                         <div className="min-w-0 flex-1">
                                             <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">{lesson.title}</h4>
                                             <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">
-                                                File: {lesson.file_name || 'Material'} • {lesson.file_size || 'PDF'}
+                                                {lesson.material_url 
+                                                    ? `File: ${lesson.file_name || 'Material'} • ${lesson.file_size || 'PDF'}` 
+                                                    : lesson.link_url 
+                                                        ? `Link: ${lesson.link_url}` 
+                                                        : 'Curriculum Topic (No material attached)'}
                                             </p>
                                         </div>
                                     </button>
                                 ))
                             ) : (
-                                <p className="text-xs text-slate-400 italic text-center py-8">No curriculum lessons have materials uploaded yet. Upload a new file instead.</p>
+                                <p className="text-xs text-slate-400 italic text-center py-8">No curriculum lessons found in the library.</p>
                             )}
                         </div>
                     </div>
@@ -1875,6 +1893,96 @@ export default function TaskReviewPage() {
                 className="hidden" 
                 accept=".pdf,.mp3,.wav,.mp4,.png,.jpg,.jpeg"
             />
+
+            {/* Task Overview Modal */}
+            {selectedOverviewTask && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[50] p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto flex flex-col animate-in zoom-in-95 duration-200 text-left">
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 rounded-t-3xl">
+                            <div>
+                                <span className="text-[10px] font-black text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 rounded-md border border-amber-100 dark:border-amber-900/50 uppercase tracking-widest font-mono">
+                                    Task Overview
+                                </span>
+                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white mt-1">{selectedOverviewTask.task_title}</h3>
+                            </div>
+                            <button 
+                                onClick={() => setSelectedOverviewTask(null)}
+                                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto flex-1 space-y-4">
+                            {/* Description / Instructions */}
+                            <div className="space-y-1.5">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Instructions</h4>
+                                <p className="text-sm font-semibold leading-relaxed bg-slate-50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800 whitespace-pre-line text-slate-700 dark:text-slate-300">
+                                    {selectedOverviewTask.task_description || 'No detailed instructions provided.'}
+                                </p>
+                            </div>
+
+                            {/* Details (Due Date, Classroom) */}
+                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-800 pt-3">
+                                <div>
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono mb-1">Due Date</h4>
+                                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                        <Clock className="w-4 h-4 text-slate-400" />
+                                        {selectedOverviewTask.due_date ? new Date(selectedOverviewTask.due_date).toLocaleDateString() : 'No due date set'}
+                                    </p>
+                                </div>
+                                {selectedOverviewTask.classroom_name && (
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono mb-1">Classroom</h4>
+                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                                            {selectedOverviewTask.classroom_name}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Attachment Link */}
+                            {selectedOverviewTask.file_url && (
+                                <div className="space-y-1.5 border-t border-slate-100 dark:border-slate-800 pt-3">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Attachment</h4>
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-800/20 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-9 h-9 rounded-lg bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-500 shrink-0 border border-red-100 dark:border-transparent">
+                                                <FileText className="w-4 h-4" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-xs text-slate-850 dark:text-slate-200 truncate">
+                                                    {selectedOverviewTask.file_name || 'Learning Material'}
+                                                </p>
+                                                {selectedOverviewTask.file_size && (
+                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold font-mono uppercase mt-0.5">
+                                                        {selectedOverviewTask.file_size}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <a 
+                                            href={selectedOverviewTask.file_url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-slate-750 dark:text-slate-250 text-[10px] font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all flex items-center gap-1 shrink-0"
+                                        >
+                                            <Download className="w-3.5 h-3.5" /> Download
+                                        </a>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 rounded-b-3xl flex justify-end">
+                            <button 
+                                onClick={() => setSelectedOverviewTask(null)}
+                                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-extrabold rounded-xl transition-all text-xs"
+                            >
+                                Close Overview
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
