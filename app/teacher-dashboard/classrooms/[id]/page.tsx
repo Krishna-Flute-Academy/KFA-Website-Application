@@ -3442,9 +3442,9 @@ export default function ClassroomDashboardPage({
                                                                                                                                                      <div className="text-left min-w-0 flex-1">
                                                                                                                                                          <div className="flex items-center gap-2">
                                                                                                                                                              <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                                                                                 statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                                                                 statusLabel === 'Completed'
                                                                                                                                                                      ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                                                                                                                     : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
+                                                                                                                                                                     : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked') ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
                                                                                                                                                              }`}>
                                                                                                                                                                  Topic {lesson.lesson_number}
                                                                                                                                                              </span>
@@ -3460,15 +3460,15 @@ export default function ClassroomDashboardPage({
                                                                                                                                                  {/* Right side: Status indicator & slider action */}
                                                                                                                                                  <div className="flex items-center gap-2 shrink-0">
                                                                                                                                                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${
-                                                                                                                                                         statusLabel === 'Completed' || statusLabel.includes('Done')
-                                                                                                                                                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
-                                                                                                                                                             : statusLabel === 'Unlocked'
+                                                                                                                                                         statusLabel === 'Completed'
+                                                                                                                                                             ? 'bg-emerald-500/10 text-emerald-605 dark:text-emerald-400 border-emerald-500/25'
+                                                                                                                                                             : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked'))
                                                                                                                                                              ? 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/25'
                                                                                                                                                              : 'bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-100 border-transparent'
                                                                                                                                                      }`}>
                                                                                                                                                          {statusLabel === 'Locked' ? (
                                                                                                                                                              <Lock className="size-3" />
-                                                                                                                                                         ) : statusLabel === 'Unlocked' ? (
+                                                                                                                                                         ) : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) ? (
                                                                                                                                                              <Unlock className="size-3" />
                                                                                                                                                          ) : (
                                                                                                                                                              <CheckCircle className="size-3" />
@@ -3484,10 +3484,12 @@ export default function ClassroomDashboardPage({
                                                                                                   setAllocationTargetLesson(lesson);
                                                                                                   setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
                                                                                                   let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                  if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                  if (statusLabel === 'Completed') {
                                                                                                       initialStatus = 'completed';
-                                                                                                  } else if (statusLabel === 'Unlocked') {
+                                                                                                  } else if (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) {
                                                                                                       initialStatus = 'unlocked';
+                                                                                                  } else if (statusLabel === 'Locked') {
+                                                                                                      initialStatus = 'locked';
                                                                                                   }
                                                                                                   setAllocationStatus(initialStatus);
                                                                                                   const currentSelected = studentProgress
@@ -3627,9 +3629,9 @@ export default function ClassroomDashboardPage({
                                                                                                                          <div className="text-left min-w-0 flex-1">
                                                                                                                              <div className="flex items-center gap-2">
                                                                                                                                  <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                                                     statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                                     statusLabel === 'Completed'
                                                                                                                                          ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                                                                                         : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
+                                                                                                                                         : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked') ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
                                                                                                                                  }`}>
                                                                                                                                      Topic {lesson.lesson_number}
                                                                                                                                  </span>
@@ -3645,9 +3647,9 @@ export default function ClassroomDashboardPage({
                                                                                                                      {/* Right side: Status indicator & slider action */}
                                                                                                                      <div className="flex items-center gap-2 shrink-0">
                                                                                                                          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${
-                                                                                                                             statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                             statusLabel === 'Completed'
                                                                                                                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
-                                                                                                                                 : statusLabel === 'Unlocked'
+                                                                                                                                 : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked'))
                                                                                                                                  ? 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/25'
                                                                                                                                  : 'bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-100 border-transparent'
                                                                                                                          }`}>
@@ -3669,10 +3671,12 @@ export default function ClassroomDashboardPage({
                                                                                                   setAllocationTargetLesson(lesson);
                                                                                                   setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
                                                                                                   let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                  if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                  if (statusLabel === 'Completed') {
                                                                                                       initialStatus = 'completed';
-                                                                                                  } else if (statusLabel === 'Unlocked') {
+                                                                                                  } else if (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) {
                                                                                                       initialStatus = 'unlocked';
+                                                                                                  } else if (statusLabel === 'Locked') {
+                                                                                                      initialStatus = 'locked';
                                                                                                   }
                                                                                                   setAllocationStatus(initialStatus);
                                                                                                   const currentSelected = studentProgress
@@ -3762,12 +3766,10 @@ export default function ClassroomDashboardPage({
                                                                                                 
                                                                                                 if (completedCount === students.length) {
                                                                                                     statusLabel = "Completed";
-                                                                                                } else if (unlockedCount === students.length) {
-                                                                                                    statusLabel = "Unlocked";
-                                                                                                } else if (completedCount === 0 && unlockedCount === 0) {
-                                                                                                    statusLabel = "Locked";
+                                                                                                } else if (completedCount > 0 || unlockedCount > 0) {
+                                                                                                    statusLabel = completedCount > 0 ? `Unlocked (${completedCount}/${students.length} Done)` : "Unlocked";
                                                                                                 } else {
-                                                                                                    statusLabel = `${completedCount}/${students.length} Done`;
+                                                                                                    statusLabel = "Locked";
                                                                                                 }
                                                                                             }
                                                                                         }
@@ -3777,9 +3779,9 @@ export default function ClassroomDashboardPage({
                                                                                                 <div className="border-b border-slate-100 dark:border-slate-800 pb-3 pl-2 flex items-center justify-between">
                                                                                                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Assigned Lesson Study Guide</h4>
                                                                                                     <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                        statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                        statusLabel === 'Completed'
                                                                                                             ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                                                            : (statusLabel === 'Unlocked' ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
+                                                                                                            : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked') ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
                                                                                                     }`}>
                                                                                                         {statusLabel}
                                                                                                     </span>
@@ -3831,10 +3833,12 @@ export default function ClassroomDashboardPage({
                                                                                                                         setAllocationTargetLesson(lesson);
                                                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
                                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                                        if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                                        if (statusLabel === 'Completed') {
                                                                                                                             initialStatus = 'completed';
-                                                                                                                        } else if (statusLabel === 'Unlocked') {
+                                                                                                                        } else if (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) {
                                                                                                                             initialStatus = 'unlocked';
+                                                                                                                        } else if (statusLabel === 'Locked') {
+                                                                                                                            initialStatus = 'locked';
                                                                                                                         }
                                                                                                                         setAllocationStatus(initialStatus);
                                                                                                                         const currentSelected = studentProgress
@@ -3844,16 +3848,16 @@ export default function ClassroomDashboardPage({
                                                                                                                         setIsAllocationDrawerOpen(true);
                                                                                                                     }}
                                                                                                                     className={`flex items-center gap-1.5 px-4.5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider border transition-all cursor-pointer ${
-                                                                                                                        statusLabel === 'Completed' || statusLabel.includes('Done')
+                                                                                                                        statusLabel === 'Completed'
                                                                                                                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                                                                                                                            : statusLabel === 'Unlocked'
+                                                                                                                            : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked'))
                                                                                                                             ? 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/20 hover:bg-[#ecb613]/20 text-[#ecb613]'
                                                                                                                             : 'bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-750 border-transparent'
                                                                                                                     }`}
                                                                                                                 >
                                                                                                                     {statusLabel === 'Locked' ? (
                                                                                                                         <Lock className="size-3" />
-                                                                                                                    ) : statusLabel === 'Unlocked' ? (
+                                                                                                                    ) : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) ? (
                                                                                                                         <Unlock className="size-3" />
                                                                                                                     ) : (
                                                                                                                         <CheckCircle className="size-3" />
@@ -3867,8 +3871,12 @@ export default function ClassroomDashboardPage({
                                                                                                                         setAllocationTargetLesson(lesson);
                                                                                                                         setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
                                                                                                                         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                                        if (statusLabel === 'Completed' || statusLabel.includes('Done')) {
+                                                                                                                        if (statusLabel === 'Completed') {
                                                                                                                             initialStatus = 'completed';
+                                                                                                                        } else if (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) {
+                                                                                                                            initialStatus = 'unlocked';
+                                                                                                                        } else if (statusLabel === 'Locked') {
+                                                                                                                            initialStatus = 'locked';
                                                                                                                         }
                                                                                                                         setAllocationStatus(initialStatus);
                                                                                                                         const currentSelected = studentProgress
