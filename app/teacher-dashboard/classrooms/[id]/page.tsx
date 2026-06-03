@@ -1790,7 +1790,7 @@ export default function ClassroomDashboardPage({
         setMetadataError('');
         setMetadataSaved(false);
         try {
-            const { error } = await supabaseAuth
+            let { error } = await supabaseAuth
                 .from('classrooms')
                 .update({
                     name: metadataForm.name.trim(),
@@ -1798,6 +1798,19 @@ export default function ClassroomDashboardPage({
                     status: metadataForm.status,
                 })
                 .eq('id', classroomId);
+
+            // If update fails because the 'status' column doesn't exist in the database, retry without it
+            if (error && (error.message?.includes('status') && (error.message?.includes('schema cache') || error.message?.includes('does not exist') || error.code === 'PGRST205'))) {
+                console.warn('[Classroom Metadata] "status" column missing in database, retrying update without status...');
+                const retryResult = await supabaseAuth
+                    .from('classrooms')
+                    .update({
+                        name: metadataForm.name.trim(),
+                        description: metadataForm.description.trim(),
+                    })
+                    .eq('id', classroomId);
+                error = retryResult.error;
+            }
 
             if (error) throw error;
 
