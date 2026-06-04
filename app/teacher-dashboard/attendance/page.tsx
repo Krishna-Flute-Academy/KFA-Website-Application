@@ -758,7 +758,9 @@ export default function AttendancePage() {
                     })
                     .eq('id', editingMakeupId);
 
-                if (error) throw error;
+                if (error) {
+                    throw new Error(error.message + (error.details ? ` (${error.details})` : '') + (error.hint ? ` [${error.hint}]` : ''));
+                }
                 alert('Makeup class rescheduled successfully!');
             } else {
                 const { error } = await supabaseAuth
@@ -770,7 +772,9 @@ export default function AttendancePage() {
                         reason: makeupReason || null
                     }]);
 
-                if (error) throw error;
+                if (error) {
+                    throw new Error(error.message + (error.details ? ` (${error.details})` : '') + (error.hint ? ` [${error.hint}]` : ''));
+                }
                 alert('Makeup class scheduled successfully!');
             }
             setShowMakeupModal(false);
