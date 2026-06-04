@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircle, Save, X, ClipboardList, Plus, ChevronLeft, ChevronRight, Trash2, ChevronDown, ChevronUp, Edit2, Download, Upload, Library, Paperclip, Send, FileText, Clock } from 'lucide-react';
+import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircle, Save, X, ClipboardList, Plus, ChevronLeft, ChevronRight, Trash2, ChevronDown, ChevronUp, Edit2, Download, Upload, Library, Paperclip, Send, FileText, Clock, BookOpen, Video, Music, Image as ImageIcon } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -134,6 +134,15 @@ export default function TaskReviewPage() {
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
     const [inventoryLessons, setInventoryLessons] = useState<any[]>([]);
     const [selectedOverviewTask, setSelectedOverviewTask] = useState<TaskSubmission | null>(null);
+
+    // Curriculum hierarchy for Inventory Library
+    const [inventoryCategories, setInventoryCategories] = useState<any[]>([]);
+    const [inventoryModules, setInventoryModules] = useState<any[]>([]);
+    const [inventoryChapters, setInventoryChapters] = useState<any[]>([]);
+    const [inventorySearchQuery, setInventorySearchQuery] = useState('');
+    const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+    const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+    const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     
@@ -531,10 +540,38 @@ export default function TaskReviewPage() {
                 setPreviousTasks(prevTasks);
             }
 
+            // Fetch curriculum categories
+            const { data: categoriesData } = await supabaseAuth
+                .from('course_categories')
+                .select('*')
+                .order('category_order', { ascending: true });
+            if (categoriesData) {
+                setInventoryCategories(categoriesData);
+            }
+
+            // Fetch curriculum modules
+            const { data: modulesData } = await supabaseAuth
+                .from('course_modules')
+                .select('*')
+                .order('module_number', { ascending: true });
+            if (modulesData) {
+                setInventoryModules(modulesData);
+            }
+
+            // Fetch curriculum chapters
+            const { data: chaptersData } = await supabaseAuth
+                .from('course_chapters')
+                .select('*')
+                .order('chapter_number', { ascending: true });
+            if (chaptersData) {
+                setInventoryChapters(chaptersData);
+            }
+
             // Fetch curriculum lessons for Inventory Library
             const { data: lessonsData } = await supabaseAuth
                 .from('course_lessons')
-                .select('id, title, material_url, file_name, file_size, link_url');
+                .select('*')
+                .order('lesson_number', { ascending: true });
             if (lessonsData) {
                 setInventoryLessons(lessonsData);
             }
@@ -592,10 +629,160 @@ export default function TaskReviewPage() {
     }, [createStudents, createSelectedClassroom, createStudentSearch]);
 
     const filteredPreviousTasks = React.useMemo(() => {
-        if (!createTitle.trim()) return previousTasks.slice(0, 5);
+        const seen = new Set<string>();
+        const unique: any[] = [];
+        previousTasks.forEach(task => {
+            const normalizedTitle = (task.title || '').toLowerCase().trim();
+            if (normalizedTitle && !seen.has(normalizedTitle)) {
+                seen.add(normalizedTitle);
+                unique.push(task);
+            }
+        });
+
+        if (!createTitle.trim()) return unique;
         const lowerTitle = createTitle.toLowerCase();
-        return previousTasks.filter(t => t.title?.toLowerCase().includes(lowerTitle));
+        return unique.filter(t => t.title?.toLowerCase().includes(lowerTitle));
     }, [previousTasks, createTitle]);
+
+    const getCategoryForModule = (mod: any, categories: any[]) => {
+        if (mod.category_id) {
+            const cat = categories.find(c => c.id === mod.category_id);
+            if (cat) return { id: cat.id, name: cat.name };
+        }
+        const desc = mod.description || '';
+        const match = desc.match(/^\[(.*?)\]/);
+        if (match) {
+            const catName = match[1].trim();
+            const cat = categories.find(c => c.name.toLowerCase() === catName.toLowerCase());
+            if (cat) return { id: cat.id, name: cat.name };
+            return { id: catName, name: catName };
+        }
+        const defaultCatName = mod.module_number < 100 ? 'Proficiency Levels' : 'Specialized Modules';
+        const cat = categories.find(c => c.name.toLowerCase() === defaultCatName.toLowerCase());
+        if (cat) return { id: cat.id, name: cat.name };
+        return { id: 'default', name: defaultCatName };
+    };
+
+    const getLessonMaterialIcon = (type: string, hasUrl: boolean) => {
+        if (!hasUrl) return <FileText className="w-3.5 h-3.5 text-slate-400" />;
+        switch (type?.toLowerCase()) {
+            case 'pdf': return <FileText className="w-3.5 h-3.5 text-red-500" />;
+            case 'video': return <Video className="w-3.5 h-3.5 text-amber-550" />;
+            case 'audio': return <Music className="w-3.5 h-3.5 text-blue-500" />;
+            case 'image': return <ImageIcon className="w-3.5 h-3.5 text-emerald-500" />;
+            default: return <FileText className="w-3.5 h-3.5 text-slate-500" />;
+        }
+    };
+
+    const filteredCurriculumTree = useMemo(() => {
+        const query = inventorySearchQuery.trim().toLowerCase();
+        
+        const categoriesMap: Record<string, { id: string; name: string; modules: any[] }> = {};
+        
+        inventoryCategories.forEach(cat => {
+            categoriesMap[cat.id] = { id: cat.id, name: cat.name, modules: [] };
+        });
+        
+        const modulesMap: Record<string, { id: string; title: string; module_number: number; chapters: any[] }> = {};
+        inventoryModules.forEach(mod => {
+            const catInfo = getCategoryForModule(mod, inventoryCategories);
+            if (!categoriesMap[catInfo.id]) {
+                categoriesMap[catInfo.id] = { id: catInfo.id, name: catInfo.name, modules: [] };
+            }
+            
+            const modNode = { id: mod.id, title: mod.title, module_number: mod.module_number, chapters: [] };
+            modulesMap[mod.id] = modNode;
+            categoriesMap[catInfo.id].modules.push(modNode);
+        });
+        
+        const chaptersMap: Record<string, { id: string; title: string; chapter_number: number; lessons: any[] }> = {};
+        inventoryChapters.forEach(chap => {
+            const chapNode = { id: chap.id, title: chap.title, chapter_number: chap.chapter_number, lessons: [] };
+            chaptersMap[chap.id] = chapNode;
+            
+            const modNode = modulesMap[chap.module_id];
+            if (modNode) {
+                modNode.chapters.push(chapNode);
+            }
+        });
+        
+        inventoryLessons.forEach(lesson => {
+            const chapNode = chaptersMap[lesson.chapter_id];
+            if (chapNode) {
+                chapNode.lessons.push(lesson);
+            }
+        });
+
+        const result: any[] = [];
+
+        Object.values(categoriesMap).forEach(cat => {
+            const catMatches = cat.name.toLowerCase().includes(query);
+            const filteredModules: any[] = [];
+            
+            cat.modules.forEach(mod => {
+                const modMatches = mod.title.toLowerCase().includes(query);
+                const filteredChapters: any[] = [];
+                
+                mod.chapters.forEach(chap => {
+                    const chapMatches = chap.title.toLowerCase().includes(query);
+                    const filteredLessons: any[] = [];
+                    
+                    chap.lessons.forEach(lesson => {
+                        const lessonTitleMatches = lesson.title.toLowerCase().includes(query);
+                        const fileNameMatches = (lesson.file_name || '').toLowerCase().includes(query);
+                        if (lessonTitleMatches || fileNameMatches || chapMatches || modMatches || catMatches) {
+                            filteredLessons.push(lesson);
+                        }
+                    });
+                    
+                    if (filteredLessons.length > 0 || chapMatches) {
+                        filteredChapters.push({
+                            ...chap,
+                            lessons: filteredLessons
+                        });
+                    }
+                });
+                
+                if (filteredChapters.length > 0 || modMatches) {
+                    filteredModules.push({
+                        ...mod,
+                        chapters: filteredChapters
+                    });
+                }
+            });
+            
+            if (filteredModules.length > 0 || catMatches) {
+                result.push({
+                    ...cat,
+                    modules: filteredModules
+                });
+            }
+        });
+
+        return result;
+    }, [inventoryCategories, inventoryModules, inventoryChapters, inventoryLessons, inventorySearchQuery]);
+
+    useEffect(() => {
+        if (inventorySearchQuery.trim() !== '') {
+            const newExpandedCats: Record<string, boolean> = {};
+            const newExpandedMods: Record<string, boolean> = {};
+            const newExpandedChaps: Record<string, boolean> = {};
+            
+            filteredCurriculumTree.forEach(cat => {
+                newExpandedCats[cat.id] = true;
+                cat.modules.forEach((mod: any) => {
+                    newExpandedMods[mod.id] = true;
+                    mod.chapters.forEach((chap: any) => {
+                        newExpandedChaps[chap.id] = true;
+                    });
+                });
+            });
+            
+            setExpandedCategories(newExpandedCats);
+            setExpandedModules(newExpandedMods);
+            setExpandedChapters(newExpandedChaps);
+        }
+    }, [inventorySearchQuery, filteredCurriculumTree]);
 
     const handleTitleChange = (newTitle: string) => {
         setCreateTitle(newTitle);
@@ -1596,18 +1783,36 @@ export default function TaskReviewPage() {
                                             </span>
                                         )}
                                     </div>
-                                    <input 
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all placeholder:text-slate-400 font-semibold text-sm" 
-                                        placeholder="e.g. Master the Mohanam Raga Scale" 
-                                        type="text"
-                                        value={createTitle}
-                                        onChange={(e) => handleTitleChange(e.target.value)}
-                                        onFocus={() => setShowSuggestions(true)}
-                                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                    />
+                                    <div className="relative flex items-center">
+                                        <input 
+                                            className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all placeholder:text-slate-400 font-semibold text-sm" 
+                                            placeholder="e.g. Master the Mohanam Raga Scale" 
+                                            type="text"
+                                            value={createTitle}
+                                            onChange={(e) => handleTitleChange(e.target.value)}
+                                            onFocus={() => setShowSuggestions(true)}
+                                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                        />
+                                        <button
+                                            type="button"
+                                            onMouseDown={(e) => {
+                                                e.preventDefault(); // prevent blur
+                                            }}
+                                            onClick={() => {
+                                                setShowSuggestions(prev => !prev);
+                                            }}
+                                            className="absolute right-3 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-650 transition-colors"
+                                            title="Show previous tasks"
+                                        >
+                                            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showSuggestions ? 'rotate-180' : ''}`} />
+                                        </button>
+                                    </div>
                                     {showSuggestions && filteredPreviousTasks.length > 0 && (
-                                        <div className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/50">
-                                            <div className="px-4 py-2 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest bg-slate-50/50 dark:bg-slate-800/10">
+                                        <div 
+                                            onMouseDown={(e) => e.preventDefault()} // Keep input focused
+                                            className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/50"
+                                        >
+                                            <div className="px-4 py-2 text-[10px] font-black text-slate-400 dark:text-slate-505 uppercase tracking-widest bg-slate-50/50 dark:bg-slate-800/10">
                                                 Previous Tasks (Click to Reuse)
                                             </div>
                                             {filteredPreviousTasks.map(task => (
@@ -1619,7 +1824,7 @@ export default function TaskReviewPage() {
                                                 >
                                                     <div className="flex-1 min-w-0 pr-4">
                                                         <div className="font-bold text-sm text-slate-800 dark:text-slate-205 truncate group-hover:text-amber-600 transition-colors">{task.title}</div>
-                                                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{task.description}</div>
+                                                        <div className="text-xs text-slate-505 dark:text-slate-400 truncate mt-0.5">{task.description}</div>
                                                     </div>
                                                     {task.status === 'draft' && (
                                                         <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 dark:bg-slate-800 text-slate-505 tracking-wider shrink-0">Draft</span>
@@ -1835,11 +2040,12 @@ export default function TaskReviewPage() {
             {/* Inventory Picker Sub-Modal */}
             {isInventoryOpen && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto flex flex-col animate-in zoom-in-95 duration-200 text-left">
-                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 rounded-t-3xl">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left">
+                        {/* Header */}
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 rounded-t-3xl shrink-0">
                             <div>
                                 <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Select from Inventory Library</h3>
-                                <p className="text-xs text-slate-500 font-semibold mt-0.5">Choose a learning material file to attach to the task</p>
+                                <p className="text-xs text-slate-505 font-semibold mt-0.5">Choose a learning material file to attach to the task</p>
                             </div>
                             <button 
                                 onClick={() => setIsInventoryOpen(false)}
@@ -1848,37 +2054,157 @@ export default function TaskReviewPage() {
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="p-5 overflow-y-auto flex-1 space-y-2">
-                            {inventoryLessons.length > 0 ? (
-                                inventoryLessons.map(lesson => (
-                                    <button
-                                        key={lesson.id}
-                                        type="button"
-                                        onClick={() => {
-                                            setCreateFileUrl(lesson.material_url || lesson.link_url || '');
-                                            setCreateFileName(lesson.file_name || lesson.title);
-                                            setCreateFileSize(lesson.file_size || (lesson.material_url ? 'File' : lesson.link_url ? 'Link' : 'Curriculum Topic'));
-                                            setIsInventoryOpen(false);
-                                        }}
-                                        className="w-full text-left p-3.5 hover:bg-amber-50/40 dark:hover:bg-amber-900/10 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-amber-200 dark:hover:border-amber-900/40 transition-all flex items-center gap-3"
+                        
+                        {/* Search Bar */}
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800/60 bg-white dark:bg-slate-900 shrink-0">
+                            <div className="relative">
+                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input 
+                                    type="text"
+                                    placeholder="Search headlines, modules, chapters, topics..."
+                                    value={inventorySearchQuery}
+                                    onChange={(e) => setInventorySearchQuery(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-white"
+                                />
+                                {inventorySearchQuery && (
+                                    <button 
+                                        onClick={() => setInventorySearchQuery('')}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650"
                                     >
-                                        <div className="w-9 h-9 rounded-lg bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-500 shrink-0">
-                                            <FileText className="w-4 h-4" />
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">{lesson.title}</h4>
-                                            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">
-                                                {lesson.material_url 
-                                                    ? `File: ${lesson.file_name || 'Material'} • ${lesson.file_size || 'PDF'}` 
-                                                    : lesson.link_url 
-                                                        ? `Link: ${lesson.link_url}` 
-                                                        : 'Curriculum Topic (No material attached)'}
-                                            </p>
-                                        </div>
+                                        <X className="w-4 h-4" />
                                     </button>
-                                ))
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Collapsible Tree Body */}
+                        <div className="p-5 overflow-y-auto flex-1 space-y-3 bg-[#f8f8f6]/30 dark:bg-[#221d10]/30">
+                            {filteredCurriculumTree.length > 0 ? (
+                                filteredCurriculumTree.map(cat => {
+                                    const isCatExpanded = expandedCategories[cat.id] ?? false;
+                                    return (
+                                        <div key={cat.id} className="space-y-1.5 border border-slate-200 dark:border-slate-800/85 rounded-2xl p-3 bg-white dark:bg-slate-900/60 shadow-sm">
+                                            {/* Category Headline Header */}
+                                            <div 
+                                                onClick={() => setExpandedCategories(prev => ({ ...prev, [cat.id]: !isCatExpanded }))}
+                                                className="flex items-center justify-between cursor-pointer select-none group/cat pb-1.5 border-b border-dashed border-slate-200/60 dark:border-slate-800/60"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <BookOpen className="w-4 h-4 text-amber-500" />
+                                                    <span className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider font-mono">
+                                                        {cat.name}
+                                                    </span>
+                                                </div>
+                                                <div className="text-slate-400 group-hover/cat:text-amber-500 transition-colors">
+                                                    {isCatExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                </div>
+                                            </div>
+
+                                            {/* Modules under Category */}
+                                            {isCatExpanded && (
+                                                <div className="space-y-2 pl-1.5 pt-1.5">
+                                                    {cat.modules.map((mod: any) => {
+                                                        const isModExpanded = expandedModules[mod.id] ?? false;
+                                                        return (
+                                                            <div key={mod.id} className="space-y-1 bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/40 rounded-xl p-2.5">
+                                                                {/* Module Header */}
+                                                                <div 
+                                                                    onClick={() => setExpandedModules(prev => ({ ...prev, [mod.id]: !isModExpanded }))}
+                                                                    className="flex items-center justify-between cursor-pointer select-none group/mod"
+                                                                >
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-6 h-6 rounded-md bg-amber-500/10 flex items-center justify-center text-amber-500 text-xs font-bold font-mono">
+                                                                            M{mod.module_number}
+                                                                        </div>
+                                                                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200 group-hover/mod:text-amber-600 transition-colors">
+                                                                            {mod.title}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="text-slate-400 group-hover/mod:text-amber-500 transition-colors">
+                                                                        {isModExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Chapters under Module */}
+                                                                {isModExpanded && (
+                                                                    <div className="space-y-1.5 pl-3 pt-2">
+                                                                        {mod.chapters.map((chap: any) => {
+                                                                            const isChapExpanded = expandedChapters[chap.id] ?? false;
+                                                                            return (
+                                                                                <div key={chap.id} className="space-y-1 border-l-2 border-slate-200 dark:border-slate-700 pl-3">
+                                                                                    {/* Chapter Header */}
+                                                                                    <div 
+                                                                                        onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapExpanded }))}
+                                                                                        className="flex items-center justify-between cursor-pointer select-none group/chap"
+                                                                                    >
+                                                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 group-hover/chap:text-amber-600 transition-colors">
+                                                                                            Chapter {chap.chapter_number}: {chap.title}
+                                                                                        </span>
+                                                                                        <div className="text-slate-400 group-hover/chap:text-amber-500 transition-colors">
+                                                                                            {isChapExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {/* Topics under Chapter */}
+                                                                                    {isChapExpanded && (
+                                                                                        <div className="space-y-1 pt-1.5 pl-1">
+                                                                                            {chap.lessons.map((lesson: any) => (
+                                                                                                <button
+                                                                                                    key={lesson.id}
+                                                                                                    type="button"
+                                                                                                    onClick={() => {
+                                                                                                        setCreateFileUrl(lesson.material_url || lesson.link_url || '');
+                                                                                                        setCreateFileName(lesson.file_name || lesson.title);
+                                                                                                        setCreateFileSize(lesson.file_size || (lesson.material_url ? 'File' : lesson.link_url ? 'Link' : 'Curriculum Topic'));
+                                                                                                        setIsInventoryOpen(false);
+                                                                                                    }}
+                                                                                                    className="w-full text-left p-2 hover:bg-amber-50/40 dark:hover:bg-amber-900/10 rounded-lg border border-transparent hover:border-amber-200/40 dark:hover:border-amber-900/20 transition-all flex items-center gap-2.5 group/lesson"
+                                                                                                >
+                                                                                                    <div className="w-7 h-7 rounded-md bg-[#f8f8f6] dark:bg-slate-900 flex items-center justify-center text-amber-500 shrink-0 border border-slate-100 dark:border-slate-800">
+                                                                                                        {getLessonMaterialIcon(lesson.material_type, !!(lesson.material_url || lesson.link_url))}
+                                                                                                    </div>
+                                                                                                    <div className="min-w-0 flex-1">
+                                                                                                        <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate group-hover/lesson:text-amber-600 transition-colors">
+                                                                                                            {lesson.title}
+                                                                                                        </h5>
+                                                                                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">
+                                                                                                            {lesson.material_url 
+                                                                                                                ? `File: ${lesson.file_name || 'Material'} • ${lesson.file_size || 'PDF'}` 
+                                                                                                                : lesson.link_url 
+                                                                                                                    ? `Link: ${lesson.link_url}` 
+                                                                                                                    : 'Curriculum Topic'}
+                                                                                                        </p>
+                                                                                                    </div>
+                                                                                                </button>
+                                                                                            ))}
+                                                                                            {chap.lessons.length === 0 && (
+                                                                                                <p className="text-[10px] text-slate-400 italic pl-2">No topics in this chapter.</p>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                        {mod.chapters.length === 0 && (
+                                                                            <p className="text-[10px] text-slate-400 italic pl-3">No chapters in this module.</p>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {cat.modules.length === 0 && (
+                                                        <p className="text-[10px] text-slate-400 italic pl-1.5">No modules in this category.</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
                             ) : (
-                                <p className="text-xs text-slate-400 italic text-center py-8">No curriculum lessons found in the library.</p>
+                                <div className="text-center py-12">
+                                    <p className="text-sm text-slate-500 italic">No matching curriculum items found.</p>
+                                </div>
                             )}
                         </div>
                     </div>
