@@ -1084,7 +1084,11 @@ export default function TaskReviewPage() {
 
         } catch (error: any) {
             console.error('Error assigning/saving task:', error);
-            alert(`Failed to save task: ${error.message}`);
+            const msg = error?.message || 'Unknown error';
+            const details = error?.details || 'No details';
+            const hint = error?.hint || 'No hint';
+            const code = error?.code || 'No code';
+            alert(`Failed to save task:\nMessage: ${msg}\nDetails: ${details}\nHint: ${hint}\nCode: ${code}\nFull Error: ${JSON.stringify(error)}`);
         } finally {
             setIsSaving(false);
         }
