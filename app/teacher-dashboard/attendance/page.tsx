@@ -119,11 +119,22 @@ export default function AttendancePage() {
     
     const initialFromDate = useMemo(() => {
         const d = new Date();
-        d.setDate(d.getDate() - 30);
-        return d.toISOString().split('T')[0];
+        const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);
+        const year = firstDay.getFullYear();
+        const month = String(firstDay.getMonth() + 1).padStart(2, '0');
+        const day = String(firstDay.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }, []);
+    const initialToDate = useMemo(() => {
+        const d = new Date();
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        const year = lastDay.getFullYear();
+        const month = String(lastDay.getMonth() + 1).padStart(2, '0');
+        const day = String(lastDay.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }, []);
     const [fromDate, setFromDate] = useState<string>(initialFromDate);
-    const [toDate, setToDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [toDate, setToDate] = useState<string>(initialToDate);
     const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
     const [logsLoading, setLogsLoading] = useState(false);
 
