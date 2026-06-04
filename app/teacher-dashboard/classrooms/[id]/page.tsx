@@ -5127,7 +5127,12 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                 {asg.description && (
                                                                     <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">{asg.description}</p>
                                                                 )}
-                                                                {asg.file_url && (
+                                                                {asg.inventory_ref_id ? (
+                                                                    <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-450 select-none">
+                                                                        <BookOpen className="w-3 h-3 text-[#ecb613]" />
+                                                                        Topic: <span className="text-[#ecb613]">{asg.inventory_ref_title}</span>
+                                                                    </div>
+                                                                ) : asg.file_url ? (
                                                                     <a
                                                                         href={asg.file_url}
                                                                         target="_blank"
@@ -5137,7 +5142,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                     >
                                                                         <Paperclip className="w-3 h-3" />{asg.file_name}
                                                                     </a>
-                                                                )}
+                                                                ) : null}
                                                                 <p className="text-[10px] text-slate-400 mt-1.5">
                                                                     Created {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                                                 </p>
@@ -6377,22 +6382,30 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                     </div>
                                 )}
 
-                                {selectedReviewAssignment.file_url && (
+                                {(selectedReviewAssignment.file_url || selectedReviewAssignment.inventory_ref_id) && (
                                     <div className="p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-350">
-                                        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 min-w-0">
-                                            <Paperclip className="w-4 h-4 shrink-0" />
-                                            <span className="text-xs font-bold truncate" title={selectedReviewAssignment.file_name || 'Material'}>
-                                                {selectedReviewAssignment.file_name || 'Learning Material'}
+                                        <div className="flex items-center gap-2 text-slate-655 dark:text-slate-400 min-w-0">
+                                            {selectedReviewAssignment.inventory_ref_id ? (
+                                                <BookOpen className="w-4 h-4 shrink-0 text-[#ecb613]" />
+                                            ) : (
+                                                <Paperclip className="w-4 h-4 shrink-0" />
+                                            )}
+                                            <span className="text-xs font-bold truncate" title={selectedReviewAssignment.inventory_ref_id ? selectedReviewAssignment.inventory_ref_title || 'Topic' : selectedReviewAssignment.file_name || 'Material'}>
+                                                {selectedReviewAssignment.inventory_ref_id ? `Topic: ${selectedReviewAssignment.inventory_ref_title}` : (selectedReviewAssignment.file_name || 'Learning Material')}
                                             </span>
                                         </div>
-                                        <a 
-                                            href={selectedReviewAssignment.file_url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
-                                            className="inline-flex items-center gap-1 text-[11px] font-black text-[#ecb613] hover:underline shrink-0"
-                                        >
-                                            <Download className="w-3 h-3" /> Download
-                                        </a>
+                                        {selectedReviewAssignment.file_url ? (
+                                            <a 
+                                                href={selectedReviewAssignment.file_url} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer" 
+                                                className="inline-flex items-center gap-1 text-[11px] font-black text-[#ecb613] hover:underline shrink-0"
+                                            >
+                                                <Download className="w-3 h-3" /> Download
+                                            </a>
+                                        ) : (
+                                            <span className="text-[10px] text-amber-600 dark:text-amber-500 font-bold uppercase tracking-wider font-mono">Curriculum</span>
+                                        )}
                                     </div>
                                 )}
 

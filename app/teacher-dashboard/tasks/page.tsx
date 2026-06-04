@@ -41,8 +41,11 @@ interface TaskSubmission {
     classroom_name?: string;
     file_url?: string;
     file_name?: string;
-    file_size?: string | null;
+    file_size?: string | number | null;
     due_date?: string | null;
+    inventory_ref_id?: string | null;
+    inventory_ref_title?: string | null;
+    inventory_ref_type?: string | null;
 }
 
 export default function TaskReviewPage() {
@@ -99,6 +102,16 @@ export default function TaskReviewPage() {
         return option ? option.label : statusVal;
     };
 
+    const formatFileSize = (size: number | string | null | undefined): string => {
+        if (!size) return '';
+        if (typeof size === 'number') {
+            if (size < 1024) return `${size} B`;
+            if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+            return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+        }
+        return size;
+    };
+
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 12;
@@ -127,8 +140,12 @@ export default function TaskReviewPage() {
     // Attachment file state
     const [createFileUrl, setCreateFileUrl] = useState('');
     const [createFileName, setCreateFileName] = useState('');
-    const [createFileSize, setCreateFileSize] = useState<string | null>(null);
+    const [createFileSize, setCreateFileSize] = useState<number | null>(null);
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+    
+    // Curriculum topic reference state
+    const [createSelectedLessonId, setCreateSelectedLessonId] = useState<string | null>(null);
+    const [createSelectedLessonTitle, setCreateSelectedLessonTitle] = useState<string | null>(null);
     
     // Inventory selection sub-modal state
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
@@ -207,7 +224,7 @@ export default function TaskReviewPage() {
 
             const res = await supabaseAuth
                 .from('assignments')
-                .select('id, title, description, created_at, due_date, target_type, classroom_id, status, inventory_ref_type, file_url, file_name, file_size')
+                .select('id, title, description, created_at, due_date, target_type, classroom_id, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
                 .in('classroom_id', classroomIds);
             
             assignmentsList = res.data;
@@ -217,7 +234,7 @@ export default function TaskReviewPage() {
                 console.warn('status column missing in assignments, running fallback...');
                 const fallback = await supabaseAuth
                     .from('assignments')
-                    .select('id, title, description, created_at, due_date, target_type, classroom_id, inventory_ref_type, file_url, file_name, file_size')
+                    .select('id, title, description, created_at, due_date, target_type, classroom_id, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
                     .in('classroom_id', classroomIds);
                 assignmentsList = fallback.data;
                 assignmentsError = fallback.error;
@@ -279,7 +296,12 @@ export default function TaskReviewPage() {
             const formatted: TaskSubmission[] = [];
 
             (assignmentsList || []).forEach(asg => {
-                if (asg.inventory_ref_type) return; // Hide inventory assignments from tasks dashboard
+                // Hide auto-assigned curriculum progress mapping items from tasks dashboard
+                const isAutoCurriculum = asg.inventory_ref_type && 
+                    asg.title === asg.inventory_ref_title && 
+                    (!asg.description || asg.description.startsWith('Study guide for '));
+                if (isAutoCurriculum) return;
+                
                 const associatedClassroomStudents = studentsList.filter(s => s.classroom_id === asg.classroom_id);
                 const classInfo = (classrooms || []).find(c => c.id === asg.classroom_id);
                 const className = classInfo?.name || 'Unknown Class';
@@ -302,7 +324,10 @@ export default function TaskReviewPage() {
                         student_notes: '',
                         classroom_id: asg.classroom_id,
                         classroom_name: className,
-                        due_date: asg.due_date || null
+                        due_date: asg.due_date || null,
+                        inventory_ref_type: asg.inventory_ref_type || null,
+                        inventory_ref_id: asg.inventory_ref_id || null,
+                        inventory_ref_title: asg.inventory_ref_title || null
                     });
                     return;
                 }
@@ -335,7 +360,10 @@ export default function TaskReviewPage() {
                             file_url: asg.file_url || '',
                             file_name: asg.file_name || '',
                             file_size: asg.file_size || null,
-                            due_date: asg.due_date || null
+                            due_date: asg.due_date || null,
+                            inventory_ref_type: asg.inventory_ref_type || null,
+                            inventory_ref_id: asg.inventory_ref_id || null,
+                            inventory_ref_title: asg.inventory_ref_title || null
                         });
                     });
                 } else {
@@ -364,7 +392,10 @@ export default function TaskReviewPage() {
                             file_url: asg.file_url || '',
                             file_name: asg.file_name || '',
                             file_size: asg.file_size || null,
-                            due_date: asg.due_date || null
+                            due_date: asg.due_date || null,
+                            inventory_ref_type: asg.inventory_ref_type || null,
+                            inventory_ref_id: asg.inventory_ref_id || null,
+                            inventory_ref_title: asg.inventory_ref_title || null
                         });
                     });
                 }
@@ -533,11 +564,17 @@ export default function TaskReviewPage() {
             // Fetch previous assignments
             const { data: prevTasks } = await supabaseAuth
                 .from('assignments')
-                .select('id, title, description, due_date, classroom_id, target_type, status')
+                .select('id, title, description, due_date, classroom_id, target_type, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
                 .eq('teacher_id', teacherId);
             
             if (prevTasks) {
-                setPreviousTasks(prevTasks);
+                const manualPrevTasks = prevTasks.filter((t: any) => {
+                    const isAutoCurriculum = t.inventory_ref_type && 
+                        t.title === t.inventory_ref_title && 
+                        (!t.description || t.description.startsWith('Study guide for '));
+                    return !isAutoCurriculum;
+                });
+                setPreviousTasks(manualPrevTasks);
             }
 
             // Fetch curriculum categories
@@ -808,6 +845,13 @@ export default function TaskReviewPage() {
         setSelectedPreviousTaskId(task.id);
         setShowSuggestions(false);
 
+        // Restore file/reference fields
+        setCreateFileUrl(task.file_url || '');
+        setCreateFileName(task.file_name || '');
+        setCreateFileSize(task.file_size || null);
+        setCreateSelectedLessonId(task.inventory_ref_id || null);
+        setCreateSelectedLessonTitle(task.inventory_ref_title || null);
+
         // Fetch currently assigned students for this task to pre-check them
         try {
             const { data: currentMappings } = await supabaseAuth
@@ -886,7 +930,10 @@ export default function TaskReviewPage() {
                 setUploadProgress(null);
                 setCreateFileUrl(publicUrl);
                 setCreateFileName(file.name);
-                setCreateFileSize(friendlySize);
+                setCreateFileSize(file.size);
+                // Clear lesson references
+                setCreateSelectedLessonId(null);
+                setCreateSelectedLessonTitle(null);
             }, 400);
         } catch (err: any) {
             console.error('Upload failed:', err);
@@ -955,7 +1002,10 @@ export default function TaskReviewPage() {
                     status: isDraft ? 'draft' : 'active',
                     file_url: createFileUrl || null,
                     file_name: createFileName || null,
-                    file_size: createFileSize || null
+                    file_size: createFileSize || null,
+                    inventory_ref_id: createSelectedLessonId || null,
+                    inventory_ref_title: createSelectedLessonTitle || null,
+                    inventory_ref_type: createSelectedLessonId ? 'lesson' : null
                 };
 
                 if (isReusedTask) {
@@ -1076,6 +1126,8 @@ export default function TaskReviewPage() {
             setCreateFileUrl('');
             setCreateFileName('');
             setCreateFileSize(null);
+            setCreateSelectedLessonId(null);
+            setCreateSelectedLessonTitle(null);
             setSelectedPreviousTaskId(null);
             
             // Refresh submissions list and dropdown previous tasks list
@@ -1653,6 +1705,22 @@ export default function TaskReviewPage() {
                                         </section>
                                     )}
 
+                                    {/* Topic Reference if exists */}
+                                    {selectedSub.inventory_ref_id && (
+                                        <section className="bg-amber-50/20 dark:bg-amber-955/5 p-4 rounded-xl border border-amber-100 dark:border-amber-900/20">
+                                            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex items-center gap-2">
+                                                <BookOpen className="w-3.5 h-3.5 text-amber-500" />
+                                                Topic Reference
+                                            </h3>
+                                            <div className="flex items-center justify-between gap-3 mt-2 bg-white dark:bg-slate-900 p-3 rounded-xl border border-amber-100/50 dark:border-amber-900/20">
+                                                <span className="text-xs font-bold text-slate-755 dark:text-slate-200 truncate max-w-[200px]" title={selectedSub.inventory_ref_title || ''}>
+                                                    📖 {selectedSub.inventory_ref_title}
+                                                </span>
+                                                <span className="text-[10px] text-amber-650 bg-amber-100/50 dark:bg-amber-955/30 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider">Curriculum</span>
+                                            </div>
+                                        </section>
+                                    )}
+
                                     {/* Student Video Link if exists (Student Submission section removed as requested) */}
                                     {selectedSub.video_url && (
                                         <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -1766,6 +1834,8 @@ export default function TaskReviewPage() {
                                     setCreateFileUrl('');
                                     setCreateFileName('');
                                     setCreateFileSize(null);
+                                    setCreateSelectedLessonId(null);
+                                    setCreateSelectedLessonTitle(null);
                                     setSelectedPreviousTaskId(null);
                                 }} 
                                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-full text-slate-400 dark:text-slate-500 transition-colors"
@@ -1878,17 +1948,16 @@ export default function TaskReviewPage() {
                                             <span className="text-xs text-slate-505 mt-1">Audio, PDF, Image, or Video</span>
                                         </button>
                                     </div>
-                                    
-                                    {/* Selected File Badge */}
+                                                                    {/* Selected File Badge */}
                                     {createFileUrl && (
-                                        <div className="mt-4 p-3 bg-amber-50/40 dark:bg-amber-950/10 rounded-xl border border-amber-100 dark:border-amber-900/20 flex items-center justify-between">
+                                        <div className="mt-4 p-3 bg-amber-50/40 dark:bg-amber-955/10 rounded-xl border border-amber-100 dark:border-amber-900/20 flex items-center justify-between">
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <Paperclip className="w-4 h-4 text-amber-650 shrink-0" />
                                                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title={createFileName}>
                                                     {createFileName}
                                                 </span>
                                                 {createFileSize && (
-                                                    <span className="text-[10px] text-slate-400 font-mono">({createFileSize})</span>
+                                                    <span className="text-[10px] text-slate-400 font-mono">({formatFileSize(createFileSize)})</span>
                                                 )}
                                             </div>
                                             <button 
@@ -1896,6 +1965,28 @@ export default function TaskReviewPage() {
                                                     setCreateFileUrl('');
                                                     setCreateFileName('');
                                                     setCreateFileSize(null);
+                                                }}
+                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-805 rounded-full transition-colors shrink-0"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Topic Reference Badge */}
+                                    {createSelectedLessonId && (
+                                        <div className="mt-4 p-3 bg-amber-50/40 dark:bg-amber-955/10 rounded-xl border border-amber-100 dark:border-amber-900/20 flex items-center justify-between">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <BookOpen className="w-4 h-4 text-amber-655 shrink-0" />
+                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title={createSelectedLessonTitle || ''}>
+                                                    Topic Reference: {createSelectedLessonTitle}
+                                                </span>
+                                                <span className="text-[10px] text-amber-650 bg-amber-100/50 dark:bg-amber-955/30 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider">Curriculum</span>
+                                            </div>
+                                            <button 
+                                                onClick={() => {
+                                                    setCreateSelectedLessonId(null);
+                                                    setCreateSelectedLessonTitle(null);
                                                 }}
                                                 className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-805 rounded-full transition-colors shrink-0"
                                             >
@@ -2157,9 +2248,11 @@ export default function TaskReviewPage() {
                                                                                                     key={lesson.id}
                                                                                                     type="button"
                                                                                                     onClick={() => {
-                                                                                                        setCreateFileUrl(lesson.material_url || lesson.link_url || '');
-                                                                                                        setCreateFileName(lesson.file_name || lesson.title);
-                                                                                                        setCreateFileSize(lesson.file_size || (lesson.material_url ? 'File' : lesson.link_url ? 'Link' : 'Curriculum Topic'));
+                                                                                                        setCreateSelectedLessonId(lesson.id);
+                                                                                                        setCreateSelectedLessonTitle(lesson.title);
+                                                                                                        setCreateFileUrl('');
+                                                                                                        setCreateFileName('');
+                                                                                                        setCreateFileSize(null);
                                                                                                         setIsInventoryOpen(false);
                                                                                                     }}
                                                                                                     className="w-full text-left p-2 hover:bg-amber-50/40 dark:hover:bg-amber-900/10 rounded-lg border border-transparent hover:border-amber-200/40 dark:hover:border-amber-900/20 transition-all flex items-center gap-2.5 group/lesson"
@@ -2285,7 +2378,7 @@ export default function TaskReviewPage() {
                                                 </p>
                                                 {selectedOverviewTask.file_size && (
                                                     <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold font-mono uppercase mt-0.5">
-                                                        {selectedOverviewTask.file_size}
+                                                        {formatFileSize(selectedOverviewTask.file_size)}
                                                     </p>
                                                 )}
                                             </div>
@@ -2298,6 +2391,28 @@ export default function TaskReviewPage() {
                                         >
                                             <Download className="w-3.5 h-3.5" /> Download
                                         </a>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Topic Reference */}
+                            {selectedOverviewTask.inventory_ref_id && (
+                                <div className="space-y-1.5 border-t border-slate-100 dark:border-slate-800 pt-3">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Curriculum Reference</h4>
+                                    <div className="p-3 bg-amber-50/20 dark:bg-amber-955/5 rounded-xl border border-amber-100 dark:border-amber-900/20 flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-950/20 flex items-center justify-center text-amber-500 shrink-0 border border-amber-100 dark:border-transparent">
+                                                <BookOpen className="w-4 h-4 text-amber-500" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-xs text-slate-850 dark:text-slate-200 truncate">
+                                                    {selectedOverviewTask.inventory_ref_title}
+                                                </p>
+                                                <p className="text-[10px] text-amber-600 dark:text-amber-500 font-bold font-mono uppercase mt-0.5">
+                                                    Curriculum Topic
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
