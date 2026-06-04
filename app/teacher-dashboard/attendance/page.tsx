@@ -116,6 +116,7 @@ export default function AttendancePage() {
     const [makeupClassroomId, setMakeupClassroomId] = useState<string>('');
     const [makeupReason, setMakeupReason] = useState<string>('');
     const [isSavingMakeup, setIsSavingMakeup] = useState(false);
+    const [editingMakeupId, setEditingMakeupId] = useState<string | null>(null);
     
     const initialFromDate = useMemo(() => {
         const d = new Date();
@@ -747,22 +748,37 @@ export default function AttendancePage() {
         }
         setIsSavingMakeup(true);
         try {
-            const { error } = await supabaseAuth
-                .from('session_student_overrides')
-                .insert([{
-                    student_id: makeupStudent.student_id,
-                    target_classroom_id: targetId,
-                    override_date: makeupDate,
-                    reason: makeupReason || null
-                }]);
+            if (editingMakeupId) {
+                const { error } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .update({
+                        target_classroom_id: targetId,
+                        override_date: makeupDate,
+                        reason: makeupReason || null
+                    })
+                    .eq('id', editingMakeupId);
 
-            if (error) throw error;
-            alert('Makeup class scheduled successfully!');
+                if (error) throw error;
+                alert('Makeup class rescheduled successfully!');
+            } else {
+                const { error } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .insert([{
+                        student_id: makeupStudent.student_id,
+                        target_classroom_id: targetId,
+                        override_date: makeupDate,
+                        reason: makeupReason || null
+                    }]);
+
+                if (error) throw error;
+                alert('Makeup class scheduled successfully!');
+            }
             setShowMakeupModal(false);
             // Reset modal states
             setMakeupStudent(null);
             setMakeupClassroomId('');
             setMakeupReason('');
+            setEditingMakeupId(null);
             // Refresh missed classes report
             await fetchMissedReport();
         } catch (err: any) {
@@ -771,6 +787,14 @@ export default function AttendancePage() {
         } finally {
             setIsSavingMakeup(false);
         }
+    };
+
+    const handleCloseModal = () => {
+        setShowMakeupModal(false);
+        setMakeupStudent(null);
+        setMakeupClassroomId('');
+        setMakeupReason('');
+        setEditingMakeupId(null);
     };
 
     const getDaysInMonth = (date: Date) => {
@@ -1418,12 +1442,12 @@ export default function AttendancePage() {
                                                                     </td>
                                                                     <td className="px-5 py-4 text-xs">
                                                                         {scheduledMakeup ? (
-                                                                            <div className="flex flex-col text-slate-655 dark:text-slate-400">
+                                                                            <div className="flex flex-col text-slate-600 dark:text-slate-400">
                                                                                 <span className="font-extrabold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                                                                                     <CheckCircle className="w-3.5 h-3.5" /> Scheduled
                                                                                 </span>
                                                                                 <span className="text-[10px] mt-0.5 text-slate-500">
-                                                                                    {new Date(scheduledMakeup.override_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} in {scheduledMakeup.classrooms?.name || 'Classroom'}
+                                                                                    {new Date(scheduledMakeup.override_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} in {classrooms.find(c => c.id === scheduledMakeup.target_classroom_id)?.name || 'Classroom'}
                                                                                 </span>
                                                                             </div>
                                                                         ) : (
@@ -1431,13 +1455,29 @@ export default function AttendancePage() {
                                                                         )}
                                                                     </td>
                                                                     <td className="px-5 py-4 text-right">
-                                                                        {!scheduledMakeup && (
+                                                                        {scheduledMakeup ? (
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setMakeupStudent(log);
+                                                                                    setMakeupDate(scheduledMakeup.override_date);
+                                                                                    setMakeupClassroomId(scheduledMakeup.target_classroom_id);
+                                                                                    setMakeupReason(scheduledMakeup.reason || '');
+                                                                                    setEditingMakeupId(scheduledMakeup.id);
+                                                                                    setShowMakeupModal(true);
+                                                                                }}
+                                                                                className="px-3 py-1.5 bg-[#ecb613]/10 hover:bg-[#ecb613]/25 text-[#92400e] dark:text-[#ecb613] text-[10px] font-extrabold uppercase tracking-wider rounded-lg shadow-xs hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-1 ml-auto cursor-pointer border border-[#ecb613]/30"
+                                                                            >
+                                                                                Reschedule
+                                                                                <ArrowRight className="w-3 h-3" />
+                                                                            </button>
+                                                                        ) : (
                                                                             <button
                                                                                 onClick={() => {
                                                                                     setMakeupStudent(log);
                                                                                     setMakeupDate(new Date().toISOString().split('T')[0]);
                                                                                     setMakeupClassroomId(classrooms[0]?.id || '');
                                                                                     setMakeupReason(`Makeup for missing ${log.classroom_name} class on ${log.date}`);
+                                                                                    setEditingMakeupId(null);
                                                                                     setShowMakeupModal(true);
                                                                                 }}
                                                                                 className="px-3 py-1.5 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 text-[10px] font-extrabold uppercase tracking-wider rounded-lg shadow-xs hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-1 ml-auto cursor-pointer"
@@ -1476,10 +1516,12 @@ export default function AttendancePage() {
                     <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md flex flex-col p-6 animate-in zoom-in-95 duration-200 text-left">
                         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5 mb-4">
                             <div>
-                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Schedule Makeup Class</h3>
+                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                                    {editingMakeupId ? 'Reschedule Makeup Class' : 'Schedule Makeup Class'}
+                                </h3>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Priority Booking Engine</p>
                             </div>
-                            <button onClick={() => setShowMakeupModal(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"><X className="w-5 h-5" /></button>
+                            <button onClick={handleCloseModal} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"><X className="w-5 h-5" /></button>
                         </div>
 
                         <div className="space-y-4 flex-1">
@@ -1546,7 +1588,7 @@ export default function AttendancePage() {
 
                         <div className="flex justify-end gap-3 mt-6 border-t border-slate-100 dark:border-slate-800 pt-4">
                             <button 
-                                onClick={() => setShowMakeupModal(false)}
+                                onClick={handleCloseModal}
                                 className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                             >
                                 Cancel
@@ -1557,7 +1599,7 @@ export default function AttendancePage() {
                                 className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#ecb613] text-slate-900 hover:bg-[#ecb613]/90 shadow-md shadow-[#ecb613]/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
                             >
                                 {isSavingMakeup ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                                Schedule Class
+                                {editingMakeupId ? 'Reschedule Class' : 'Schedule Class'}
                             </button>
                         </div>
                     </div>
