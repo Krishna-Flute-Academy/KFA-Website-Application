@@ -230,7 +230,12 @@ export default function StudentProfilePage() {
 
                     // Merge classroom assignments and student assignments status
                     const mappedTasks = (assignmentsData || [])
-                        .filter((asg: any) => !asg.inventory_ref_type) // Hide curriculum pacing assignments from Tasks tab
+                        .filter((asg: any) => {
+                            const isAuto = asg.inventory_ref_type && 
+                                asg.title === asg.inventory_ref_title && 
+                                (!asg.description || asg.description.startsWith('Study guide for '));
+                            return !isAuto;
+                        })
                         .map((asg: any) => {
                             const studentMapping = (studentAssignmentsData || []).find((s: any) => s.assignment_id === asg.id);
                             
@@ -851,7 +856,7 @@ export default function StudentProfilePage() {
                                             Curriculum Pacing Controls — {studentInfo.name}
                                         </h1>
                                         <p className="text-xs md:text-sm text-teal-50/90 font-medium leading-relaxed">
-                                            Manage lock overrides, sequential unlocking, and complete manual bypasses for this student. Red badges signify core assignments, gold checkmarks highlight completed topics, and locked panels prevent student view access.
+                                            Manage lock overrides, sequential unlocking, and complete manual bypasses for this student. Red badges signify core allocations, gold checkmarks highlight completed topics, and locked panels prevent student view access.
                                         </p>
                                     </div>
                                 </div>
@@ -873,7 +878,7 @@ export default function StudentProfilePage() {
                                             <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
                                                 <Award className="size-12 text-slate-300 mx-auto mb-4" />
                                                 <h4 className="font-bold text-slate-900">No curriculum content unlocked or completed yet</h4>
-                                                <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto font-medium">This student does not have any active assignments or unlocked curriculum progress path items.</p>
+                                                <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto font-medium">This student does not have any active allocations or unlocked curriculum progress path items.</p>
                                             </div>
                                         ) : (
                                             courseModules

@@ -1414,15 +1414,20 @@ export default function ClassroomDashboardPage({
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
+    const isAutoCurriculum = (a: any) => 
+        !!(a.inventory_ref_type && 
+        a.title === a.inventory_ref_title && 
+        (!a.description || a.description.startsWith('Study guide for ')));
+
     const filteredAssignments = useMemo(() => {
-        const nonInventoryAssignments = assignments.filter(a => !a.inventory_ref_type);
-        if (assignmentFilter === 'all') return nonInventoryAssignments;
-        if (assignmentFilter === 'all_students') return nonInventoryAssignments.filter(a => a.target_type === 'all');
-        return nonInventoryAssignments.filter(a => a.target_type === 'individual');
+        const nonAutoAssignments = assignments.filter(a => !isAutoCurriculum(a));
+        if (assignmentFilter === 'all') return nonAutoAssignments;
+        if (assignmentFilter === 'all_students') return nonAutoAssignments.filter(a => a.target_type === 'all');
+        return nonAutoAssignments.filter(a => a.target_type === 'individual');
     }, [assignments, assignmentFilter]);
 
     const assignedInventoryItems = useMemo(() => {
-        const inventoryItems = assignments.filter(a => a.inventory_ref_type);
+        const inventoryItems = assignments.filter(a => isAutoCurriculum(a));
         if (curriculumTab === 'classwide') {
             // Class-wide: Only show assignments targeted to all students
             return inventoryItems.filter(a => a.target_type === 'all');
@@ -1914,12 +1919,12 @@ export default function ClassroomDashboardPage({
     ) => {
         if (!classroomId || !teacherProfile) return;
         
-        // Prevent duplicate import
-        const isAlreadyAssigned = assignments.some(a => 
-            a.inventory_ref_type === type && a.inventory_ref_id === id
+        // Prevent duplicate allocation
+        const isAlreadyAllocated = assignments.some(a => 
+            a.inventory_ref_type === type && a.inventory_ref_id === id && isAutoCurriculum(a)
         );
-        if (isAlreadyAssigned) {
-            alert(`"${title}" is already assigned to this classroom.`);
+        if (isAlreadyAllocated) {
+            alert(`"${title}" is already allocated to this classroom.`);
             return;
         }
 
@@ -3149,7 +3154,7 @@ export default function ClassroomDashboardPage({
                                             </div>
                                             <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">No Learning Path Set</h3>
                                             <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center">
-                                                You haven't assigned any study materials yet. Open the Inventory Library to assign levels, chapters, or individual lessons.
+                                                You haven't allocated any study materials yet. Open the Inventory Library to allocate levels, chapters, or individual lessons.
                                             </p>
                                             <button 
                                                 onClick={() => setIsInventoryDrawerOpen(true)}
@@ -3258,12 +3263,12 @@ export default function ClassroomDashboardPage({
                                                                                                     {modGroup.moduleName}
                                                                                                 </h3>
                                                                                                 <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/10 text-[#ecb613] border border-[#ecb613]/20">
-                                                                                                    Level Assigned
+                                                                                                    Level Allocated
                                                                                                 </span>
                                                                                             </div>
                                                                                             {moduleAsg && (
                                                                                                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
-                                                                                                    Assigned on {new Date(moduleAsg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                                                    Allocated on {new Date(moduleAsg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                                                                                 </p>
                                                                                             )}
                                                                                         </div>
@@ -3278,7 +3283,7 @@ export default function ClassroomDashboardPage({
                                                                                                 }}
                                                                                                 disabled={deletingAssignmentId === moduleAsg.id}
                                                                                                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
-                                                                                                title="Unassign level from class"
+                                                                                                title="Deallocate level from class"
                                                                                                 type="button"
                                                                                             >
                                                                                                 {deletingAssignmentId === moduleAsg.id ? (
@@ -3399,7 +3404,7 @@ export default function ClassroomDashboardPage({
                                                                                                     </span>
                                                                                                 </div>
                                                                                                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
-                                                                                                    Assigned on {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                                                    Allocated on {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                                                                                 </p>
                                                                                             </div>
                                                                                         </div>
@@ -3411,7 +3416,7 @@ export default function ClassroomDashboardPage({
                                                                                                 }}
                                                                                                 disabled={isDeleting}
                                                                                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
-                                                                                                title="Unassign tutorial from class"
+                                                                                                title="Deallocate chapter from class"
                                                                                             >
                                                                                                 {isDeleting ? (
                                                                                                     <Loader2 className="size-3.5 animate-spin" />
@@ -3949,7 +3954,7 @@ export default function ClassroomDashboardPage({
                                                                                         return (
                                                                                             <div className="space-y-4">
                                                                                                 <div className="border-b border-slate-100 dark:border-slate-800 pb-3 pl-2 flex items-center justify-between">
-                                                                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Assigned Lesson Study Guide</h4>
+                                                                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Allocated Topic Study Guide</h4>
                                                                                                     <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
                                                                                                         statusLabel === 'Completed'
                                                                                                             ? 'text-emerald-600 dark:text-emerald-400' 
@@ -5842,7 +5847,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                     );
                 })()}
 
-                {/* Import from Inventory Sliding Drawer */}
+                {/* Allocate from Inventory Sliding Drawer */}
                 {isInventoryDrawerOpen && (
                     <div className="fixed inset-0 z-[600] flex justify-end animate-in fade-in duration-300">
                         {/* Backdrop */}
@@ -5860,7 +5865,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         <BookOpen className="size-4.5 text-amber-500" />
                                     </div>
                                     <div>
-                                        <h3 className="font-extrabold text-slate-900 dark:text-white text-base tracking-tight leading-none">Import from Inventory</h3>
+                                        <h3 className="font-extrabold text-slate-900 dark:text-white text-base tracking-tight leading-none">Allocate from Inventory</h3>
                                         <p className="text-[10px] text-slate-400 font-bold uppercase font-mono tracking-wider mt-1">Classroom Learning Materials</p>
                                     </div>
                                 </div>
@@ -5930,7 +5935,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                         const isExpanded = !!expandedInventoryModules[mod.id];
                                                         const modChapters = courseChapters.filter(c => c.module_id === mod.id);
                                                         const isImporting = importingItemId === mod.id;
-                                                        const isAssigned = assignments.some(a => a.inventory_ref_id === mod.id);
+                                                        const isAllocated = assignments.some(a => a.inventory_ref_id === mod.id && isAutoCurriculum(a));
 
                                                         return (
                                                             <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
@@ -5952,22 +5957,22 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                     </div>
                                                                     <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                                                                         <button
-                                                                            disabled={isImporting || isAssigned}
+                                                                            disabled={isImporting || isAllocated}
                                                                             onClick={() => handleImportItem('module', mod.id, mod.title, mod.description)}
                                                                             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 ${
-                                                                                isAssigned
+                                                                                isAllocated
                                                                                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
                                                                                     : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 hover:-translate-y-0.5'
                                                                             }`}
                                                                         >
                                                                             {isImporting ? (
                                                                                 <Loader2 className="size-3 animate-spin" />
-                                                                            ) : isAssigned ? (
+                                                                            ) : isAllocated ? (
                                                                                 <CheckCircle className="size-3" />
                                                                             ) : (
                                                                                 <Plus className="size-3 stroke-[3]" />
                                                                             )}
-                                                                            <span>{isAssigned ? 'Assigned' : 'Import Module'}</span>
+                                                                            <span>{isAllocated ? 'Allocated' : 'Allocate Module'}</span>
                                                                         </button>
                                                                         <div 
                                                                             onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
@@ -5990,7 +5995,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                         ) : (
                                                                             modChapters.map(chap => {
                                                                                 const isChapImporting = importingItemId === chap.id;
-                                                                                const isChapAssigned = assignments.some(a => a.inventory_ref_id === chap.id);
+                                                                                const isChapAllocated = assignments.some(a => a.inventory_ref_id === chap.id && isAutoCurriculum(a));
                                                                                 const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
 
                                                                                 return (
@@ -6002,22 +6007,22 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                                 <h6 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">{chap.title}</h6>
                                                                                             </div>
                                                                                             <button
-                                                                                                disabled={isChapImporting || isChapAssigned}
+                                                                                                disabled={isChapImporting || isChapAllocated}
                                                                                                 onClick={() => handleImportItem('chapter', chap.id, chap.title, chap.description)}
                                                                                                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 ${
-                                                                                                    isChapAssigned
+                                                                                                    isChapAllocated
                                                                                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
                                                                                                         : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
                                                                                                 }`}
                                                                                             >
                                                                                                 {isChapImporting ? (
                                                                                                     <Loader2 className="size-3 animate-spin" />
-                                                                                                ) : isChapAssigned ? (
+                                                                                                ) : isChapAllocated ? (
                                                                                                     <CheckCircle className="size-3" />
                                                                                                 ) : (
                                                                                                     <Plus className="size-3 stroke-[3]" />
                                                                                                 )}
-                                                                                                <span>{isChapAssigned ? 'Assigned' : 'Import'}</span>
+                                                                                                <span>{isChapAllocated ? 'Allocated' : 'Allocate'}</span>
                                                                                             </button>
                                                                                         </div>
 
@@ -6026,7 +6031,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                             <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
                                                                                                 {chapLessons.map(lesson => {
                                                                                                     const isLessonImporting = importingItemId === lesson.id;
-                                                                                                    const isLessonAssigned = assignments.some(a => a.inventory_ref_id === lesson.id);
+                                                                                                    const isLessonAllocated = assignments.some(a => a.inventory_ref_id === lesson.id && isAutoCurriculum(a));
 
                                                                                                     return (
                                                                                                         <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
@@ -6043,22 +6048,22 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                                                 <span className="text-[11px] font-bold text-slate-655 dark:text-slate-355 truncate leading-none mt-0.5">{lesson.title}</span>
                                                                                                             </div>
                                                                                                             <button
-                                                                                                                disabled={isLessonImporting || isLessonAssigned}
+                                                                                                                disabled={isLessonImporting || isLessonAllocated}
                                                                                                                 onClick={() => handleImportItem('lesson', lesson.id, lesson.title, lesson.description)}
                                                                                                                 className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 ${
-                                                                                                                    isLessonAssigned
+                                                                                                                    isLessonAllocated
                                                                                                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
                                                                                                                         : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
                                                                                                                 }`}
                                                                                                             >
                                                                                                                 {isLessonImporting ? (
                                                                                                                     <Loader2 className="size-2.5 animate-spin" />
-                                                                                                                ) : isLessonAssigned ? (
+                                                                                                                ) : isLessonAllocated ? (
                                                                                                                     <CheckCircle className="size-2.5" />
                                                                                                                 ) : (
                                                                                                                     <Plus className="size-2.5 stroke-[3]" />
                                                                                                                 )}
-                                                                                                                <span>{isLessonAssigned ? 'Assigned' : 'Import'}</span>
+                                                                                                                <span>{isLessonAllocated ? 'Allocated' : 'Allocate'}</span>
                                                                                                             </button>
                                                                                                         </div>
                                                                                                     );
