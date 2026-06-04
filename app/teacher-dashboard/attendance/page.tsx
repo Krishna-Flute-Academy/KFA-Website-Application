@@ -787,7 +787,12 @@ export default function AttendancePage() {
             await fetchMissedReport();
         } catch (err: any) {
             console.error('Error saving makeup override:', err);
-            alert(`Failed to save makeup class: ${err.message || err}`);
+            const errMsg = err.message || String(err);
+            if (errMsg.includes('23505') || errMsg.includes('unique_violation') || errMsg.includes('unique constraint') || errMsg.includes('already exists')) {
+                alert('A makeup class is already scheduled for this student in this classroom on the selected date. Please choose a different classroom or date.');
+            } else {
+                alert(`Failed to save makeup class: ${errMsg}`);
+            }
         } finally {
             setIsSavingMakeup(false);
         }
