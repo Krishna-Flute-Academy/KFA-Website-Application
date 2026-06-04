@@ -1292,6 +1292,10 @@ export default function ClassroomDashboardPage({
         if (!window.confirm('Delete this assignment?')) return;
         setDeletingAssignmentId(id);
         try {
+            // First delete student mappings
+            await supabaseAuth.from('assignment_students').delete().eq('assignment_id', id);
+
+            // Then delete parent assignment
             const { error } = await supabaseAuth.from('assignments').delete().eq('id', id);
             if (error) throw error;
             setAssignments(prev => prev.filter(a => a.id !== id));
