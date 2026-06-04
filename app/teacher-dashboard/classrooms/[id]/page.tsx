@@ -295,7 +295,7 @@ export default function ClassroomDashboardPage({
 
     // ── Assignments ───────────────────────────────────────────────────────────
     const [assignments, setAssignments] = useState<Assignment[]>([]);
-    const [classroomInventoryAssignments, setClassroomInventoryAssignments] = useState<any[]>([]);
+    const [classroomInventoryAllocations, setClassroomInventoryAllocations] = useState<any[]>([]);
     const [assignmentsLoading, setAssignmentsLoading] = useState(false);
     const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
     const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'all_students' | 'individual'>('all');
@@ -708,17 +708,17 @@ export default function ClassroomDashboardPage({
                 // Fetch curriculum allocations immediately on mount
                 try {
                     const { data: curriculumData, error: curriculumError } = await supabaseAuth
-                        .from('classroom_inventory_assignments')
+                        .from('classroom_inventory_allocation')
                         .select('*')
                         .eq('classroom_id', classroomId);
                     if (!curriculumError && curriculumData) {
-                        setClassroomInventoryAssignments(curriculumData);
+                        setClassroomInventoryAllocations(curriculumData);
                     } else if (curriculumError) {
-                        console.error('Mount pre-fetch classroom_inventory_assignments error:', curriculumError);
+                        console.error('Mount pre-fetch classroom_inventory_allocation error:', curriculumError);
                         setDbSetupError(true);
                     }
                 } catch (ce) {
-                    console.warn('Could not pre-fetch classroom_inventory_assignments on mount (exception):', ce);
+                    console.warn('Could not pre-fetch classroom_inventory_allocation on mount (exception):', ce);
                 }
 
             } catch (err) {
@@ -820,7 +820,7 @@ export default function ClassroomDashboardPage({
         if (!classroomId) return;
         try {
             const { data, error } = await supabaseAuth
-                .from('classroom_inventory_assignments')
+                .from('classroom_inventory_allocation')
                 .select('*')
                 .eq('classroom_id', classroomId);
             if (error) {
@@ -828,7 +828,7 @@ export default function ClassroomDashboardPage({
                 setDbSetupError(true);
                 return;
             }
-            setClassroomInventoryAssignments(data || []);
+            setClassroomInventoryAllocations(data || []);
         } catch (err: any) {
             console.error('Error fetching curriculum allocations (exception):', err?.message || err);
         }
@@ -1466,8 +1466,8 @@ export default function ClassroomDashboardPage({
         return nonAutoAssignments.filter(a => a.target_type === 'individual');
     }, [assignments, assignmentFilter]);
 
-    const assignedInventoryItems = useMemo(() => {
-        const inventoryItems = classroomInventoryAssignments.map(item => {
+    const allocatedInventoryItems = useMemo(() => {
+        const inventoryItems = classroomInventoryAllocations.map(item => {
             let type: 'module' | 'chapter' | 'lesson' = 'module';
             let refId = '';
             let title = '';
@@ -1496,24 +1496,24 @@ export default function ClassroomDashboardPage({
             return {
                 id: item.id,
                 classroom_id: item.classroom_id,
-                teacher_id: item.assigned_by,
+                teacher_id: item.allocated_by,
                 title: title,
                 description: description,
                 due_date: null,
-                target_type: item.assigned_to_student_id ? 'individual' : 'all',
+                target_type: item.allocated_to_student_id ? 'individual' : 'all',
                 created_at: item.created_at,
                 inventory_ref_type: type,
                 inventory_ref_id: refId,
                 inventory_ref_title: title,
-                assignment_students: item.assigned_to_student_id ? [{ student_id: item.assigned_to_student_id }] : []
+                assignment_students: item.allocated_to_student_id ? [{ student_id: item.allocated_to_student_id }] : []
             };
         });
 
         if (curriculumTab === 'classwide') {
-            // Class-wide: Only show assignments targeted to all students
+            // Class-wide: Only show allocations targeted to all students
             return inventoryItems.filter(a => a.target_type === 'all');
         } else {
-            // Individual pacing: Filter to only show assignments active for the selected student
+            // Individual pacing: Filter to only show allocations active for the selected student
             if (!selectedStudentForCurriculum) return [];
             return inventoryItems.filter(a => {
                 if (a.target_type === 'all') return true;
@@ -1522,20 +1522,20 @@ export default function ClassroomDashboardPage({
                 );
             });
         }
-    }, [classroomInventoryAssignments, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons]);
+    }, [classroomInventoryAllocations, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons]);
 
-    const groupedAssignments = useMemo(() => {
+    const groupedAllocations = useMemo(() => {
         const categoriesMap: Record<string, {
             categoryName: string;
             categoryOrder: number;
             modulesMap: Record<string, {
                 moduleName: string;
                 moduleOrder: number;
-                assignments: typeof assignedInventoryItems;
+                allocations: typeof allocatedInventoryItems;
             }>;
         }> = {};
 
-        assignedInventoryItems.forEach(asg => {
+        allocatedInventoryItems.forEach(asg => {
             let categoryName = 'Specialized Modules';
             let categoryOrder = 2;
             let moduleName = 'Other';
@@ -1598,11 +1598,11 @@ export default function ClassroomDashboardPage({
                 categoriesMap[categoryName].modulesMap[moduleId] = {
                     moduleName,
                     moduleOrder,
-                    assignments: []
+                    allocations: []
                 };
             }
 
-            categoriesMap[categoryName].modulesMap[moduleId].assignments.push(asg);
+            categoriesMap[categoryName].modulesMap[moduleId].allocations.push(asg);
         });
 
         // Convert to sorted array representation
@@ -1613,7 +1613,7 @@ export default function ClassroomDashboardPage({
                     id,
                     moduleName: modInfo.moduleName,
                     moduleOrder: modInfo.moduleOrder,
-                    assignments: modInfo.assignments
+                    allocations: modInfo.allocations
                 })).sort((a, b) => a.moduleOrder - b.moduleOrder);
 
                 return {
@@ -1623,7 +1623,7 @@ export default function ClassroomDashboardPage({
             });
 
         return sortedCategories;
-    }, [assignedInventoryItems, courseModules, courseChapters, courseLessons, categories]);
+    }, [allocatedInventoryItems, courseModules, courseChapters, courseLessons, categories]);
 
     const selectedStudentPermissions = useMemo(() => {
         const completed = new Set<string>();
@@ -1653,7 +1653,7 @@ export default function ClassroomDashboardPage({
         const lessonsSet = new Set<string>();
         const uniqueLessons: any[] = [];
 
-        assignedInventoryItems.forEach(item => {
+        allocatedInventoryItems.forEach(item => {
             const isIndividualMode = curriculumTab === 'individual';
             
             const filterLesson = (lessonId: string) => {
@@ -1693,7 +1693,7 @@ export default function ClassroomDashboardPage({
         });
 
         return uniqueLessons.sort((a, b) => a.lesson_number - b.lesson_number);
-    }, [assignedInventoryItems, courseChapters, courseLessons, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions]);
+    }, [allocatedInventoryItems, courseChapters, courseLessons, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions]);
 
     const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
         if (syllabusLessons.length === 0) return defaultMockVal;
@@ -1729,9 +1729,9 @@ export default function ClassroomDashboardPage({
         if (curriculumTab === 'classwide') return true;
         if (!selectedStudentForCurriculum) return false;
         
-        return groupedAssignments.some(group => 
+        return groupedAllocations.some(group => 
             group.modules.some(modGroup => 
-                modGroup.assignments.some(asg => {
+                modGroup.allocations.some(asg => {
                     if (asg.target_type === 'individual') return true;
                     if (asg.inventory_ref_type === 'module') {
                         const modChapters = courseChapters.filter(c => c.module_id === asg.inventory_ref_id);
@@ -1756,7 +1756,7 @@ export default function ClassroomDashboardPage({
                 })
             )
         );
-    }, [curriculumTab, selectedStudentForCurriculum, groupedAssignments, courseChapters, courseLessons, selectedStudentPermissions]);
+    }, [curriculumTab, selectedStudentForCurriculum, groupedAllocations, courseChapters, courseLessons, selectedStudentPermissions]);
 
     const handleToggleTopicLock = async (studentId: string, lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
         if (!classroomId) return;
@@ -1992,7 +1992,7 @@ export default function ClassroomDashboardPage({
         }
     };
 
-    const handleImportItem = async (
+    const handleAllocateItem = async (
         type: 'module' | 'chapter' | 'lesson',
         id: string,
         title: string,
@@ -2001,9 +2001,9 @@ export default function ClassroomDashboardPage({
         if (!classroomId || !teacherProfile) return;
         
         // Prevent duplicate allocation
-        const isAlreadyAllocated = classroomInventoryAssignments.some(a => {
+        const isAlreadyAllocated = classroomInventoryAllocations.some(a => {
             const refId = a.module_id || a.chapter_id || a.lesson_id;
-            return refId === id && !a.assigned_to_student_id;
+            return refId === id && !a.allocated_to_student_id;
         });
         if (isAlreadyAllocated) {
             alert(`"${title}" is already allocated to this classroom.`);
@@ -2014,15 +2014,15 @@ export default function ClassroomDashboardPage({
         try {
             const insertData: any = {
                 classroom_id: classroomId,
-                assigned_by: teacherProfile.id,
-                assigned_to_student_id: null
+                allocated_by: teacherProfile.id,
+                allocated_to_student_id: null
             };
             if (type === 'module') insertData.module_id = id;
             else if (type === 'chapter') insertData.chapter_id = id;
             else if (type === 'lesson') insertData.lesson_id = id;
 
             const { error } = await supabaseAuth
-                .from('classroom_inventory_assignments')
+                .from('classroom_inventory_allocation')
                 .insert([insertData]);
 
             if (error) throw error;
@@ -2030,23 +2030,23 @@ export default function ClassroomDashboardPage({
             // Refresh allocations list
             await fetchCurriculumAllocations();
         } catch (err) {
-            console.error('Failed to import item:', err);
-            alert('Failed to import item from inventory.');
+            console.error('Failed to allocate item:', err);
+            alert('Failed to allocate item from inventory.');
         } finally {
             setImportingItemId(null);
         }
     };
 
-    const handleDeleteCurriculumAllocation = async (id: string) => {
+    const handleDeallocateItem = async (id: string) => {
         if (!window.confirm('Deallocate this item from the classroom?')) return;
         setDeletingAssignmentId(id);
         try {
             const { error } = await supabaseAuth
-                .from('classroom_inventory_assignments')
+                .from('classroom_inventory_allocation')
                 .delete()
                 .eq('id', id);
             if (error) throw error;
-            setClassroomInventoryAssignments(prev => prev.filter(a => a.id !== id));
+            setClassroomInventoryAllocations(prev => prev.filter(a => a.id !== id));
         } catch (err) {
             console.error('Error deallocating item:', err);
             alert('Failed to deallocate item.');
@@ -3234,7 +3234,7 @@ export default function ClassroomDashboardPage({
                             {/* Two-Column Responsive Grid */}
                             <div className="grid grid-cols-12 gap-8 items-start">
                                 <div className={`${curriculumTab === 'individual' && selectedStudentForCurriculum ? 'col-span-12 lg:col-span-8' : 'col-span-12'} space-y-6`}>
-                                    {assignedInventoryItems.length === 0 ? (
+                                    {allocatedInventoryItems.length === 0 ? (
                                         <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[400px]">
                                             <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner animate-bounce duration-1000">
                                                 <BookOpen className="size-10 text-amber-500" />
@@ -3265,10 +3265,10 @@ export default function ClassroomDashboardPage({
                                         </div>
                                     ) : (
                                         <div className="space-y-12">
-                                            {groupedAssignments.map((group) => {
+                                            {groupedAllocations.map((group) => {
                                                 const visibleModules = group.modules.filter(modGroup => {
                                                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                        return modGroup.assignments.some(asg => {
+                                                        return modGroup.allocations.some(asg => {
                                                             if (asg.target_type === 'individual') return true;
                                                             if (asg.inventory_ref_type === 'module') {
                                                                 const modChapters = courseChapters.filter(c => c.module_id === asg.inventory_ref_id);
@@ -3329,7 +3329,7 @@ export default function ClassroomDashboardPage({
                                                         {isHeadlineExpanded && (
                                                             <div className="space-y-8 pl-3 md:pl-6 border-l-2 border-slate-150 dark:border-slate-800 text-left">
                                                                 {visibleModules.map((modGroup) => {
-                                                                    const moduleAsg = modGroup.assignments.find(a => a.inventory_ref_type === 'module');
+                                                                    const moduleAsg = modGroup.allocations.find(a => a.inventory_ref_type === 'module');
                                                                     const hasModuleAssignment = !!moduleAsg;
                                                                     const isModuleExpanded = expandedModules[modGroup.id] !== false;
                                                                     return (
@@ -3366,7 +3366,7 @@ export default function ClassroomDashboardPage({
                                                                                             <button 
                                                                                                 onClick={(e) => {
                                                                                                     e.stopPropagation();
-                                                                                                    handleDeleteCurriculumAllocation(moduleAsg.id);
+                                                                                                    handleDeallocateItem(moduleAsg.id);
                                                                                                 }}
                                                                                                 disabled={deletingAssignmentId === moduleAsg.id}
                                                                                                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
@@ -3423,7 +3423,7 @@ export default function ClassroomDashboardPage({
                                                                             {/* Assignments Under This Module */}
                                                                             {(isModuleExpanded || hasModuleAssignment) && (
                                                                                 <div className="space-y-6">
-                                                                    {modGroup.assignments.map((asg) => {
+                                                                    {modGroup.allocations.map((asg) => {
                                                                         const isDeleting = deletingAssignmentId === asg.id;
                                                                         const isAsgModule = asg.inventory_ref_type === 'module';
                                                                         
@@ -3499,7 +3499,7 @@ export default function ClassroomDashboardPage({
                                                                                             <button 
                                                                                                 onClick={(e) => {
                                                                                                     e.stopPropagation();
-                                                                                                    handleDeleteCurriculumAllocation(asg.id);
+                                                                                                    handleDeallocateItem(asg.id);
                                                                                                 }}
                                                                                                 disabled={deletingAssignmentId === asg.id}
                                                                                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
@@ -4896,7 +4896,7 @@ export default function ClassroomDashboardPage({
                                         <div className="flex-1">
                                             <h4 className="font-bold text-rose-800 dark:text-rose-300 text-sm">Database setup required</h4>
                                             <p className="text-xs text-rose-700 dark:text-rose-400 mt-1 leading-relaxed">
-                                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">classroom_inventory_assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-150 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
+                                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">classroom_inventory_allocation</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-150 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
                                             </p>
                                             <p className="text-xs text-rose-700 dark:text-rose-400 mt-2">
                                                 Go to <strong>Supabase Dashboard → sevtycwrmhzyfxvxkkgc → SQL Editor → New Query</strong> and paste the SQL below, then click Run.
@@ -4926,14 +4926,14 @@ CREATE TABLE IF NOT EXISTS public.assignment_students (
   assignment_id UUID NOT NULL, student_id UUID NOT NULL,
   status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)
 );
-CREATE TABLE IF NOT EXISTS public.classroom_inventory_assignments (
+CREATE TABLE IF NOT EXISTS public.classroom_inventory_allocation (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,
   module_id UUID REFERENCES public.course_modules(id) ON DELETE SET NULL,
   chapter_id UUID REFERENCES public.course_chapters(id) ON DELETE SET NULL,
   lesson_id UUID REFERENCES public.course_lessons(id) ON DELETE SET NULL,
-  assigned_by UUID REFERENCES public.users(id),
-  assigned_to_student_id UUID REFERENCES public.users(id),
+  allocated_by UUID REFERENCES public.users(id),
+  allocated_to_student_id UUID REFERENCES public.users(id),
   created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS public.student_topic_progress (
@@ -4950,16 +4950,16 @@ CREATE TABLE IF NOT EXISTS public.student_topic_progress (
 ALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.classroom_inventory_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.classroom_inventory_allocation ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all classroom_inventory_assignments" ON public.classroom_inventory_assignments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all classroom_inventory_allocation" ON public.classroom_inventory_allocation FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`}</pre>
                                         <button
                                             onClick={() => {
-                                                const sql = `CREATE TABLE IF NOT EXISTS public.class_notes (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, content TEXT, file_url TEXT,\n  file_name TEXT, file_size INTEGER, color TEXT DEFAULT 'yellow',\n  created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, description TEXT, due_date DATE,\n  target_type TEXT NOT NULL DEFAULT 'all',\n  file_url TEXT, file_name TEXT, file_size INTEGER,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignment_students (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  assignment_id UUID NOT NULL, student_id UUID NOT NULL,\n  status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)\n);\nCREATE TABLE IF NOT EXISTS public.classroom_inventory_assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  module_id UUID REFERENCES public.course_modules(id) ON DELETE SET NULL,\n  chapter_id UUID REFERENCES public.course_chapters(id) ON DELETE SET NULL,\n  lesson_id UUID REFERENCES public.course_lessons(id) ON DELETE SET NULL,\n  assigned_by UUID REFERENCES public.users(id),\n  assigned_to_student_id UUID REFERENCES public.users(id),\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.student_topic_progress (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  student_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  lesson_id UUID NOT NULL REFERENCES public.course_lessons(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'locked',\n  unlocked_by TEXT NOT NULL DEFAULT 'system',\n  unlocked_at TIMESTAMPTZ DEFAULT now(),\n  completed_at TIMESTAMPTZ,\n  UNIQUE (student_id, lesson_id)\n);\nALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.classroom_inventory_assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all classroom_inventory_assignments" ON public.classroom_inventory_assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`;
+                                                const sql = `CREATE TABLE IF NOT EXISTS public.class_notes (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, content TEXT, file_url TEXT,\n  file_name TEXT, file_size INTEGER, color TEXT DEFAULT 'yellow',\n  created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, description TEXT, due_date DATE,\n  target_type TEXT NOT NULL DEFAULT 'all',\n  file_url TEXT, file_name TEXT, file_size INTEGER,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignment_students (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  assignment_id UUID NOT NULL, student_id UUID NOT NULL,\n  status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)\n);\nCREATE TABLE IF NOT EXISTS public.classroom_inventory_allocation (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  module_id UUID REFERENCES public.course_modules(id) ON DELETE SET NULL,\n  chapter_id UUID REFERENCES public.course_chapters(id) ON DELETE SET NULL,\n  lesson_id UUID REFERENCES public.course_lessons(id) ON DELETE SET NULL,\n  allocated_by UUID REFERENCES public.users(id),\n  allocated_to_student_id UUID REFERENCES public.users(id),\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.student_topic_progress (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  student_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  lesson_id UUID NOT NULL REFERENCES public.course_lessons(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'locked',\n  unlocked_by TEXT NOT NULL DEFAULT 'system',\n  unlocked_at TIMESTAMPTZ DEFAULT now(),\n  completed_at TIMESTAMPTZ,\n  UNIQUE (student_id, lesson_id)\n);\nALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.classroom_inventory_allocation ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all classroom_inventory_allocation" ON public.classroom_inventory_allocation FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`;
                                                 navigator.clipboard.writeText(sql).then(() => alert('SQL copied to clipboard!'));
                                             }}
                                             className="absolute top-2 right-2 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold rounded-lg transition-colors"
@@ -6034,7 +6034,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                         const isExpanded = !!expandedInventoryModules[mod.id];
                                                         const modChapters = courseChapters.filter(c => c.module_id === mod.id);
                                                         const isImporting = importingItemId === mod.id;
-                                                        const isAllocated = assignments.some(a => a.inventory_ref_id === mod.id && isAutoCurriculum(a));
+                                                        const isAllocated = classroomInventoryAllocations.some(a => a.module_id === mod.id && !a.allocated_to_student_id);
 
                                                         return (
                                                             <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
@@ -6057,7 +6057,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                     <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
                                                                         <button
                                                                             disabled={isImporting || isAllocated}
-                                                                            onClick={() => handleImportItem('module', mod.id, mod.title, mod.description)}
+                                                                            onClick={() => handleAllocateItem('module', mod.id, mod.title, mod.description)}
                                                                             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 ${
                                                                                 isAllocated
                                                                                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
@@ -6094,7 +6094,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                         ) : (
                                                                             modChapters.map(chap => {
                                                                                 const isChapImporting = importingItemId === chap.id;
-                                                                                const isChapAllocated = assignments.some(a => a.inventory_ref_id === chap.id && isAutoCurriculum(a));
+                                                                                const isChapAllocated = classroomInventoryAllocations.some(a => a.chapter_id === chap.id && !a.allocated_to_student_id);
                                                                                 const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
 
                                                                                 return (
@@ -6107,7 +6107,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                             </div>
                                                                                             <button
                                                                                                 disabled={isChapImporting || isChapAllocated}
-                                                                                                onClick={() => handleImportItem('chapter', chap.id, chap.title, chap.description)}
+                                                                                                onClick={() => handleAllocateItem('chapter', chap.id, chap.title, chap.description)}
                                                                                                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 ${
                                                                                                     isChapAllocated
                                                                                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
@@ -6130,7 +6130,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                             <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
                                                                                                 {chapLessons.map(lesson => {
                                                                                                     const isLessonImporting = importingItemId === lesson.id;
-                                                                                                    const isLessonAllocated = assignments.some(a => a.inventory_ref_id === lesson.id && isAutoCurriculum(a));
+                                                                                                    const isLessonAllocated = classroomInventoryAllocations.some(a => a.lesson_id === lesson.id && !a.allocated_to_student_id);
 
                                                                                                     return (
                                                                                                         <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
@@ -6148,7 +6148,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                                             </div>
                                                                                                             <button
                                                                                                                 disabled={isLessonImporting || isLessonAllocated}
-                                                                                                                onClick={() => handleImportItem('lesson', lesson.id, lesson.title, lesson.description)}
+                                                                                                                onClick={() => handleAllocateItem('lesson', lesson.id, lesson.title, lesson.description)}
                                                                                                                 className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 ${
                                                                                                                     isLessonAllocated
                                                                                                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
