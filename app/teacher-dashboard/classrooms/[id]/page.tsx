@@ -295,6 +295,7 @@ export default function ClassroomDashboardPage({
 
     // ── Assignments ───────────────────────────────────────────────────────────
     const [assignments, setAssignments] = useState<Assignment[]>([]);
+    const [classroomInventoryAssignments, setClassroomInventoryAssignments] = useState<any[]>([]);
     const [assignmentsLoading, setAssignmentsLoading] = useState(false);
     const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
     const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'all_students' | 'individual'>('all');
@@ -704,6 +705,19 @@ export default function ClassroomDashboardPage({
                     console.warn('Could not pre-fetch assignments on mount:', ae);
                 }
 
+                // Fetch curriculum allocations immediately on mount
+                try {
+                    const { data: curriculumData, error: curriculumError } = await supabaseAuth
+                        .from('classroom_inventory_assignments')
+                        .select('*')
+                        .eq('classroom_id', classroomId);
+                    if (!curriculumError && curriculumData) {
+                        setClassroomInventoryAssignments(curriculumData);
+                    }
+                } catch (ce) {
+                    console.warn('Could not pre-fetch classroom_inventory_assignments on mount:', ce);
+                }
+
             } catch (err) {
                 console.error('Error fetching classroom data:', err);
                 router.push('/teacher-dashboard/classrooms');
@@ -798,6 +812,20 @@ export default function ClassroomDashboardPage({
             setAssignmentsLoading(false);
         }
     }, [classroomId, students]);
+
+    const fetchCurriculumAllocations = useCallback(async () => {
+        if (!classroomId) return;
+        try {
+            const { data, error } = await supabaseAuth
+                .from('classroom_inventory_assignments')
+                .select('*')
+                .eq('classroom_id', classroomId);
+            if (error) throw error;
+            setClassroomInventoryAssignments(data || []);
+        } catch (err) {
+            console.error('Error fetching curriculum allocations:', err);
+        }
+    }, [classroomId]);
 
     const handleOpenReviewModal = (student: AssignmentStudent, assignment: Assignment) => {
         setSelectedReviewStudent(student);
@@ -941,8 +969,11 @@ export default function ClassroomDashboardPage({
             if (activeTab === 'Assignments') {
                 fetchClassNotes();
             }
+            if (activeTab === 'Curriculum') {
+                fetchCurriculumAllocations();
+            }
         }
-    }, [activeTab, fetchAssignments, fetchClassNotes]);
+    }, [activeTab, fetchAssignments, fetchClassNotes, fetchCurriculumAllocations]);
 
     // ── Fetch Classroom Attendance ─────────────────────────────────────────────
     const fetchClassroomAttendance = useCallback(async () => {
@@ -1429,7 +1460,48 @@ export default function ClassroomDashboardPage({
     }, [assignments, assignmentFilter]);
 
     const assignedInventoryItems = useMemo(() => {
-        const inventoryItems = assignments.filter(a => isAutoCurriculum(a));
+        const inventoryItems = classroomInventoryAssignments.map(item => {
+            let type: 'module' | 'chapter' | 'lesson' = 'module';
+            let refId = '';
+            let title = '';
+            let description = '';
+
+            if (item.module_id) {
+                type = 'module';
+                refId = item.module_id;
+                const mod = courseModules.find(m => m.id === refId);
+                title = mod?.title || 'Unknown Module';
+                description = mod?.description || '';
+            } else if (item.chapter_id) {
+                type = 'chapter';
+                refId = item.chapter_id;
+                const chap = courseChapters.find(c => c.id === refId);
+                title = chap?.title || 'Unknown Chapter';
+                description = chap?.description || '';
+            } else if (item.lesson_id) {
+                type = 'lesson';
+                refId = item.lesson_id;
+                const les = courseLessons.find(l => l.id === refId);
+                title = les?.title || 'Unknown Lesson';
+                description = les?.description || '';
+            }
+
+            return {
+                id: item.id,
+                classroom_id: item.classroom_id,
+                teacher_id: item.assigned_by,
+                title: title,
+                description: description,
+                due_date: null,
+                target_type: item.assigned_to_student_id ? 'individual' : 'all',
+                created_at: item.created_at,
+                inventory_ref_type: type,
+                inventory_ref_id: refId,
+                inventory_ref_title: title,
+                assignment_students: item.assigned_to_student_id ? [{ student_id: item.assigned_to_student_id }] : []
+            };
+        });
+
         if (curriculumTab === 'classwide') {
             // Class-wide: Only show assignments targeted to all students
             return inventoryItems.filter(a => a.target_type === 'all');
@@ -1443,7 +1515,7 @@ export default function ClassroomDashboardPage({
                 );
             });
         }
-    }, [assignments, curriculumTab, selectedStudentForCurriculum]);
+    }, [classroomInventoryAssignments, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons]);
 
     const groupedAssignments = useMemo(() => {
         const categoriesMap: Record<string, {
@@ -1922,9 +1994,10 @@ export default function ClassroomDashboardPage({
         if (!classroomId || !teacherProfile) return;
         
         // Prevent duplicate allocation
-        const isAlreadyAllocated = assignments.some(a => 
-            a.inventory_ref_type === type && a.inventory_ref_id === id && isAutoCurriculum(a)
-        );
+        const isAlreadyAllocated = classroomInventoryAssignments.some(a => {
+            const refId = a.module_id || a.chapter_id || a.lesson_id;
+            return refId === id && !a.assigned_to_student_id;
+        });
         if (isAlreadyAllocated) {
             alert(`"${title}" is already allocated to this classroom.`);
             return;
@@ -1932,41 +2005,46 @@ export default function ClassroomDashboardPage({
 
         setImportingItemId(id);
         try {
-            const { data: newAsg, error } = await supabaseAuth
-                .from('assignments')
-                .insert([{
-                    classroom_id: classroomId,
-                    teacher_id: teacherProfile.id,
-                    title: title,
-                    description: description || `Study guide for ${title}`,
-                    due_date: null,
-                    target_type: 'all',
-                    inventory_ref_type: type,
-                    inventory_ref_id: id,
-                    inventory_ref_title: title
-                }])
-                .select()
-                .single();
+            const insertData: any = {
+                classroom_id: classroomId,
+                assigned_by: teacherProfile.id,
+                assigned_to_student_id: null
+            };
+            if (type === 'module') insertData.module_id = id;
+            else if (type === 'chapter') insertData.chapter_id = id;
+            else if (type === 'lesson') insertData.lesson_id = id;
+
+            const { error } = await supabaseAuth
+                .from('classroom_inventory_assignments')
+                .insert([insertData]);
 
             if (error) throw error;
 
-            // Also insert assignment_students for all students in the class
-            if (students.length > 0) {
-                const rows = students.map(s => ({
-                    assignment_id: newAsg.id,
-                    student_id: s.student_id,
-                    status: 'pending'
-                }));
-                await supabaseAuth.from('assignment_students').insert(rows);
-            }
-
-            // Refresh assignments list
-            await fetchAssignments();
+            // Refresh allocations list
+            await fetchCurriculumAllocations();
         } catch (err) {
             console.error('Failed to import item:', err);
             alert('Failed to import item from inventory.');
         } finally {
             setImportingItemId(null);
+        }
+    };
+
+    const handleDeleteCurriculumAllocation = async (id: string) => {
+        if (!window.confirm('Deallocate this item from the classroom?')) return;
+        setDeletingAssignmentId(id);
+        try {
+            const { error } = await supabaseAuth
+                .from('classroom_inventory_assignments')
+                .delete()
+                .eq('id', id);
+            if (error) throw error;
+            setClassroomInventoryAssignments(prev => prev.filter(a => a.id !== id));
+        } catch (err) {
+            console.error('Error deallocating item:', err);
+            alert('Failed to deallocate item.');
+        } finally {
+            setDeletingAssignmentId(null);
         }
     };
 
@@ -3281,7 +3359,7 @@ export default function ClassroomDashboardPage({
                                                                                             <button 
                                                                                                 onClick={(e) => {
                                                                                                     e.stopPropagation();
-                                                                                                    handleDeleteAssignment(moduleAsg.id);
+                                                                                                    handleDeleteCurriculumAllocation(moduleAsg.id);
                                                                                                 }}
                                                                                                 disabled={deletingAssignmentId === moduleAsg.id}
                                                                                                 className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
@@ -3414,13 +3492,13 @@ export default function ClassroomDashboardPage({
                                                                                             <button 
                                                                                                 onClick={(e) => {
                                                                                                     e.stopPropagation();
-                                                                                                    handleDeleteAssignment(asg.id);
+                                                                                                    handleDeleteCurriculumAllocation(asg.id);
                                                                                                 }}
-                                                                                                disabled={isDeleting}
+                                                                                                disabled={deletingAssignmentId === asg.id}
                                                                                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm"
                                                                                                 title="Deallocate chapter from class"
                                                                                             >
-                                                                                                {isDeleting ? (
+                                                                                                {deletingAssignmentId === asg.id ? (
                                                                                                     <Loader2 className="size-3.5 animate-spin" />
                                                                                                 ) : (
                                                                                                     <Trash2 className="size-3.5" />
@@ -4811,7 +4889,7 @@ export default function ClassroomDashboardPage({
                                         <div className="flex-1">
                                             <h4 className="font-bold text-rose-800 dark:text-rose-300 text-sm">Database setup required</h4>
                                             <p className="text-xs text-rose-700 dark:text-rose-400 mt-1 leading-relaxed">
-                                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-150 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
+                                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">classroom_inventory_assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-150 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
                                             </p>
                                             <p className="text-xs text-rose-700 dark:text-rose-400 mt-2">
                                                 Go to <strong>Supabase Dashboard → sevtycwrmhzyfxvxkkgc → SQL Editor → New Query</strong> and paste the SQL below, then click Run.
@@ -4820,7 +4898,7 @@ export default function ClassroomDashboardPage({
                                         <button onClick={() => setDbSetupError(false)} className="p-1 rounded text-rose-400 hover:text-rose-600 flex-shrink-0"><X className="w-4 h-4" /></button>
                                     </div>
                                     <div className="mx-5 mb-4 relative">
-                                        <pre className="text-[10px] font-mono bg-rose-900/10 dark:bg-rose-950/30 text-rose-900 dark:text-rose-200 p-4 rounded-xl overflow-x-auto leading-relaxed border border-rose-200 dark:border-rose-800 max-h-40 overflow-y-auto">{`-- Run in: Supabase Dashboard > sevtycwrmhzyfxvxkkgc > SQL Editor
+                                        <pre className="text-[10px] font-mono bg-rose-900/10 dark:bg-rose-955/30 text-rose-900 dark:text-rose-200 p-4 rounded-xl overflow-x-auto leading-relaxed border border-rose-200 dark:border-rose-800 max-h-40 overflow-y-auto">{`-- Run in: Supabase Dashboard > sevtycwrmhzyfxvxkkgc > SQL Editor
 CREATE TABLE IF NOT EXISTS public.class_notes (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,
@@ -4841,6 +4919,16 @@ CREATE TABLE IF NOT EXISTS public.assignment_students (
   assignment_id UUID NOT NULL, student_id UUID NOT NULL,
   status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)
 );
+CREATE TABLE IF NOT EXISTS public.classroom_inventory_assignments (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,
+  module_id UUID REFERENCES public.course_modules(id) ON DELETE SET NULL,
+  chapter_id UUID REFERENCES public.course_chapters(id) ON DELETE SET NULL,
+  lesson_id UUID REFERENCES public.course_lessons(id) ON DELETE SET NULL,
+  assigned_by UUID REFERENCES public.users(id),
+  assigned_to_student_id UUID REFERENCES public.users(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS public.student_topic_progress (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   student_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -4855,14 +4943,16 @@ CREATE TABLE IF NOT EXISTS public.student_topic_progress (
 ALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.classroom_inventory_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all classroom_inventory_assignments" ON public.classroom_inventory_assignments FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`}</pre>
                                         <button
                                             onClick={() => {
-                                                const sql = `CREATE TABLE IF NOT EXISTS public.class_notes (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, content TEXT, file_url TEXT,\n  file_name TEXT, file_size INTEGER, color TEXT DEFAULT 'yellow',\n  created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, description TEXT, due_date DATE,\n  target_type TEXT NOT NULL DEFAULT 'all',\n  file_url TEXT, file_name TEXT, file_size INTEGER,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignment_students (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  assignment_id UUID NOT NULL, student_id UUID NOT NULL,\n  status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)\n);\nCREATE TABLE IF NOT EXISTS public.student_topic_progress (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  student_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  lesson_id UUID NOT NULL REFERENCES public.course_lessons(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'locked',\n  unlocked_by TEXT NOT NULL DEFAULT 'system',\n  unlocked_at TIMESTAMPTZ DEFAULT now(),\n  completed_at TIMESTAMPTZ,\n  UNIQUE (student_id, lesson_id)\n);\nALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`;
+                                                const sql = `CREATE TABLE IF NOT EXISTS public.class_notes (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, content TEXT, file_url TEXT,\n  file_name TEXT, file_size INTEGER, color TEXT DEFAULT 'yellow',\n  created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL, teacher_id UUID NOT NULL,\n  title TEXT NOT NULL, description TEXT, due_date DATE,\n  target_type TEXT NOT NULL DEFAULT 'all',\n  file_url TEXT, file_name TEXT, file_size INTEGER,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.assignment_students (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  assignment_id UUID NOT NULL, student_id UUID NOT NULL,\n  status TEXT DEFAULT 'pending', UNIQUE (assignment_id, student_id)\n);\nCREATE TABLE IF NOT EXISTS public.classroom_inventory_assignments (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  module_id UUID REFERENCES public.course_modules(id) ON DELETE SET NULL,\n  chapter_id UUID REFERENCES public.course_chapters(id) ON DELETE SET NULL,\n  lesson_id UUID REFERENCES public.course_lessons(id) ON DELETE SET NULL,\n  assigned_by UUID REFERENCES public.users(id),\n  assigned_to_student_id UUID REFERENCES public.users(id),\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS public.student_topic_progress (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  student_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  classroom_id UUID NOT NULL REFERENCES public.classrooms(id) ON DELETE CASCADE,\n  lesson_id UUID NOT NULL REFERENCES public.course_lessons(id) ON DELETE CASCADE,\n  status TEXT NOT NULL DEFAULT 'locked',\n  unlocked_by TEXT NOT NULL DEFAULT 'system',\n  unlocked_at TIMESTAMPTZ DEFAULT now(),\n  completed_at TIMESTAMPTZ,\n  UNIQUE (student_id, lesson_id)\n);\nALTER TABLE public.class_notes ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.assignment_students ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.classroom_inventory_assignments ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.student_topic_progress ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all class_notes" ON public.class_notes FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all assignment_students" ON public.assignment_students FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all classroom_inventory_assignments" ON public.classroom_inventory_assignments FOR ALL USING (true) WITH CHECK (true);\nCREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progress FOR ALL USING (true) WITH CHECK (true);`;
                                                 navigator.clipboard.writeText(sql).then(() => alert('SQL copied to clipboard!'));
                                             }}
                                             className="absolute top-2 right-2 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold rounded-lg transition-colors"
