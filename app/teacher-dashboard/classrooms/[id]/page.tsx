@@ -84,7 +84,12 @@ interface AssignmentStudent {
     id: string;
     assignment_id: string;
     student_id: string;
-    status: 'pending' | 'submitted' | 'reviewed';
+    status: 'pending' | 'submitted' | 'reviewed' | 'approved' | 'draft';
+    score?: number | null;
+    proficiency_level?: string | null;
+    feedback_text?: string | null;
+    video_url?: string | null;
+    submitted_at?: string | null;
     // joined
     student_name?: string;
     student_pic?: string | null;
@@ -338,6 +343,16 @@ export default function ClassroomDashboardPage({
     const [deletingAssignmentId, setDeletingAssignmentId] = useState<string | null>(null);
     const assignmentFileRef = useRef<HTMLInputElement>(null);
     const [isDraggingOverAssignments, setIsDraggingOverAssignments] = useState(false);
+
+    // Student Task Review Dialog states
+    const [selectedReviewStudent, setSelectedReviewStudent] = useState<AssignmentStudent | null>(null);
+    const [selectedReviewAssignment, setSelectedReviewAssignment] = useState<Assignment | null>(null);
+    const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+    const [reviewScore, setReviewScore] = useState<number | ''>('');
+    const [reviewProficiency, setReviewProficiency] = useState<string>('');
+    const [reviewFeedback, setReviewFeedback] = useState<string>('');
+    const [reviewReassign, setReviewReassign] = useState<boolean>(false);
+    const [isSavingReview, setIsSavingReview] = useState<boolean>(false);
 
     const parseModuleCategory = (mod: any) => {
         if (mod.category_id) {
@@ -720,21 +735,59 @@ export default function ClassroomDashboardPage({
                 return;
             }
 
-            // For each individual assignment, fetch assignment_students
+            // Fetch and enrich student progress/statuses for BOTH all and individual assignments
             const enriched = await Promise.all((asgData || []).map(async (a: Assignment) => {
+                const { data: asData, error: asError } = await supabaseAuth
+                    .from('assignment_students')
+                    .select('*')
+                    .eq('assignment_id', a.id);
+                
+                if (asError) {
+                    console.error('Error fetching assignment students for a.id', a.id, asError);
+                }
+
+                const existingRows = asData || [];
+
                 if (a.target_type === 'individual') {
-                    const { data: asData } = await supabaseAuth
-                        .from('assignment_students')
-                        .select('*')
-                        .eq('assignment_id', a.id);
-                    // Enrich with student names from the loaded students list
-                    const enrichedStudents = (asData || []).map((as: AssignmentStudent) => {
+                    // Only show students who have explicit assignment_students rows
+                    const enrichedStudents = existingRows.map((as: AssignmentStudent) => {
                         const match = students.find(s => s.student_id === as.student_id);
-                        return { ...as, student_name: match?.name || 'Unknown', student_pic: match?.profile_pic_url || null };
+                        return { 
+                            ...as, 
+                            student_name: match?.name || 'Unknown', 
+                            student_pic: match?.profile_pic_url || null 
+                        };
+                    });
+                    return { ...a, assignment_students: enrichedStudents };
+                } else {
+                    // For 'all' assignments, show every student in the classroom.
+                    // Map existing status/grading row or default to a virtual pending row.
+                    const enrichedStudents = students.map(s => {
+                        const existing = existingRows.find(row => row.student_id === s.student_id);
+                        if (existing) {
+                            return {
+                                ...existing,
+                                student_name: s.name,
+                                student_pic: s.profile_pic_url || null
+                            };
+                        } else {
+                            return {
+                                id: `temp-impl-${a.id}-${s.student_id}`, // virtual ID
+                                assignment_id: a.id,
+                                student_id: s.student_id,
+                                status: 'pending' as const,
+                                score: null,
+                                proficiency_level: null,
+                                feedback_text: null,
+                                video_url: null,
+                                submitted_at: null,
+                                student_name: s.name,
+                                student_pic: s.profile_pic_url || null
+                            };
+                        }
                     });
                     return { ...a, assignment_students: enrichedStudents };
                 }
-                return { ...a, assignment_students: [] };
             }));
 
             setAssignments(enriched);
@@ -745,6 +798,116 @@ export default function ClassroomDashboardPage({
             setAssignmentsLoading(false);
         }
     }, [classroomId, students]);
+
+    const handleOpenReviewModal = (student: AssignmentStudent, assignment: Assignment) => {
+        setSelectedReviewStudent(student);
+        setSelectedReviewAssignment(assignment);
+        setReviewScore(student.score !== undefined && student.score !== null ? student.score : '');
+        setReviewProficiency(student.proficiency_level || '');
+        setReviewFeedback(student.feedback_text || '');
+        setReviewReassign(student.status === 'reviewed');
+        setIsReviewModalOpen(true);
+    };
+
+    const handleSaveStudentReview = async () => {
+        if (!selectedReviewStudent || !selectedReviewAssignment) return;
+        setIsSavingReview(true);
+
+        try {
+            const newStatus = reviewReassign ? 'reviewed' : 'approved';
+            const updates = {
+                status: newStatus,
+                score: reviewScore === '' ? null : Number(reviewScore),
+                proficiency_level: reviewProficiency,
+                feedback_text: reviewFeedback,
+                submitted_at: new Date().toISOString()
+            };
+
+            const isTemp = selectedReviewStudent.id.startsWith('temp-impl-');
+            let dbError;
+            let finalId = selectedReviewStudent.id;
+
+            if (isTemp) {
+                // Insert a new row
+                const { data: newRow, error: insertError } = await supabaseAuth
+                    .from('assignment_students')
+                    .insert({
+                        assignment_id: selectedReviewAssignment.id,
+                        student_id: selectedReviewStudent.student_id,
+                        ...updates
+                    })
+                    .select()
+                    .single();
+                
+                dbError = insertError;
+                if (!insertError && newRow) {
+                    finalId = newRow.id;
+                }
+            } else {
+                // Update existing row
+                const { error: updateError } = await supabaseAuth
+                    .from('assignment_students')
+                    .update(updates)
+                    .eq('id', selectedReviewStudent.id);
+                
+                dbError = updateError;
+            }
+
+            if (dbError) {
+                console.warn('Columns on assignment_students table might be missing, running fallback save...', dbError);
+                if (isTemp) {
+                    const { data: newRow, error: fallbackError } = await supabaseAuth
+                        .from('assignment_students')
+                        .insert({
+                            assignment_id: selectedReviewAssignment.id,
+                            student_id: selectedReviewStudent.student_id,
+                            status: newStatus
+                        })
+                        .select()
+                        .single();
+                    if (fallbackError) throw fallbackError;
+                    if (newRow) finalId = newRow.id;
+                } else {
+                    const { error: fallbackError } = await supabaseAuth
+                        .from('assignment_students')
+                        .update({ status: newStatus })
+                        .eq('id', selectedReviewStudent.id);
+                    if (fallbackError) throw fallbackError;
+                }
+            }
+
+            // Update local assignments state
+            setAssignments(prevAssignments => {
+                return prevAssignments.map(asg => {
+                    if (asg.id !== selectedReviewAssignment.id) return asg;
+                    
+                    const updatedStudents = (asg.assignment_students || []).map(stud => {
+                        if (stud.student_id !== selectedReviewStudent.student_id) return stud;
+                        return {
+                            ...stud,
+                            id: finalId,
+                            status: newStatus as any,
+                            score: reviewScore === '' ? null : Number(reviewScore),
+                            proficiency_level: reviewProficiency,
+                            feedback_text: reviewFeedback,
+                            submitted_at: updates.submitted_at
+                        };
+                    });
+                    
+                    return { ...asg, assignment_students: updatedStudents };
+                });
+            });
+
+            setIsReviewModalOpen(false);
+            alert('Review saved successfully');
+
+        } catch (error: any) {
+            console.error('Error updating review:', error);
+            alert(`Failed to save review: ${error.message || 'Unknown error'}`);
+        } finally {
+            setIsSavingReview(false);
+        }
+    };
 
     // ── Fetch Class Notes ──────────────────────────────────────────────────────
     const fetchClassNotes = useCallback(async () => {
@@ -4924,7 +5087,10 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                         className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-shadow hover:shadow-md"
                                                     >
                                                         {/* Card Header */}
-                                                        <div className="px-5 py-4 flex items-start gap-3">
+                                                        <div 
+                                                            onClick={() => setExpandedAssignmentId(isExpanded ? null : asg.id)}
+                                                            className="px-5 py-4 flex items-start gap-3 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors"
+                                                        >
                                                             {/* Icon */}
                                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                                                                 asg.target_type === 'all'
@@ -4966,6 +5132,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                         href={asg.file_url}
                                                                         target="_blank"
                                                                         rel="noreferrer"
+                                                                        onClick={(e) => e.stopPropagation()}
                                                                         className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-[#ecb613] hover:underline"
                                                                     >
                                                                         <Paperclip className="w-3 h-3" />{asg.file_name}
@@ -4978,9 +5145,12 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
 
                                                             {/* Actions */}
                                                             <div className="flex items-center gap-1 flex-shrink-0">
-                                                                {asg.target_type === 'individual' && asg.assignment_students && asg.assignment_students.length > 0 && (
+                                                                {asg.assignment_students && asg.assignment_students.length > 0 && (
                                                                     <button
-                                                                        onClick={() => setExpandedAssignmentId(isExpanded ? null : asg.id)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setExpandedAssignmentId(isExpanded ? null : asg.id);
+                                                                        }}
                                                                         className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                                                                         title={isExpanded ? 'Collapse' : 'Show students'}
                                                                     >
@@ -4988,7 +5158,10 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                     </button>
                                                                 )}
                                                                 <button
-                                                                    onClick={() => handleDeleteAssignment(asg.id)}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDeleteAssignment(asg.id);
+                                                                    }}
                                                                     disabled={isDeleting}
                                                                     className="p-1.5 rounded-lg text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
                                                                     title="Delete assignment"
@@ -4998,25 +5171,44 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                             </div>
                                                         </div>
 
-                                                        {/* Expanded: Individual student list */}
+                                                        {/* Expanded: student list */}
                                                         {isExpanded && asg.assignment_students && asg.assignment_students.length > 0 && (
                                                             <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 px-5 py-4">
                                                                 <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Assigned Students</p>
                                                                 <div className="space-y-2">
-                                                                    {asg.assignment_students.map(as => (
-                                                                        <div key={as.id} className="flex items-center gap-3 p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                                                                            <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-                                                                                {as.student_pic
-                                                                                    ? <img src={as.student_pic} alt={as.student_name} className="w-full h-full object-cover" />
-                                                                                    : <span className="text-xs font-bold text-slate-500">{(as.student_name || 'U').charAt(0)}</span>
-                                                                                }
+                                                                    {asg.assignment_students.map(as => {
+                                                                        const mappedStatusColors: Record<string, string> = {
+                                                                            pending: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+                                                                            submitted: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                                                                            reviewed: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', // Reassigned/reviewed
+                                                                            approved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', // Approved
+                                                                            draft: 'bg-slate-100 text-slate-500 dark:bg-slate-850 dark:text-slate-450 border border-dashed border-slate-300'
+                                                                        };
+
+                                                                        return (
+                                                                            <div key={as.id} className="flex items-center gap-3 p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 animate-in fade-in duration-200">
+                                                                                <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                                                    {as.student_pic
+                                                                                        ? <img src={as.student_pic} alt={as.student_name} className="w-full h-full object-cover" />
+                                                                                        : <span className="text-xs font-bold text-slate-500">{(as.student_name || 'U').charAt(0)}</span>
+                                                                                    }
+                                                                                </div>
+                                                                                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex-1">{as.student_name || 'Unknown'}</span>
+                                                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${mappedStatusColors[as.status] || mappedStatusColors.pending}`}>
+                                                                                    {as.status === 'reviewed' ? 'Re-assigned' : as.status}
+                                                                                </span>
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleOpenReviewModal(as, asg);
+                                                                                    }}
+                                                                                    className="ml-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-900 bg-[#ecb613] hover:bg-[#ecb613]/90 rounded-lg transition-all shadow-sm shadow-[#ecb613]/10"
+                                                                                >
+                                                                                    Review
+                                                                                </button>
                                                                             </div>
-                                                                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex-1">{as.student_name || 'Unknown'}</span>
-                                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${statusColors[as.status] || statusColors.pending}`}>
-                                                                                {as.status}
-                                                                            </span>
-                                                                        </div>
-                                                                    ))}
+                                                                        );
+                                                                    })}
                                                                 </div>
                                                             </div>
                                                         )}
@@ -6132,6 +6324,150 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                 </button>
                             </div>
 
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Review Task Modal ───────────────────────────────────── */}
+                {isReviewModalOpen && selectedReviewStudent && selectedReviewAssignment && (
+                    <div className="fixed inset-0 z-[350] flex items-end sm:items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-300">
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-600 flex-shrink-0">
+                                        {selectedReviewStudent.student_pic ? (
+                                            <img src={selectedReviewStudent.student_pic} alt={selectedReviewStudent.student_name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span className="text-sm font-bold text-slate-500">{(selectedReviewStudent.student_name || 'U').charAt(0)}</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h3 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight font-mono">Review: {selectedReviewStudent.student_name}</h3>
+                                        <p className="text-[11px] text-[#ecb613] font-bold mt-0.5 max-w-[285px] truncate" title={selectedReviewAssignment.title}>
+                                            Task: {selectedReviewAssignment.title}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setIsReviewModalOpen(false)} 
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Body */}
+                            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-left">
+                                {/* Video/Materials Links if exists */}
+                                {selectedReviewStudent.video_url && (
+                                    <div className="p-3 bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-350">
+                                        <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400 min-w-0">
+                                            <PlayCircle className="w-4 h-4 shrink-0" />
+                                            <span className="text-xs font-bold truncate">Submission Video URL</span>
+                                        </div>
+                                        <a 
+                                            href={selectedReviewStudent.video_url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="inline-flex items-center gap-1 text-[11px] font-black text-[#ecb613] hover:underline shrink-0"
+                                        >
+                                            <ExternalLink className="w-3 h-3" /> View
+                                        </a>
+                                    </div>
+                                )}
+
+                                {selectedReviewAssignment.file_url && (
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-350">
+                                        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 min-w-0">
+                                            <Paperclip className="w-4 h-4 shrink-0" />
+                                            <span className="text-xs font-bold truncate" title={selectedReviewAssignment.file_name || 'Material'}>
+                                                {selectedReviewAssignment.file_name || 'Learning Material'}
+                                            </span>
+                                        </div>
+                                        <a 
+                                            href={selectedReviewAssignment.file_url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="inline-flex items-center gap-1 text-[11px] font-black text-[#ecb613] hover:underline shrink-0"
+                                        >
+                                            <Download className="w-3 h-3" /> Download
+                                        </a>
+                                    </div>
+                                )}
+
+                                {/* Grading Form Fields */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Score (Out of 10)</label>
+                                        <input 
+                                            className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100" 
+                                            type="number" 
+                                            min="0" max="10" step="0.5" 
+                                            placeholder="e.g. 8.5"
+                                            value={reviewScore}
+                                            onChange={(e) => setReviewScore(e.target.value === '' ? '' : Number(e.target.value))}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Proficiency</label>
+                                        <select 
+                                            className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
+                                            value={reviewProficiency}
+                                            onChange={(e) => setReviewProficiency(e.target.value)}
+                                        >
+                                            <option value="">Select Level</option>
+                                            <option value="Beginner">Beginner</option>
+                                            <option value="Developing">Developing</option>
+                                            <option value="Proficient">Proficient</option>
+                                            <option value="Exemplary">Exemplary</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Feedback / Comments</label>
+                                    <textarea 
+                                        className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all resize-none text-slate-800 dark:text-slate-100" 
+                                        rows={3} 
+                                        placeholder="Add encouragement, areas of improvement..."
+                                        value={reviewFeedback}
+                                        onChange={(e) => setReviewFeedback(e.target.value)}
+                                    ></textarea>
+                                </div>
+
+                                <div className="flex items-center gap-3 p-3.5 bg-rose-50 dark:bg-rose-950/10 rounded-xl border border-rose-100 dark:border-rose-900/40">
+                                    <input 
+                                        className="rounded text-rose-600 focus:ring-rose-500 h-4 w-4 border-slate-350 dark:border-slate-650 cursor-pointer" 
+                                        type="checkbox" 
+                                        id="review-reassign"
+                                        checked={reviewReassign}
+                                        onChange={(e) => setReviewReassign(e.target.checked)}
+                                    />
+                                    <label className="text-xs font-bold text-rose-800 dark:text-rose-450 flex flex-col cursor-pointer select-none" htmlFor="review-reassign">
+                                        Re-assign Task
+                                        <span className="text-[10px] font-medium text-slate-500 dark:text-slate-450 mt-0.5">Mark as incomplete to request a resubmission.</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3 flex-shrink-0">
+                                <button
+                                    onClick={() => setIsReviewModalOpen(false)}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSaveStudentReview}
+                                    disabled={isSavingReview}
+                                    className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#ecb613] text-slate-900 hover:bg-[#ecb613]/90 shadow-md shadow-[#ecb613]/10 transition-all disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {isSavingReview ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                                    {isSavingReview ? 'Saving...' : 'Save Review'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
