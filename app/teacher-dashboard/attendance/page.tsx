@@ -737,8 +737,12 @@ export default function AttendancePage() {
     }, [mode, fromDate, toDate, missedStatusFilter, missedSearchQuery, fetchMissedReport]);
 
     const handleSaveMakeup = async () => {
-        if (!makeupStudent || !makeupClassroomId || !makeupDate) {
-            alert('Please fill out all required fields.');
+        let targetId = makeupClassroomId;
+        if (!targetId && classrooms.length > 0) {
+            targetId = classrooms[0].id;
+        }
+        if (!makeupStudent || !targetId || !makeupDate) {
+            alert(`Please fill out all required fields. (Student: ${makeupStudent ? 'Yes' : 'No'}, Classroom: ${targetId ? 'Yes' : 'No'}, Date: ${makeupDate ? 'Yes' : 'No'})`);
             return;
         }
         setIsSavingMakeup(true);
@@ -747,7 +751,7 @@ export default function AttendancePage() {
                 .from('session_student_overrides')
                 .insert([{
                     student_id: makeupStudent.student_id,
-                    target_classroom_id: makeupClassroomId,
+                    target_classroom_id: targetId,
                     override_date: makeupDate,
                     reason: makeupReason || null
                 }]);
@@ -1499,15 +1503,21 @@ export default function AttendancePage() {
                             {/* Target classroom */}
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1">Target Class / Batch</label>
-                                <select 
-                                    value={makeupClassroomId}
-                                    onChange={(e) => setMakeupClassroomId(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/40 outline-none transition-all"
-                                >
-                                    {classrooms.map(room => (
-                                        <option key={room.id} value={room.id}>{room.name}</option>
-                                    ))}
-                                </select>
+                                {classrooms.length > 0 ? (
+                                    <select 
+                                        value={makeupClassroomId}
+                                        onChange={(e) => setMakeupClassroomId(e.target.value)}
+                                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/40 outline-none transition-all"
+                                    >
+                                        {classrooms.map(room => (
+                                            <option key={room.id} value={room.id}>{room.name}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <div className="text-xs text-rose-500 font-bold p-2.5 bg-rose-50 dark:bg-rose-950/20 rounded-xl border border-rose-100 dark:border-rose-900/40">
+                                        No permanent classrooms found. You must configure at least one permanent classroom to schedule a makeup class.
+                                    </div>
+                                )}
                             </div>
 
                             {/* Date */}
@@ -1543,7 +1553,7 @@ export default function AttendancePage() {
                             </button>
                             <button
                                 onClick={handleSaveMakeup}
-                                disabled={isSavingMakeup || !makeupClassroomId || !makeupDate}
+                                disabled={isSavingMakeup || (!makeupClassroomId && classrooms.length === 0) || !makeupDate}
                                 className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#ecb613] text-slate-900 hover:bg-[#ecb613]/90 shadow-md shadow-[#ecb613]/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
                             >
                                 {isSavingMakeup ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
