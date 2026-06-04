@@ -117,7 +117,29 @@ export default function AttendancePage() {
     const [makeupReason, setMakeupReason] = useState<string>('');
     const [isSavingMakeup, setIsSavingMakeup] = useState(false);
     const [editingMakeupId, setEditingMakeupId] = useState<string | null>(null);
-    
+    const [excusedSuggestions, setExcusedSuggestions] = useState<any[]>([]);
+
+    const formatLocalDateStr = useCallback((dateStr: string, includeYear = false) => {
+        if (!dateStr) return '';
+        const cleanDate = dateStr.split('T')[0].split(' ')[0];
+        const parts = cleanDate.split('-');
+        if (parts.length !== 3) return dateStr;
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        const d = new Date(year, month, day);
+        return d.toLocaleDateString('en-IN', { 
+            day: 'numeric', 
+            month: 'short', 
+            ...(includeYear ? { year: 'numeric' } : {}) 
+        });
+    }, []);
+ 
+    const stripMissedDateTag = useCallback((reasonStr: string) => {
+        if (!reasonStr) return '';
+        return reasonStr.replace(/^\[MissedDate:[^\]]+\]\s*/, '');
+    }, []);
+
     const initialFromDate = useMemo(() => {
         const d = new Date();
         const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -651,7 +673,7 @@ export default function AttendancePage() {
             // 2. Fetch all student overrides (makeups) to match later
             const { data: overridesData, error: overridesErr } = await supabaseAuth
                 .from('session_student_overrides')
-                .select('id, student_id, target_classroom_id, override_date, reason, classrooms!target_classroom_id(name)')
+                .select('id, student_id, target_classroom_id, override_date, reason')
                 .in('student_id', studentIds);
 
             if (overridesErr) {
@@ -748,13 +770,20 @@ export default function AttendancePage() {
         }
         setIsSavingMakeup(true);
         try {
+            // Ensure the reason starts with [MissedDate:YYYY-MM-DD] tag for accurate matching
+            const tag = `[MissedDate:${makeupStudent.date}]`;
+            let cleanReason = makeupReason || '';
+            if (!cleanReason.includes(tag)) {
+                cleanReason = `${tag} ${cleanReason}`.trim();
+            }
+
             if (editingMakeupId) {
                 const { error } = await supabaseAuth
                     .from('session_student_overrides')
                     .update({
                         target_classroom_id: targetId,
                         override_date: makeupDate,
-                        reason: makeupReason || null
+                        reason: cleanReason || null
                     })
                     .eq('id', editingMakeupId);
 
@@ -769,7 +798,7 @@ export default function AttendancePage() {
                         student_id: makeupStudent.student_id,
                         target_classroom_id: targetId,
                         override_date: makeupDate,
-                        reason: makeupReason || null
+                        reason: cleanReason || null
                     }]);
 
                 if (error) {
@@ -805,6 +834,53 @@ export default function AttendancePage() {
         setMakeupReason('');
         setEditingMakeupId(null);
     };
+
+    const fetchExcusedSuggestions = useCallback(async (dateStr: string) => {
+        if (!teacherProfile) return;
+        try {
+            const { data, error } = await supabaseAuth
+                .from('attendance')
+                .select(`
+                    classroom_id,
+                    student_id,
+                    users!student_id(name)
+                `)
+                .eq('date', dateStr)
+                .eq('status', 'excused');
+
+            if (error) throw error;
+
+            const counts: Record<string, { name: string; studentNames: string[] }> = {};
+            (data || []).forEach((row: any) => {
+                const cid = row.classroom_id;
+                const roomName = classrooms.find(c => c.id === cid)?.name || 'Classroom';
+                const studentName = row.users?.name || 'Unknown Student';
+                if (!counts[cid]) {
+                    counts[cid] = { name: roomName, studentNames: [] };
+                }
+                counts[cid].studentNames.push(studentName);
+            });
+
+            const suggestions = Object.entries(counts).map(([cid, info]) => ({
+                classroomId: cid,
+                classroomName: info.name,
+                excusedCount: info.studentNames.length,
+                excusedStudents: info.studentNames
+            }));
+
+            setExcusedSuggestions(suggestions);
+        } catch (err) {
+            console.error('Error fetching excused suggestions:', err);
+        }
+    }, [teacherProfile, classrooms]);
+
+    useEffect(() => {
+        if (showMakeupModal && makeupDate) {
+            fetchExcusedSuggestions(makeupDate);
+        } else {
+            setExcusedSuggestions([]);
+        }
+    }, [showMakeupModal, makeupDate, fetchExcusedSuggestions]);
 
     const getDaysInMonth = (date: Date) => {
         const year = date.getFullYear();
@@ -1415,10 +1491,12 @@ export default function AttendancePage() {
                                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
                                                         {missedLogs.map((log) => {
                                                             // Check if there is already an override scheduled on or after this missed date
-                                                            const scheduledMakeup = studentOverrides.find(o => 
-                                                                o.student_id === log.student_id && 
-                                                                o.override_date >= log.date
-                                                            );
+                                                            const scheduledMakeup = studentOverrides.find(o => {
+                                                                if (!o.override_date || !log.date) return false;
+                                                                const oDate = o.override_date.split('T')[0].split(' ')[0];
+                                                                const lDate = log.date.split('T')[0].split(' ')[0];
+                                                                return o.student_id === log.student_id && oDate >= lDate;
+                                                            });
 
                                                             return (
                                                                 <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
@@ -1438,7 +1516,7 @@ export default function AttendancePage() {
                                                                         {log.classroom_name}
                                                                     </td>
                                                                     <td className="px-5 py-4 text-xs font-bold text-slate-600 dark:text-slate-350">
-                                                                        {new Date(log.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                        {formatLocalDateStr(log.date, true)}
                                                                     </td>
                                                                     <td className="px-5 py-4">
                                                                         <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
@@ -1456,7 +1534,7 @@ export default function AttendancePage() {
                                                                                     <CheckCircle className="w-3.5 h-3.5" /> Scheduled
                                                                                 </span>
                                                                                 <span className="text-[10px] mt-0.5 text-slate-500">
-                                                                                    {new Date(scheduledMakeup.override_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} in {classrooms.find(c => c.id === scheduledMakeup.target_classroom_id)?.name || 'Classroom'}
+                                                                                    {formatLocalDateStr(scheduledMakeup.override_date)} in {classrooms.find(c => c.id === scheduledMakeup.target_classroom_id)?.name || 'Classroom'}
                                                                                 </span>
                                                                             </div>
                                                                         ) : (
@@ -1470,7 +1548,7 @@ export default function AttendancePage() {
                                                                                     setMakeupStudent(log);
                                                                                     setMakeupDate(scheduledMakeup.override_date);
                                                                                     setMakeupClassroomId(scheduledMakeup.target_classroom_id);
-                                                                                    setMakeupReason(scheduledMakeup.reason || '');
+                                                                                    setMakeupReason(stripMissedDateTag(scheduledMakeup.reason || ''));
                                                                                     setEditingMakeupId(scheduledMakeup.id);
                                                                                     setShowMakeupModal(true);
                                                                                 }}
@@ -1483,9 +1561,9 @@ export default function AttendancePage() {
                                                                             <button
                                                                                 onClick={() => {
                                                                                     setMakeupStudent(log);
-                                                                                    setMakeupDate(new Date().toISOString().split('T')[0]);
+                                                                                    setMakeupDate(log.date);
                                                                                     setMakeupClassroomId(classrooms[0]?.id || '');
-                                                                                    setMakeupReason(`Makeup for missing ${log.classroom_name} class on ${log.date}`);
+                                                                                    setMakeupReason(`Makeup for missing ${log.classroom_name} class on ${formatLocalDateStr(log.date)}`);
                                                                                     setEditingMakeupId(null);
                                                                                     setShowMakeupModal(true);
                                                                                 }}
@@ -1522,7 +1600,7 @@ export default function AttendancePage() {
             {/* ── Schedule Makeup Modal ─────────────────────────────────────────── */}
             {showMakeupModal && makeupStudent && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md flex flex-col p-6 animate-in zoom-in-95 duration-200 text-left">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md flex flex-col p-6 animate-in zoom-in-95 duration-200 text-left max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5 mb-4">
                             <div>
                                 <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
@@ -1546,7 +1624,7 @@ export default function AttendancePage() {
                                 <div className="text-left">
                                     <h6 className="text-xs font-black text-slate-900 dark:text-white">{makeupStudent.student_name}</h6>
                                     <p className="text-[10px] text-slate-500 font-bold mt-0.5">
-                                        Missed: {makeupStudent.classroom_name} on {new Date(makeupStudent.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                        Missed: {makeupStudent.classroom_name} on {formatLocalDateStr(makeupStudent.date)}
                                     </p>
                                 </div>
                             </div>
@@ -1581,6 +1659,59 @@ export default function AttendancePage() {
                                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/40 outline-none transition-all"
                                 />
                             </div>
+
+                            {/* Suggestions based on excused absences */}
+                            {makeupDate && (
+                                <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                                    <div className="flex items-center gap-1.5 pl-1">
+                                        <Lightbulb className="w-3.5 h-3.5 text-[#ecb613]" />
+                                        <span className="block text-[10px] font-black text-slate-450 dark:text-slate-450 uppercase tracking-wider">
+                                            Suggestions (Excused absences on this date)
+                                        </span>
+                                    </div>
+                                    {excusedSuggestions.length > 0 ? (
+                                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                                            {excusedSuggestions.map((sug) => {
+                                                const isSelected = makeupClassroomId === sug.classroomId;
+                                                return (
+                                                    <button
+                                                        key={sug.classroomId}
+                                                        type="button"
+                                                        onClick={() => setMakeupClassroomId(sug.classroomId)}
+                                                        className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-start justify-between gap-3 group cursor-pointer ${
+                                                            isSelected
+                                                                ? 'border-[#ecb613] bg-[#ecb613]/10 dark:bg-[#ecb613]/5'
+                                                                : 'border-slate-100 dark:border-slate-850 hover:border-[#ecb613]/50 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                                                        }`}
+                                                    >
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <p className={`text-xs font-bold truncate ${isSelected ? 'text-[#b45309] dark:text-[#ecb613]' : 'text-slate-800 dark:text-slate-200'}`}>
+                                                                    {sug.classroomName}
+                                                                </p>
+                                                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                                                    isSelected
+                                                                        ? 'bg-[#ecb613] text-slate-900'
+                                                                        : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
+                                                                }`}>
+                                                                    {sug.excusedCount} Slot{sug.excusedCount > 1 ? 's' : ''} Open
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[10px] text-slate-500 font-medium truncate mt-1">
+                                                                Excused: {sug.excusedStudents.join(', ')}
+                                                            </p>
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 italic pl-1">
+                                            No excused absences on this date. You can select any classroom manually from the dropdown.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Reason/Notes */}
                             <div className="space-y-1">

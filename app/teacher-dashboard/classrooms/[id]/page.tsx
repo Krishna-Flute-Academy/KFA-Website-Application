@@ -2138,7 +2138,7 @@ export default function ClassroomDashboardPage({
         return `${hStr}:${m} ${ampm}`;
     };
 
-    const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
     const generateTimeOptions = () => {
         const options = [];
