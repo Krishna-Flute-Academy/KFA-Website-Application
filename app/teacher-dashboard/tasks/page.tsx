@@ -121,6 +121,7 @@ export default function TaskReviewPage() {
     const [collapsedTasks, setCollapsedTasks] = useState<Record<string, boolean>>({});
     
     // Task Creation Form states
+    const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [createTitle, setCreateTitle] = useState('');
     const [createDescription, setCreateDescription] = useState('');
@@ -993,6 +994,60 @@ export default function TaskReviewPage() {
         }
     };
 
+    const handleEditTaskClick = async (taskId: string) => {
+        try {
+            const { data: asg, error: asgError } = await supabaseAuth
+                .from('assignments')
+                .select('id, title, description, due_date, classroom_id, status, target_type, inventory_ref_id, inventory_ref_title, inventory_ref_type, file_url, file_name, file_size')
+                .eq('id', taskId)
+                .single();
+
+            if (asgError || !asg) {
+                console.error('Error fetching assignment for editing:', asgError);
+                alert('Could not fetch task details.');
+                return;
+            }
+
+            setEditingTaskId(asg.id);
+            setCreateTitle(asg.title || '');
+            setCreateDescription(asg.description || '');
+            
+            if (asg.due_date) {
+                const d = new Date(asg.due_date);
+                const formattedDate = d.toISOString().split('T')[0];
+                setCreateDueDate(formattedDate);
+            } else {
+                setCreateDueDate('');
+            }
+
+            setCreateSelectedClassroom(asg.classroom_id || 'all');
+            setCreateSelectAll(asg.target_type === 'all');
+            setCreateFileUrl(asg.file_url || '');
+            setCreateFileName(asg.file_name || '');
+            setCreateFileSize(asg.file_size ? Number(asg.file_size) : null);
+            setCreateSelectedLessonId(asg.inventory_ref_id || null);
+            setCreateSelectedLessonTitle(asg.inventory_ref_title || null);
+
+            // Fetch current mappings to select students
+            const { data: currentMappings } = await supabaseAuth
+                .from('assignment_students')
+                .select('student_id')
+                .eq('assignment_id', taskId);
+
+            const assignedIds = new Set((currentMappings || []).map(m => m.student_id));
+
+            setCreateStudents(prev => prev.map(student => ({
+                ...student,
+                selected: asg.target_type === 'all' || assignedIds.has(student.id)
+            })));
+
+            setIsCreateModalOpen(true);
+        } catch (err) {
+            console.error('Failed to load task details for editing:', err);
+            alert('Failed to load task details.');
+        }
+    };
+
     const handleAssignTask = async (isDraft: boolean = false) => {
         const { data: { session } } = await supabaseAuth.auth.getSession();
         if (!session) return;
@@ -1037,18 +1092,12 @@ export default function TaskReviewPage() {
 
         setIsSaving(true);
         try {
-            const originalTask = previousTasks.find(t => t.id === selectedPreviousTaskId);
-
-            for (const [classId, studentIds] of Object.entries(studentsByClass)) {
-                const isReusedTask = selectedPreviousTaskId && originalTask && classId === originalTask.classroom_id;
-
-                let assignmentIdToUse = '';
-                let assignmentError = null;
-
+            if (editingTaskId) {
                 const updateData: any = {
                     title: createTitle,
                     description: createDescription,
                     due_date: createDueDate || null,
+                    classroom_id: createSelectedClassroom === 'all' ? (createClassrooms[0]?.id || null) : createSelectedClassroom,
                     target_type: createSelectedClassroom === 'all' && createSelectAll ? 'all' : 'individual',
                     status: isDraft ? 'draft' : 'active',
                     file_url: createFileUrl || null,
@@ -1059,63 +1108,34 @@ export default function TaskReviewPage() {
                     inventory_ref_type: createSelectedLessonId ? 'lesson' : null
                 };
 
-                if (isReusedTask) {
-                    assignmentIdToUse = selectedPreviousTaskId!;
-                    const { error } = await supabaseAuth
+                let { error: updateError } = await supabaseAuth
+                    .from('assignments')
+                    .update(updateData)
+                    .eq('id', editingTaskId);
+
+                if (updateError && (updateError.code === '42703' || updateError.message?.includes('status'))) {
+                    delete updateData.status;
+                    const fallback = await supabaseAuth
                         .from('assignments')
                         .update(updateData)
-                        .eq('id', assignmentIdToUse);
-
-                    assignmentError = error;
-
-                    if (assignmentError && (assignmentError.code === '42703' || assignmentError.message?.includes('status'))) {
-                        delete updateData.status;
-                        const fallback = await supabaseAuth
-                            .from('assignments')
-                            .update(updateData)
-                            .eq('id', assignmentIdToUse);
-                        assignmentError = fallback.error;
-                    }
-                } else {
-                    const insertData = {
-                        classroom_id: classId,
-                        teacher_id: session.user.id,
-                        ...updateData,
-                        created_at: new Date().toISOString()
-                    };
-
-                    let { data: newAsg, error: newAsgError } = await supabaseAuth
-                        .from('assignments')
-                        .insert(insertData)
-                        .select()
-                        .single();
-
-                    assignmentError = newAsgError;
-
-                    if (newAsgError && (newAsgError.code === '42703' || newAsgError.message?.includes('status'))) {
-                        delete insertData.status;
-                        const fallback = await supabaseAuth
-                            .from('assignments')
-                            .insert(insertData)
-                            .select()
-                            .single();
-                        newAsg = fallback.data;
-                        assignmentError = fallback.error;
-                    }
-
-                    if (newAsg) {
-                        assignmentIdToUse = newAsg.id;
-                    }
+                        .eq('id', editingTaskId);
+                    updateError = fallback.error;
                 }
 
-                if (assignmentError) throw assignmentError;
+                if (updateError) throw updateError;
 
-                // Sync assignment student mappings
-                if (isReusedTask) {
+                // Sync student mappings
+                if (isDraft) {
+                    await supabaseAuth
+                        .from('assignment_students')
+                        .delete()
+                        .eq('assignment_id', editingTaskId);
+                } else {
+                    const studentIds = selectedStudents.map(s => s.id);
                     const { data: currentMappings } = await supabaseAuth
                         .from('assignment_students')
                         .select('student_id')
-                        .eq('assignment_id', assignmentIdToUse);
+                        .eq('assignment_id', editingTaskId);
 
                     const existingStudentIds = new Set((currentMappings || []).map(m => m.student_id));
                     const targetStudentIds = new Set(studentIds);
@@ -1125,14 +1145,14 @@ export default function TaskReviewPage() {
                         await supabaseAuth
                             .from('assignment_students')
                             .delete()
-                            .eq('assignment_id', assignmentIdToUse)
+                            .eq('assignment_id', editingTaskId)
                             .in('student_id', toRemove);
                     }
 
                     const toAdd = studentIds.filter(id => !existingStudentIds.has(id));
-                    if (toAdd.length > 0 && !isDraft) {
+                    if (toAdd.length > 0) {
                         const newMappings = toAdd.map(studentId => ({
-                            assignment_id: assignmentIdToUse,
+                            assignment_id: editingTaskId,
                             student_id: studentId,
                             status: 'pending'
                         }));
@@ -1143,32 +1163,145 @@ export default function TaskReviewPage() {
 
                         if (mappingError) throw mappingError;
                     }
-                    
-                    if (isDraft) {
-                        await supabaseAuth
-                            .from('assignment_students')
-                            .delete()
-                            .eq('assignment_id', assignmentIdToUse);
+                }
+
+                alert(isDraft ? 'Task draft saved successfully!' : 'Task changes saved successfully!');
+            } else {
+                const originalTask = previousTasks.find(t => t.id === selectedPreviousTaskId);
+
+                for (const [classId, studentIds] of Object.entries(studentsByClass)) {
+                    const isReusedTask = selectedPreviousTaskId && originalTask && classId === originalTask.classroom_id;
+
+                    let assignmentIdToUse = '';
+                    let assignmentError = null;
+
+                    const updateData: any = {
+                        title: createTitle,
+                        description: createDescription,
+                        due_date: createDueDate || null,
+                        target_type: createSelectedClassroom === 'all' && createSelectAll ? 'all' : 'individual',
+                        status: isDraft ? 'draft' : 'active',
+                        file_url: createFileUrl || null,
+                        file_name: createFileName || null,
+                        file_size: createFileSize || null,
+                        inventory_ref_id: createSelectedLessonId || null,
+                        inventory_ref_title: createSelectedLessonTitle || null,
+                        inventory_ref_type: createSelectedLessonId ? 'lesson' : null
+                    };
+
+                    if (isReusedTask) {
+                        assignmentIdToUse = selectedPreviousTaskId!;
+                        const { error } = await supabaseAuth
+                            .from('assignments')
+                            .update(updateData)
+                            .eq('id', assignmentIdToUse);
+
+                        assignmentError = error;
+
+                        if (assignmentError && (assignmentError.code === '42703' || assignmentError.message?.includes('status'))) {
+                            delete updateData.status;
+                            const fallback = await supabaseAuth
+                                .from('assignments')
+                                .update(updateData)
+                                .eq('id', assignmentIdToUse);
+                            assignmentError = fallback.error;
+                        }
+                    } else {
+                        const insertData = {
+                            classroom_id: classId,
+                            teacher_id: session.user.id,
+                            ...updateData,
+                            created_at: new Date().toISOString()
+                        };
+
+                        let { data: newAsg, error: newAsgError } = await supabaseAuth
+                            .from('assignments')
+                            .insert(insertData)
+                            .select()
+                            .single();
+
+                        assignmentError = newAsgError;
+
+                        if (newAsgError && (newAsgError.code === '42703' || newAsgError.message?.includes('status'))) {
+                            delete insertData.status;
+                            const fallback = await supabaseAuth
+                                .from('assignments')
+                                .insert(insertData)
+                                .select()
+                                .single();
+                            newAsg = fallback.data;
+                            assignmentError = fallback.error;
+                        }
+
+                        if (newAsg) {
+                            assignmentIdToUse = newAsg.id;
+                        }
                     }
-                } else {
-                    if (!isDraft && studentIds.length > 0) {
-                        const studentMappings = studentIds.map(studentId => ({
-                            assignment_id: assignmentIdToUse,
-                            student_id: studentId,
-                            status: 'pending'
-                        }));
 
-                        const { error: mappingError } = await supabaseAuth
+                    if (assignmentError) throw assignmentError;
+
+                    // Sync assignment student mappings
+                    if (isReusedTask) {
+                        const { data: currentMappings } = await supabaseAuth
                             .from('assignment_students')
-                            .insert(studentMappings);
+                            .select('student_id')
+                            .eq('assignment_id', assignmentIdToUse);
 
-                        if (mappingError) throw mappingError;
+                        const existingStudentIds = new Set((currentMappings || []).map(m => m.student_id));
+                        const targetStudentIds = new Set(studentIds);
+
+                        const toRemove = [...existingStudentIds].filter(id => !targetStudentIds.has(id));
+                        if (toRemove.length > 0) {
+                            await supabaseAuth
+                                .from('assignment_students')
+                                .delete()
+                                .eq('assignment_id', assignmentIdToUse)
+                                .in('student_id', toRemove);
+                        }
+
+                        const toAdd = studentIds.filter(id => !existingStudentIds.has(id));
+                        if (toAdd.length > 0 && !isDraft) {
+                            const newMappings = toAdd.map(studentId => ({
+                                assignment_id: assignmentIdToUse,
+                                student_id: studentId,
+                                status: 'pending'
+                            }));
+
+                            const { error: mappingError } = await supabaseAuth
+                                .from('assignment_students')
+                                .insert(newMappings);
+
+                            if (mappingError) throw mappingError;
+                        }
+                        
+                        if (isDraft) {
+                            await supabaseAuth
+                                .from('assignment_students')
+                                .delete()
+                                .eq('assignment_id', assignmentIdToUse);
+                        }
+                    } else {
+                        if (!isDraft && studentIds.length > 0) {
+                            const studentMappings = studentIds.map(studentId => ({
+                                assignment_id: assignmentIdToUse,
+                                student_id: studentId,
+                                status: 'pending'
+                            }));
+
+                            const { error: mappingError } = await supabaseAuth
+                                .from('assignment_students')
+                                .insert(studentMappings);
+
+                            if (mappingError) throw mappingError;
+                        }
                     }
                 }
+
+                alert(isDraft ? 'Task draft saved successfully!' : 'Task assigned successfully!');
             }
 
-            alert(isDraft ? 'Task draft saved successfully!' : 'Task assigned successfully!');
             setIsCreateModalOpen(false);
+            setEditingTaskId(null);
             
             // Clear form
             setCreateTitle('');
@@ -1447,7 +1580,20 @@ export default function TaskReviewPage() {
                                     )}
                                 </div>
                                 <button 
-                                    onClick={() => setIsCreateModalOpen(true)}
+                                    onClick={() => {
+                                        setEditingTaskId(null);
+                                        setCreateTitle('');
+                                        setCreateDescription('');
+                                        setCreateDueDate('');
+                                        setCreateFileUrl('');
+                                        setCreateFileName('');
+                                        setCreateFileSize(null);
+                                        setCreateSelectedLessonId(null);
+                                        setCreateSelectedLessonTitle(null);
+                                        setSelectedPreviousTaskId(null);
+                                        setCreateStudents(prev => prev.map(s => ({ ...s, selected: true })));
+                                        setIsCreateModalOpen(true);
+                                    }}
                                     className="bg-[#ecb613] text-slate-900 px-4 py-2 rounded-lg text-sm font-bold hover:bg-[#ecb613]/90 transition-colors flex items-center gap-2 shadow-sm"
                                 >
                                     <Plus className="w-4 h-4" />
@@ -1474,7 +1620,24 @@ export default function TaskReviewPage() {
                                             className="px-6 py-4 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100/50 dark:hover:bg-slate-800/60 transition-colors"
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-lg bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613]">
+                                                <input 
+                                                    type="checkbox"
+                                                    className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer w-4 h-4 mr-1 shrink-0"
+                                                    checked={
+                                                        group.submissions.length > 0 &&
+                                                        group.submissions.every(sub => selectedSubIds.includes(sub.id))
+                                                    }
+                                                    onChange={(e) => {
+                                                        const groupIds = group.submissions.map(s => s.id);
+                                                        if (e.target.checked) {
+                                                            setSelectedSubIds(prev => [...new Set([...prev, ...groupIds])]);
+                                                        } else {
+                                                            setSelectedSubIds(prev => prev.filter(id => !groupIds.includes(id)));
+                                                        }
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                />
+                                                <div className="w-10 h-10 rounded-lg bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613] shrink-0">
                                                     <ClipboardList className="w-5 h-5" />
                                                 </div>
                                                 <div>
@@ -1485,14 +1648,17 @@ export default function TaskReviewPage() {
                                                                 Draft
                                                             </span>
                                                         )}
-                                                        <Link 
-                                                            href={`/teacher-dashboard/tasks/${group.submissions[0].task_id}/edit`}
-                                                            onClick={(e) => e.stopPropagation()}
+                                                        <button 
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleEditTaskClick(group.submissions[0].task_id);
+                                                            }}
                                                             className="text-slate-400 hover:text-[#ecb613] transition-colors p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800/80"
                                                             title="Edit Task"
                                                         >
                                                             <Edit2 className="w-3.5 h-3.5" />
-                                                        </Link>
+                                                        </button>
                                                         <button 
                                                             type="button"
                                                             onClick={(e) => {
@@ -1540,13 +1706,17 @@ export default function TaskReviewPage() {
                                                         This task has not been assigned to any students yet. You can keep it as a draft or delete it when you're ready.
                                                     </p>
                                                     <div className="mt-4 flex gap-2">
-                                                        <Link 
-                                                            href={`/teacher-dashboard/tasks/${group.submissions[0].task_id}/edit`}
+                                                        <button 
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleEditTaskClick(group.submissions[0].task_id);
+                                                            }}
                                                             className="px-4 py-2 bg-[#ecb613] text-slate-900 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 active:scale-[0.98]"
                                                         >
                                                             <Edit2 className="w-3.5 h-3.5" />
                                                             Edit Draft
-                                                        </Link>
+                                                        </button>
                                                         <button 
                                                             type="button"
                                                             onClick={(e) => handleDeleteSingle(e, group.submissions[0].id)}
@@ -1888,12 +2058,15 @@ export default function TaskReviewPage() {
                         {/* Header */}
                         <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 rounded-t-3xl">
                             <div>
-                                <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">Create New Task</h2>
+                                <h2 className="text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
+                                    {editingTaskId ? 'Edit Task' : 'Create New Task'}
+                                </h2>
                                 <p className="text-xs text-slate-500 mt-1 font-semibold">Assign tasks, lesson materials, and checksheets to classrooms or individual students</p>
                             </div>
                             <button 
                                 onClick={() => {
                                     setIsCreateModalOpen(false);
+                                    setEditingTaskId(null);
                                     // Clear form
                                     setCreateTitle('');
                                     setCreateDescription('');
@@ -2180,8 +2353,14 @@ export default function TaskReviewPage() {
                                         disabled={isSaving}
                                         className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
                                     >
-                                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                        {selectedPreviousTaskId ? 'Save & Assign Task' : 'Assign Task'}
+                                        {isSaving ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : editingTaskId ? (
+                                            <Save className="w-4 h-4" />
+                                        ) : (
+                                            <Send className="w-4 h-4" />
+                                        )}
+                                        {editingTaskId ? 'Save Changes' : (selectedPreviousTaskId ? 'Save & Assign Task' : 'Assign Task')}
                                     </button>
                                     <button 
                                         type="button"
@@ -2190,7 +2369,7 @@ export default function TaskReviewPage() {
                                         className="w-full py-3 px-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-750 dark:text-slate-250 font-bold text-xs rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2 active:translate-y-[1px] disabled:opacity-50"
                                     >
                                         <FileText className="w-4 h-4" />
-                                        Save as Draft
+                                        {editingTaskId ? 'Save as Draft' : 'Save as Draft'}
                                     </button>
                                 </div>
                             </div>
