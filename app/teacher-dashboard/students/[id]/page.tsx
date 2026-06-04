@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink } from 'lucide-react';
+import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -44,7 +44,7 @@ export default function StudentProfilePage() {
     const studentId = params.id as string;
 
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
     const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
     const [submissions, setSubmissions] = useState<Submission[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
@@ -52,6 +52,20 @@ export default function StudentProfilePage() {
     const [activeTab, setActiveTab] = useState('profile'); // profile, tasks, history, attendance, curriculum
     const [studentTasks, setStudentTasks] = useState<any[]>([]);
     const [selectedStudentTask, setSelectedStudentTask] = useState<any | null>(null);
+
+    const [reloadTrigger, setReloadTrigger] = useState(0);
+
+    // Form states for Student Submission
+    const [submitVideoUrl, setSubmitVideoUrl] = useState('');
+    const [studentUploadProgress, setStudentUploadProgress] = useState<number | null>(null);
+    const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+
+    // Form states for Teacher Reviews
+    const [reviewScore, setReviewScore] = useState<number | ''>('');
+    const [reviewProficiency, setReviewProficiency] = useState('');
+    const [reviewFeedback, setReviewFeedback] = useState('');
+    const [reviewReassign, setReviewReassign] = useState(false);
+    const [isSavingReview, setIsSavingReview] = useState(false);
 
     // Restore active tab from sessionStorage on mount
     useEffect(() => {
@@ -119,7 +133,7 @@ export default function StudentProfilePage() {
                 // 2. Fetch Teacher Profile
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('name, email')
+                    .select('id, name, email, role')
                     .eq('id', session.user.id)
                     .single();
                 setTeacherProfile(profile);
@@ -314,11 +328,157 @@ export default function StudentProfilePage() {
         };
 
         fetchData();
-    }, [studentId, router]);
+    }, [studentId, router, reloadTrigger]);
 
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/');
+    };
+
+    // Populate form states when selectedStudentTask changes
+    useEffect(() => {
+        if (selectedStudentTask) {
+            // Student states
+            setSubmitVideoUrl(selectedStudentTask.video_url || '');
+            setStudentUploadProgress(null);
+            setIsSubmittingTask(false);
+
+            // Teacher states
+            setReviewScore(selectedStudentTask.score !== undefined && selectedStudentTask.score !== null ? selectedStudentTask.score : '');
+            setReviewProficiency(selectedStudentTask.proficiency_level || '');
+            setReviewFeedback(selectedStudentTask.feedback_text || '');
+            setReviewReassign(selectedStudentTask.status === 'reviewed');
+            setIsSavingReview(false);
+        } else {
+            setSubmitVideoUrl('');
+            setStudentUploadProgress(null);
+            setIsSubmittingTask(false);
+            setReviewScore('');
+            setReviewProficiency('');
+            setReviewFeedback('');
+            setReviewReassign(false);
+            setIsSavingReview(false);
+        }
+    }, [selectedStudentTask]);
+
+    const handleStudentFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setStudentUploadProgress(15);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const randomName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+            const filePath = `submissions/${randomName}`;
+
+            setStudentUploadProgress(40);
+            const { error: uploadError } = await supabaseAuth.storage
+                .from('inventory_materials')
+                .upload(filePath, file);
+
+            if (uploadError) {
+                throw uploadError;
+            }
+
+            setStudentUploadProgress(80);
+            const { data: { publicUrl } } = supabaseAuth.storage
+                .from('inventory_materials')
+                .getPublicUrl(filePath);
+
+            setStudentUploadProgress(100);
+            setTimeout(() => {
+                setStudentUploadProgress(null);
+                setSubmitVideoUrl(publicUrl);
+            }, 400);
+        } catch (err: any) {
+            console.error('File upload failed:', err);
+            setStudentUploadProgress(null);
+            alert(`File upload failed: ${err.message}`);
+        }
+    };
+
+    const handleSaveStudentSubmission = async () => {
+        if (!selectedStudentTask) return;
+        setIsSubmittingTask(true);
+        try {
+            const updates = {
+                video_url: submitVideoUrl,
+                submitted_at: new Date().toISOString(),
+                status: 'submitted'
+            };
+
+            let dbError;
+            if (selectedStudentTask.student_mapping_id) {
+                const { error } = await supabaseAuth
+                    .from('assignment_students')
+                    .update(updates)
+                    .eq('id', selectedStudentTask.student_mapping_id);
+                dbError = error;
+            } else {
+                const { error } = await supabaseAuth
+                    .from('assignment_students')
+                    .insert({
+                        assignment_id: selectedStudentTask.id,
+                        student_id: studentId,
+                        ...updates
+                    });
+                dbError = error;
+            }
+
+            if (dbError) throw dbError;
+
+            // Trigger reload
+            setReloadTrigger(prev => prev + 1);
+            setSelectedStudentTask(null);
+        } catch (err: any) {
+            console.error('Error saving submission:', err);
+            alert(`Failed to save submission: ${err.message}`);
+        } finally {
+            setIsSubmittingTask(false);
+        }
+    };
+
+    const handleSaveTeacherReview = async () => {
+        if (!selectedStudentTask) return;
+        setIsSavingReview(true);
+        try {
+            const newStatus = reviewReassign ? 'reviewed' : 'approved';
+            const updates = {
+                status: newStatus,
+                score: reviewScore === '' ? null : Number(reviewScore),
+                proficiency_level: reviewProficiency,
+                feedback_text: reviewFeedback,
+                submitted_at: selectedStudentTask.submitted_at || new Date().toISOString()
+            };
+
+            let dbError;
+            if (selectedStudentTask.student_mapping_id) {
+                const { error } = await supabaseAuth
+                    .from('assignment_students')
+                    .update(updates)
+                    .eq('id', selectedStudentTask.student_mapping_id);
+                dbError = error;
+            } else {
+                const { error } = await supabaseAuth
+                    .from('assignment_students')
+                    .insert({
+                        assignment_id: selectedStudentTask.id,
+                        student_id: studentId,
+                        ...updates
+                    });
+                dbError = error;
+            }
+
+            if (dbError) throw dbError;
+
+            setReloadTrigger(prev => prev + 1);
+            setSelectedStudentTask(null);
+        } catch (err: any) {
+            console.error('Error saving review:', err);
+            alert(`Failed to save review: ${err.message}`);
+        } finally {
+            setIsSavingReview(false);
+        }
     };
 
 
@@ -564,15 +724,19 @@ export default function StudentProfilePage() {
                             </div>
                         </div>
                         <div className="flex gap-3">
-                            <button className="px-5 py-2.5 border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all text-sm flex items-center gap-2 shadow-sm">
-                                <Mail className="size-4" /> Message
-                            </button>
-                            <Link 
-                                href={`/teacher-dashboard/students/${studentId}/edit`}
-                                className="px-5 py-2.5 bg-[#ecb613] text-white font-bold rounded-xl hover:bg-[#ecb613]/90 shadow-lg shadow-[#ecb613]/20 transition-all text-sm flex items-center gap-2"
-                            >
-                                <Edit className="size-4" /> Edit Profile
-                            </Link>
+                            {teacherProfile?.role !== 'student' && (
+                                <>
+                                    <button className="px-5 py-2.5 border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all text-sm flex items-center gap-2 shadow-sm">
+                                        <Mail className="size-4" /> Message
+                                    </button>
+                                    <Link 
+                                        href={`/teacher-dashboard/students/${studentId}/edit`}
+                                        className="px-5 py-2.5 bg-[#ecb613] text-white font-bold rounded-xl hover:bg-[#ecb613]/90 shadow-lg shadow-[#ecb613]/20 transition-all text-sm flex items-center gap-2"
+                                    >
+                                        <Edit className="size-4" /> Edit Profile
+                                    </Link>
+                                </>
+                            )}
                         </div>
                     </div>
 
@@ -1259,55 +1423,208 @@ export default function StudentProfilePage() {
                                 </div>
                             )}
 
-                            {/* Student Submission Video URL */}
-                            {selectedStudentTask.video_url && (
-                                <div className="space-y-2">
-                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">Student Submission</h3>
-                                    <div className="p-4 bg-slate-50 dark:bg-slate-800/20 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className="w-10 h-10 rounded-xl bg-green-50 dark:bg-green-955/20 flex items-center justify-center text-green-500 shrink-0 border border-green-105 dark:border-transparent">
-                                                <PlayCircle className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <p className="font-extrabold text-sm text-slate-850 dark:text-slate-200">Practice Video Recording</p>
-                                                {selectedStudentTask.submitted_at && (
-                                                    <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-0.5">Submitted: {new Date(selectedStudentTask.submitted_at).toLocaleDateString()}</p>
+                            {/* Logged in user is a Student */}
+                            {teacherProfile?.role === 'student' && (
+                                <div className="space-y-6">
+                                    {/* If the task is pending, reviewed (re-assigned), or submitted, show the submission form */}
+                                    {(selectedStudentTask.status === 'pending' || selectedStudentTask.status === 'reviewed' || selectedStudentTask.status === 'submitted') && (
+                                        <div className="space-y-4 p-5 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-150 dark:border-slate-800">
+                                            <h3 className="text-xs font-black text-slate-850 dark:text-slate-300 uppercase tracking-widest font-mono">
+                                                {selectedStudentTask.status === 'submitted' ? 'Edit Your Submission' : 'Submit Practice Recording'}
+                                            </h3>
+                                            
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-widest mb-1.5">Recording URL</label>
+                                                    <input 
+                                                        className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-xs font-semibold focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100" 
+                                                        type="url" 
+                                                        placeholder="Paste link to Google Drive, YouTube, etc."
+                                                        value={submitVideoUrl}
+                                                        onChange={(e) => setSubmitVideoUrl(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-[#ecb613] rounded-2xl p-6 text-center cursor-pointer transition-colors bg-white dark:bg-slate-900 group">
+                                                    <input 
+                                                        type="file" 
+                                                        accept="video/*,audio/*"
+                                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                        onChange={handleStudentFileUpload}
+                                                        disabled={studentUploadProgress !== null}
+                                                    />
+                                                    <span className="material-symbols-outlined text-3xl text-slate-400 group-hover:text-[#ecb613] transition-colors">upload_file</span>
+                                                    <p className="text-xs font-bold text-slate-600 dark:text-slate-400 mt-1.5">
+                                                        {studentUploadProgress !== null ? `Uploading (${studentUploadProgress}%)` : 'Click to select and upload audio/video file'}
+                                                    </p>
+                                                </div>
+                                                {studentUploadProgress !== null && (
+                                                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                                        <div className="bg-[#ecb613] h-full transition-all duration-300" style={{ width: `${studentUploadProgress}%` }} />
+                                                    </div>
                                                 )}
+
+                                                <div className="flex justify-end pt-2">
+                                                    <button
+                                                        onClick={handleSaveStudentSubmission}
+                                                        disabled={isSubmittingTask || !submitVideoUrl}
+                                                        className="px-5 py-2.5 bg-[#ecb613] hover:bg-[#ecb613]/90 text-white font-extrabold rounded-xl shadow-md transition-all text-xs flex items-center gap-2"
+                                                    >
+                                                        {isSubmittingTask ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                                        {selectedStudentTask.status === 'submitted' ? 'Update Submission' : 'Submit Recording'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-                                        <a 
-                                            href={selectedStudentTask.video_url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
-                                            className="px-4 py-2.5 bg-emerald-600 text-white text-xs font-extrabold rounded-xl hover:bg-emerald-700 shadow-md shadow-emerald-650/10 transition-all flex items-center gap-1.5 shrink-0"
-                                        >
-                                            <PlayCircle className="w-4 h-4" /> View Video
-                                        </a>
-                                    </div>
+                                    )}
+
+                                    {/* If already submitted, show current video link */}
+                                    {selectedStudentTask.status === 'submitted' && selectedStudentTask.video_url && (
+                                        <div className="space-y-2">
+                                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">Current Submission</h3>
+                                            <div className="p-4 bg-emerald-50/10 dark:bg-emerald-950/5 rounded-2xl border border-emerald-100 dark:border-emerald-900/20 flex items-center justify-between gap-4">
+                                                <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-450">Practice Recording video uploaded/linked</span>
+                                                <a 
+                                                    href={selectedStudentTask.video_url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl transition-colors flex items-center gap-1.5"
+                                                >
+                                                    <PlayCircle className="w-4 h-4" /> View Video
+                                                </a>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* If reviewed or approved, show the teacher reviews */}
+                                    {(selectedStudentTask.feedback_text || selectedStudentTask.score !== undefined) && (
+                                        <div className="space-y-3 p-5 bg-amber-50/40 dark:bg-amber-950/10 rounded-2xl border border-amber-105/50 font-sans font-semibold">
+                                            <div className="flex justify-between items-center gap-4">
+                                                <h3 className="text-xs font-black text-amber-800 dark:text-amber-400 uppercase tracking-widest font-mono font-bold">Teacher Review & Grades</h3>
+                                                {selectedStudentTask.score !== undefined && selectedStudentTask.score !== null && (
+                                                    <span className="text-sm font-black text-amber-900 dark:text-amber-100 bg-amber-100/60 dark:bg-amber-950 px-3 py-1 rounded-lg border border-amber-205 font-mono font-bold">
+                                                        Score: {selectedStudentTask.score}/10
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {selectedStudentTask.proficiency_level && (
+                                                <p className="text-xs text-slate-550 dark:text-slate-400 font-bold">
+                                                    Proficiency: <span className="text-amber-800 dark:text-amber-450 font-black">{selectedStudentTask.proficiency_level}</span>
+                                                </p>
+                                            )}
+                                            {selectedStudentTask.feedback_text && (
+                                                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-105/50 dark:border-slate-800/80 whitespace-pre-line font-semibold">
+                                                    {selectedStudentTask.feedback_text}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
-                            {/* Grading & Feedback */}
-                            {(selectedStudentTask.feedback_text || selectedStudentTask.score !== undefined) && (
-                                <div className="space-y-3 p-5 bg-amber-50/40 dark:bg-amber-950/10 rounded-2xl border border-amber-100 dark:border-amber-900/20 font-sans">
-                                    <div className="flex justify-between items-center gap-4">
-                                        <h3 className="text-xs font-black text-amber-800 dark:text-amber-400 uppercase tracking-widest font-mono">Teacher Review & Grades</h3>
-                                        {selectedStudentTask.score !== undefined && selectedStudentTask.score !== null && (
-                                            <span className="text-sm font-black text-amber-900 dark:text-amber-100 bg-amber-100/60 dark:bg-amber-950 px-3 py-1 rounded-lg border border-amber-200/50 font-mono">
-                                                Score: {selectedStudentTask.score}/10
-                                            </span>
-                                        )}
+                            {/* Logged in user is a Teacher */}
+                            {teacherProfile?.role !== 'student' && (
+                                <div className="space-y-6">
+                                    {/* Student Submission Display */}
+                                    {selectedStudentTask.video_url ? (
+                                        <div className="space-y-2">
+                                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">Student Submission</h3>
+                                            <div className="p-4 bg-slate-50 dark:bg-slate-800/20 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="w-10 h-10 rounded-xl bg-green-50 dark:bg-green-955/20 flex items-center justify-center text-green-500 shrink-0 border border-green-105 dark:border-transparent">
+                                                        <PlayCircle className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-extrabold text-sm text-slate-850 dark:text-slate-200">Practice Video Recording</p>
+                                                        {selectedStudentTask.submitted_at && (
+                                                            <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-0.5">Submitted: {new Date(selectedStudentTask.submitted_at).toLocaleDateString()}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <a 
+                                                    href={selectedStudentTask.video_url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="px-4 py-2.5 bg-emerald-600 text-white text-xs font-extrabold rounded-xl hover:bg-emerald-700 shadow-md shadow-emerald-650/10 transition-all flex items-center gap-1.5 shrink-0"
+                                                >
+                                                    <PlayCircle className="w-4 h-4" /> View Video
+                                                </a>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="p-4 bg-slate-50 dark:bg-slate-800/20 rounded-2xl border border-slate-100 dark:border-slate-800 text-center">
+                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">No student recording submitted yet.</p>
+                                        </div>
+                                    )}
+
+                                    {/* Grading Form */}
+                                    <div className="space-y-4 p-5 bg-amber-50/20 dark:bg-amber-955/5 rounded-2xl border border-amber-105/40">
+                                        <h3 className="text-xs font-black text-amber-800 dark:text-amber-400 uppercase tracking-widest font-mono">Grade & Review Task</h3>
+                                        
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Score (Out of 10)</label>
+                                                <input 
+                                                    className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-xs font-bold focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100" 
+                                                    type="number" 
+                                                    min="0" max="10" step="0.5" 
+                                                    placeholder="e.g. 8.5"
+                                                    value={reviewScore}
+                                                    onChange={(e) => setReviewScore(e.target.value === '' ? '' : Number(e.target.value))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Proficiency</label>
+                                                <select 
+                                                    className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-xs font-bold focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
+                                                    value={reviewProficiency}
+                                                    onChange={(e) => setReviewProficiency(e.target.value)}
+                                                >
+                                                    <option value="">Select Level</option>
+                                                    <option value="Beginner">Beginner</option>
+                                                    <option value="Developing">Developing</option>
+                                                    <option value="Proficient">Proficient</option>
+                                                    <option value="Exemplary">Exemplary</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Feedback / Comments</label>
+                                            <textarea 
+                                                className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-xs font-bold focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all resize-none text-slate-800 dark:text-slate-100" 
+                                                rows={3} 
+                                                placeholder="Add encouragement, areas of improvement..."
+                                                value={reviewFeedback}
+                                                onChange={(e) => setReviewFeedback(e.target.value)}
+                                            ></textarea>
+                                        </div>
+
+                                        <div className="flex items-center gap-3 p-3.5 bg-rose-50 dark:bg-rose-955/10 rounded-xl border border-rose-100 dark:border-rose-900/40">
+                                            <input 
+                                                className="rounded text-rose-600 focus:ring-rose-500 h-4 w-4 border-slate-350 dark:border-slate-650 cursor-pointer" 
+                                                type="checkbox" 
+                                                id="review-reassign"
+                                                checked={reviewReassign}
+                                                onChange={(e) => setReviewReassign(e.target.checked)}
+                                            />
+                                            <label className="text-xs font-bold text-rose-800 dark:text-rose-455 flex flex-col cursor-pointer select-none" htmlFor="review-reassign">
+                                                Re-assign Task
+                                                <span className="text-[10px] font-medium text-slate-500 dark:text-slate-455 mt-0.5">Mark as incomplete to request a resubmission.</span>
+                                            </label>
+                                        </div>
+
+                                        <div className="flex justify-end pt-2">
+                                            <button
+                                                onClick={handleSaveTeacherReview}
+                                                disabled={isSavingReview}
+                                                className="px-5 py-2.5 bg-[#ecb613] hover:bg-[#ecb613]/90 text-white font-extrabold rounded-xl shadow-md transition-all text-xs flex items-center gap-2"
+                                            >
+                                                {isSavingReview ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                                Save Review
+                                            </button>
+                                        </div>
                                     </div>
-                                    {selectedStudentTask.proficiency_level && (
-                                        <p className="text-xs text-slate-550 dark:text-slate-400 font-bold">
-                                            Proficiency: <span className="text-amber-800 dark:text-amber-450 font-black">{selectedStudentTask.proficiency_level}</span>
-                                        </p>
-                                    )}
-                                    {selectedStudentTask.feedback_text && (
-                                        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-105/50 dark:border-slate-800/80 whitespace-pre-line font-semibold">
-                                            {selectedStudentTask.feedback_text}
-                                        </p>
-                                    )}
                                 </div>
                             )}
                         </div>
