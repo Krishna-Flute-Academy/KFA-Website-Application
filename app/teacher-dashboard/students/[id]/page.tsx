@@ -232,8 +232,7 @@ export default function StudentProfilePage() {
                     const mappedTasks = (assignmentsData || [])
                         .filter((asg: any) => {
                             const isAuto = asg.inventory_ref_type && 
-                                asg.title === asg.inventory_ref_title && 
-                                (!asg.description || asg.description.startsWith('Study guide for '));
+                                asg.title === asg.inventory_ref_title;
                             return !isAuto;
                         })
                         .map((asg: any) => {

@@ -298,8 +298,7 @@ export default function TaskReviewPage() {
             (assignmentsList || []).forEach(asg => {
                 // Hide auto-assigned curriculum progress mapping items from tasks dashboard
                 const isAutoCurriculum = asg.inventory_ref_type && 
-                    asg.title === asg.inventory_ref_title && 
-                    (!asg.description || asg.description.startsWith('Study guide for '));
+                    asg.title === asg.inventory_ref_title;
                 if (isAutoCurriculum) return;
                 
                 const associatedClassroomStudents = studentsList.filter(s => s.classroom_id === asg.classroom_id);
@@ -570,8 +569,7 @@ export default function TaskReviewPage() {
             if (prevTasks) {
                 const manualPrevTasks = prevTasks.filter((t: any) => {
                     const isAutoCurriculum = t.inventory_ref_type && 
-                        t.title === t.inventory_ref_title && 
-                        (!t.description || t.description.startsWith('Study guide for '));
+                        t.title === t.inventory_ref_title;
                     return !isAutoCurriculum;
                 });
                 setPreviousTasks(manualPrevTasks);

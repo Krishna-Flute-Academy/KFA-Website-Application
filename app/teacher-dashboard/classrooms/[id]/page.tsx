@@ -1415,9 +1415,7 @@ export default function ClassroomDashboardPage({
     };
 
     const isAutoCurriculum = (a: any) => 
-        !!(a.inventory_ref_type && 
-        a.title === a.inventory_ref_title && 
-        (!a.description || a.description.startsWith('Study guide for ')));
+        !!(a.inventory_ref_type && a.title === a.inventory_ref_title);
 
     const filteredAssignments = useMemo(() => {
         const nonAutoAssignments = assignments.filter(a => !isAutoCurriculum(a));
