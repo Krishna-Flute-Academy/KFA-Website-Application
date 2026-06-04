@@ -8,3 +8,13 @@ create table if not exists classroom_inventory_assignments (
   assigned_to_student_id uuid references users(id),
   created_at timestamp with time zone default now()
 );
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE public.classroom_inventory_assignments ENABLE ROW LEVEL SECURITY;
+
+-- Allow all policy
+DROP POLICY IF EXISTS "Allow all classroom_inventory_assignments" ON public.classroom_inventory_assignments;
+CREATE POLICY "Allow all classroom_inventory_assignments"
+  ON public.classroom_inventory_assignments FOR ALL
+  USING (true) WITH CHECK (true);
+

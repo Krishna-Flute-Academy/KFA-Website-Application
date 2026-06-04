@@ -713,9 +713,12 @@ export default function ClassroomDashboardPage({
                         .eq('classroom_id', classroomId);
                     if (!curriculumError && curriculumData) {
                         setClassroomInventoryAssignments(curriculumData);
+                    } else if (curriculumError) {
+                        console.error('Mount pre-fetch classroom_inventory_assignments error:', curriculumError);
+                        setDbSetupError(true);
                     }
                 } catch (ce) {
-                    console.warn('Could not pre-fetch classroom_inventory_assignments on mount:', ce);
+                    console.warn('Could not pre-fetch classroom_inventory_assignments on mount (exception):', ce);
                 }
 
             } catch (err) {
@@ -820,10 +823,14 @@ export default function ClassroomDashboardPage({
                 .from('classroom_inventory_assignments')
                 .select('*')
                 .eq('classroom_id', classroomId);
-            if (error) throw error;
+            if (error) {
+                console.error('Error fetching curriculum allocations — code:', error.code, '| msg:', error.message);
+                setDbSetupError(true);
+                return;
+            }
             setClassroomInventoryAssignments(data || []);
-        } catch (err) {
-            console.error('Error fetching curriculum allocations:', err);
+        } catch (err: any) {
+            console.error('Error fetching curriculum allocations (exception):', err?.message || err);
         }
     }, [classroomId]);
 
