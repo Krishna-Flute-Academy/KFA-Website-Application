@@ -213,9 +213,6 @@ export default function TaskReviewPage() {
 
             if (studentIds.length === 0) {
                 console.log('No students enrolled in classrooms');
-                setSubmissions([]);
-                setFilteredSubmissions([]);
-                return;
             }
 
             // Step 3: Fetch all assignments created for these classrooms
@@ -334,57 +331,21 @@ export default function TaskReviewPage() {
                 if (asg.target_type === 'individual') {
                     // For individual assignments, only show students who have a row in assignment_students
                     const mappingRows = (assignmentStudents || []).filter(row => row.assignment_id === asg.id);
-                    mappingRows.forEach(row => {
-                        const studentInfo = studentsList.find(s => s.student_id === row.student_id);
-                        const studentClassInfo = (classrooms || []).find(c => c.id === studentInfo?.classroom_id);
-                        const studentClassName = studentClassInfo?.name || className;
-                        
+                    if (mappingRows.length === 0) {
                         formatted.push({
-                            id: row.id,
-                            student_id: row.student_id,
-                            student_name: (studentInfo?.users as any)?.name || 'Unknown Student',
-                            student_profile_pic_url: (studentInfo?.users as any)?.profile_pic_url,
+                            id: `no-students-${asg.id}`,
+                            student_id: 'no-students',
+                            student_name: 'No Students Assigned',
+                            student_profile_pic_url: undefined,
                             task_id: asg.id,
                             task_title: asg.title || 'Unknown Assignment',
                             task_description: asg.description || '',
-                            status: row.status || 'pending',
-                            submitted_at: row.submitted_at || asg.created_at || new Date().toISOString(),
-                            video_url: row.video_url || '',
-                            feedback_text: row.feedback_text || '',
-                            score: row.score !== undefined ? row.score : undefined,
-                            proficiency_level: row.proficiency_level || '',
-                            student_notes: '',
-                            classroom_id: studentInfo?.classroom_id || asg.classroom_id,
-                            classroom_name: studentClassName,
-                            file_url: asg.file_url || '',
-                            file_name: asg.file_name || '',
-                            file_size: asg.file_size || null,
-                            due_date: asg.due_date || null,
-                            inventory_ref_type: asg.inventory_ref_type || null,
-                            inventory_ref_id: asg.inventory_ref_id || null,
-                            inventory_ref_title: asg.inventory_ref_title || null
-                        });
-                    });
-                } else {
-                    // For "all" (Everyone) assignments, implicitly show EVERY student in the classroom!
-                    associatedClassroomStudents.forEach(studentInfo => {
-                        // Check if they already have an assignment_students row
-                        const existingRow = (assignmentStudents || []).find(row => row.assignment_id === asg.id && row.student_id === studentInfo.student_id);
-                        
-                        formatted.push({
-                            id: existingRow?.id || `temp-impl-${asg.id}-${studentInfo.student_id}`, // virtual ID
-                            student_id: studentInfo.student_id,
-                            student_name: (studentInfo.users as any)?.name || 'Unknown Student',
-                            student_profile_pic_url: (studentInfo.users as any)?.profile_pic_url,
-                            task_id: asg.id,
-                            task_title: asg.title || 'Unknown Assignment',
-                            task_description: asg.description || '',
-                            status: existingRow?.status || 'pending',
-                            submitted_at: existingRow?.submitted_at || asg.created_at || new Date().toISOString(),
-                            video_url: existingRow?.video_url || '',
-                            feedback_text: existingRow?.feedback_text || '',
-                            score: existingRow?.score !== undefined ? existingRow?.score : undefined,
-                            proficiency_level: existingRow?.proficiency_level || '',
+                            status: 'pending',
+                            submitted_at: asg.created_at || new Date().toISOString(),
+                            video_url: '',
+                            feedback_text: '',
+                            score: undefined,
+                            proficiency_level: '',
                             student_notes: '',
                             classroom_id: asg.classroom_id,
                             classroom_name: className,
@@ -396,7 +357,99 @@ export default function TaskReviewPage() {
                             inventory_ref_id: asg.inventory_ref_id || null,
                             inventory_ref_title: asg.inventory_ref_title || null
                         });
-                    });
+                    } else {
+                        mappingRows.forEach(row => {
+                            const studentInfo = studentsList.find(s => s.student_id === row.student_id);
+                            const studentClassInfo = (classrooms || []).find(c => c.id === studentInfo?.classroom_id);
+                            const studentClassName = studentClassInfo?.name || className;
+                            
+                            formatted.push({
+                                id: row.id,
+                                student_id: row.student_id,
+                                student_name: (studentInfo?.users as any)?.name || 'Unknown Student',
+                                student_profile_pic_url: (studentInfo?.users as any)?.profile_pic_url,
+                                task_id: asg.id,
+                                task_title: asg.title || 'Unknown Assignment',
+                                task_description: asg.description || '',
+                                status: row.status || 'pending',
+                                submitted_at: row.submitted_at || asg.created_at || new Date().toISOString(),
+                                video_url: row.video_url || '',
+                                feedback_text: row.feedback_text || '',
+                                score: row.score !== undefined ? row.score : undefined,
+                                proficiency_level: row.proficiency_level || '',
+                                student_notes: '',
+                                classroom_id: studentInfo?.classroom_id || asg.classroom_id,
+                                classroom_name: studentClassName,
+                                file_url: asg.file_url || '',
+                                file_name: asg.file_name || '',
+                                file_size: asg.file_size || null,
+                                due_date: asg.due_date || null,
+                                inventory_ref_type: asg.inventory_ref_type || null,
+                                inventory_ref_id: asg.inventory_ref_id || null,
+                                inventory_ref_title: asg.inventory_ref_title || null
+                            });
+                        });
+                    }
+                } else {
+                    // For "all" (Everyone) assignments, implicitly show EVERY student in the classroom!
+                    if (associatedClassroomStudents.length === 0) {
+                        formatted.push({
+                            id: `no-students-${asg.id}`,
+                            student_id: 'no-students',
+                            student_name: 'No Students Assigned',
+                            student_profile_pic_url: undefined,
+                            task_id: asg.id,
+                            task_title: asg.title || 'Unknown Assignment',
+                            task_description: asg.description || '',
+                            status: 'pending',
+                            submitted_at: asg.created_at || new Date().toISOString(),
+                            video_url: '',
+                            feedback_text: '',
+                            score: undefined,
+                            proficiency_level: '',
+                            student_notes: '',
+                            classroom_id: asg.classroom_id,
+                            classroom_name: className,
+                            file_url: asg.file_url || '',
+                            file_name: asg.file_name || '',
+                            file_size: asg.file_size || null,
+                            due_date: asg.due_date || null,
+                            inventory_ref_type: asg.inventory_ref_type || null,
+                            inventory_ref_id: asg.inventory_ref_id || null,
+                            inventory_ref_title: asg.inventory_ref_title || null
+                        });
+                    } else {
+                        associatedClassroomStudents.forEach(studentInfo => {
+                            // Check if they already have an assignment_students row
+                            const existingRow = (assignmentStudents || []).find(row => row.assignment_id === asg.id && row.student_id === studentInfo.student_id);
+                            
+                            formatted.push({
+                                id: existingRow?.id || `temp-impl-${asg.id}-${studentInfo.student_id}`, // virtual ID
+                                student_id: studentInfo.student_id,
+                                student_name: (studentInfo.users as any)?.name || 'Unknown Student',
+                                student_profile_pic_url: (studentInfo.users as any)?.profile_pic_url,
+                                task_id: asg.id,
+                                task_title: asg.title || 'Unknown Assignment',
+                                task_description: asg.description || '',
+                                status: existingRow?.status || 'pending',
+                                submitted_at: existingRow?.submitted_at || asg.created_at || new Date().toISOString(),
+                                video_url: existingRow?.video_url || '',
+                                feedback_text: existingRow?.feedback_text || '',
+                                score: existingRow?.score !== undefined ? existingRow?.score : undefined,
+                                proficiency_level: existingRow?.proficiency_level || '',
+                                student_notes: '',
+                                classroom_id: asg.classroom_id,
+                                classroom_name: className,
+                                file_url: asg.file_url || '',
+                                file_name: asg.file_name || '',
+                                file_size: asg.file_size || null,
+                                due_date: asg.due_date || null,
+                                inventory_ref_type: asg.inventory_ref_type || null,
+                                inventory_ref_id: asg.inventory_ref_id || null,
+                                inventory_ref_title: asg.inventory_ref_title || null
+                            });
+                        });
+                    }
                 }
             });
 
@@ -1157,6 +1210,8 @@ export default function TaskReviewPage() {
             let taskId = '';
             if (isDraft) {
                 taskId = attemptId.replace('draft-', '');
+            } else if (attemptId.startsWith('no-students-')) {
+                taskId = attemptId.replace('no-students-', '');
             } else {
                 const sub = submissions.find(s => s.id === attemptId);
                 if (sub) taskId = sub.task_id;
@@ -1438,6 +1493,18 @@ export default function TaskReviewPage() {
                                                         >
                                                             <Edit2 className="w-3.5 h-3.5" />
                                                         </Link>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteSingle(e, group.submissions[0].id);
+                                                            }}
+                                                            disabled={isDeleting}
+                                                            className="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800/80 disabled:opacity-50"
+                                                            title="Delete Task"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
                                                     </div>
                                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                                                         {isDraft ? 'Saved as Draft' : `${group.submissions.length} Student${group.submissions.length !== 1 ? 's' : ''} assigned`}
@@ -1788,16 +1855,18 @@ export default function TaskReviewPage() {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="p-6 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex">
-                                    <button 
-                                        onClick={handleSaveReview}
-                                        disabled={isSaving}
-                                        className="w-full bg-[#ecb613] text-slate-900 font-bold py-3 px-4 rounded-xl shadow-md hover:bg-[#ecb613]/90 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
-                                    >
-                                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                                        {reassign ? 'Mark as Reviewed' : 'Mark as Reviewed & Close'}
-                                    </button>
-                                </div>
+                                {selectedSub.student_id !== 'no-students' && (
+                                    <div className="p-6 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex">
+                                        <button 
+                                            onClick={handleSaveReview}
+                                            disabled={isSaving}
+                                            className="w-full bg-[#ecb613] text-slate-900 font-bold py-3 px-4 rounded-xl shadow-md hover:bg-[#ecb613]/90 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
+                                        >
+                                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                            {reassign ? 'Mark as Reviewed' : 'Mark as Reviewed & Close'}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="h-full bg-slate-50 dark:bg-slate-800/30 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center p-12 text-center text-slate-500">
