@@ -36,6 +36,7 @@ interface EnrolledStudent {
     mock_milestone: string;
     mock_status: 'Consistent' | 'Improving' | 'At Risk';
     level?: string;
+    is_makeup?: boolean;
 }
 
 // Lightweight record from the teacher's student directory
@@ -481,6 +482,33 @@ export default function ClassroomDashboardPage({
     const [attendanceRecords, setAttendanceRecords] = useState<Record<string, 'present' | 'absent' | 'late' | 'excused'>>({});
     const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [isSavingAttendanceMap, setIsSavingAttendanceMap] = useState<Record<string, boolean>>({});
+
+    const activeAttendanceRoster = useMemo(() => {
+        const list = [...students];
+        const matchingOverrides = sessionOverrides.filter(
+            o => o.override_date === attendanceDate
+        );
+        matchingOverrides.forEach(o => {
+            if (!list.some(s => s.student_id === o.student_id)) {
+                const level = o.users?.level || 'Level 1';
+                list.push({
+                    id: `override-${o.id}`,
+                    student_id: o.student_id,
+                    name: `${o.users?.name || 'Unknown'} (Makeup)`,
+                    profile_pic_url: o.users?.profile_pic_url || null,
+                    level: level,
+                    joined_at: o.override_date,
+                    mock_score: 8.0,
+                    mock_progress: 75,
+                    mock_attendance: 90,
+                    mock_milestone: 'Makeup Session',
+                    mock_status: 'Consistent',
+                    is_makeup: true
+                });
+            }
+        });
+        return list;
+    }, [students, sessionOverrides, attendanceDate]);
 
     // ── Error states ──────────────────────────────────────────────────────────
     const [dbSetupError, setDbSetupError] = useState(false); // tables not created yet
@@ -5383,7 +5411,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                             {/* Summary Statistics */}
                             {(() => {
                                 const activeRecords = Object.values(attendanceRecords);
-                                const totalCount = students.length;
+                                const totalCount = activeAttendanceRoster.length;
                                 const presentCount = activeRecords.filter(r => r === 'present').length;
                                 const lateCount = activeRecords.filter(r => r === 'late').length;
                                 const absentCount = activeRecords.filter(r => r === 'absent').length;
@@ -5447,9 +5475,9 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         <Loader2 className="w-8 h-8 animate-spin text-[#ecb613] mb-2" />
                                         <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Syncing attendance logs...</p>
                                     </div>
-                                ) : students.length > 0 ? (
+                                ) : activeAttendanceRoster.length > 0 ? (
                                     <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                                        {students.map((student) => {
+                                        {activeAttendanceRoster.map((student) => {
                                             const status = attendanceRecords[student.student_id];
                                             const isSaving = isSavingAttendanceMap[student.student_id];
                                             return (
