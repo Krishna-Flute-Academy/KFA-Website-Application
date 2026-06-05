@@ -552,6 +552,47 @@ export default function ClassroomDashboardPage({
                 if (roomError) throw roomError;
                 const classroomData = { ...roomData, status: roomData.status || 'active' };
                 setClassroom(classroomData);
+
+                // 4. Fetch Enrolled Students
+                let roster: any[] = [];
+                if (classroomData.type === 'temporary') {
+                    const { data: tempClassData } = await supabaseAuth
+                        .from('temporary_classes')
+                        .select('id, class_date')
+                        .eq('classroom_id', classroomId)
+                        .maybeSingle();
+
+                    if (tempClassData) {
+                        const { data: tempRoster, error: tempRosterError } = await supabaseAuth
+                            .from('temporary_class_students')
+                            .select(`
+                                id,
+                                student_id,
+                                users!student_id(name, profile_pic_url, level)
+                            `)
+                            .eq('temporary_class_id', tempClassData.id);
+                        
+                        if (tempRosterError) throw tempRosterError;
+                        roster = (tempRoster || []).map(r => ({
+                            ...r,
+                            joined_at: tempClassData.class_date
+                        }));
+                    }
+                } else {
+                    const { data: permRoster, error: rosterError } = await supabaseAuth
+                        .from('classroom_students')
+                        .select(`
+                            id,
+                            student_id,
+                            joined_at,
+                            users!student_id(name, profile_pic_url, level)
+                        `)
+                        .eq('classroom_id', classroomId);
+
+                    if (rosterError) throw rosterError;
+                    roster = permRoster || [];
+                }
+                
                 // Seed the metadata form with fetched values
                 setMetadataForm({
                     name: roomData.name || '',
@@ -559,18 +600,7 @@ export default function ClassroomDashboardPage({
                     status: roomData.status || 'active',
                 });
 
-                // 4. Fetch Enrolled Students
-                const { data: roster, error: rosterError } = await supabaseAuth
-                    .from('classroom_students')
-                    .select(`
-                        id,
-                        student_id,
-                        joined_at,
-                        users!student_id(name, profile_pic_url, level)
-                    `)
-                    .eq('classroom_id', classroomId);
 
-                if (rosterError) throw rosterError;
 
                 // 5. Build Enrolled Students with Mock metrics for the UI
                 const statusOptions: ('Consistent' | 'Improving' | 'At Risk')[] = ['Consistent', 'Improving', 'At Risk'];
