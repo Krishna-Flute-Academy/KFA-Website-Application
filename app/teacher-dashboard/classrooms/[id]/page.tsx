@@ -2395,7 +2395,7 @@ export default function ClassroomDashboardPage({
                                     <p className="text-xs text-slate-500">Allocate a temporary student for a specific date</p>
                                 </div>
                             </div>
-                            <button onClick={() => setShowOverrideModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-650 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <button onClick={() => setShowOverrideModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -2454,7 +2454,7 @@ export default function ClassroomDashboardPage({
                         <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
                             <button
                                 onClick={() => setShowOverrideModal(false)}
-                                className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-350 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                                className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-xl transition-colors"
                             >
                                 Cancel
                             </button>
@@ -2576,7 +2576,7 @@ export default function ClassroomDashboardPage({
 
                             <div className="text-left">
                                 <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest block mb-2">Message Body</span>
-                                <div className="p-4 bg-slate-50 dark:bg-slate-850 border border-slate-100 dark:border-slate-800 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-350 leading-relaxed whitespace-pre-wrap select-text">
+                                <div className="p-4 bg-slate-50 dark:bg-slate-850 border border-slate-100 dark:border-slate-800 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap select-text">
                                     {selectedAnnouncement.content}
                                 </div>
                             </div>
@@ -3123,7 +3123,7 @@ export default function ClassroomDashboardPage({
                                                     </div>
                                                 ))}
                                                 {filteredAnnouncements.length === 0 && (
-                                                    <div className="py-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-250 dark:border-slate-700">
+                                                    <div className="py-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
                                                         <p className="text-slate-400 text-xs font-semibold">
                                                             {announcementSearchQuery ? 'No announcements match your search.' : 'No announcements sent yet.'}
                                                         </p>
@@ -3608,7 +3608,7 @@ export default function ClassroomDashboardPage({
                                                                                                                                 </p>
                                                                                                                             </div>
                                                                                                                         </div>
-                                                                                                                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-900/60 flex items-center justify-center text-slate-400 hover:text-slate-650 transition-colors">
+                                                                                                                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-900/60 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
                                                                                                                             {isExpanded ? (
                                                                                                                                 <ChevronUp className="size-4" />
                                                                                                                             ) : (
@@ -4051,7 +4051,7 @@ export default function ClassroomDashboardPage({
                                                                                                     </span>
                                                                                                 </div>
                                                                                                 <div 
-                                                                                                    className={`p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 border-l-4 ${highlightBorder} bg-slate-50/20 dark:bg-slate-900/40 flex flex-col gap-6 transition-all hover:shadow-md hover:border-slate-350 dark:hover:border-slate-700`}
+                                                                                                    className={`p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 border-l-4 ${highlightBorder} bg-slate-50/20 dark:bg-slate-900/40 flex flex-col gap-6 transition-all hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700`}
                                                                                                 >
                                                                                                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                                                                                                         <div className="space-y-4 text-left max-w-xl">
@@ -4080,7 +4080,7 @@ export default function ClassroomDashboardPage({
                                                                                                             {lesson.bullet_points && lesson.bullet_points.length > 0 && (
                                                                                                                 <div className="space-y-2 bg-white dark:bg-slate-955/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 pl-4">
                                                                                                                     {lesson.bullet_points.map((pt, i) => (
-                                                                                                                        <div key={i} className="flex items-start gap-2.5 text-xs text-slate-650 dark:text-slate-350">
+                                                                                                                        <div key={i} className="flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300">
                                                                                                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
                                                                                                                             <span className="font-medium">{pt}</span>
                                                                                                                         </div>
@@ -5904,7 +5904,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                     <img src={selectedTopic.material_url} alt={selectedTopic.title} className="w-full h-full object-contain" />
                                                 ) : (
                                                     <div className="text-center p-8 space-y-4">
-                                                        <FileText className="size-16 text-slate-650 mx-auto" />
+                                                        <FileText className="size-16 text-slate-600 mx-auto" />
                                                         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">No interactive simulation available for generic files. Download or open in a new tab:</p>
                                                         <a 
                                                             href={selectedTopic.material_url} 
@@ -6248,7 +6248,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
                                             allocationTargetType === 'classwide'
                                                 ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
-                                                : 'text-slate-450 hover:text-slate-600 dark:hover:text-slate-350'
+                                                : 'text-slate-450 hover:text-slate-600 dark:hover:text-slate-300'
                                         }`}
                                     >
                                         Class-wide
@@ -6259,7 +6259,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
                                             allocationTargetType === 'individual'
                                                 ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
-                                                : 'text-slate-450 hover:text-slate-600 dark:hover:text-slate-350'
+                                                : 'text-slate-450 hover:text-slate-600 dark:hover:text-slate-300'
                                         }`}
                                     >
                                         Individual Student
@@ -6555,7 +6555,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
 
                                 <div className="flex items-center gap-3 p-3.5 bg-rose-50 dark:bg-rose-950/10 rounded-xl border border-rose-100 dark:border-rose-900/40">
                                     <input 
-                                        className="rounded text-rose-600 focus:ring-rose-500 h-4 w-4 border-slate-350 dark:border-slate-650 cursor-pointer" 
+                                        className="rounded text-rose-600 focus:ring-rose-500 h-4 w-4 border-slate-300 dark:border-slate-600 cursor-pointer" 
                                         type="checkbox" 
                                         id="review-reassign"
                                         checked={reviewReassign}

@@ -607,7 +607,7 @@ export default function ClassroomsPage() {
                                         return (
                                             <div key={`${room.id}-${idx}`} className={`p-6 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group ${
                                                 isOngoing
-                                                    ? 'bg-rose-50/15 dark:bg-rose-950/10 border-rose-250 dark:border-rose-800 shadow-md shadow-rose-500/5'
+                                                    ? 'bg-rose-50/15 dark:bg-rose-950/10 border-rose-200 dark:border-rose-800 shadow-md shadow-rose-500/5'
                                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
                                             }`}>
                                                 <div className="flex items-center gap-4">
@@ -754,7 +754,7 @@ export default function ClassroomsPage() {
                                                                 setSelectedIds([]);
                                                             }
                                                         }}
-                                                        className="rounded border-slate-350 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
+                                                        className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
                                                     />
                                                 </th>
                                                 <th className="px-6 py-4 text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Class Name</th>
@@ -798,7 +798,7 @@ export default function ClassroomsPage() {
                                                                         setSelectedIds(prev => prev.filter(id => id !== room.id));
                                                                     }
                                                                 }}
-                                                                className="rounded border-slate-350 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
+                                                                className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
                                                             />
                                                         </td>
                                                         <td className="px-6 py-6">

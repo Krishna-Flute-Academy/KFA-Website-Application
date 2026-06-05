@@ -1201,7 +1201,7 @@ export default function AttendancePage() {
                                     {activeBatchesOnSelectedDate.length === 0 && (
                                         <div className="bg-white dark:bg-slate-900 p-12 rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-center">
                                             <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-4">
-                                                <CalendarIcon className="w-8 h-8 text-slate-350" />
+                                                <CalendarIcon className="w-8 h-8 text-slate-300" />
                                             </div>
                                             <h5 className="font-extrabold text-slate-400 tracking-tight">No batches scheduled</h5>
                                             <p className="text-xs text-slate-400 mt-1">Please select another date on the calendar, or schedule a classroom session.</p>
@@ -1395,7 +1395,7 @@ export default function AttendancePage() {
                                     ) : (
                                         <div className="bg-white dark:bg-slate-900 p-12 rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-center">
                                             <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-4">
-                                                <User className="w-8 h-8 text-slate-350" />
+                                                <User className="w-8 h-8 text-slate-300" />
                                             </div>
                                             <h5 className="font-extrabold text-slate-400 tracking-tight">No student selected</h5>
                                             <p className="text-xs text-slate-400 mt-1">Please search and select a student above to construct their range-query logs.</p>
@@ -1515,7 +1515,7 @@ export default function AttendancePage() {
                                                                     <td className="px-5 py-4 text-xs font-extrabold text-slate-950 dark:text-white">
                                                                         {log.classroom_name}
                                                                     </td>
-                                                                    <td className="px-5 py-4 text-xs font-bold text-slate-600 dark:text-slate-350">
+                                                                    <td className="px-5 py-4 text-xs font-bold text-slate-600 dark:text-slate-300">
                                                                         {formatLocalDateStr(log.date, true)}
                                                                     </td>
                                                                     <td className="px-5 py-4">
@@ -1582,7 +1582,7 @@ export default function AttendancePage() {
                                             </div>
                                         ) : (
                                             <div className="py-16 text-center">
-                                                <XCircle className="w-10 h-10 text-slate-350 mx-auto mb-3" />
+                                                <XCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                                                 <h6 className="font-extrabold text-slate-450">No missed classes found</h6>
                                                 <p className="text-xs text-slate-400 mt-1">There are no absent or excused records for the selected filters and date range.</p>
                                             </div>

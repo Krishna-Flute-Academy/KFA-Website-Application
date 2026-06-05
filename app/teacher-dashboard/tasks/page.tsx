@@ -1925,7 +1925,7 @@ export default function TaskReviewPage() {
                                                 Attachments
                                             </h3>
                                             <div className="flex items-center justify-between gap-3 mt-2 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                                                <span className="text-xs font-bold text-slate-750 dark:text-slate-250 truncate max-w-[200px]" title={selectedSub.file_name}>
+                                                <span className="text-xs font-bold text-slate-750 dark:text-slate-200 truncate max-w-[200px]" title={selectedSub.file_name}>
                                                     📎 {selectedSub.file_name || 'Learning Material'}
                                                 </span>
                                                 <a 
@@ -2115,7 +2115,7 @@ export default function TaskReviewPage() {
                                             onClick={() => {
                                                 setShowSuggestions(prev => !prev);
                                             }}
-                                            className="absolute right-3 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-650 transition-colors"
+                                            className="absolute right-3 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
                                             title="Show previous tasks"
                                         >
                                             <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showSuggestions ? 'rotate-180' : ''}`} />
@@ -2150,7 +2150,7 @@ export default function TaskReviewPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-350 mb-2 uppercase tracking-wide">Detailed Instructions</label>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">Detailed Instructions</label>
                                     <textarea 
                                         className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all placeholder:text-slate-400 text-sm" 
                                         placeholder="Provide specific guidance on breath control, finger placement, or scale drills..." 
@@ -2161,7 +2161,7 @@ export default function TaskReviewPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-350 mb-3 uppercase tracking-wide">Learning Materials & Attachments</label>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wide">Learning Materials & Attachments</label>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <button 
                                             onClick={() => setIsInventoryOpen(true)}
@@ -2366,7 +2366,7 @@ export default function TaskReviewPage() {
                                         type="button"
                                         onClick={() => handleAssignTask(true)}
                                         disabled={isSaving}
-                                        className="w-full py-3 px-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-750 dark:text-slate-250 font-bold text-xs rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2 active:translate-y-[1px] disabled:opacity-50"
+                                        className="w-full py-3 px-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-750 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2 active:translate-y-[1px] disabled:opacity-50"
                                     >
                                         <FileText className="w-4 h-4" />
                                         {editingTaskId ? 'Save as Draft' : 'Save as Draft'}
@@ -2410,7 +2410,7 @@ export default function TaskReviewPage() {
                                 {inventorySearchQuery && (
                                     <button 
                                         onClick={() => setInventorySearchQuery('')}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                                     >
                                         <X className="w-4 h-4" />
                                     </button>
@@ -2633,7 +2633,7 @@ export default function TaskReviewPage() {
                                             href={selectedOverviewTask.file_url} 
                                             target="_blank" 
                                             rel="noopener noreferrer" 
-                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-slate-750 dark:text-slate-250 text-[10px] font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all flex items-center gap-1 shrink-0"
+                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-slate-750 dark:text-slate-200 text-[10px] font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all flex items-center gap-1 shrink-0"
                                         >
                                             <Download className="w-3.5 h-3.5" /> Download
                                         </a>

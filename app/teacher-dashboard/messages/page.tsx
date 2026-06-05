@@ -1450,7 +1450,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                                 audio.play();
                                                                 showToast('Playing attached flute note...', 'info');
                                                             }}
-                                                            className="flex items-center gap-1.5 px-3 py-1 bg-stone-50 dark:bg-slate-800 hover:bg-[#ecb613]/10 hover:text-[#ecb613] text-stone-600 dark:text-slate-350 text-[10px] font-bold rounded-full border border-stone-200 dark:border-slate-700 transition-all"
+                                                            className="flex items-center gap-1.5 px-3 py-1 bg-stone-50 dark:bg-slate-800 hover:bg-[#ecb613]/10 hover:text-[#ecb613] text-stone-600 dark:text-slate-300 text-[10px] font-bold rounded-full border border-stone-200 dark:border-slate-700 transition-all"
                                                         >
                                                             <Mic className="w-3.5 h-3.5 text-[#ecb613]" />
                                                             Play Attached Flute Note

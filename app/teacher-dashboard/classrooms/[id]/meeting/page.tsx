@@ -417,10 +417,10 @@ export default function MeetingPage() {
                                             {/* Attendance buttons */}
                                             <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
                                                 {([
-                                                    { key: 'present', label: 'Present', color: 'emerald', border: 'border-emerald-250 dark:border-emerald-900/30', activeBg: 'bg-emerald-500 text-white shadow-md shadow-emerald-250 dark:shadow-none' },
-                                                    { key: 'absent', label: 'Absent', color: 'rose', border: 'border-rose-250 dark:border-rose-900/30', activeBg: 'bg-rose-500 text-white shadow-md shadow-rose-250 dark:shadow-none' },
-                                                    { key: 'late', label: 'Late', color: 'amber', border: 'border-amber-250 dark:border-amber-900/30', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-250 dark:shadow-none' },
-                                                    { key: 'excused', label: 'Excused', color: 'slate', border: 'border-slate-200 dark:border-slate-700', activeBg: 'bg-slate-650 text-white shadow-md shadow-slate-250 dark:shadow-none' }
+                                                    { key: 'present', label: 'Present', color: 'emerald', border: 'border-emerald-200 dark:border-emerald-900/30', activeBg: 'bg-emerald-500 text-white shadow-md shadow-emerald-200 dark:shadow-none' },
+                                                    { key: 'absent', label: 'Absent', color: 'rose', border: 'border-rose-200 dark:border-rose-900/30', activeBg: 'bg-rose-500 text-white shadow-md shadow-rose-200 dark:shadow-none' },
+                                                    { key: 'late', label: 'Late', color: 'amber', border: 'border-amber-200 dark:border-amber-900/30', activeBg: 'bg-amber-500 text-white shadow-md shadow-amber-200 dark:shadow-none' },
+                                                    { key: 'excused', label: 'Excused', color: 'slate', border: 'border-slate-200 dark:border-slate-700', activeBg: 'bg-slate-600 text-white shadow-md shadow-slate-200 dark:shadow-none' }
                                                 ] as const).map(opt => {
                                                     const isActive = student.attendance === opt.key;
                                                     return (

@@ -1267,7 +1267,7 @@ export default function InventoryLibrary() {
                                     <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 select-none">
                                         <div className="flex items-center gap-2">
                                             <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
-                                            <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-700 dark:text-slate-350">Collapsible Chapter curriculum</h2>
+                                            <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-700 dark:text-slate-300">Collapsible Chapter curriculum</h2>
                                         </div>
                                         <button 
                                             onClick={() => openChapterModal()}
@@ -1293,7 +1293,7 @@ export default function InventoryLibrary() {
                                                 return (
                                                     <div 
                                                         key={chap.id}
-                                                        className="rounded-3xl border border-slate-200/85 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:border-slate-350 dark:hover:border-slate-750 transition-all duration-300"
+                                                        className="rounded-3xl border border-slate-200/85 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:border-slate-300 dark:hover:border-slate-750 transition-all duration-300"
                                                     >
                                                         {/* Chapter Accordion Header bar */}
                                                         <div 
@@ -1832,7 +1832,7 @@ export default function InventoryLibrary() {
                                     </label>
                                     
                                     <div className="flex items-center gap-3">
-                                        <label className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-350 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none">
+                                        <label className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none">
                                             <UploadCloud className="size-6 text-slate-400 mb-1" />
                                             <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Select Attachment File</span>
                                             <input 
@@ -2055,7 +2055,7 @@ export default function InventoryLibrary() {
                                         setSelectedLessonPreview(null);
                                         openLessonModal(selectedLessonPreview.chapter_id, selectedLessonPreview, e);
                                     }}
-                                    className="flex-1 py-3 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] hover:text-slate-950 text-slate-800 dark:text-slate-200 font-black rounded-2xl shadow-xs border border-slate-250 dark:border-slate-700 transition-all active:scale-98 text-xs tracking-wider uppercase leading-none inline-flex items-center justify-center gap-1.5"
+                                    className="flex-1 py-3 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] hover:text-slate-950 text-slate-800 dark:text-slate-200 font-black rounded-2xl shadow-xs border border-slate-200 dark:border-slate-700 transition-all active:scale-98 text-xs tracking-wider uppercase leading-none inline-flex items-center justify-center gap-1.5"
                                 >
                                     <Edit2 className="size-4" />
                                     <span>Edit Details</span>

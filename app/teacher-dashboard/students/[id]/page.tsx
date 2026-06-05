@@ -1274,7 +1274,7 @@ export default function StudentProfilePage() {
                                                                                 ? 'bg-amber-500/20 text-amber-300'
                                                                                 : r.status === 'excused'
                                                                                 ? 'bg-slate-500/20 text-slate-300'
-                                                                                : 'bg-slate-500/20 text-slate-350'
+                                                                                : 'bg-slate-500/20 text-slate-300'
                                                                         }`}>
                                                                             {r.status}
                                                                         </span>
@@ -1350,7 +1350,7 @@ export default function StudentProfilePage() {
                                         ) : (
                                             <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
                                                 <div className="size-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                                                    <Calendar className="text-slate-350 size-6" />
+                                                    <Calendar className="text-slate-300 size-6" />
                                                 </div>
                                                 <h4 className="font-bold text-slate-800">No attendance history</h4>
                                                 <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">This student has no marked attendance logs yet.</p>
@@ -1375,7 +1375,7 @@ export default function StudentProfilePage() {
                                     selectedStudentTask.status === 'submitted' ? 'bg-amber-100 text-amber-800 border-amber-200' :
                                     selectedStudentTask.status === 'reviewed' ? 'bg-blue-100 text-blue-800 border-blue-200' :
                                     selectedStudentTask.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
-                                    'bg-slate-100 text-slate-650 border-slate-200'
+                                    'bg-slate-100 text-slate-600 border-slate-200'
                                 }`}>
                                     {selectedStudentTask.status}
                                 </span>
@@ -1606,7 +1606,7 @@ export default function StudentProfilePage() {
 
                                         <div className="flex items-center gap-3 p-3.5 bg-rose-50 dark:bg-rose-955/10 rounded-xl border border-rose-100 dark:border-rose-900/40">
                                             <input 
-                                                className="rounded text-rose-600 focus:ring-rose-500 h-4 w-4 border-slate-350 dark:border-slate-650 cursor-pointer" 
+                                                className="rounded text-rose-600 focus:ring-rose-500 h-4 w-4 border-slate-300 dark:border-slate-600 cursor-pointer" 
                                                 type="checkbox" 
                                                 id="review-reassign"
                                                 checked={reviewReassign}
