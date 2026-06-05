@@ -1092,8 +1092,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                     <div className="grid grid-cols-12 gap-8 items-start shrink-0">
                         {/* Channel selector panel (Col-span 4) */}
                         <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
-                            <div className="bg-white p-5 rounded-2xl shadow-xs border border-stone-200/60">
-                                <span className="text-[10px] font-extrabold text-stone-400 uppercase tracking-widest">Message Channels</span>
+                            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-sm border border-slate-200/60 dark:border-slate-800">
+                                <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Message Channels</span>
                                 <div className="space-y-2 mt-4">
                                     {[
                                         { id: 'announcements', label: 'Announcements', desc: 'Global Broadcast', icon: Megaphone, color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/20' },
@@ -1112,18 +1112,18 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 }}
                                                 className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all border text-left ${
                                                     isSelected 
-                                                        ? 'bg-stone-50 border-stone-200 shadow-sm ring-1 ring-stone-150' 
-                                                        : 'bg-white border-transparent hover:bg-stone-50/50'
+                                                        ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 shadow-sm ring-1 ring-stone-150' 
+                                                        : 'bg-white border-transparent hover:bg-slate-50/50 dark:bg-slate-950/20'
                                                 }`}
                                             >
                                                 <div className={`p-2.5 rounded-lg shrink-0 ${channel.color}`}>
                                                     <channel.icon className="w-5 h-5" />
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <h5 className="text-xs font-bold text-stone-800">{channel.label}</h5>
-                                                    <p className="text-[10px] text-stone-400 font-medium mt-0.5">{channel.desc}</p>
+                                                    <h5 className="text-sm font-bold text-slate-800 dark:text-slate-250">{channel.label}</h5>
+                                                    <p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5">{channel.desc}</p>
                                                 </div>
-                                                <ChevronRight className="w-4 h-4 text-stone-300 ml-auto shrink-0" />
+                                                <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 ml-auto shrink-0" />
                                             </button>
                                         );
                                     })}
@@ -1132,8 +1132,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                             {/* Saved Custom Groups Card */}
                             {activeChannel === 'custom_groups' && (
-                                <div className="bg-white p-5 rounded-2xl shadow-xs border border-stone-200/60 flex flex-col gap-3">
-                                    <div className="flex justify-between items-center border-b border-stone-100 pb-2.5">
+                                <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-sm border border-slate-200/60 dark:border-slate-800 flex flex-col gap-3">
+                                    <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2.5">
                                         <span className="text-[10px] font-extrabold text-[#0e5f59] uppercase tracking-widest">Saved Custom Groups</span>
                                         <button 
                                             type="button"
@@ -1149,7 +1149,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                     </div>
 
                                     {customGroups.length === 0 ? (
-                                        <p className="text-[11px] text-stone-400 italic text-center py-4">No custom groups created yet.</p>
+                                        <p className="text-[11px] text-slate-400 dark:text-slate-500 italic text-center py-4">No custom groups created yet.</p>
                                     ) : (
                                         <div className="space-y-2 max-h-56 overflow-y-auto">
                                             {customGroups.map((grp) => (
@@ -1160,15 +1160,15 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         setSelectedRecipients(grp.recipients);
                                                         showToast(`Loaded group "${grp.name}"!`, 'info');
                                                     }}
-                                                    className="w-full flex flex-col p-3 bg-stone-50 hover:bg-[#0e5f59]/5 border border-stone-200 hover:border-[#0e5f59]/30 rounded-xl text-left transition-all group"
+                                                    className="w-full flex flex-col p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-[#0e5f59]/5 border border-slate-200 dark:border-slate-700 hover:border-[#0e5f59]/30 rounded-xl text-left transition-all group"
                                                 >
-                                                    <span className="text-xs font-bold text-stone-850 truncate group-hover:text-[#0e5f59] transition-colors">{grp.name}</span>
+                                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-[#0e5f59] transition-colors">{grp.name}</span>
                                                     {grp.description && (
-                                                        <span className="text-[9px] text-stone-400 font-medium truncate mt-0.5">{grp.description}</span>
+                                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">{grp.description}</span>
                                                     )}
                                                     <div className="flex flex-wrap gap-1 mt-2">
                                                         {grp.recipients.map((rec: any, idx: number) => (
-                                                            <span key={idx} className="px-1.5 py-0.5 bg-stone-100 text-[8px] font-bold text-stone-500 rounded border border-stone-200">
+                                                            <span key={idx} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-[8px] font-bold text-slate-500 dark:text-slate-400 rounded border border-slate-200 dark:border-slate-700">
                                                                 {rec.name}
                                                             </span>
                                                         ))}
@@ -1191,19 +1191,19 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                         {/* Broadcast composer workspace (Col-span 8) */}
                         <div className="col-span-12 lg:col-span-8 flex flex-col gap-4">
-                            <span className="text-[10px] font-extrabold text-stone-400 uppercase tracking-widest">Messaging Workspace</span>
+                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Messaging Workspace</span>
                             
                             {/* Main Composer Form */}
-                            <form onSubmit={handleSendBroadcast} className="bg-white p-6 rounded-2xl border border-stone-200/60 shadow-xs flex flex-col gap-6">
-                                <div className="flex justify-between items-center border-b border-stone-100 pb-4">
+                            <form onSubmit={handleSendBroadcast} className="bg-white p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-xs flex flex-col gap-6">
+                                <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
                                     <div>
-                                        <h2 className="text-lg font-bold text-stone-900">Compose Notification</h2>
-                                        <p className="text-xs text-stone-400 mt-0.5">Targeted messages & push notification panel</p>
+                                        <h2 className="text-lg font-bold text-slate-900 dark:text-white">Compose Notification</h2>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Targeted messages & push notification panel</p>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <button 
                                             type="button" 
-                                            className="px-4 py-2 hover:bg-stone-50 border border-stone-200 text-stone-600 text-xs font-bold rounded-full transition-all"
+                                            className="px-4 py-2 hover:bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 text-xs font-bold rounded-full transition-all"
                                         >
                                             View Analytics
                                         </button>
@@ -1214,15 +1214,15 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 setIsCreateTemplateModalOpen(true);
                                             }}
                                             disabled={!subject.trim() || !content.trim()}
-                                            className="px-4 py-2 hover:bg-stone-50 border border-stone-200 text-stone-650 text-xs font-bold rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                            className="px-4 py-2 hover:bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                                         >
-                                            <FolderPlus className="w-3.5 h-3.5 text-stone-550" />
+                                            <FolderPlus className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                                             Save as Template
                                         </button>
                                         <button 
                                             type="submit" 
                                             disabled={isSending}
-                                            className="px-5 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 text-xs font-bold rounded-full transition-all flex items-center gap-2 shadow-md hover:shadow-lg disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0"
+                                            className="px-5 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 text-xs font-bold rounded-full transition-all flex items-center gap-2 shadow-md hover:shadow-lg disabled:bg-stone-300 disabled:text-slate-500 dark:text-slate-400 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0"
                                         >
                                             {isSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                                             Send Notification
@@ -1232,10 +1232,10 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                                 <div className="grid grid-cols-12 gap-6 items-start">
                                     {/* Left inputs column: recipients & templates */}
-                                    <div className="col-span-12 md:col-span-5 flex flex-col gap-5 border-r border-stone-100/80 pr-4">
+                                    <div className="col-span-12 md:col-span-5 flex flex-col gap-5 border-r border-slate-100/80 dark:border-slate-800/80 pr-4">
                                         {/* Recipients list block */}
                                         <div className="space-y-2.5">
-                                            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Recipients</span>
+                                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Recipients</span>
                                             
                                             {/* Pills view */}
                                             <div className="flex flex-wrap gap-2">
@@ -1258,7 +1258,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 <button 
                                                     type="button" 
                                                     onClick={openRecipientsModal}
-                                                    className="px-3 py-1 bg-white hover:bg-stone-50 border border-dashed border-stone-300 text-stone-500 hover:text-[#0e5f59] text-[10px] font-bold rounded-full transition-all flex items-center gap-1"
+                                                    className="px-3 py-1 bg-white hover:bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-[#0e5f59] text-[10px] font-bold rounded-full transition-all flex items-center gap-1"
                                                 >
                                                     <Plus className="w-3 h-3" />
                                                     Add Classes/Tags
@@ -1272,7 +1272,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                             setNewGroupDesc('');
                                                             setIsCreateGroupModalOpen(true);
                                                         }}
-                                                        className="px-3 py-1 bg-white hover:bg-[#0e5f59]/5 border border-stone-200 text-[#0e5f59] text-[10px] font-bold rounded-full transition-all flex items-center gap-1"
+                                                        className="px-3 py-1 bg-white hover:bg-[#0e5f59]/5 border border-slate-200 dark:border-slate-700 text-[#0e5f59] text-[10px] font-bold rounded-full transition-all flex items-center gap-1"
                                                     >
                                                         <FolderPlus className="w-3.5 h-3.5" />
                                                         Save Selection as Group
@@ -1284,7 +1284,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                         {/* Templates block */}
                                         <div className="space-y-3 pt-2">
                                             <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Message Templates</span>
+                                                <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Message Templates</span>
                                                 {customTemplates.length > 0 && (
                                                     <span className="text-[9px] font-bold text-[#ecb613] bg-[#ecb613]/10 px-2 py-0.5 rounded-full">
                                                         {filteredTemplates.length} of {customTemplates.length}
@@ -1294,9 +1294,9 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                             
                                             {/* Template Search Input */}
                                             <div className="relative">
-                                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 w-3.5 h-3.5" />
+                                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 w-3.5 h-3.5" />
                                                 <input 
-                                                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-stone-200 rounded-lg text-[10px] outline-none focus:ring-1 focus:ring-[#ecb613] font-semibold text-stone-700 placeholder:text-stone-300"
+                                                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] outline-none focus:ring-1 focus:ring-[#ecb613] font-semibold text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:text-slate-600"
                                                     placeholder="Search templates..."
                                                     type="text"
                                                     value={templateSearchQuery}
@@ -1305,7 +1305,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                             </div>
 
                                             {filteredTemplates.length === 0 ? (
-                                                <p className="text-[10px] text-stone-400 italic text-center py-4 bg-stone-50 rounded-xl border border-dashed border-stone-200">
+                                                <p className="text-[10px] text-slate-400 dark:text-slate-500 italic text-center py-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
                                                     No templates found matching "{templateSearchQuery}"
                                                 </p>
                                             ) : (
@@ -1315,17 +1315,17 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                             <button 
                                                                 type="button" 
                                                                 onClick={() => handleApplyCustomTemplate(tpl)}
-                                                                className="flex-1 flex items-center gap-3 p-2.5 bg-white hover:bg-stone-50 rounded-xl border border-stone-200 hover:border-stone-300 transition-all text-left group"
+                                                                className="flex-1 flex items-center gap-3 p-2.5 bg-white hover:bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:border-slate-700 transition-all text-left group"
                                                             >
-                                                                <div className="p-1.5 bg-stone-100 group-hover:bg-[#ecb613]/10 rounded-lg text-stone-600 group-hover:text-[#ecb613] transition-colors shrink-0">
+                                                                <div className="p-1.5 bg-slate-100 dark:bg-slate-800 group-hover:bg-[#ecb613]/10 rounded-lg text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] transition-colors shrink-0">
                                                                     <FileText className="w-4 h-4" />
                                                                 </div>
-                                                                <span className="text-[11px] font-bold text-stone-700 truncate">{tpl.name}</span>
+                                                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">{tpl.name}</span>
                                                             </button>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleDeleteTemplate(tpl.id)}
-                                                                className="p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-100 transition-colors shrink-0"
+                                                                className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:bg-slate-800 transition-colors shrink-0"
                                                                 title="Delete Template"
                                                             >
                                                                 <X className="w-3.5 h-3.5" />
@@ -1356,7 +1356,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     <button 
                                                         type="button" 
                                                         onClick={discardAudioNote}
-                                                        className="text-stone-400 hover:text-red-500 transition-colors"
+                                                        className="text-slate-400 dark:text-slate-500 hover:text-red-500 transition-colors"
                                                         title="Remove attachment"
                                                     >
                                                         <X className="w-3.5 h-3.5" />
@@ -1365,9 +1365,9 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                             </div>
                                         )}
                                         <div className="flex flex-col gap-1.5">
-                                            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Broadcast Subject</label>
+                                            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Broadcast Subject</label>
                                             <input 
-                                                className="px-4 py-2 border border-stone-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-stone-800 bg-white placeholder:text-stone-300"
+                                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-slate-800 dark:text-slate-200 bg-white placeholder:text-slate-300 dark:text-slate-600"
                                                 placeholder="e.g. Important Update: New Practice Schedule" 
                                                 type="text" 
                                                 value={subject}
@@ -1376,18 +1376,18 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                         </div>
 
                                         <div className="flex flex-col gap-1.5">
-                                            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Message Content</label>
-                                            <div className="border border-stone-200 rounded-xl overflow-hidden flex flex-col bg-white">
+                                            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Message Content</label>
+                                            <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden flex flex-col bg-white dark:bg-slate-900">
                                                 {/* Mock Editor Toolbar */}
-                                                <div className="px-3 py-2 bg-stone-50 border-b border-stone-150 flex gap-4 text-stone-400 text-xs select-none">
-                                                    <span className="font-bold cursor-pointer hover:text-stone-800">B</span>
-                                                    <span className="italic cursor-pointer hover:text-stone-800 font-serif">I</span>
-                                                    <span className="cursor-pointer hover:text-stone-800">List</span>
-                                                    <span className="cursor-pointer hover:text-stone-800">Link</span>
-                                                    <span className="cursor-pointer hover:text-stone-800">Img</span>
+                                                <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex gap-4 text-slate-400 dark:text-slate-500 text-xs select-none">
+                                                    <span className="font-bold cursor-pointer hover:text-slate-800 dark:text-slate-200">B</span>
+                                                    <span className="italic cursor-pointer hover:text-slate-800 dark:text-slate-200 font-serif">I</span>
+                                                    <span className="cursor-pointer hover:text-slate-800 dark:text-slate-200">List</span>
+                                                    <span className="cursor-pointer hover:text-slate-800 dark:text-slate-200">Link</span>
+                                                    <span className="cursor-pointer hover:text-slate-800 dark:text-slate-200">Img</span>
                                                 </div>
                                                 <textarea 
-                                                    className="p-4 text-xs font-semibold leading-relaxed text-stone-700 placeholder:text-stone-350 resize-none h-44 outline-none border-none bg-white" 
+                                                    className="p-4 text-xs font-semibold leading-relaxed text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:text-slate-500 resize-none h-44 outline-none border-none bg-white" 
                                                     placeholder="Write your message here. You can use @name to personalize..."
                                                     value={content}
                                                     onChange={(e) => setContent(e.target.value)}
@@ -1402,8 +1402,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                     {/* Bottom Recent Broadcasts log section */}
                     <div className="flex flex-col gap-4">
-                        <div className="flex justify-between items-center border-b border-stone-200/80 pb-3">
-                            <h3 className="text-base font-extrabold text-stone-900">Recent Broadcasts</h3>
+                        <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700/80 pb-3">
+                            <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Recent Broadcasts</h3>
                             <button 
                                 onClick={() => showToast('Viewing complete message logs history...', 'info')}
                                 className="text-amber-600 hover:text-amber-700 text-xs font-bold transition-colors"
@@ -1416,20 +1416,20 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                             {/* Broadcast logs list (Col-span 8) */}
                             <div className="col-span-12 lg:col-span-8 flex flex-col gap-3">
                                 {filteredBroadcasts.length === 0 ? (
-                                    <div className="p-8 bg-white rounded-2xl border border-dashed border-stone-300 text-center">
-                                        <Info className="w-8 h-8 text-stone-300 mx-auto mb-2" />
-                                        <p className="text-xs font-bold text-stone-500">No broadcasts found matching "{searchQuery}"</p>
-                                        <p className="text-[10px] text-stone-400 mt-1">Try refining your search terms or send a new broadcast!</p>
+                                    <div className="p-8 bg-white rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center">
+                                        <Info className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">No broadcasts found matching "{searchQuery}"</p>
+                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Try refining your search terms or send a new broadcast!</p>
                                     </div>
                                 ) : (
                                     filteredBroadcasts.map((bc) => (
-                                        <div key={bc.id} className="bg-white p-5 rounded-2xl border border-stone-200/60 shadow-2xs hover:shadow-xs transition-shadow flex flex-col md:flex-row gap-6 justify-between items-start animate-in fade-in-50 duration-200">
+                                        <div key={bc.id} className="bg-white p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-2xs hover:shadow-xs transition-shadow flex flex-col md:flex-row gap-6 justify-between items-start animate-in fade-in-50 duration-200">
                                             <div className="flex-1 space-y-2">
                                                 <div className="flex items-center gap-3">
                                                     <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#0e5f59] bg-[#0e5f59]/10 px-2.5 py-0.5 rounded-full">
                                                         {bc.channel.replace('_', ' ')}
                                                     </span>
-                                                    <span className="text-[10px] text-stone-400 font-bold">
+                                                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold">
                                                         {new Date(bc.created_at).toLocaleDateString('en-US', {
                                                             month: 'short',
                                                             day: 'numeric',
@@ -1439,8 +1439,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         })}
                                                     </span>
                                                 </div>
-                                                <h4 className="text-sm font-extrabold text-stone-900">{bc.subject}</h4>
-                                                <p className="text-xs font-medium text-stone-600 leading-relaxed max-w-2xl">{bc.content}</p>
+                                                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">{bc.subject}</h4>
+                                                <p className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl">{bc.content}</p>
                                                 {(bc as any).audio_attachment && (
                                                     <div className="flex items-center gap-2 mt-3 select-none">
                                                         <button 
@@ -1450,7 +1450,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                                 audio.play();
                                                                 showToast('Playing attached flute note...', 'info');
                                                             }}
-                                                            className="flex items-center gap-1.5 px-3 py-1 bg-stone-50 dark:bg-slate-800 hover:bg-[#ecb613]/10 hover:text-[#ecb613] text-stone-600 dark:text-slate-300 text-[10px] font-bold rounded-full border border-stone-200 dark:border-slate-700 transition-all"
+                                                            className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 dark:bg-slate-800/40 dark:bg-slate-800 hover:bg-[#ecb613]/10 hover:text-[#ecb613] text-slate-600 dark:text-slate-400 dark:text-slate-300 text-[10px] font-bold rounded-full border border-slate-200 dark:border-slate-700 dark:border-slate-700 transition-all"
                                                         >
                                                             <Mic className="w-3.5 h-3.5 text-[#ecb613]" />
                                                             Play Attached Flute Note
@@ -1461,17 +1461,17 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                                             <div className="shrink-0 flex flex-col gap-3 min-w-44 text-right justify-between md:h-full">
                                                 <div className="space-y-1">
-                                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-stone-400 block">Sent To</span>
+                                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">Sent To</span>
                                                     <div className="flex flex-wrap md:justify-end gap-1.5">
                                                         {bc.recipients.map((rec, i) => (
-                                                            <span key={i} className="px-2 py-0.5 bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-bold rounded">
+                                                            <span key={i} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 text-[9px] font-bold rounded">
                                                                 {rec.name}
                                                             </span>
                                                         ))}
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col gap-1 items-end">
-                                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-stone-500">
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
                                                         <Globe className="w-3.5 h-3.5 text-emerald-500" />
                                                         <span>Active</span>
                                                     </div>
@@ -1492,13 +1492,13 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                             {/* Floating mic tip card on the right (Col-span 4) */}
                             {audioRecorderOpen ? (
-                                <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-2xl border border-stone-200/60 shadow-xs flex flex-col gap-4 select-none animate-in zoom-in-95 duration-200">
-                                    <div className="flex justify-between items-center border-b border-stone-100 pb-2">
-                                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#ecb613]">Interactive Recorder</span>
+                                <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-xs flex flex-col gap-4 select-none animate-in zoom-in-95 duration-200">
+                                    <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-[#ecb613]">Interactive Recorder</span>
                                         <button 
                                             type="button"
                                             onClick={() => setAudioRecorderOpen(false)}
-                                            className="text-stone-400 hover:text-stone-600 transition-colors"
+                                            className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-400 transition-colors"
                                         >
                                             <X className="w-3.5 h-3.5" />
                                         </button>
@@ -1537,8 +1537,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         <Mic className={`w-5 h-5 ${isPlayingAudio ? 'animate-pulse' : ''}`} />
                                                     </button>
                                                     <div className="text-left">
-                                                        <h6 className="text-[10px] font-extrabold text-stone-850">Recording Finished</h6>
-                                                        <p className="text-[9px] text-stone-400 mt-0.5">Size: ~{(recordedBlob?.size ? (recordedBlob.size / 1024).toFixed(1) : 0)} KB</p>
+                                                        <h6 className="text-[10px] font-extrabold text-slate-800 dark:text-slate-100">Recording Finished</h6>
+                                                        <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">Size: ~{(recordedBlob?.size ? (recordedBlob.size / 1024).toFixed(1) : 0)} KB</p>
                                                     </div>
                                                 </div>
                                                 
@@ -1553,7 +1553,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     <button
                                                         type="button"
                                                         onClick={discardAudioNote}
-                                                        className="px-3 py-1 bg-stone-100 hover:bg-stone-200 text-stone-600 text-[10px] font-bold rounded-lg transition-all shadow-xs"
+                                                        className="px-3 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-stone-200 text-slate-600 dark:text-slate-400 text-[10px] font-bold rounded-lg transition-all shadow-xs"
                                                     >
                                                         Discard
                                                     </button>
@@ -1565,8 +1565,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     <Sparkles className="w-8 h-8 text-[#ecb613]" />
                                                 </div>
                                                 <div className="text-center space-y-1 w-full animate-in fade-in duration-300">
-                                                    <h6 className="text-xs font-bold text-stone-850">Synthesizer Fallback</h6>
-                                                    <p className="text-[9px] text-stone-400 max-w-[200px] mx-auto">
+                                                    <h6 className="text-xs font-bold text-slate-800 dark:text-slate-100">Synthesizer Fallback</h6>
+                                                    <p className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px] mx-auto">
                                                         Microphone unavailable. Dynamically generate high-fidelity simulated flute notes!
                                                     </p>
                                                     
@@ -1576,7 +1576,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                                 <Info className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                                                                 <span className="text-[9.5px] font-extrabold text-amber-800 dark:text-amber-300 uppercase tracking-wider">How to Fix Mic Access:</span>
                                                             </div>
-                                                            <ol className="list-decimal pl-4 text-[9px] text-stone-650 dark:text-slate-400 space-y-1 font-semibold leading-relaxed">
+                                                            <ol className="list-decimal pl-4 text-[9px] text-slate-600 dark:text-slate-300 dark:text-slate-400 space-y-1 font-semibold leading-relaxed">
                                                                 <li>Click the <strong>padlock/camera icon</strong> in your browser's URL bar (top of screen).</li>
                                                                 <li>Change <strong>Microphone</strong> permission from <em>Block</em> to <strong>Allow</strong>.</li>
                                                                 <li>Click <strong>Retry Mic</strong> below to re-verify hardware settings.</li>
@@ -1585,11 +1585,11 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     )}
 
                                                     <div className="mt-3 text-left w-full space-y-1.5 px-2">
-                                                        <label className="text-[9px] font-extrabold text-stone-400 uppercase tracking-wide">Select Tone / Melody</label>
+                                                        <label className="text-[9px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wide">Select Tone / Melody</label>
                                                         <select
                                                             value={selectedPreset}
                                                             onChange={(e) => setSelectedPreset(e.target.value)}
-                                                            className="w-full text-xs font-bold px-3 py-1.5 border border-stone-200 rounded-lg outline-none bg-stone-50 text-stone-800 focus:ring-1 focus:ring-[#ecb613] select-none"
+                                                            className="w-full text-xs font-bold px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-slate-50 dark:bg-slate-800/40 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-[#ecb613] select-none"
                                                         >
                                                             <option value="d5">D5 Pure Flute Note (Warm & Clear)</option>
                                                             <option value="a5">A5 High Flute Note (Bright & Airy)</option>
@@ -1603,7 +1603,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         type="button"
                                                         onClick={handleSynthesizeFlute}
                                                         disabled={isSynthesizing}
-                                                        className="flex-1 px-4 py-1.5 bg-[#ecb613] hover:bg-[#d49f0e] disabled:bg-stone-200 disabled:text-stone-400 text-slate-900 text-xs font-bold rounded-lg transition-all shadow-xs flex items-center justify-center gap-1.5"
+                                                        className="flex-1 px-4 py-1.5 bg-[#ecb613] hover:bg-[#d49f0e] disabled:bg-stone-200 disabled:text-slate-400 dark:text-slate-500 text-slate-900 text-xs font-bold rounded-lg transition-all shadow-xs flex items-center justify-center gap-1.5"
                                                     >
                                                         {isSynthesizing ? (
                                                             <>
@@ -1623,7 +1623,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                             setIsMicUnavailable(false);
                                                             startRecording();
                                                         }}
-                                                        className="px-3 py-1.5 border border-stone-200 hover:bg-stone-50 text-stone-600 text-xs font-bold rounded-lg transition-all"
+                                                        className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 text-xs font-bold rounded-lg transition-all"
                                                     >
                                                         Retry Mic
                                                     </button>
@@ -1635,8 +1635,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     <Mic className="w-8 h-8" />
                                                 </div>
                                                 <div className="text-center space-y-1">
-                                                    <h6 className="text-xs font-bold text-stone-850">Microphone Ready</h6>
-                                                    <p className="text-[9px] text-stone-400 max-w-[200px] mx-auto">Press button to record a live flute sample and attach it</p>
+                                                    <h6 className="text-xs font-bold text-slate-800 dark:text-slate-100">Microphone Ready</h6>
+                                                    <p className="text-[9px] text-slate-400 dark:text-slate-500 max-w-[200px] mx-auto">Press button to record a live flute sample and attach it</p>
                                                 </div>
                                                 <button
                                                     type="button"
@@ -1648,7 +1648,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 <button
                                                     type="button"
                                                     onClick={() => setIsMicUnavailable(true)}
-                                                    className="mt-2 text-[9px] font-bold text-stone-400 hover:text-[#ecb613] transition-colors"
+                                                    className="mt-2 text-[9px] font-bold text-slate-400 dark:text-slate-500 hover:text-[#ecb613] transition-colors"
                                                 >
                                                     Or switch to virtual synthesizer fallback &rarr;
                                                 </button>
@@ -1657,14 +1657,14 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                     </div>
                                 </div>
                             ) : (
-                                <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-2xl border border-stone-200/60 shadow-2xs flex items-center gap-4 select-none animate-in fade-in duration-200">
+                                <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-2xs flex items-center gap-4 select-none animate-in fade-in duration-200">
                                     <div className="p-3 bg-amber-800 text-white rounded-full shrink-0 shadow-sm animate-pulse">
                                         <Mic className="w-6 h-6" />
                                     </div>
                                     <div className="min-w-0">
                                         <span className="text-[9px] font-extrabold uppercase tracking-widest text-amber-700">Live Tip</span>
-                                        <h5 className="text-xs font-extrabold text-stone-850 mt-0.5">Record Flute Notes</h5>
-                                        <p className="text-[10px] font-bold leading-relaxed text-stone-500 mt-1">
+                                        <h5 className="text-xs font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">Record Flute Notes</h5>
+                                        <p className="text-[10px] font-bold leading-relaxed text-slate-500 dark:text-slate-400 mt-1">
                                             Teachers can record and broadcast dynamic flute audio samples directly to inspire student practice checklists!
                                         </p>
                                         <button 
@@ -1685,31 +1685,31 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
             {/* Interactive Overlay Target Selector Modal */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-stone-200/60 flex flex-col max-h-[500px]">
+                <div className="fixed inset-0 z-50 bg-slate-900/65 dark:bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col max-h-[500px]">
                         
                         {/* Modal Header */}
-                        <div className="p-6 border-b border-stone-100 flex justify-between items-center">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                             <div>
-                                <h3 className="text-base font-extrabold text-stone-900">Select Recipients</h3>
-                                <p className="text-[11px] text-stone-400 font-semibold mt-0.5">Pick targeted classrooms or individual students</p>
+                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Select Recipients</h3>
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">Pick targeted classrooms or individual students</p>
                             </div>
                             <button 
                                 onClick={() => setIsModalOpen(false)}
-                                className="text-stone-400 hover:text-stone-600 transition-colors hover:bg-stone-50 p-1.5 rounded-full"
+                                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:bg-slate-800/40 p-1.5 rounded-full"
                             >
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
 
                         {/* Search and Tab selectors */}
-                        <div className="px-6 py-4 flex flex-col gap-4 border-b border-stone-100">
+                        <div className="px-6 py-4 flex flex-col gap-4 border-b border-slate-100 dark:border-slate-800">
                             {/* Target Class vs Student Toggle */}
-                            <div className="bg-stone-100 p-1 rounded-xl flex gap-1 select-none">
+                            <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex gap-1 select-none">
                                 <button 
                                     onClick={() => setModalTab('class')}
                                     className={`flex-1 py-2 text-xs font-bold rounded-lg tracking-wide transition-all ${
-                                        modalTab === 'class' ? 'bg-white text-[#0e5f59] shadow-sm' : 'text-stone-500 hover:text-stone-800'
+                                        modalTab === 'class' ? 'bg-white text-[#0e5f59] shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200'
                                     }`}
                                 >
                                     Classrooms
@@ -1717,7 +1717,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                 <button 
                                     onClick={() => setModalTab('student')}
                                     className={`flex-1 py-2 text-xs font-bold rounded-lg tracking-wide transition-all ${
-                                        modalTab === 'student' ? 'bg-white text-[#0e5f59] shadow-sm' : 'text-stone-500 hover:text-stone-800'
+                                        modalTab === 'student' ? 'bg-white text-[#0e5f59] shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200'
                                     }`}
                                 >
                                     Students
@@ -1726,9 +1726,9 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                             {/* Inner Search Box */}
                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 w-4 h-4" />
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 w-4 h-4" />
                                 <input 
-                                    className="w-full pl-9 pr-4 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-medium text-stone-800" 
+                                    className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#ecb613] font-medium text-slate-800 dark:text-slate-100" 
                                     placeholder={`Filter ${modalTab === 'class' ? 'classrooms' : 'students'}...`}
                                     type="text" 
                                     value={modalSearchQuery}
@@ -1741,34 +1741,34 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         <div className="flex-1 overflow-y-auto p-6 space-y-3 max-h-60">
                             {/* Special global targeting option when Class tab is open */}
                             {modalTab === 'class' && !modalSearchQuery && (
-                                <label className="flex items-center gap-3 p-3 bg-stone-50 hover:bg-stone-100/80 rounded-xl cursor-pointer border border-transparent hover:border-stone-200 transition-all">
+                                <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:bg-slate-800/80 rounded-xl cursor-pointer border border-transparent hover:border-slate-200 dark:border-slate-700 transition-all">
                                     <input 
                                         type="checkbox" 
                                         checked={tempSelectedTargets.includes('global')}
                                         onChange={() => toggleTargetSelection('global')}
-                                        className="rounded border-stone-300 text-amber-600 focus:ring-amber-500 focus:ring-1"
+                                        className="rounded border-slate-300 dark:border-slate-700 text-amber-600 focus:ring-amber-500 focus:ring-1"
                                     />
                                     <div className="min-w-0 select-none">
-                                        <h6 className="text-xs font-bold text-stone-800">All Students (Global)</h6>
+                                        <h6 className="text-sm font-bold text-slate-800 dark:text-slate-250">All Students (Global)</h6>
                                         <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-0.5">Global Broadcast target</p>
                                     </div>
                                 </label>
                             )}
 
                             {filteredModalItems.length === 0 ? (
-                                <p className="text-xs text-stone-400 italic text-center py-4">No matching results found.</p>
+                                <p className="text-xs text-slate-400 dark:text-slate-500 italic text-center py-4">No matching results found.</p>
                             ) : (
                                 filteredModalItems.map((item) => (
-                                    <label key={item.id} className="flex items-center gap-3 p-3 bg-stone-50 hover:bg-stone-100/80 rounded-xl cursor-pointer border border-transparent hover:border-stone-200 transition-all">
+                                    <label key={item.id} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:bg-slate-800/80 rounded-xl cursor-pointer border border-transparent hover:border-slate-200 dark:border-slate-700 transition-all">
                                         <input 
                                             type="checkbox" 
                                             checked={tempSelectedTargets.includes(item.id)}
                                             onChange={() => toggleTargetSelection(item.id)}
-                                            className="rounded border-stone-300 text-amber-600 focus:ring-amber-500 focus:ring-1"
+                                            className="rounded border-slate-300 dark:border-slate-700 text-amber-600 focus:ring-amber-500 focus:ring-1"
                                         />
                                         <div className="min-w-0 select-none">
-                                            <h6 className="text-xs font-bold text-stone-800 truncate">{item.name}</h6>
-                                            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mt-0.5">
+                                            <h6 className="text-sm font-bold text-slate-800 dark:text-slate-250 truncate">{item.name}</h6>
+                                            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
                                                 {modalTab === 'class' ? 'Classroom Group' : 'Individual Student'}
                                             </p>
                                         </div>
@@ -1778,16 +1778,16 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         </div>
 
                         {/* Modal Footer actions */}
-                        <div className="p-6 border-t border-stone-100 flex justify-end gap-3 shrink-0">
+                        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 shrink-0">
                             <button 
                                 onClick={() => setIsModalOpen(false)}
-                                className="px-4 py-2 hover:bg-stone-50 border border-stone-200 text-stone-600 text-xs font-bold rounded-full transition-all"
+                                className="px-4 py-2 hover:bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 text-xs font-bold rounded-full transition-all"
                             >
                                 Cancel
                             </button>
                             <button 
                                 onClick={applySelectedRecipients}
-                                className="px-5 py-2 bg-[#0e5f59] hover:bg-[#0c4e49] text-white text-xs font-bold rounded-full transition-all shadow-xs"
+                                className="px-5 py-2.5 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 text-xs font-bold rounded-xl transition-all shadow-md active:translate-y-[1px]"
                             >
                                 Apply Targets
                             </button>
@@ -1797,18 +1797,18 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
             )}
             {/* Create Custom Group Modal */}
             {isCreateGroupModalOpen && (
-                <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-stone-200/60 flex flex-col max-h-[500px]">
+                <div className="fixed inset-0 z-50 bg-slate-900/65 dark:bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col max-h-[500px]">
                         
                         {/* Modal Header */}
-                        <div className="p-6 border-b border-stone-100 flex justify-between items-center">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                             <div>
-                                <h3 className="text-base font-extrabold text-stone-900">Create Custom Group</h3>
-                                <p className="text-[11px] text-stone-400 font-semibold mt-0.5">Save targeted lists for instant future broadcasts</p>
+                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Create Custom Group</h3>
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">Save targeted lists for instant future broadcasts</p>
                             </div>
                             <button 
                                 onClick={() => setIsCreateGroupModalOpen(false)}
-                                className="text-stone-400 hover:text-stone-600 transition-colors hover:bg-stone-50 p-1.5 rounded-full"
+                                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:bg-slate-800/40 p-1.5 rounded-full"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -1817,9 +1817,9 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         {/* Modal Fields */}
                         <div className="p-6 space-y-4 flex-1 overflow-y-auto">
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Group Name</label>
+                                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Group Name</label>
                                 <input 
-                                    className="px-4 py-2 border border-stone-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-stone-800 bg-white placeholder:text-stone-300"
+                                    className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-slate-800 dark:text-slate-200 bg-white placeholder:text-slate-300 dark:text-slate-600"
                                     placeholder="e.g. Advanced Flautists, Saturday Performers" 
                                     type="text" 
                                     value={newGroupName}
@@ -1828,9 +1828,9 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                             </div>
 
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Group Description (Optional)</label>
+                                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Group Description (Optional)</label>
                                 <input 
-                                    className="px-4 py-2 border border-stone-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-stone-800 bg-white placeholder:text-stone-300"
+                                    className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-slate-800 dark:text-slate-200 bg-white placeholder:text-slate-300 dark:text-slate-600"
                                     placeholder="e.g. Students in the weekend morning masterclass" 
                                     type="text" 
                                     value={newGroupDesc}
@@ -1840,7 +1840,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                             {/* Recipients preview summary */}
                             <div className="flex flex-col gap-2">
-                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Selected Members ({selectedRecipients.length})</label>
+                                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Selected Members ({selectedRecipients.length})</label>
                                 {selectedRecipients.length === 0 ? (
                                     <div className="p-3.5 bg-amber-50/50 rounded-xl border border-dashed border-amber-200 text-center">
                                         <p className="text-[10px] text-amber-700 font-semibold leading-relaxed">
@@ -1848,9 +1848,9 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                         </p>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 bg-stone-50 rounded-xl border border-stone-200">
+                                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700">
                                         {selectedRecipients.map((rec) => (
-                                            <span key={rec.id} className="px-2 py-0.5 bg-white border border-stone-200 text-[9px] font-bold text-stone-600 rounded">
+                                            <span key={rec.id} className="px-2 py-0.5 bg-white border border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-600 dark:text-slate-400 rounded">
                                                 {rec.name}
                                             </span>
                                         ))}
@@ -1860,10 +1860,10 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         </div>
 
                         {/* Modal Footer actions */}
-                        <div className="p-6 border-t border-stone-100 flex justify-end gap-3 shrink-0">
+                        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 shrink-0">
                             <button 
                                 onClick={() => setIsCreateGroupModalOpen(false)}
-                                className="px-4 py-2 hover:bg-stone-50 border border-stone-200 text-stone-600 text-xs font-bold rounded-full transition-all"
+                                className="px-4 py-2 hover:bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 text-xs font-bold rounded-full transition-all"
                             >
                                 Cancel
                             </button>
@@ -1881,18 +1881,18 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
             {/* Create Custom Template Modal */}
             {isCreateTemplateModalOpen && (
-                <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-stone-200/60 flex flex-col max-h-[500px]">
+                <div className="fixed inset-0 z-50 bg-slate-900/65 dark:bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col max-h-[500px]">
                         
                         {/* Modal Header */}
-                        <div className="p-6 border-b border-stone-100 flex justify-between items-center">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                             <div>
-                                <h3 className="text-base font-extrabold text-stone-900">Save Message as Template</h3>
-                                <p className="text-[11px] text-stone-400 font-semibold mt-0.5">Give your composed message a reusable template name</p>
+                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Save Message as Template</h3>
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">Give your composed message a reusable template name</p>
                             </div>
                             <button 
                                 onClick={() => setIsCreateTemplateModalOpen(false)}
-                                className="text-stone-400 hover:text-stone-600 transition-colors hover:bg-stone-50 p-1.5 rounded-full"
+                                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:bg-slate-800/40 p-1.5 rounded-full"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -1901,9 +1901,9 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         {/* Modal Fields */}
                         <div className="p-6 space-y-4 flex-1 overflow-y-auto">
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Template Name</label>
+                                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Template Name</label>
                                 <input 
-                                    className="px-4 py-2 border border-stone-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-stone-800 bg-white placeholder:text-stone-300"
+                                    className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-slate-800 dark:text-slate-200 bg-white placeholder:text-slate-300 dark:text-slate-600"
                                     placeholder="e.g. Student Progress Update, Saturday Reschedule" 
                                     type="text" 
                                     value={newTemplateName}
@@ -1912,11 +1912,11 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                             </div>
 
                             {/* Template Preview */}
-                            <div className="flex flex-col gap-2 bg-stone-50 p-4 rounded-2xl border border-stone-200">
+                            <div className="flex flex-col gap-2 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
                                 <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#0e5f59]">Template Content Preview</span>
                                 <div className="space-y-1">
-                                    <h5 className="text-xs font-bold text-stone-900 truncate">Subject: {subject}</h5>
-                                    <p className="text-[11px] font-medium text-stone-600 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                    <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate">Subject: {subject}</h5>
+                                    <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
                                         {content}
                                     </p>
                                 </div>
@@ -1924,10 +1924,10 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         </div>
 
                         {/* Modal Footer actions */}
-                        <div className="p-6 border-t border-stone-100 flex justify-end gap-3 shrink-0">
+                        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 shrink-0">
                             <button 
                                 onClick={() => setIsCreateTemplateModalOpen(false)}
-                                className="px-4 py-2 hover:bg-stone-50 border border-stone-200 text-stone-600 text-xs font-bold rounded-full transition-all"
+                                className="px-4 py-2 hover:bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 text-xs font-bold rounded-full transition-all"
                             >
                                 Cancel
                             </button>
