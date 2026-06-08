@@ -337,6 +337,21 @@ export default function TeacherDashboard() {
                 const todayRecurring = loadedSchedules.filter(s => s.day_of_week === todayDow);
                 const todayTemporary = loadedTemps.filter(t => t.class_date === today);
 
+                const now = new Date();
+                const curTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+                const getStatusScore = (start: string, end: string) => {
+                    const startStr = start.slice(0, 5);
+                    const endStr = end.slice(0, 5);
+                    if (startStr <= curTimeStr && endStr >= curTimeStr) {
+                        return 0; // Ongoing
+                    } else if (startStr > curTimeStr) {
+                        return 1; // Upcoming
+                    } else {
+                        return 2; // Past
+                    }
+                };
+
                 const formattedTodayClasses: UpcomingClass[] = [
                     ...todayRecurring.map(s => ({
                         id: s.id,
@@ -356,7 +371,14 @@ export default function TeacherDashboard() {
                         classroom_name: t.title,
                         students_joined: 0
                     }))
-                ].sort((a, b) => a.start_time.localeCompare(b.start_time));
+                ].sort((a, b) => {
+                    const scoreA = getStatusScore(a.start_time, a.end_time);
+                    const scoreB = getStatusScore(b.start_time, b.end_time);
+                    if (scoreA !== scoreB) {
+                        return scoreA - scoreB;
+                    }
+                    return a.start_time.localeCompare(b.start_time);
+                });
 
                 setUpcomingClasses(formattedTodayClasses);
                 setStats(prev => ({
@@ -1040,27 +1062,43 @@ export default function TeacherDashboard() {
                                         </p>
                                     </div>
                                     <div className="p-6 space-y-6">
-                                        {upcomingClasses.map((cl, idx) => (
-                                            <div key={cl.id} className={`relative pl-6 border-l-2 ${idx === 0 ? 'border-[#ecb613]' : 'border-slate-200 dark:border-slate-700'}`}>
-                                                <div className={`absolute -left-[9px] top-0 size-4 rounded-full border-2 ${idx === 0 ? 'border-[#ecb613]' : 'border-slate-200 dark:border-slate-700'} bg-white dark:bg-slate-900`}></div>
-                                                <p className={`text-xs font-bold ${idx === 0 ? 'text-[#ecb613]' : 'text-slate-400'} uppercase tracking-wider`}>
-                                                    {formatTime12hr(cl.start_time.slice(0, 5))} - {formatTime12hr(cl.end_time.slice(0, 5))}
-                                                </p>
-                                                <h4 className={`text-sm font-bold mt-1 ${idx === 0 ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{cl.classroom_name}</h4>
-                                                <div className="flex items-center gap-2 mt-2">
-                                                    <span className="material-symbols-outlined text-base text-slate-400">group</span>
-                                                    <span className="text-xs text-slate-500">{cl.students_joined} Students joined</span>
-                                                </div>
-                                                {idx === 0 && (
+                                        {upcomingClasses.map((cl, idx) => {
+                                            const now = new Date();
+                                            const curTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                            const startStr = cl.start_time.slice(0, 5);
+                                            const endStr = cl.end_time.slice(0, 5);
+                                            const isPast = endStr < curTimeStr;
+                                            const isOngoing = startStr <= curTimeStr && endStr >= curTimeStr;
+                                            const isUpcoming = startStr > curTimeStr;
+
+                                            return (
+                                                <div key={cl.id} className={`relative pl-6 border-l-2 ${isPast ? 'border-slate-200 dark:border-slate-800 opacity-60' : isOngoing ? 'border-emerald-500' : 'border-[#ecb613]'}`}>
+                                                    <div className={`absolute -left-[9px] top-0 size-4 rounded-full border-2 ${isPast ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900' : isOngoing ? 'border-emerald-500 bg-emerald-500' : 'border-[#ecb613] bg-[#ecb613]'} bg-white dark:bg-slate-900`}></div>
+                                                    <p className={`text-xs font-bold ${isPast ? 'text-slate-400' : isOngoing ? 'text-emerald-500' : 'text-[#ecb613]'} uppercase tracking-wider flex items-center gap-1.5`}>
+                                                        {formatTime12hr(cl.start_time.slice(0, 5))} - {formatTime12hr(cl.end_time.slice(0, 5))}
+                                                        {isOngoing && <span className="size-1.5 bg-emerald-500 rounded-full animate-pulse" />}
+                                                        {isUpcoming && <span className="text-[10px] font-semibold text-slate-500 lowercase font-normal">(upcoming)</span>}
+                                                    </p>
+                                                    <h4 className={`text-sm font-bold mt-1 ${isPast ? 'text-slate-500 dark:text-slate-400 line-through' : 'text-slate-900 dark:text-white'}`}>{cl.classroom_name}</h4>
+                                                    <div className="flex items-center gap-2 mt-2">
+                                                        <span className="material-symbols-outlined text-base text-slate-400">group</span>
+                                                        <span className="text-xs text-slate-500">{cl.students_joined} Students joined</span>
+                                                    </div>
                                                     <Link 
                                                         href={`/teacher-dashboard/classrooms/${cl.classroom_id}/meeting`}
-                                                        className="mt-4 w-full py-2 bg-[#ecb613] text-slate-900 text-xs font-bold rounded-lg hover:bg-[#ecb613]/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#ecb613]/20"
+                                                        className={`mt-4 w-full py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-xs ${
+                                                            isPast 
+                                                                ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400' 
+                                                                : isOngoing 
+                                                                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/10' 
+                                                                    : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 shadow-[#ecb613]/10'
+                                                        }`}
                                                     >
                                                         <Video className="w-4 h-4" /> Start Session
                                                     </Link>
-                                                )}
-                                            </div>
-                                        ))}
+                                                </div>
+                                            );
+                                        })}
                                         {upcomingClasses.length === 0 && (
                                             <div className="text-center py-6">
                                                 <p className="text-slate-500 text-sm">No classes scheduled for today.</p>
