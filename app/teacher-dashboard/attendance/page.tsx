@@ -82,8 +82,26 @@ export default function AttendancePage() {
     
     // UI State
     const [mode, setMode] = useState<'class' | 'individual' | 'missed'>('class');
-    const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-    const [viewDate, setViewDate] = useState(new Date()); // Calendar month being displayed
+    const [selectedDate, setSelectedDate] = useState<string>(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const dateParam = params.get('date');
+            if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+                return dateParam;
+            }
+        }
+        return new Date().toISOString().split('T')[0];
+    });
+    const [viewDate, setViewDate] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const dateParam = params.get('date');
+            if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+                return new Date(dateParam);
+            }
+        }
+        return new Date();
+    }); // Calendar month being displayed
     const [searchQuery, setSearchQuery] = useState('');
     
     // Core Data State
@@ -92,7 +110,13 @@ export default function AttendancePage() {
     const [temporaryClasses, setTemporaryClasses] = useState<TemporaryClass[]>([]);
     
     // Expanded batch state
-    const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
+    const [expandedBatchId, setExpandedBatchId] = useState<string | null>(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('classId');
+        }
+        return null;
+    });
     const [batchStudentsMap, setBatchStudentsMap] = useState<Record<string, Student[]>>({});
     const [batchAttendanceMap, setBatchAttendanceMap] = useState<Record<string, Record<string, 'present' | 'absent' | 'late' | 'excused'>>>({});
     const [batchLoadingMap, setBatchLoadingMap] = useState<Record<string, boolean>>({});

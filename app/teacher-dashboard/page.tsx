@@ -3,7 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../src/lib/supabase-auth';
-import { Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, LayoutDashboard, ClipboardList, Calendar, Trash2, Edit, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { supabase } from '../../src/lib/supabase';
+import { 
+    Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, 
+    LayoutDashboard, ClipboardList, Calendar, Trash2, Edit, 
+    CheckCircle, AlertCircle, ChevronLeft, ChevronRight, X,
+    MessageSquare, StickyNote, Wallet, Sparkles, Coins
+} from 'lucide-react';
 import TeacherSidebar from '../../src/components/TeacherSidebar';
 import TeacherHeader from '../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -61,6 +67,13 @@ interface PanelStudent {
     profile_pic_url?: string;
 }
 
+function getLocalDateString(d: Date) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 function formatTime12hr(time24: string) {
     if (!time24) return '';
     const [h, m] = time24.split(':');
@@ -113,6 +126,20 @@ export default function TeacherDashboard() {
     const [allStudents, setAllStudents] = useState<{ id: string; name: string }[]>([]);
     const [tempSelectedStudents, setTempSelectedStudents] = useState<string[]>([]);
 
+    // New state hooks for dashboard enhancements
+    const [feesStats, setFeesStats] = useState({
+        collectedThisMonth: 0,
+        dueStudentsCount: 0
+    });
+    const [inquiries, setInquiries] = useState<any[]>([]);
+    const [inquiriesLoading, setInquiriesLoading] = useState(true);
+    const [notes, setNotes] = useState<any[]>([]);
+    const [notesLoading, setNotesLoading] = useState(true);
+    const [forgottenClasses, setForgottenClasses] = useState<any[]>([]);
+    const [showNoteModal, setShowNoteModal] = useState(false);
+    const [noteForm, setNoteForm] = useState({ id: '', title: '', content: '', color: 'yellow', classroom_id: '' });
+    const [isSavingNote, setIsSavingNote] = useState(false);
+
     const calendarMonth = calendarDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
     // Build calendar cells with events
@@ -131,7 +158,7 @@ export default function TeacherDashboard() {
         const getEventsForDate = (d: Date): CalendarEvent[] => {
             const evts: CalendarEvent[] = [];
             const dow = d.getDay(); // 0=Sun matches DB convention
-            const dateStr = d.toISOString().split('T')[0];
+            const dateStr = getLocalDateString(d);
             // Recurring
             batchSchedules.filter(s => s.day_of_week === dow).forEach(s => {
                 evts.push({ id: s.id, type: 'recurring', name: s.classroom_name, time: `${formatTime12hr(s.start_time.slice(0,5))} – ${formatTime12hr(s.end_time.slice(0,5))}`, date: dateStr, classroom_id: s.classroom_id });
@@ -145,12 +172,12 @@ export default function TeacherDashboard() {
 
         for (let i = startDow - 1; i >= 0; i--) {
             const d = new Date(year, month - 1, prevMonthLast - i);
-            cells.push({ day: prevMonthLast - i, current: false, isToday: false, date: d.toISOString().split('T')[0], events: [] });
+            cells.push({ day: prevMonthLast - i, current: false, isToday: false, date: getLocalDateString(d), events: [] });
         }
         for (let d = 1; d <= daysInMonth; d++) {
             const dt = new Date(year, month, d);
             const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-            cells.push({ day: d, current: true, isToday, date: dt.toISOString().split('T')[0], events: getEventsForDate(dt) });
+            cells.push({ day: d, current: true, isToday, date: getLocalDateString(dt), events: getEventsForDate(dt) });
         }
         while (cells.length % 7 !== 0) {
             const nextDay = cells.length - (startDow + daysInMonth) + 1;
@@ -162,6 +189,8 @@ export default function TeacherDashboard() {
     useEffect(() => {
         const loadDashboardData = async () => {
             setLoading(true);
+            setNotesLoading(true);
+            setInquiriesLoading(true);
             try {
                 // 1. Check Session
                 const { data: { session } } = await supabaseAuth.auth.getSession();
@@ -187,21 +216,60 @@ export default function TeacherDashboard() {
 
                 setTeacherProfile({ name: profile.name, email: profile.email });
 
-                // 3. Fetch Stats in Parallel
-                const today = new Date().toISOString().split('T')[0];
+                // 3. Fetch Stats & Roster data in Parallel
+                const today = getLocalDateString(new Date());
 
-                const [studentRes, classroomRes, pendingRes, todayRes] = await Promise.all([
+                const [studentRes, classroomRes, pendingRes] = await Promise.all([
                     supabaseAuth.from('users').select('*', { count: 'exact', head: true }).eq('role', 'student').eq('teacher_id', userId),
-                    supabaseAuth.from('classrooms').select('*', { count: 'exact', head: true }).eq('teacher_id', userId),
-                    supabaseAuth.from('task_attempts').select('id, users!student_id(teacher_id)', { count: 'exact', head: true }).eq('status', 'submitted').eq('users.teacher_id', userId),
-                    supabaseAuth.from('class_sessions').select('id, classrooms!classroom_id(teacher_id)', { count: 'exact', head: true }).eq('session_date', today).eq('classrooms.teacher_id', userId)
+                    supabaseAuth.from('classrooms').select('id, name').eq('teacher_id', userId),
+                    supabaseAuth.from('task_attempts').select('id, users!student_id(teacher_id)', { count: 'exact', head: true }).eq('status', 'submitted').eq('users.teacher_id', userId)
                 ]);
 
+                const roomList = classroomRes.data || [];
+                setClassrooms(roomList);
+
+                // Fetch student profiles for fees due calculation
+                const { data: teacherStudents } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, fees_classes_paid, fees_collection_date, fees_basis')
+                    .eq('role', 'student')
+                    .eq('teacher_id', userId);
+
+                const studentList = teacherStudents || [];
+                setAllStudents(studentList.map(s => ({ id: s.id, name: s.name })));
+
+                // Calculate stats counts
                 setStats({
                     totalStudents: studentRes.count || 0,
-                    activeClassrooms: classroomRes.count || 0,
+                    activeClassrooms: roomList.length || 0,
                     pendingSubmissions: pendingRes.count || 0,
-                    todayClasses: todayRes.count || 0
+                    todayClasses: 0 // Will be set dynamically by today's classes list
+                });
+
+                // Fetch fees payments for this month
+                const startOfMonth = new Date();
+                startOfMonth.setDate(1);
+                const startOfMonthStr = getLocalDateString(startOfMonth);
+                const { data: paymentsData } = await supabaseAuth
+                    .from('fees_payments')
+                    .select('amount, student_id')
+                    .gte('payment_date', startOfMonthStr);
+
+                const studentIds = studentList.map(s => s.id);
+                const totalCollected = (paymentsData || [])
+                    .filter(p => studentIds.includes(p.student_id))
+                    .reduce((sum, p) => sum + Number(p.amount), 0);
+
+                const dueCount = studentList.filter(s => {
+                    const classesPaid = s.fees_classes_paid ?? 0;
+                    const isLowClasses = classesPaid <= 1;
+                    const isPassDueDate = s.fees_basis === 'monthly' && s.fees_collection_date && s.fees_collection_date <= today;
+                    return isLowClasses || isPassDueDate;
+                }).length;
+
+                setFeesStats({
+                    collectedThisMonth: totalCollected,
+                    dueStudentsCount: dueCount
                 });
 
                 // 4. Fetch Recent Submissions
@@ -230,81 +298,170 @@ export default function TeacherDashboard() {
                     setRecentSubmissions(formatted);
                 }
 
-                // 5. Fetch Upcoming Classes
-                const { data: classesData, error: clErr } = await supabaseAuth
-                    .from('class_sessions')
-                    .select(`
-                        id,
-                        classroom_id,
-                        session_date,
-                        start_time,
-                        end_time,
-                        classrooms!classroom_id(name, teacher_id)
-                    `)
-                    .gte('session_date', today)
-                    .eq('classrooms.teacher_id', userId)
-                    .order('session_date', { ascending: true })
-                    .order('start_time', { ascending: true })
-                    .limit(3);
-
-                if (!clErr && classesData) {
-                    const formatted: UpcomingClass[] = (classesData as any[]).map(c => ({
-                        id: c.id,
-                        classroom_id: c.classroom_id,
-                        session_date: c.session_date,
-                        start_time: c.start_time,
-                        end_time: c.end_time,
-                        classroom_name: c.classrooms?.name || 'Unknown Class',
-                        students_joined: 0
-                    }));
-                    setUpcomingClasses(formatted);
-                }
-
-                // 6. Fetch Batch Schedules (for calendar)
+                // 5. Fetch Batch Schedules (for calendar & today's schedule)
                 const { data: schedData } = await supabaseAuth
                     .from('batch_schedules')
                     .select('id, classroom_id, day_of_week, start_time, end_time, classrooms(name, teacher_id)')
                     .eq('classrooms.teacher_id', userId);
+                
+                let loadedSchedules: BatchSchedule[] = [];
                 if (schedData) {
-                    setBatchSchedules((schedData as any[]).map(s => ({
+                    loadedSchedules = (schedData as any[]).map(s => ({
                         id: s.id, classroom_id: s.classroom_id, day_of_week: s.day_of_week,
                         start_time: s.start_time, end_time: s.end_time,
                         classroom_name: s.classrooms?.name || 'Unknown'
-                    })));
+                    }));
+                    setBatchSchedules(loadedSchedules);
                 }
 
-                // 7. Fetch Temporary Classes (for calendar)
+                // 6. Fetch Temporary Classes (for calendar & today's schedule)
                 const { data: tempData } = await supabaseAuth
                     .from('temporary_classes')
                     .select('id, classroom_id, title, class_date, start_time, end_time, classrooms(name)')
                     .eq('teacher_id', userId);
+                
+                let loadedTemps: TemporaryClass[] = [];
                 if (tempData) {
-                    setTempClasses((tempData as any[]).map(t => ({
+                    loadedTemps = (tempData as any[]).map(t => ({
                         id: t.id, classroom_id: t.classroom_id, title: t.title,
                         class_date: t.class_date, start_time: t.start_time, end_time: t.end_time,
                         classroom_name: t.classrooms?.name || 'Standalone'
+                    }));
+                    setTempClasses(loadedTemps);
+                }
+
+                // 7. Calculate Today's Scheduled Classes
+                const todayDow = new Date().getDay(); // 0 = Sunday, 1 = Monday...
+                const todayRecurring = loadedSchedules.filter(s => s.day_of_week === todayDow);
+                const todayTemporary = loadedTemps.filter(t => t.class_date === today);
+
+                const formattedTodayClasses: UpcomingClass[] = [
+                    ...todayRecurring.map(s => ({
+                        id: s.id,
+                        classroom_id: s.classroom_id,
+                        session_date: today,
+                        start_time: s.start_time,
+                        end_time: s.end_time,
+                        classroom_name: s.classroom_name,
+                        students_joined: 0
+                    })),
+                    ...todayTemporary.map(t => ({
+                        id: t.id,
+                        classroom_id: t.classroom_id || '',
+                        session_date: today,
+                        start_time: t.start_time,
+                        end_time: t.end_time,
+                        classroom_name: t.title,
+                        students_joined: 0
+                    }))
+                ].sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+                setUpcomingClasses(formattedTodayClasses);
+                setStats(prev => ({
+                    ...prev,
+                    todayClasses: formattedTodayClasses.length
+                }));
+
+                // 8. Fetch Personal Notes (class_notes)
+                const { data: notesData } = await supabaseAuth
+                    .from('class_notes')
+                    .select('id, title, content, color, classroom_id, created_at, classrooms(name)')
+                    .eq('teacher_id', userId)
+                    .order('created_at', { ascending: false });
+
+                if (notesData) {
+                    setNotes((notesData as any[]).map(n => ({
+                        id: n.id,
+                        title: n.title,
+                        content: n.content,
+                        color: n.color || 'yellow',
+                        classroom_id: n.classroom_id,
+                        classroom_name: n.classrooms?.name || 'General',
+                        created_at: n.created_at
                     })));
                 }
 
-                // 8. Fetch classrooms list for temp class modal
-                const { data: roomList } = await supabaseAuth
-                    .from('classrooms')
-                    .select('id, name')
-                    .eq('teacher_id', userId);
-                if (roomList) setClassrooms(roomList);
+                // 9. Fetch inquiries from marketing DB
+                const { data: inquiriesData } = await supabase
+                    .from('inquiries')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
 
-                // 9. Fetch all students for the current teacher
-                const { data: studentsData } = await supabaseAuth
-                    .from('users')
-                    .select('id, name')
-                    .eq('role', 'student')
-                    .eq('teacher_id', userId);
-                if (studentsData) setAllStudents(studentsData);
+                if (inquiriesData) {
+                    setInquiries(inquiriesData);
+                }
+
+                // 10. Scan for Forgotten Attendance in the last 14 days
+                const fourteenDaysAgo = new Date();
+                fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+                const fourteenDaysAgoStr = getLocalDateString(fourteenDaysAgo);
+
+                const roomIds = roomList.map(c => c.id);
+                let markedSet = new Set<string>();
+
+                if (roomIds.length > 0) {
+                    const { data: attendanceData } = await supabaseAuth
+                        .from('attendance')
+                        .select('classroom_id, date')
+                        .in('classroom_id', roomIds)
+                        .gte('date', fourteenDaysAgoStr);
+
+                    if (attendanceData) {
+                        attendanceData.forEach((r: any) => {
+                            const cleanDate = r.date.split('T')[0].split(' ')[0];
+                            markedSet.add(`${r.classroom_id}_${cleanDate}`);
+                        });
+                    }
+                }
+
+                const forgotten: any[] = [];
+                // Loop back 14 days
+                for (let i = 1; i <= 14; i++) {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    const dStr = getLocalDateString(d);
+                    const dow = d.getDay();
+                    const dayName = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+
+                    // Check recurring batch schedules
+                    loadedSchedules.filter(s => s.day_of_week === dow).forEach(s => {
+                        const key = `${s.classroom_id}_${dStr}`;
+                        if (!markedSet.has(key)) {
+                            if (!forgotten.some(f => f.classroom_id === s.classroom_id && f.date === dStr)) {
+                                forgotten.push({
+                                    classroom_id: s.classroom_id,
+                                    classroom_name: s.classroom_name,
+                                    date: dStr,
+                                    dayName
+                                });
+                            }
+                        }
+                    });
+
+                    // Check temporary classes
+                    loadedTemps.filter(t => t.class_date === dStr).forEach(t => {
+                        const key = `${t.classroom_id}_${dStr}`;
+                        if (!markedSet.has(key)) {
+                            if (!forgotten.some(f => f.classroom_id === t.classroom_id && f.date === dStr)) {
+                                forgotten.push({
+                                    classroom_id: t.classroom_id,
+                                    classroom_name: t.classroom_name,
+                                    date: dStr,
+                                    dayName
+                                });
+                            }
+                        }
+                    });
+                }
+                setForgottenClasses(forgotten);
 
             } catch (err) {
                 console.error('Critical Dashboard Error:', err);
             } finally {
                 setLoading(false);
+                setNotesLoading(false);
+                setInquiriesLoading(false);
             }
         };
 
@@ -430,6 +587,85 @@ export default function TeacherDashboard() {
         } catch (e) { console.error(e); }
     };
 
+    const handleSaveNote = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!noteForm.title.trim() || !noteForm.classroom_id) {
+            alert('Please fill out the title and select a classroom.');
+            return;
+        }
+        setIsSavingNote(true);
+        try {
+            const userId = (await supabaseAuth.auth.getSession()).data.session?.user.id;
+            if (!userId) return;
+
+            const noteData = {
+                title: noteForm.title.trim(),
+                content: noteForm.content.trim(),
+                color: noteForm.color,
+                classroom_id: noteForm.classroom_id,
+                teacher_id: userId,
+                updated_at: new Date().toISOString()
+            };
+
+            if (noteForm.id) {
+                // Update
+                const { error } = await supabaseAuth
+                    .from('class_notes')
+                    .update(noteData)
+                    .eq('id', noteForm.id);
+                if (error) throw error;
+            } else {
+                // Insert
+                const { error } = await supabaseAuth
+                    .from('class_notes')
+                    .insert([noteData]);
+                if (error) throw error;
+            }
+
+            // Refresh notes
+            const { data: notesData } = await supabaseAuth
+                .from('class_notes')
+                .select('id, title, content, color, classroom_id, created_at, classrooms(name)')
+                .eq('teacher_id', userId)
+                .order('created_at', { ascending: false });
+
+            if (notesData) {
+                setNotes((notesData as any[]).map(n => ({
+                    id: n.id,
+                    title: n.title,
+                    content: n.content,
+                    color: n.color || 'yellow',
+                    classroom_id: n.classroom_id,
+                    classroom_name: n.classrooms?.name || 'General',
+                    created_at: n.created_at
+                })));
+            }
+            setShowNoteModal(false);
+            setNoteForm({ id: '', title: '', content: '', color: 'yellow', classroom_id: '' });
+        } catch (err) {
+            console.error('Error saving note:', err);
+            alert('Failed to save note.');
+        } finally {
+            setIsSavingNote(false);
+        }
+    };
+
+    const handleDeleteNote = async (noteId: string) => {
+        if (!confirm('Are you sure you want to delete this note?')) return;
+        try {
+            const { error } = await supabaseAuth
+                .from('class_notes')
+                .delete()
+                .eq('id', noteId);
+            if (error) throw error;
+
+            setNotes(prev => prev.filter(n => n.id !== noteId));
+        } catch (err) {
+            console.error('Error deleting note:', err);
+            alert('Failed to delete note.');
+        }
+    };
+
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/');
@@ -456,28 +692,28 @@ export default function TeacherDashboard() {
                         {/* Stats Section */}
                         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {[
-                                { label: 'Total Students', value: stats.totalStudents, icon: 'person', color: 'blue', status: 'Live' },
-                                { label: 'Active Classrooms', value: stats.activeClassrooms, icon: 'meeting_room', color: 'amber', status: 'Active' },
-                                { label: 'Submissions', value: stats.pendingSubmissions, icon: 'assignment_late', color: 'purple', status: 'Pending' },
-                                { label: "Today's Classes", value: stats.todayClasses, icon: 'schedule', color: 'rose', status: 'Today' }
+                                { label: 'Total Students', value: stats.totalStudents, icon: 'person', color: 'blue', status: 'Live', href: '/teacher-dashboard/students' },
+                                { label: 'Active Classrooms', value: stats.activeClassrooms, icon: 'meeting_room', color: 'amber', status: 'Active', href: '/teacher-dashboard/classrooms' },
+                                { label: 'Pending Submissions', value: stats.pendingSubmissions, icon: 'assignment_late', color: 'purple', status: 'Review', href: '/teacher-dashboard/submissions' },
+                                { label: 'Fees Collection (Month)', value: `₹${feesStats.collectedThisMonth.toLocaleString('en-IN')}`, icon: 'payments', color: 'emerald', status: feesStats.dueStudentsCount > 0 ? `${feesStats.dueStudentsCount} Due` : 'Paid', href: '/teacher-dashboard/fees' }
                             ].map((stat, i) => (
-                                <div key={i} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-transform hover:scale-[1.02]">
+                                <Link key={i} href={stat.href} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:scale-[1.02] hover:shadow-md block">
                                     <div className="flex items-center justify-between mb-4">
-                                        <div className={`p-2 bg-${stat.color}-50 dark:bg-${stat.color}-900/20 text-${stat.color}-600 rounded-lg`}>
+                                        <div className={`p-2 bg-${stat.color === 'emerald' ? 'emerald-50 dark:bg-emerald-950/20 text-emerald-600' : `${stat.color}-50 dark:bg-${stat.color}-900/20 text-${stat.color}-600`} rounded-lg`}>
                                             <span className="material-symbols-outlined">{stat.icon}</span>
                                         </div>
                                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                                            stat.status === 'Live' ? 'text-emerald-600 bg-emerald-50' : 
-                                            stat.status === 'Active' ? 'text-amber-600 bg-amber-50' : 
-                                            stat.status === 'Pending' ? 'text-purple-600 bg-purple-50' : 
-                                            'text-slate-500 bg-slate-50'
+                                            stat.label === 'Total Students' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 
+                                            stat.label === 'Active Classrooms' ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' : 
+                                            stat.label === 'Pending Submissions' ? 'text-purple-600 bg-purple-50 dark:bg-purple-900/20' : 
+                                            feesStats.dueStudentsCount > 0 ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 animate-pulse' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20'
                                         }`}>
                                             {stat.status}
                                         </span>
                                     </div>
                                     <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">{stat.label}</p>
                                     <h3 className="text-2xl font-bold mt-1">{stat.value}</h3>
-                                </div>
+                                </Link>
                             ))}
                         </section>
 
@@ -625,13 +861,172 @@ export default function TeacherDashboard() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* 2-Column Grid: Notebook & Student Inquiries */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {/* Personal Idea Notebook */}
+                                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[480px]">
+                                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20">
+                                            <div className="flex items-center gap-2">
+                                                <StickyNote className="w-5 h-5 text-[#ecb613]" />
+                                                <h3 className="font-bold text-lg">Personal Idea Notebook</h3>
+                                            </div>
+                                            <button 
+                                                onClick={() => {
+                                                    setNoteForm({ id: '', title: '', content: '', color: 'yellow', classroom_id: classrooms[0]?.id || '' });
+                                                    setShowNoteModal(true);
+                                                }}
+                                                className="px-3 py-1.5 flex items-center gap-1 bg-[#ecb613]/10 hover:bg-[#ecb613]/20 text-[#ecb613] rounded-lg transition-colors text-xs font-bold"
+                                            >
+                                                <Plus size={14} /> Add Note
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-slate-900/10">
+                                            {notesLoading ? (
+                                                <div className="flex flex-col items-center justify-center h-full space-y-2">
+                                                    <Loader2 className="w-6 h-6 animate-spin text-[#ecb613]" />
+                                                    <p className="text-xs text-slate-400">Loading your ideas...</p>
+                                                </div>
+                                            ) : notes.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                                                    <Lightbulb className="w-8 h-8 text-slate-300 mb-2 animate-bounce" />
+                                                    <p className="text-sm font-semibold text-slate-500">Your notebook is empty</p>
+                                                    <p className="text-xs text-slate-400 max-w-[240px] mt-1 leading-relaxed">
+                                                        Jot down class structures, concert plans, or teaching ideas.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                notes.map(note => {
+                                                    let colorClasses = 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/30 text-amber-950 dark:text-amber-200';
+                                                    if (note.color === 'blue') colorClasses = 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900/30 text-blue-950 dark:text-blue-200';
+                                                    if (note.color === 'green') colorClasses = 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30 text-emerald-950 dark:text-emerald-200';
+                                                    if (note.color === 'pink') colorClasses = 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30 text-rose-950 dark:text-rose-200';
+                                                    
+                                                    return (
+                                                        <div key={note.id} className={`p-4 rounded-xl border shadow-xs transition-all hover:shadow-sm ${colorClasses}`}>
+                                                            <div className="flex justify-between items-start">
+                                                                <h4 className="font-bold text-sm leading-tight">{note.title}</h4>
+                                                                <div className="flex items-center gap-1.5 ml-2">
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            setNoteForm({
+                                                                                id: note.id,
+                                                                                title: note.title,
+                                                                                content: note.content,
+                                                                                color: note.color,
+                                                                                classroom_id: note.classroom_id
+                                                                            });
+                                                                            setShowNoteModal(true);
+                                                                        }} 
+                                                                        className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded transition-colors text-slate-600 dark:text-slate-400"
+                                                                        title="Edit Note"
+                                                                    >
+                                                                        <Edit size={12} />
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => handleDeleteNote(note.id)} 
+                                                                        className="p-1 hover:bg-red-500/10 hover:text-red-500 rounded transition-colors text-slate-600 dark:text-slate-400"
+                                                                        title="Delete Note"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-xs mt-2 whitespace-pre-line leading-relaxed opacity-90">{note.content}</p>
+                                                            <div className="flex items-center justify-between border-t border-black/5 dark:border-white/5 mt-3 pt-2 text-[9px] font-semibold uppercase tracking-wider opacity-75">
+                                                                <span>Class: {note.classroom_name}</span>
+                                                                <span>{new Date(note.created_at).toLocaleDateString()}</span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Student Messages / Website Inquiries */}
+                                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[480px]">
+                                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20">
+                                            <div className="flex items-center gap-2">
+                                                <MessageSquare className="w-5 h-5 text-[#ecb613]" />
+                                                <h3 className="font-bold text-lg">Student Inquiries & Messages</h3>
+                                            </div>
+                                            <Link className="text-xs font-bold text-[#ecb613] hover:underline" href="/teacher-dashboard/messages">Compose Reply</Link>
+                                        </div>
+                                        
+                                        <div className="p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-slate-900/10">
+                                            {inquiriesLoading ? (
+                                                <div className="flex flex-col items-center justify-center h-full space-y-2">
+                                                    <Loader2 className="w-6 h-6 animate-spin text-[#ecb613]" />
+                                                    <p className="text-xs text-slate-400">Loading student messages...</p>
+                                                </div>
+                                            ) : inquiries.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                                                    <MessageSquare className="w-8 h-8 text-slate-300 mb-2 animate-pulse" />
+                                                    <p className="text-sm font-semibold text-slate-500">No student messages</p>
+                                                    <p className="text-xs text-slate-400 max-w-[240px] mt-1 leading-relaxed">
+                                                        New inquiries from the website contact form will appear here.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                inquiries.map(inq => {
+                                                    const whatsappText = encodeURIComponent(`Hi ${inq.name}, thank you for contacting Krishna Flute Academy! This is Sri Krishna Gopal Bhaumik. I received your inquiry about the ${inq.course || 'Beginner Course'}.`);
+                                                    const cleanPhone = (inq.phone || '').replace(/[^0-9]/g, '');
+                                                    const whatsappUrl = `https://wa.me/${cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone}?text=${whatsappText}`;
+                                                    
+                                                    return (
+                                                        <div key={inq.id} className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-2 hover:border-slate-200 dark:hover:border-slate-600 transition-colors">
+                                                            <div className="flex justify-between items-start">
+                                                                <div>
+                                                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white leading-tight">{inq.name}</h4>
+                                                                    {inq.course && (
+                                                                        <span className="inline-block px-2 py-0.5 mt-1 bg-yellow-50 dark:bg-yellow-950/20 text-[#a15912] dark:text-yellow-400 rounded-md text-[9px] font-bold uppercase border border-yellow-100 dark:border-yellow-900/30">
+                                                                            {inq.course}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-[10px] text-slate-400 font-semibold">
+                                                                    {inq.created_at ? new Date(inq.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Recent'}
+                                                                </span>
+                                                            </div>
+                                                            {inq.message ? (
+                                                                <p className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50/50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-100/50 dark:border-slate-800/50 italic leading-relaxed whitespace-pre-line">
+                                                                    "{inq.message}"
+                                                                </p>
+                                                            ) : (
+                                                                <p className="text-xs text-slate-400 italic">No custom message provided.</p>
+                                                            )}
+                                                            <div className="flex items-center justify-between border-t border-slate-50 dark:border-slate-700/50 pt-2 mt-2">
+                                                                <div className="flex flex-col text-[10px] text-slate-500">
+                                                                    {inq.email && <a href={`mailto:${inq.email}`} className="hover:text-[#ecb613] hover:underline font-medium truncate max-w-[150px]">{inq.email}</a>}
+                                                                    {inq.phone && <a href={`tel:${inq.phone}`} className="hover:text-[#ecb613] hover:underline font-bold mt-0.5">{inq.phone}</a>}
+                                                                </div>
+                                                                {inq.phone && (
+                                                                    <a 
+                                                                        href={whatsappUrl} 
+                                                                        target="_blank" 
+                                                                        rel="noopener noreferrer" 
+                                                                        className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm shadow-emerald-500/10"
+                                                                    >
+                                                                        Chat via WhatsApp
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </section>
 
                             {/* Sidebar: Upcoming Classes & Tasks */}
                             <section className="space-y-8">
                                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                                     <div className="p-6 border-b border-slate-200 dark:border-slate-800">
-                                        <h3 className="font-bold text-lg">Upcoming Classes</h3>
+                                        <h3 className="font-bold text-lg">Today's Classes</h3>
                                         <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-semibold">
                                             {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                                         </p>
@@ -660,7 +1055,7 @@ export default function TeacherDashboard() {
                                         ))}
                                         {upcomingClasses.length === 0 && (
                                             <div className="text-center py-6">
-                                                <p className="text-slate-500 text-sm">No upcoming classes today.</p>
+                                                <p className="text-slate-500 text-sm">No classes scheduled for today.</p>
                                                  <Link href="/teacher-dashboard/classrooms" className="text-xs text-[#ecb613] font-bold mt-2 inline-block hover:underline">Manage Classrooms</Link>
                                             </div>
                                         )}
@@ -687,6 +1082,30 @@ export default function TeacherDashboard() {
                                                     <ArrowRight className="w-3 h-3" />
                                                 </Link>
                                             </div>
+
+                                            {/* Forgotten Attendance List */}
+                                            {forgottenClasses.length > 0 && (
+                                                <div className="space-y-2 mt-4">
+                                                    <p className="text-xs font-bold text-teal-100/70 uppercase tracking-wider">Forgot Attendance ({forgottenClasses.length})</p>
+                                                    <div className="max-h-[180px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                                        {forgottenClasses.map((item, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between bg-black/20 p-3 rounded-lg border border-white/5 text-xs">
+                                                                <div className="truncate pr-2">
+                                                                    <p className="font-bold truncate">{item.classroom_name}</p>
+                                                                    <p className="text-[10px] text-teal-100/60 mt-0.5">{item.dayName}</p>
+                                                                </div>
+                                                                <Link 
+                                                                    href={`/teacher-dashboard/attendance?date=${item.date}&classId=${item.classroom_id}`}
+                                                                    className="bg-[#ecb613] hover:bg-white text-slate-900 px-2.5 py-1 rounded font-bold transition-all flex items-center gap-1 flex-shrink-0"
+                                                                >
+                                                                    Mark
+                                                                    <ArrowRight className="w-2.5 h-2.5" />
+                                                                </Link>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="mt-8 pt-6 border-t border-white/10">
                                             <div className="flex items-center gap-3 mb-3">
@@ -879,6 +1298,85 @@ export default function TeacherDashboard() {
                         >
                             Create Temporary Class
                         </button>
+                    </div>
+                </>
+            )}
+            {/* Note Editor Modal */}
+            {showNoteModal && (
+                <>
+                    <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => setShowNoteModal(false)} />
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="font-bold text-lg">{noteForm.id ? 'Edit Idea / Note' : 'Add New Idea / Note'}</h3>
+                            <button onClick={() => setShowNoteModal(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveNote} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Note Title</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={noteForm.title}
+                                    onChange={e => setNoteForm({ ...noteForm, title: e.target.value })}
+                                    placeholder="e.g. Concert preparation ideas"
+                                    className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Note Content</label>
+                                <textarea
+                                    value={noteForm.content}
+                                    onChange={e => setNoteForm({ ...noteForm, content: e.target.value })}
+                                    placeholder="Compose your thoughts, plans, or guidelines..."
+                                    rows={4}
+                                    className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none resize-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Select Classroom</label>
+                                <select
+                                    required
+                                    value={noteForm.classroom_id}
+                                    onChange={e => setNoteForm({ ...noteForm, classroom_id: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                >
+                                    <option value="" disabled>-- Select Classroom --</option>
+                                    {classrooms.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Color Theme</label>
+                                <div className="flex gap-4">
+                                    {[
+                                        { name: 'yellow', colorClass: 'bg-yellow-400 border-yellow-500' },
+                                        { name: 'blue', colorClass: 'bg-blue-400 border-blue-500' },
+                                        { name: 'green', colorClass: 'bg-emerald-400 border-emerald-500' },
+                                        { name: 'pink', colorClass: 'bg-pink-400 border-pink-500' }
+                                    ].map(colorOpt => (
+                                        <button
+                                            key={colorOpt.name}
+                                            type="button"
+                                            onClick={() => setNoteForm({ ...noteForm, color: colorOpt.name })}
+                                            className={`size-8 rounded-full border-2 transition-all ${colorOpt.colorClass} ${
+                                                noteForm.color === colorOpt.name ? 'ring-2 ring-slate-800 dark:ring-white scale-110 shadow-md' : 'opacity-80'
+                                            }`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={isSavingNote}
+                                className="mt-6 w-full py-3 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-bold rounded-xl transition-all shadow-lg shadow-[#ecb613]/20 text-sm flex items-center justify-center gap-2"
+                            >
+                                {isSavingNote && <Loader2 className="w-4 h-4 animate-spin" />}
+                                {noteForm.id ? 'Update Note' : 'Save Note'}
+                            </button>
+                        </form>
                     </div>
                 </>
             )}
