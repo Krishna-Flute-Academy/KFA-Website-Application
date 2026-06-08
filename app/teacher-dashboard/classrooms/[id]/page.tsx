@@ -493,6 +493,13 @@ export default function ClassroomDashboardPage({
 
     // ── Attendance Tab State ──────────────────────────────────────────────────
     const [attendanceDate, setAttendanceDate] = useState<string>(new Date().toISOString().split('T')[0]);
+
+    // Sync sessionDate from props to attendanceDate state (so overrides resolve correctly in meeting mode)
+    useEffect(() => {
+        if (sessionDate) {
+            setAttendanceDate(sessionDate);
+        }
+    }, [sessionDate]);
     const [attendanceRecords, setAttendanceRecords] = useState<Record<string, 'present' | 'absent' | 'late' | 'excused'>>({});
     const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [isSavingAttendanceMap, setIsSavingAttendanceMap] = useState<Record<string, boolean>>({});
@@ -569,6 +576,7 @@ export default function ClassroomDashboardPage({
 
                 // 4. Fetch Enrolled Students
                 let roster: any[] = [];
+                let overridesData: any[] = [];
                 if (classroomData.type === 'temporary') {
                     const { data: tempClassData } = await supabaseAuth
                         .from('temporary_classes')
@@ -647,7 +655,7 @@ export default function ClassroomDashboardPage({
 
                 // 5b. Fetch Temporary Session Overrides
                 try {
-                    const { data: overridesData } = await supabaseAuth
+                    const { data } = await supabaseAuth
                         .from('session_student_overrides')
                         .select(`
                             id,
@@ -659,7 +667,8 @@ export default function ClassroomDashboardPage({
                         .eq('target_classroom_id', classroomId)
                         .order('override_date', { ascending: true });
                     
-                    setSessionOverrides(overridesData || []);
+                    overridesData = data || [];
+                    setSessionOverrides(overridesData);
                 } catch (e) {
                     console.error('Failed to load session overrides:', e);
                 }
@@ -733,10 +742,22 @@ export default function ClassroomDashboardPage({
                 setCourseLessons(dbLessonsData);
 
                 try {
-                    const { data: progressData, error: progressError } = await supabaseAuth
+                    const studentIds = [
+                        ...formattedRoster.map(s => s.student_id),
+                        ...(overridesData || []).map((o: any) => o.student_id)
+                    ];
+                    
+                    let progressQuery = supabaseAuth
                         .from('student_topic_progress')
-                        .select('*')
-                        .eq('classroom_id', classroomId);
+                        .select('*');
+                    
+                    if (studentIds.length > 0) {
+                        progressQuery = progressQuery.in('student_id', studentIds);
+                    } else {
+                        progressQuery = progressQuery.eq('classroom_id', classroomId);
+                    }
+
+                    const { data: progressData, error: progressError } = await progressQuery;
                     if (progressError) {
                         console.warn('Could not fetch student_topic_progress:', progressError);
                         if (progressError.code === 'PGRST205' || progressError.message?.includes('schema cache') || progressError.message?.includes('does not exist')) {
@@ -1953,10 +1974,19 @@ export default function ClassroomDashboardPage({
                     return [...filtered, fallbackRow];
                 });
             } else {
-                const { data: progressData, error: fetchError } = await supabaseAuth
+                const studentIds = [
+                    ...students.map(s => s.student_id),
+                    ...sessionOverrides.map(o => o.student_id)
+                ];
+                let progressQuery = supabaseAuth
                     .from('student_topic_progress')
-                    .select('*')
-                    .eq('classroom_id', classroomId);
+                    .select('*');
+                if (studentIds.length > 0) {
+                    progressQuery = progressQuery.in('student_id', studentIds);
+                } else {
+                    progressQuery = progressQuery.eq('classroom_id', classroomId);
+                }
+                const { data: progressData, error: fetchError } = await progressQuery;
                 if (fetchError) throw fetchError;
                 setStudentProgress(progressData || []);
             }
@@ -1978,8 +2008,8 @@ export default function ClassroomDashboardPage({
         
         setIsUpdatingProgress(lessonId);
 
-        // If there are no students enrolled, write in-memory with 'classwide_default' key
-        if (students.length === 0) {
+        // If there are no students enrolled or attending, write in-memory with 'classwide_default' key
+        if (activeAttendanceRoster.length === 0) {
             console.log('[Pacing] Classroom is empty, updating pacing in-memory only.');
             const fallbackRow = {
                 student_id: 'classwide_default',
@@ -1998,7 +2028,7 @@ export default function ClassroomDashboardPage({
             return;
         }
 
-        const rows = students.map(s => {
+        const rows = activeAttendanceRoster.map(s => {
             const existingRow = studentProgress.find(p => p.student_id === s.student_id && p.lesson_id === lessonId);
             const existingStatus = existingRow ? existingRow.status : 'locked';
             
@@ -2032,10 +2062,19 @@ export default function ClassroomDashboardPage({
                     return [...filtered, ...rows];
                 });
             } else {
-                const { data: progressData, error: fetchError } = await supabaseAuth
+                const studentIds = [
+                    ...students.map(s => s.student_id),
+                    ...sessionOverrides.map(o => o.student_id)
+                ];
+                let progressQuery = supabaseAuth
                     .from('student_topic_progress')
-                    .select('*')
-                    .eq('classroom_id', classroomId);
+                    .select('*');
+                if (studentIds.length > 0) {
+                    progressQuery = progressQuery.in('student_id', studentIds);
+                } else {
+                    progressQuery = progressQuery.eq('classroom_id', classroomId);
+                }
+                const { data: progressData, error: fetchError } = await progressQuery;
                 if (fetchError) throw fetchError;
                 setStudentProgress(progressData || []);
             }
@@ -2059,7 +2098,7 @@ export default function ClassroomDashboardPage({
             if (allocationTargetType === 'classwide') {
                 await handleToggleTopicLockClasswide(lessonId, allocationStatus);
             } else {
-                if (students.length === 0) {
+                if (activeAttendanceRoster.length === 0) {
                     // Empty classroom in-memory fallback
                     const fallbackRow = {
                         student_id: 'classwide_default',
@@ -2081,9 +2120,9 @@ export default function ClassroomDashboardPage({
 
                 const targetStudentIds = (curriculumTab === 'individual' && selectedStudentForCurriculum)
                     ? [selectedStudentForCurriculum.student_id]
-                    : students.map(s => s.student_id);
+                    : activeAttendanceRoster.map(s => s.student_id);
 
-                const rows = students
+                const rows = activeAttendanceRoster
                     .filter(s => targetStudentIds.includes(s.student_id))
                     .map(s => {
                         const isSelected = allocationSelectedStudents.includes(s.student_id);
@@ -2141,10 +2180,19 @@ export default function ClassroomDashboardPage({
                         return [...filtered, ...rows];
                     });
                 } else {
-                    const { data: progressData, error: fetchError } = await supabaseAuth
+                    const studentIds = [
+                        ...students.map(s => s.student_id),
+                        ...sessionOverrides.map(o => o.student_id)
+                    ];
+                    let progressQuery = supabaseAuth
                         .from('student_topic_progress')
-                        .select('*')
-                        .eq('classroom_id', classroomId);
+                        .select('*');
+                    if (studentIds.length > 0) {
+                        progressQuery = progressQuery.in('student_id', studentIds);
+                    } else {
+                        progressQuery = progressQuery.eq('classroom_id', classroomId);
+                    }
+                    const { data: progressData, error: fetchError } = await progressQuery;
                     if (fetchError) throw fetchError;
                     setStudentProgress(progressData || []);
                 }
@@ -3353,14 +3401,14 @@ export default function ClassroomDashboardPage({
                                         <button
                                             onClick={() => {
                                                 setCurriculumTab('individual');
-                                                if (!selectedStudentForCurriculum && students.length > 0) {
-                                                    setSelectedStudentForCurriculum(students[0]);
+                                                if (!selectedStudentForCurriculum && activeAttendanceRoster.length > 0) {
+                                                    setSelectedStudentForCurriculum(activeAttendanceRoster[0]);
                                                 }
                                             }}
                                             className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${
                                                 curriculumTab === 'individual' 
                                                     ? 'border-[#ecb613] text-[#ecb613]' 
-                                                    : 'border-transparent text-slate-400 hover:text-slate-605 dark:text-slate-500 dark:hover:text-slate-400'
+                                                    : 'border-transparent text-slate-400 hover:text-slate-655 dark:text-slate-500 dark:hover:text-slate-400'
                                             }`}
                                         >
                                             Individual Override Pacing
@@ -3373,10 +3421,10 @@ export default function ClassroomDashboardPage({
                             {curriculumTab === 'individual' && (
                                 <div className="flex items-center gap-3 overflow-x-auto py-4 px-4 scrollbar-hide border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-3xl mb-8 shadow-sm">
                                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider shrink-0">Select Student:</span>
-                                    {students.length === 0 ? (
-                                        <p className="text-xs text-slate-400 italic">No enrolled students in this classroom.</p>
+                                    {activeAttendanceRoster.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic">No students in this classroom.</p>
                                     ) : (
-                                        students.map(s => {
+                                        activeAttendanceRoster.map(s => {
                                             const isSelected = selectedStudentForCurriculum?.student_id === s.student_id;
                                             return (
                                                 <button
