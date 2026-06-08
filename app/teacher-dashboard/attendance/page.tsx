@@ -223,8 +223,7 @@ export default function AttendancePage() {
         const ampm = hours >= 12 ? 'PM' : 'AM';
         hours = hours % 12;
         hours = hours ? hours : 12;
-        const hStr = hours.toString().padStart(2, '0');
-        return `${hStr}:${m} ${ampm}`;
+        return `${hours}:${m} ${ampm}`;
     }
 
     // Authenticate & Load initial meta-data

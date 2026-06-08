@@ -2398,8 +2398,7 @@ export default function ClassroomDashboardPage({
         const ampm = hours >= 12 ? 'PM' : 'AM';
         hours = hours % 12;
         hours = hours ? hours : 12;
-        const hStr = hours.toString().padStart(2, '0');
-        return `${hStr}:${m} ${ampm}`;
+        return `${hours}:${m} ${ampm}`;
     };
 
     const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
