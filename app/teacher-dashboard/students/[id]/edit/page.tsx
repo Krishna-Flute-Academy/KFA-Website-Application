@@ -33,7 +33,11 @@ export default function EditStudentPage() {
         level: 'beginner',
         profilePicUrl: '',
         notes: '',
-        status: 'active'
+        status: 'active',
+        feesBasis: 'monthly',
+        feesAmount: '0',
+        feesCollectionDate: '',
+        feesClassesPaid: '0'
     });
 
     useEffect(() => {
@@ -85,6 +89,10 @@ export default function EditStudentPage() {
                         level,
                         profile_pic_url,
                         notes,
+                        fees_basis,
+                        fees_amount,
+                        fees_collection_date,
+                        fees_classes_paid,
                         classroom_students(classroom_id)
                     `)
                     .eq('id', studentId)
@@ -97,6 +105,15 @@ export default function EditStudentPage() {
                     return;
                 }
 
+                let baseCollectionDateStr = '';
+                if (student.fees_collection_date) {
+                    const dateObj = new Date(student.fees_collection_date);
+                    dateObj.setDate(dateObj.getDate() - 30);
+                    baseCollectionDateStr = dateObj.toISOString().split('T')[0];
+                } else if (student.join_date) {
+                    baseCollectionDateStr = student.join_date.split('T')[0];
+                }
+
                 setFormData({
                     fullName: student.name || '',
                     email: student.email || '',
@@ -106,7 +123,11 @@ export default function EditStudentPage() {
                     level: student.level || 'beginner',
                     profilePicUrl: student.profile_pic_url || '',
                     notes: student.notes || '',
-                    status: student.status || 'active'
+                    status: student.status || 'active',
+                    feesBasis: student.fees_basis || 'monthly',
+                    feesAmount: String(student.fees_amount || 0),
+                    feesCollectionDate: baseCollectionDateStr,
+                    feesClassesPaid: String(student.fees_classes_paid || 0)
                 });
 
             } catch (err) {
@@ -125,6 +146,14 @@ export default function EditStudentPage() {
 
         setSubmitting(true);
         try {
+            // Calculate Next Fees Collection Date as base fees collection date + 30 days
+            let finalCollectionDate = null;
+            if (formData.feesCollectionDate) {
+                const dateObj = new Date(formData.feesCollectionDate);
+                dateObj.setDate(dateObj.getDate() + 30);
+                finalCollectionDate = dateObj.toISOString().split('T')[0];
+            }
+
             // Step 1: Update user in public.users
             const { error: userError } = await supabaseAuth
                 .from('users')
@@ -136,7 +165,11 @@ export default function EditStudentPage() {
                     join_date: formData.startDate,
                     level: formData.level,
                     profile_pic_url: formData.profilePicUrl,
-                    notes: formData.notes
+                    notes: formData.notes,
+                    fees_basis: formData.feesBasis,
+                    fees_amount: Number(formData.feesAmount) || 0,
+                    fees_collection_date: finalCollectionDate,
+                    fees_classes_paid: Number(formData.feesClassesPaid) || 0
                 })
                 .eq('id', studentId);
 
@@ -312,7 +345,61 @@ export default function EditStudentPage() {
                                                 type="date"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 value={formData.startDate}
-                                                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                                                onChange={(e) => {
+                                                    const newDate = e.target.value;
+                                                    setFormData({
+                                                        ...formData,
+                                                        startDate: newDate,
+                                                        feesCollectionDate: newDate
+                                                    });
+                                                }}
+                                            />
+                                        </div>
+                                        {/* Fees Configuration */}
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Fees Payment Basis</label>
+                                            <div className="relative">
+                                                <select
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
+                                                    value={formData.feesBasis}
+                                                    onChange={(e) => setFormData({ ...formData, feesBasis: e.target.value })}
+                                                >
+                                                    <option value="monthly">Monthly Subscription (4 classes)</option>
+                                                    <option value="class">Class-basis (Advance Booking)</option>
+                                                </select>
+                                                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Fees Amount</label>
+                                            <input
+                                                required
+                                                type="number"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                placeholder="e.g. 2000"
+                                                value={formData.feesAmount}
+                                                onChange={(e) => setFormData({ ...formData, feesAmount: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Fees Collection Date</label>
+                                            <input
+                                                required
+                                                type="date"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                value={formData.feesCollectionDate}
+                                                onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Prepaid Classes Balance</label>
+                                            <input
+                                                required
+                                                type="number"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                placeholder="e.g. 4"
+                                                value={formData.feesClassesPaid}
+                                                onChange={(e) => setFormData({ ...formData, feesClassesPaid: e.target.value })}
                                             />
                                         </div>
                                         <div className="space-y-2 md:col-span-2">

@@ -29,7 +29,11 @@ export default function AddStudentPage() {
         batchId: '',
         level: 'beginner',
         profilePicUrl: '',
-        notes: ''
+        notes: '',
+        feesBasis: 'monthly',
+        feesAmount: '0',
+        feesCollectionDate: new Date().toISOString().split('T')[0],
+        feesClassesPaid: '4'
     });
 
     useEffect(() => {
@@ -84,6 +88,14 @@ export default function AddStudentPage() {
 
         setSubmitting(true);
         try {
+            // Calculate Next Fees Collection Date as base fees collection date + 30 days
+            let finalCollectionDate = null;
+            if (formData.feesCollectionDate) {
+                const dateObj = new Date(formData.feesCollectionDate);
+                dateObj.setDate(dateObj.getDate() + 30);
+                finalCollectionDate = dateObj.toISOString().split('T')[0];
+            }
+
             // Step 1: Create user in public.users with all student details
             // Level, Notes, Join Date, and Teacher ID are now directly in public.users
             const { data: userData, error: userError } = await supabaseAuth
@@ -98,7 +110,11 @@ export default function AddStudentPage() {
                     join_date: formData.startDate,
                     level: formData.level,
                     profile_pic_url: formData.profilePicUrl,
-                    notes: formData.notes
+                    notes: formData.notes,
+                    fees_basis: formData.feesBasis,
+                    fees_amount: Number(formData.feesAmount) || 0,
+                    fees_collection_date: finalCollectionDate,
+                    fees_classes_paid: Number(formData.feesClassesPaid) || 0
                 }])
                 .select()
                 .single();
@@ -215,7 +231,14 @@ export default function AddStudentPage() {
                                                 type="date"
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                                 value={formData.startDate}
-                                                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                                                onChange={(e) => {
+                                                    const newDate = e.target.value;
+                                                    setFormData({
+                                                        ...formData,
+                                                        startDate: newDate,
+                                                        feesCollectionDate: newDate
+                                                    });
+                                                }}
                                             />
                                         </div>
                                         <div className="space-y-2">
@@ -248,6 +271,53 @@ export default function AddStudentPage() {
                                                 </select>
                                                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                             </div>
+                                        </div>
+                                        {/* Fees Configuration */}
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Fees Payment Basis</label>
+                                            <div className="relative">
+                                                <select
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
+                                                    value={formData.feesBasis}
+                                                    onChange={(e) => setFormData({ ...formData, feesBasis: e.target.value })}
+                                                >
+                                                    <option value="monthly">Monthly Subscription (4 classes)</option>
+                                                    <option value="class">Class-basis (Advance Booking)</option>
+                                                </select>
+                                                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Fees Amount</label>
+                                            <input
+                                                required
+                                                type="number"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                placeholder="e.g. 2000"
+                                                value={formData.feesAmount}
+                                                onChange={(e) => setFormData({ ...formData, feesAmount: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Fees Collection Date</label>
+                                            <input
+                                                required
+                                                type="date"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                value={formData.feesCollectionDate}
+                                                onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Initial Prepaid Classes</label>
+                                            <input
+                                                required
+                                                type="number"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                placeholder="e.g. 4"
+                                                value={formData.feesClassesPaid}
+                                                onChange={(e) => setFormData({ ...formData, feesClassesPaid: e.target.value })}
+                                            />
                                         </div>
                                         <div className="space-y-2 md:col-span-2">
                                             <label className="text-sm font-bold text-slate-700 block">Profile Picture URL</label>

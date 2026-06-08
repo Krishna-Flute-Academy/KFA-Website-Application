@@ -52,6 +52,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         { name: 'Tasks', icon: 'assignment', href: '/teacher-dashboard/tasks' },
         { name: 'Inventory Library', icon: 'inventory_2', href: '/teacher-dashboard/inventory' },
         { name: 'Attendance', icon: 'calendar_today', href: '/teacher-dashboard/attendance' },
+        { name: 'Fees', icon: 'payments', href: '/teacher-dashboard/fees' },
         { name: 'Messages', icon: 'chat_bubble', href: '/teacher-dashboard/messages' },
         { name: 'Reports', icon: 'analytics', href: '/teacher-dashboard/reports' },
     ];
