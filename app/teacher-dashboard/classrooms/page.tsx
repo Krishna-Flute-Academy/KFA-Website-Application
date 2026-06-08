@@ -272,9 +272,9 @@ export default function ClassroomsPage() {
                 
                 const tempRoomsWithCounts = await Promise.all((tempRoomsData || []).map(async (room) => {
                     const { count } = await supabaseAuth
-                        .from('temporary_class_students')
+                        .from('session_student_overrides')
                         .select('*', { count: 'exact', head: true })
-                        .eq('temporary_class_id', room.id);
+                        .eq('target_classroom_id', room.classroom_id);
 
                     return {
                         id: room.id,

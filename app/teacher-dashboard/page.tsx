@@ -345,11 +345,12 @@ export default function TeacherDashboard() {
                     }));
 
                     results[evt.id] = [...enrolledList, ...overrideList];
-                } else if (evt.type === 'temporary' && evt.id) {
+                } else if (evt.type === 'temporary' && evt.classroom_id) {
                     const { data } = await supabaseAuth
-                        .from('temporary_class_students')
+                        .from('session_student_overrides')
                         .select('users!student_id(id, name, profile_pic_url)')
-                        .eq('temporary_class_id', evt.id);
+                        .eq('target_classroom_id', evt.classroom_id)
+                        .eq('override_date', dateStr);
                     if (data) {
                         results[evt.id] = (data as any[]).map(d => ({
                             id: d.users?.id || '',
@@ -401,12 +402,14 @@ export default function TeacherDashboard() {
             if (error) { console.error('Error creating temp class:', error); alert('Failed to create temporary class.'); return; }
             
             // Insert selected students
-            if (tempSelectedStudents.length > 0 && tempClassData) {
+            if (tempSelectedStudents.length > 0 && classroom) {
                 const studentInserts = tempSelectedStudents.map(studentId => ({
-                    temporary_class_id: tempClassData.id,
-                    student_id: studentId
+                    student_id: studentId,
+                    target_classroom_id: classroom.id,
+                    override_date: tempModalDate,
+                    reason: 'Temporary Class Session'
                 }));
-                await supabaseAuth.from('temporary_class_students').insert(studentInserts);
+                await supabaseAuth.from('session_student_overrides').insert(studentInserts);
             }
 
             // Refresh temp classes

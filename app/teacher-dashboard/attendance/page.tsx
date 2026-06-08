@@ -20,6 +20,7 @@ import {
     School,
     ArrowDown,
     CheckCircle,
+    Check,
     X,
     ChevronDown,
     ChevronUp,
@@ -118,8 +119,15 @@ export default function AttendancePage() {
     const [isSavingMakeup, setIsSavingMakeup] = useState(false);
     const [editingMakeupId, setEditingMakeupId] = useState<string | null>(null);
     const [excusedSuggestions, setExcusedSuggestions] = useState<any[]>([]);
+    const [completedMissedLogs, setCompletedMissedLogs] = useState<any[]>([]);
+    const [historyStudent, setHistoryStudent] = useState<any | null>(null);
+    const [studentHistoryLogs, setStudentHistoryLogs] = useState<any[]>([]);
+    const [studentRescheduleChains, setStudentRescheduleChains] = useState<any[]>([]);
+    const [activeHistoryTab, setActiveHistoryTab] = useState<'chains' | 'timeline'>('chains');
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
 
-    const formatLocalDateStr = useCallback((dateStr: string, includeYear = false) => {
+    const formatLocalDateStr = useCallback((dateStr: string, includeYear = false, locale = 'en-IN', options?: Intl.DateTimeFormatOptions) => {
         if (!dateStr) return '';
         const cleanDate = dateStr.split('T')[0].split(' ')[0];
         const parts = cleanDate.split('-');
@@ -128,7 +136,10 @@ export default function AttendancePage() {
         const month = parseInt(parts[1], 10) - 1;
         const day = parseInt(parts[2], 10);
         const d = new Date(year, month, day);
-        return d.toLocaleDateString('en-IN', { 
+        if (options) {
+            return d.toLocaleDateString(locale, options);
+        }
+        return d.toLocaleDateString(locale, { 
             day: 'numeric', 
             month: 'short', 
             ...(includeYear ? { year: 'numeric' } : {}) 
@@ -323,12 +334,11 @@ export default function AttendancePage() {
                         
                         total = (enrolledCount || 0) + (overrideCount || 0);
                     } else {
-                        const tempClass = temporaryClasses.find(tc => tc.classroom_id === batch.id || tc.id === batch.id);
-                        const tempId = tempClass?.id || batch.id;
                         const { count } = await supabaseAuth
-                            .from('temporary_class_students')
+                            .from('session_student_overrides')
                             .select('*', { count: 'exact', head: true })
-                            .eq('temporary_class_id', tempId);
+                            .eq('target_classroom_id', batch.id)
+                            .eq('override_date', selectedDate);
                         total = count || 0;
                     }
 
@@ -417,12 +427,11 @@ export default function AttendancePage() {
 
                     roster = [...permRoster, ...tempRoster];
                 } else {
-                    const tempClass = temporaryClasses.find(tc => tc.classroom_id === batchId || tc.id === batchId);
-                    const tempId = tempClass?.id || batchId;
                     const { data: tempStudents } = await supabaseAuth
-                        .from('temporary_class_students')
+                        .from('session_student_overrides')
                         .select('student_id, users!student_id(name, profile_pic_url)')
-                        .eq('temporary_class_id', tempId);
+                        .eq('target_classroom_id', batchId)
+                        .eq('override_date', selectedDate);
                     
                     roster = (tempStudents || []).map((row: any) => ({
                         id: row.student_id,
@@ -670,18 +679,32 @@ export default function AttendancePage() {
                 return;
             }
 
-            // 2. Fetch all student overrides (makeups) to match later
+            // 2. Fetch all student overrides (makeups) to match later (sorted chronologically)
             const { data: overridesData, error: overridesErr } = await supabaseAuth
                 .from('session_student_overrides')
                 .select('id, student_id, target_classroom_id, override_date, reason')
-                .in('student_id', studentIds);
+                .in('student_id', studentIds)
+                .order('override_date', { ascending: true });
 
             if (overridesErr) {
                 console.error('Error fetching overrides:', overridesErr);
             }
             setStudentOverrides(overridesData || []);
 
-            // 3. Fetch attendance logs where status is absent or excused
+            // 3. Fetch all attendance records of these students to check if they attended makeup classes
+            const { data: attendanceDataForMakeup } = await supabaseAuth
+                .from('attendance')
+                .select('student_id, classroom_id, date, status')
+                .in('student_id', studentIds);
+
+            const attendanceMap: Record<string, string> = {};
+            (attendanceDataForMakeup || []).forEach((r: any) => {
+                const cleanDate = r.date.split('T')[0].split(' ')[0];
+                const key = `${r.student_id}_${r.classroom_id}_${cleanDate}`;
+                attendanceMap[key] = r.status;
+            });
+
+            // 4. Fetch attendance logs where status is absent or excused
             const statuses = missedStatusFilter === 'all' ? ['absent', 'excused'] : [missedStatusFilter];
             const { data: logsData, error: logsErr } = await supabaseAuth
                 .from('attendance')
@@ -701,8 +724,32 @@ export default function AttendancePage() {
 
             if (logsErr) throw logsErr;
 
-            // 4. Resolve classroom names
-            const resolved = await Promise.all((logsData || []).map(async (row: any) => {
+            // Filter out logs that are actually missed makeup classes (overrides)
+            // so they don't count as separate root missed classes.
+            const regularLogs = (logsData || []).filter((r: any) => {
+                const rDateClean = r.date.split('T')[0].split(' ')[0];
+                const isOverride = (overridesData || []).some((o: any) => {
+                    if (!o.override_date) return false;
+                    const oDateClean = o.override_date.split('T')[0].split(' ')[0];
+                    return o.student_id === r.student_id && 
+                           o.target_classroom_id === r.classroom_id && 
+                           oDateClean === rDateClean;
+                });
+                return !isOverride;
+            });
+
+            // Group by student_id to only keep the latest missed class for each student
+            const latestLogsByStudent: any[] = [];
+            const seenStudents = new Set();
+            regularLogs.forEach((log: any) => {
+                if (!seenStudents.has(log.student_id)) {
+                    seenStudents.add(log.student_id);
+                    latestLogsByStudent.push(log);
+                }
+            });
+
+            // 5. Resolve classroom names and check makeup completion status
+            const resolved = await Promise.all(latestLogsByStudent.map(async (row: any) => {
                 let name = classrooms.find(c => c.id === row.classroom_id)?.name;
                 let isTemp = false;
 
@@ -725,6 +772,69 @@ export default function AttendancePage() {
                     }
                 }
 
+                // Find matching scheduled makeup override
+                // Find matching scheduled makeup override (recursively trace chain)
+                const logDateClean = row.date.split('T')[0].split(' ')[0];
+                let initialMakeup = (overridesData || []).find((o: any) => {
+                    if (!o.override_date || !row.date) return false;
+                    const oDate = o.override_date.split('T')[0].split(' ')[0];
+                    
+                    // First try strict match with [MissedDate:YYYY-MM-DD] tag in reason
+                    if (o.reason && o.reason.includes(`[MissedDate:${logDateClean}]`)) {
+                        return o.student_id === row.student_id;
+                    }
+                    
+                    // Fallback to date order if no tag
+                    return o.student_id === row.student_id && oDate >= logDateClean;
+                });
+
+                let currentMakeup = initialMakeup;
+                let visited = new Set();
+                while (currentMakeup) {
+                    if (visited.has(currentMakeup.id)) break;
+                    visited.add(currentMakeup.id);
+                    
+                    const mDateClean = currentMakeup.override_date.split('T')[0].split(' ')[0];
+                    const key = `${row.student_id}_${currentMakeup.target_classroom_id}_${mDateClean}`;
+                    const attStatus = attendanceMap[key];
+                    
+                    if (attStatus === 'absent' || attStatus === 'excused') {
+                        // It was missed! Find if there is another override scheduled for this missed date
+                        const nextMakeup = (overridesData || []).find((o: any) => {
+                            if (!o.override_date) return false;
+                            const oDateClean = o.override_date.split('T')[0].split(' ')[0];
+                            if (o.reason && o.reason.includes(`[MissedDate:${mDateClean}]`)) {
+                                return o.student_id === row.student_id;
+                            }
+                            return o.student_id === row.student_id && oDateClean > mDateClean;
+                        });
+                        
+                        if (nextMakeup && nextMakeup.id !== currentMakeup.id) {
+                            currentMakeup = nextMakeup;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
+                // Check if this scheduled makeup is completed/success or missed
+                let isMakeupCompleted = false;
+                let isMakeupMissed = false;
+                let makeupAttendanceStatus = '';
+                if (currentMakeup) {
+                    const mDateClean = currentMakeup.override_date.split('T')[0].split(' ')[0];
+                    const key = `${row.student_id}_${currentMakeup.target_classroom_id}_${mDateClean}`;
+                    const attStatus = attendanceMap[key];
+                    if (attStatus === 'present' || attStatus === 'late') {
+                        isMakeupCompleted = true;
+                        makeupAttendanceStatus = attStatus;
+                    } else if (attStatus === 'absent' || attStatus === 'excused') {
+                        isMakeupMissed = true;
+                    }
+                }
+
                 return {
                     id: row.id,
                     date: row.date,
@@ -734,7 +844,11 @@ export default function AttendancePage() {
                     is_temporary: isTemp,
                     student_id: row.student_id,
                     student_name: row.users?.name || 'Unknown Student',
-                    student_profile_pic_url: row.users?.profile_pic_url
+                    student_profile_pic_url: row.users?.profile_pic_url,
+                    scheduledMakeup: currentMakeup,
+                    isMakeupCompleted,
+                    isMakeupMissed,
+                    makeupAttendanceStatus
                 };
             }));
 
@@ -745,7 +859,11 @@ export default function AttendancePage() {
                 finalLogs = resolved.filter(log => log.student_name.toLowerCase().includes(query));
             }
 
-            setMissedLogs(finalLogs);
+            const pending = finalLogs.filter(log => !log.isMakeupCompleted);
+            const completed = finalLogs.filter(log => log.isMakeupCompleted);
+
+            setMissedLogs(pending);
+            setCompletedMissedLogs(completed);
         } catch (err) {
             console.error('Error fetching missed classes report:', err);
         } finally {
@@ -758,6 +876,226 @@ export default function AttendancePage() {
             fetchMissedReport();
         }
     }, [mode, fromDate, toDate, missedStatusFilter, missedSearchQuery, fetchMissedReport]);
+
+    const fetchStudentHistory = async (studentId: string, studentName: string) => {
+        setHistoryStudent({ id: studentId, name: studentName });
+        setShowHistoryModal(true);
+        setHistoryLoading(true);
+        try {
+            // 1. Fetch all attendance logs for this student
+            const { data: attLogs, error: attErr } = await supabaseAuth
+                .from('attendance')
+                .select('id, date, status, classroom_id')
+                .eq('student_id', studentId)
+                .order('date', { ascending: true });
+
+            if (attErr) throw attErr;
+
+            // 2. Fetch all overrides for this student
+            const { data: overrides, error: overErr } = await supabaseAuth
+                .from('session_student_overrides')
+                .select('id, target_classroom_id, override_date, reason')
+                .eq('student_id', studentId)
+                .order('override_date', { ascending: true });
+
+            if (overErr) throw overErr;
+
+            // Build chronological timeline of events
+            const timelineEvents: any[] = [];
+
+            // Helper to get classroom name
+            const getClassroomName = (cId: string) => {
+                let name = classrooms.find(c => c.id === cId)?.name;
+                if (!name) {
+                    const temp = temporaryClasses.find(tc => tc.id === cId);
+                    if (temp) name = temp.title;
+                }
+                return name || 'Unknown Classroom';
+            };
+
+            const overrideDates = new Set((overrides || []).map(o => o.override_date.split('T')[0].split(' ')[0]));
+
+            // Add missed classes (absent/excused records from regular classes)
+            (attLogs || []).forEach((att: any) => {
+                const attDate = att.date.split('T')[0].split(' ')[0];
+                const isOverrideDate = overrideDates.has(attDate);
+                const className = getClassroomName(att.classroom_id);
+
+                if (isOverrideDate) {
+                    // This is attendance marked for a makeup class
+                    timelineEvents.push({
+                        type: 'makeup_attendance',
+                        date: attDate,
+                        status: att.status,
+                        classroomId: att.classroom_id,
+                        classroomName: className,
+                        details: `Attended makeup session in ${className}. Status: ${att.status.toUpperCase()}`
+                    });
+                } else if (att.status === 'absent' || att.status === 'excused') {
+                    // This is a regular missed class
+                    timelineEvents.push({
+                        type: 'missed_class',
+                        date: attDate,
+                        status: att.status,
+                        classroomId: att.classroom_id,
+                        classroomName: className,
+                        details: `Missed regular class ${className}. Status: ${att.status.toUpperCase()}`
+                    });
+                } else {
+                    // Regular present attendance
+                    timelineEvents.push({
+                        type: 'regular_attendance',
+                        date: attDate,
+                        status: att.status,
+                        classroomId: att.classroom_id,
+                        classroomName: className,
+                        details: `Attended regular class ${className}. Status: ${att.status.toUpperCase()}`
+                    });
+                }
+            });
+
+            // Add scheduled makeups
+            (overrides || []).forEach((o: any) => {
+                const oDate = o.override_date.split('T')[0].split(' ')[0];
+                const className = getClassroomName(o.target_classroom_id);
+                timelineEvents.push({
+                    type: 'makeup_scheduled',
+                    date: oDate,
+                    classroomId: o.target_classroom_id,
+                    classroomName: className,
+                    reason: o.reason,
+                    details: `Rescheduled makeup class in ${className}. Reason: ${stripMissedDateTag(o.reason || 'No reason provided')}`
+                });
+            });
+
+            // Sort timeline chronologically (by date, and then logically by type priority)
+            const typePriority: Record<string, number> = {
+                'regular_attendance': 1,
+                'missed_class': 2,
+                'makeup_scheduled': 3,
+                'makeup_attendance': 4
+            };
+            timelineEvents.sort((a, b) => {
+                const dateComp = a.date.localeCompare(b.date);
+                if (dateComp !== 0) return dateComp;
+                const pA = typePriority[a.type] || 99;
+                const pB = typePriority[b.type] || 99;
+                return pA - pB;
+            });
+
+            setStudentHistoryLogs(timelineEvents);
+
+            // Build reschedule chains
+            const missedSessions = (attLogs || []).filter((att: any) => att.status === 'absent' || att.status === 'excused');
+            missedSessions.sort((a: any, b: any) => a.date.localeCompare(b.date));
+
+            const dateToOverride = new Map();
+            const matchedOverrideIds = new Set();
+
+            // First pass: Match by strict tag [MissedDate:YYYY-MM-DD]
+            (overrides || []).forEach((o: any) => {
+                if (o.reason) {
+                    const match = o.reason.match(/\[MissedDate:(\d{4}-\d{2}-\d{2})\]/);
+                    if (match) {
+                        const missedDate = match[1];
+                        dateToOverride.set(missedDate, o);
+                        matchedOverrideIds.add(o.id);
+                    }
+                }
+            });
+
+            // Second pass: Match remaining overrides using date order (fallback)
+            (overrides || []).forEach((o: any) => {
+                if (matchedOverrideIds.has(o.id)) return;
+                if (!o.override_date) return;
+                const oDateClean = o.override_date.split('T')[0].split(' ')[0];
+                const unmatchedMissed = missedSessions.find((m: any) => {
+                    const mDateClean = m.date.split('T')[0].split(' ')[0];
+                    return mDateClean <= oDateClean && !dateToOverride.has(mDateClean);
+                });
+                if (unmatchedMissed) {
+                    const mDateClean = unmatchedMissed.date.split('T')[0].split(' ')[0];
+                    dateToOverride.set(mDateClean, o);
+                    matchedOverrideIds.add(o.id);
+                }
+            });
+
+            const isMakeupMissedCheck = (m: any) => {
+                const mDateClean = m.date.split('T')[0].split(' ')[0];
+                return (overrides || []).some((o: any) => {
+                    if (!o.override_date) return false;
+                    const oDateClean = o.override_date.split('T')[0].split(' ')[0];
+                    return o.target_classroom_id === m.classroom_id && oDateClean === mDateClean;
+                });
+            };
+
+            const chains: any[] = [];
+            const rootMissed = missedSessions.filter((m: any) => !isMakeupMissedCheck(m));
+
+            rootMissed.forEach((root: any) => {
+                const chain: any = {
+                    root,
+                    reschedules: []
+                };
+
+                let currentSession = root;
+                let visited = new Set();
+
+                while (currentSession) {
+                    const curDateClean = currentSession.date.split('T')[0].split(' ')[0];
+                    if (visited.has(curDateClean)) break;
+                    visited.add(curDateClean);
+
+                    const override = dateToOverride.get(curDateClean);
+                    if (override) {
+                        const oDateClean = override.override_date.split('T')[0].split(' ')[0];
+                        
+                        // Find if this override itself was missed
+                        const missedAttendance = missedSessions.find((m: any) => {
+                            const mDateClean = m.date.split('T')[0].split(' ')[0];
+                            return m.classroom_id === override.target_classroom_id && mDateClean === oDateClean;
+                        });
+
+                        // Find if this override was attended
+                        const attendedAttendance = (attLogs || []).find((att: any) => {
+                            const attDateClean = att.date.split('T')[0].split(' ')[0];
+                            return att.classroom_id === override.target_classroom_id &&
+                                   attDateClean === oDateClean &&
+                                   (att.status === 'present' || att.status === 'late');
+                        });
+
+                        let status = 'pending';
+                        if (missedAttendance) {
+                            status = 'missed';
+                        } else if (attendedAttendance) {
+                            status = 'attended';
+                        }
+
+                        chain.reschedules.push({
+                            override,
+                            status,
+                            classroomName: getClassroomName(override.target_classroom_id)
+                        });
+
+                        if (missedAttendance) {
+                            currentSession = missedAttendance;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                chains.push(chain);
+            });
+
+            setStudentRescheduleChains(chains);
+        } catch (err) {
+            console.error('Error fetching student history:', err);
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
 
     const handleSaveMakeup = async () => {
         let targetId = makeupClassroomId;
@@ -922,7 +1260,7 @@ export default function AttendancePage() {
                         <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800 mx-2"></div>
                         <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm font-medium">
                             <CalendarIcon className="w-4 h-4" />
-                            <span>{new Date(selectedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                            <span>{formatLocalDateStr(selectedDate, true, 'en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
                         </div>
                     </div>
                 </header>
@@ -1067,7 +1405,7 @@ export default function AttendancePage() {
                                 <div className="space-y-4">
                                     <div className="flex items-center justify-between px-2">
                                         <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight">
-                                            Scheduled Batches on {new Date(selectedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            Scheduled Batches on {formatLocalDateStr(selectedDate, true)}
                                         </h4>
                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                             {activeBatchesOnSelectedDate.length} Found
@@ -1349,7 +1687,7 @@ export default function AttendancePage() {
                                                                 {attendanceLogs.map((log) => (
                                                                     <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
                                                                         <td className="px-5 py-4 text-xs font-bold text-slate-800 dark:text-slate-300">
-                                                                            {new Date(log.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                            {formatLocalDateStr(log.date, true)}
                                                                         </td>
                                                                         <td className="px-5 py-4 text-xs font-extrabold text-slate-950 dark:text-white">
                                                                             {log.classroom_name}
@@ -1509,7 +1847,12 @@ export default function AttendancePage() {
                                                                                     <span className="text-[#ecb613] font-black text-xs">{log.student_name.charAt(0)}</span>
                                                                                 )}
                                                                             </div>
-                                                                            <span className="text-xs font-extrabold text-slate-900 dark:text-white">{log.student_name}</span>
+                                                                            <span 
+                                                                                onClick={() => fetchStudentHistory(log.student_id, log.student_name)}
+                                                                                className="text-xs font-extrabold text-slate-900 dark:text-white hover:text-[#ecb613] hover:underline cursor-pointer transition-all"
+                                                                            >
+                                                                                {log.student_name}
+                                                                            </span>
                                                                         </div>
                                                                     </td>
                                                                     <td className="px-5 py-4 text-xs font-extrabold text-slate-950 dark:text-white">
@@ -1528,13 +1871,19 @@ export default function AttendancePage() {
                                                                         </span>
                                                                     </td>
                                                                     <td className="px-5 py-4 text-xs">
-                                                                        {scheduledMakeup ? (
+                                                                        {log.scheduledMakeup ? (
                                                                             <div className="flex flex-col text-slate-600 dark:text-slate-400">
-                                                                                <span className="font-extrabold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                                                                                    <CheckCircle className="w-3.5 h-3.5" /> Scheduled
-                                                                                </span>
+                                                                                {log.isMakeupMissed ? (
+                                                                                    <span className="font-extrabold text-rose-600 dark:text-rose-455 flex items-center gap-1.5">
+                                                                                        <XCircle className="w-3.5 h-3.5" /> Missed Makeup
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="font-extrabold text-emerald-600 dark:text-emerald-450 flex items-center gap-1.5">
+                                                                                        <CheckCircle className="w-3.5 h-3.5" /> Scheduled
+                                                                                    </span>
+                                                                                )}
                                                                                 <span className="text-[10px] mt-0.5 text-slate-500">
-                                                                                    {formatLocalDateStr(scheduledMakeup.override_date)} in {classrooms.find(c => c.id === scheduledMakeup.target_classroom_id)?.name || 'Classroom'}
+                                                                                    {formatLocalDateStr(log.scheduledMakeup.override_date)} in {classrooms.find(c => c.id === log.scheduledMakeup.target_classroom_id)?.name || 'Classroom'}
                                                                                 </span>
                                                                             </div>
                                                                         ) : (
@@ -1542,14 +1891,14 @@ export default function AttendancePage() {
                                                                         )}
                                                                     </td>
                                                                     <td className="px-5 py-4 text-right">
-                                                                        {scheduledMakeup ? (
+                                                                        {log.scheduledMakeup && !log.isMakeupMissed ? (
                                                                             <button
                                                                                 onClick={() => {
                                                                                     setMakeupStudent(log);
-                                                                                    setMakeupDate(scheduledMakeup.override_date);
-                                                                                    setMakeupClassroomId(scheduledMakeup.target_classroom_id);
-                                                                                    setMakeupReason(stripMissedDateTag(scheduledMakeup.reason || ''));
-                                                                                    setEditingMakeupId(scheduledMakeup.id);
+                                                                                    setMakeupDate(log.scheduledMakeup.override_date);
+                                                                                    setMakeupClassroomId(log.scheduledMakeup.target_classroom_id);
+                                                                                    setMakeupReason(stripMissedDateTag(log.scheduledMakeup.reason || ''));
+                                                                                    setEditingMakeupId(log.scheduledMakeup.id);
                                                                                     setShowMakeupModal(true);
                                                                                 }}
                                                                                 className="px-3 py-1.5 bg-[#ecb613]/10 hover:bg-[#ecb613]/25 text-[#92400e] dark:text-[#ecb613] text-[10px] font-extrabold uppercase tracking-wider rounded-lg shadow-xs hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center gap-1 ml-auto cursor-pointer border border-[#ecb613]/30"
@@ -1560,10 +1909,18 @@ export default function AttendancePage() {
                                                                         ) : (
                                                                             <button
                                                                                 onClick={() => {
-                                                                                    setMakeupStudent(log);
-                                                                                    setMakeupDate(log.date);
+                                                                                    const targetLog = log.isMakeupMissed ? {
+                                                                                        student_id: log.student_id,
+                                                                                        student_name: log.student_name,
+                                                                                        date: log.scheduledMakeup.override_date,
+                                                                                        classroom_name: classrooms.find(c => c.id === log.scheduledMakeup.target_classroom_id)?.name || 'Makeup Classroom',
+                                                                                        classroom_id: log.scheduledMakeup.target_classroom_id,
+                                                                                        status: 'absent'
+                                                                                    } : log;
+                                                                                    setMakeupStudent(targetLog);
+                                                                                    setMakeupDate(targetLog.date);
                                                                                     setMakeupClassroomId(classrooms[0]?.id || '');
-                                                                                    setMakeupReason(`Makeup for missing ${log.classroom_name} class on ${formatLocalDateStr(log.date)}`);
+                                                                                    setMakeupReason(`Makeup for missing ${targetLog.classroom_name} class on ${formatLocalDateStr(targetLog.date)}`);
                                                                                     setEditingMakeupId(null);
                                                                                     setShowMakeupModal(true);
                                                                                 }}
@@ -1585,6 +1942,90 @@ export default function AttendancePage() {
                                                 <XCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                                                 <h6 className="font-extrabold text-slate-450">No missed classes found</h6>
                                                 <p className="text-xs text-slate-400 mt-1">There are no absent or excused records for the selected filters and date range.</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Completed Makeup Classes (Success) Section */}
+                                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/20">
+                                            <div>
+                                                <h4 className="text-sm font-bold text-slate-950 dark:text-white flex items-center gap-2">
+                                                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                                    Completed Makeup Classes (Success)
+                                                </h4>
+                                                <p className="text-[10px] text-slate-400 mt-0.5">Successfully resolved makeup sessions where the student attended.</p>
+                                            </div>
+                                            <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 font-black text-[10px] rounded-full uppercase tracking-wider">
+                                                {completedMissedLogs.length} Records
+                                            </span>
+                                        </div>
+                                        {completedMissedLogs.length > 0 ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left border-collapse min-w-[700px]">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Student</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Original Missed Class</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Attended Makeup Class</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Reason / Notes</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
+                                                        {completedMissedLogs.map((log) => (
+                                                            <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
+                                                                <td className="px-5 py-4">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 border flex items-center justify-center overflow-hidden">
+                                                                            {log.student_profile_pic_url ? (
+                                                                                <img src={log.student_profile_pic_url} alt={log.student_name} className="w-full h-full object-cover" />
+                                                                            ) : (
+                                                                                <span className="text-[#ecb613] font-black text-xs">{log.student_name.charAt(0)}</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <span 
+                                                                            onClick={() => fetchStudentHistory(log.student_id, log.student_name)}
+                                                                            className="text-xs font-extrabold text-slate-900 dark:text-white hover:text-[#ecb613] hover:underline cursor-pointer transition-all"
+                                                                        >
+                                                                            {log.student_name}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-5 py-4">
+                                                                    <div className="flex flex-col text-xs">
+                                                                        <span className="font-extrabold text-slate-700 dark:text-slate-200">{log.classroom_name}</span>
+                                                                        <span className="text-[10px] text-slate-400">{formatLocalDateStr(log.date, true)}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-5 py-4">
+                                                                    <div className="flex flex-col text-xs">
+                                                                        <span className="font-extrabold text-slate-700 dark:text-slate-200">
+                                                                            {classrooms.find(c => c.id === log.scheduledMakeup?.target_classroom_id)?.name || 'Classroom'}
+                                                                        </span>
+                                                                        <span className="text-[10px] text-slate-400">
+                                                                            {log.scheduledMakeup ? formatLocalDateStr(log.scheduledMakeup.override_date, true) : ''}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-5 py-4">
+                                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400">
+                                                                        <Check className="w-3 h-3" /> Success
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-5 py-4 text-xs text-slate-500 italic">
+                                                                    {log.scheduledMakeup?.reason ? stripMissedDateTag(log.scheduledMakeup.reason) : 'No details provided'}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="py-16 text-center">
+                                                <CheckCircle2 className="w-10 h-10 text-slate-350 mx-auto mb-3" />
+                                                <h6 className="font-extrabold text-slate-450">No completed makeups yet</h6>
+                                                <p className="text-xs text-slate-400 mt-1">Completed records will appear here automatically once makeup attendance is marked present.</p>
                                             </div>
                                         )}
                                     </div>
@@ -1713,7 +2154,6 @@ export default function AttendancePage() {
                                 </div>
                             )}
 
-                            {/* Reason/Notes */}
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1">Reason / Notes</label>
                                 <textarea
@@ -1740,6 +2180,240 @@ export default function AttendancePage() {
                             >
                                 {isSavingMakeup ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
                                 {editingMakeupId ? 'Reschedule Class' : 'Schedule Class'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showHistoryModal && historyStudent && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg flex flex-col p-6 animate-in zoom-in-95 duration-200 text-left max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5 mb-4">
+                            <div>
+                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                                    Makeup & Reschedule History
+                                </h3>
+                                <p className="text-[10px] font-bold text-[#ecb613] uppercase tracking-widest mt-0.5">
+                                    {historyStudent.name}
+                                </p>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setShowHistoryModal(false);
+                                    setHistoryStudent(null);
+                                    setStudentHistoryLogs([]);
+                                    setStudentRescheduleChains([]);
+                                    setActiveHistoryTab('chains');
+                                }} 
+                                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-450 hover:text-slate-650 transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
+                            <button
+                                onClick={() => setActiveHistoryTab('chains')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                                    activeHistoryTab === 'chains'
+                                        ? 'bg-[#ecb613] text-slate-900 shadow-sm'
+                                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                                }`}
+                            >
+                                Reschedule Chains
+                            </button>
+                            <button
+                                onClick={() => setActiveHistoryTab('timeline')}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                                    activeHistoryTab === 'timeline'
+                                        ? 'bg-[#ecb613] text-slate-900 shadow-sm'
+                                        : 'text-slate-555 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                                }`}
+                            >
+                                Chronological Logs
+                            </button>
+                        </div>
+
+                        {historyLoading ? (
+                            <div className="flex flex-col items-center justify-center py-12">
+                                <Loader2 className="w-8 h-8 animate-spin text-[#ecb613] mb-2" />
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Loading history...</p>
+                            </div>
+                        ) : activeHistoryTab === 'chains' ? (
+                            studentRescheduleChains.length > 0 ? (
+                                <div className="space-y-6 my-2">
+                                    {studentRescheduleChains.map((chain, idx) => (
+                                        <div key={idx} className="bg-slate-50/60 dark:bg-slate-850 p-4 rounded-2xl border border-slate-100 dark:border-slate-800/80">
+                                            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-2.5 mb-4">
+                                                <div>
+                                                    <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                                                        Missed {chain.root.classroom_name || 'Class'}
+                                                    </h4>
+                                                    <p className="text-[10px] text-slate-450 font-bold mt-0.5">
+                                                        {formatLocalDateStr(chain.root.date, true)}
+                                                    </p>
+                                                </div>
+                                                <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                                    chain.root.status === 'absent'
+                                                        ? 'bg-rose-100/70 text-rose-700 dark:bg-rose-950/45 dark:text-rose-400'
+                                                        : 'bg-blue-100/70 text-blue-700 dark:bg-blue-950/45 dark:text-blue-400'
+                                                }`}>
+                                                    {chain.root.status}
+                                                </span>
+                                            </div>
+
+                                            {chain.reschedules.length > 0 ? (
+                                                <div className="relative border-l-2 border-slate-200 dark:border-slate-800/80 ml-3 pl-5 space-y-4">
+                                                    {chain.reschedules.map((r: any, rIdx: number) => {
+                                                        let pillClass = '';
+                                                        let pillText = '';
+                                                        let iconEl = null;
+
+                                                        if (r.status === 'attended') {
+                                                            pillClass = 'bg-emerald-55 dark:bg-emerald-950/35 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40';
+                                                            pillText = 'Attended';
+                                                            iconEl = <Check className="w-2.5 h-2.5" />;
+                                                        } else if (r.status === 'missed') {
+                                                            pillClass = 'bg-rose-50 text-rose-650 dark:bg-rose-950/35 dark:text-rose-455 border border-rose-100 dark:border-rose-900/40';
+                                                            pillText = 'Missed';
+                                                            iconEl = <X className="w-2.5 h-2.5" />;
+                                                        } else {
+                                                            pillClass = 'bg-amber-50 text-amber-600 dark:bg-amber-950/35 dark:text-amber-400 border border-amber-100 dark:border-amber-900/40';
+                                                            pillText = 'Pending';
+                                                            iconEl = <Clock className="w-2.5 h-2.5" />;
+                                                        }
+
+                                                        return (
+                                                            <div key={rIdx} className="relative">
+                                                                <div className={`absolute -left-[28px] top-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900 ${
+                                                                    r.status === 'attended' ? 'bg-emerald-500' : r.status === 'missed' ? 'bg-rose-500' : 'bg-amber-500'
+                                                                }`} />
+                                                                
+                                                                <div>
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                                            Rescheduled to {r.classroomName}
+                                                                        </span>
+                                                                        <span className="text-[9px] font-black text-slate-450 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                                                            {formatLocalDateStr(r.override.override_date, true)}
+                                                                        </span>
+                                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider ${pillClass}`}>
+                                                                            {iconEl}
+                                                                            {pillText}
+                                                                        </span>
+                                                                    </div>
+                                                                    {r.override.reason && (
+                                                                        <p className="text-[10px] text-slate-500 italic mt-1 font-semibold pl-2 border-l-2 border-slate-200 dark:border-slate-800">
+                                                                            Notes: {stripMissedDateTag(r.override.reason)}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-2">
+                                                    <p className="text-[10.5px] text-slate-450 italic font-semibold">No makeup class scheduled for this missed session yet.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="py-12 text-center">
+                                    <CheckCircle2 className="w-8 h-8 text-slate-350 mx-auto mb-2" />
+                                    <p className="text-xs text-slate-400 italic font-semibold">No missed classes recorded for this student.</p>
+                                </div>
+                            )
+                        ) : (
+                            studentHistoryLogs.length > 0 ? (
+                                <div className="relative border-l border-slate-200 dark:border-slate-850 ml-4 my-2 pl-6 space-y-6">
+                                    {studentHistoryLogs.map((evt, idx) => {
+                                        const isMissed = evt.type === 'missed_class';
+                                        const isScheduled = evt.type === 'makeup_scheduled';
+                                        const isAttendance = evt.type === 'makeup_attendance';
+                                        const isRegular = evt.type === 'regular_attendance';
+
+                                        let iconColor = 'bg-slate-100 text-slate-550';
+                                        let iconContent = <Clock className="w-3.5 h-3.5" />;
+                                        let title = '';
+                                        let titleColor = 'text-slate-800 dark:text-slate-200';
+
+                                        if (isMissed) {
+                                            iconColor = 'bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-450';
+                                            iconContent = <XCircle className="w-3.5 h-3.5" />;
+                                            title = `Missed Class (${evt.status === 'absent' ? 'Absent' : 'Excused'})`;
+                                            titleColor = 'text-rose-700 dark:text-rose-455';
+                                        } else if (isScheduled) {
+                                            iconColor = 'bg-amber-50 dark:bg-amber-950/30 text-[#ecb613]';
+                                            iconContent = <CalendarIcon className="w-3.5 h-3.5" />;
+                                            title = 'Rescheduled Makeup Booked';
+                                            titleColor = 'text-amber-700 dark:text-amber-400';
+                                        } else if (isAttendance) {
+                                            const success = evt.status === 'present' || evt.status === 'late';
+                                            if (success) {
+                                                iconColor = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600';
+                                                iconContent = <Check className="w-3.5 h-3.5" />;
+                                                title = `Attended Makeup (Success)`;
+                                                titleColor = 'text-emerald-700 dark:text-emerald-450';
+                                            } else {
+                                                iconColor = 'bg-rose-50 dark:bg-rose-950/30 text-rose-600';
+                                                iconContent = <XCircle className="w-3.5 h-3.5" />;
+                                                title = `Missed Scheduled Makeup`;
+                                                titleColor = 'text-rose-700 dark:text-rose-455';
+                                            }
+                                        } else if (isRegular) {
+                                            iconColor = 'bg-slate-50 dark:bg-slate-850 text-slate-550';
+                                            iconContent = <Check className="w-3.5 h-3.5" />;
+                                            title = 'Attended Regular Class';
+                                            titleColor = 'text-slate-700 dark:text-slate-400';
+                                        }
+
+                                        return (
+                                            <div key={idx} className="relative group">
+                                                <div className={`absolute -left-[35px] top-0.5 w-6 h-6 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm ${iconColor}`}>
+                                                    {iconContent}
+                                                </div>
+
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-xs font-black tracking-tight ${titleColor}`}>
+                                                            {title}
+                                                        </span>
+                                                        <span className="text-[9px] font-black text-slate-450 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded">
+                                                            {formatLocalDateStr(evt.date, true)}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[10.5px] text-slate-500 mt-1 font-semibold leading-relaxed">
+                                                        {evt.details}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="py-12 text-center">
+                                    <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                                    <p className="text-xs text-slate-400 italic font-semibold">No attendance or makeup history recorded for this student.</p>
+                                </div>
+                            )
+                        )}
+
+                        <div className="flex justify-end mt-6 border-t border-slate-100 dark:border-slate-800 pt-4">
+                            <button 
+                                onClick={() => {
+                                    setShowHistoryModal(false);
+                                    setHistoryStudent(null);
+                                    setStudentHistoryLogs([]);
+                                    setStudentRescheduleChains([]);
+                                    setActiveHistoryTab('chains');
+                                }}
+                                className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#ecb613] text-slate-900 hover:bg-[#ecb613]/90 shadow-md shadow-[#ecb613]/10 transition-all cursor-pointer"
+                            >
+                                Close
                             </button>
                         </div>
                     </div>

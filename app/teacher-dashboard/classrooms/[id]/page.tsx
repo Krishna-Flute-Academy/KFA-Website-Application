@@ -14,6 +14,8 @@ interface ClassroomDetails {
     description: string;
     status: string;
     created_at: string;
+    type?: string;
+    class_date?: string;
 }
 
 interface ScheduleEntry {
@@ -127,11 +129,23 @@ export default function ClassroomDashboardPage({
     // ── Temporary session overrides (Makeup Classes) states ─────────────────────
     const [sessionOverrides, setSessionOverrides] = useState<any[]>([]);
     const [showOverrideModal, setShowOverrideModal] = useState(false);
+    const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
     const [overrideForm, setOverrideForm] = useState({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '' });
     const [isSavingOverride, setIsSavingOverride] = useState(false);
     const [isDeletingOverrideId, setIsDeletingOverrideId] = useState<string | null>(null);
     const [directoryStudentsForOverride, setDirectoryStudentsForOverride] = useState<any[]>([]);
     const [isOverrideRosterLoading, setIsOverrideRosterLoading] = useState(false);
+
+    // Timezone-safe local date formatter
+    const formatLocalDate = (dateStr: string): Date => {
+        if (!dateStr) return new Date();
+        // Check if dateStr strictly matches YYYY-MM-DD format (no time part)
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            const [year, month, day] = dateStr.split('-').map(Number);
+            return new Date(year, month - 1, day);
+        }
+        return new Date(dateStr);
+    };
 
     // ── Live session broadcast states ──────────────────────────────────────────
     const [messageSubject, setMessageSubject] = useState('');
@@ -563,14 +577,15 @@ export default function ClassroomDashboardPage({
                         .maybeSingle();
 
                     if (tempClassData) {
+                        classroomData.class_date = tempClassData.class_date;
                         const { data: tempRoster, error: tempRosterError } = await supabaseAuth
-                            .from('temporary_class_students')
+                            .from('session_student_overrides')
                             .select(`
                                 id,
                                 student_id,
                                 users!student_id(name, profile_pic_url, level)
                             `)
-                            .eq('temporary_class_id', tempClassData.id);
+                            .eq('target_classroom_id', classroomId);
                         
                         if (tempRosterError) throw tempRosterError;
                         roster = (tempRoster || []).map(r => ({
@@ -1105,9 +1120,9 @@ export default function ClassroomDashboardPage({
         }
     };
 
-    // ── Temporary session overrides (Makeup Classes) handlers ──────────────────
     const openMakeupModal = async () => {
         if (!teacherProfile) return;
+        setEditingOverrideId(null);
         setShowOverrideModal(true);
         setIsOverrideRosterLoading(true);
         setOverrideForm({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '' });
@@ -1134,6 +1149,45 @@ export default function ClassroomDashboardPage({
         }
     };
 
+    const openRescheduleModal = async (override: any) => {
+        if (!teacherProfile) return;
+        setEditingOverrideId(override.id);
+        setShowOverrideModal(true);
+        setIsOverrideRosterLoading(true);
+        setOverrideForm({
+            studentId: override.student_id,
+            date: override.override_date,
+            reason: override.reason || ''
+        });
+        try {
+            const enrolledIds = new Set(students.map(s => s.student_id));
+            const { data, error } = await supabaseAuth
+                .from('users')
+                .select('id, name, profile_pic_url, level')
+                .eq('role', 'student')
+                .eq('teacher_id', teacherProfile.id)
+                .order('name', { ascending: true });
+
+            if (error) throw error;
+            // Only show students who are not already permanently enrolled in this classroom
+            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id));
+            // Ensure the student being rescheduled is present in the list
+            if (override.student_id && !available.some((s: any) => s.id === override.student_id)) {
+                available.push({
+                    id: override.student_id,
+                    name: override.users?.name || 'Unknown Student',
+                    level: override.users?.level || 'Beginner',
+                    profile_pic_url: override.users?.profile_pic_url || null
+                });
+            }
+            setDirectoryStudentsForOverride(available);
+        } catch (err) {
+            console.error('Error fetching directory for override:', err);
+        } finally {
+            setIsOverrideRosterLoading(false);
+        }
+    };
+
     const handleSaveOverride = async () => {
         if (!overrideForm.studentId || !overrideForm.date) {
             alert('Please select a student and date.');
@@ -1141,29 +1195,59 @@ export default function ClassroomDashboardPage({
         }
         setIsSavingOverride(true);
         try {
-            const { data, error } = await supabaseAuth
-                .from('session_student_overrides')
-                .insert([{
-                    student_id: overrideForm.studentId,
-                    target_classroom_id: classroomId,
-                    override_date: overrideForm.date,
-                    reason: overrideForm.reason || null
-                }])
-                .select(`
-                    id,
-                    student_id,
-                    override_date,
-                    reason,
-                    users!student_id(name, profile_pic_url, level)
-                `)
-                .single();
+            if (editingOverrideId) {
+                // UPDATE existing override
+                const { data, error } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .update({
+                        student_id: overrideForm.studentId,
+                        override_date: overrideForm.date,
+                        reason: overrideForm.reason || null
+                    })
+                    .eq('id', editingOverrideId)
+                    .select(`
+                        id,
+                        student_id,
+                        override_date,
+                        reason,
+                        users!student_id(name, profile_pic_url, level)
+                    `)
+                    .single();
 
-            if (error) throw error;
+                if (error) throw error;
 
-            setSessionOverrides(prev => [...prev, data].sort((a, b) => a.override_date.localeCompare(b.override_date)));
-            setShowOverrideModal(false);
+                setSessionOverrides(prev =>
+                    prev.map(o => o.id === editingOverrideId ? data : o)
+                        .sort((a, b) => a.override_date.localeCompare(b.override_date))
+                );
+                setShowOverrideModal(false);
+                setEditingOverrideId(null);
+            } else {
+                // INSERT new override
+                const { data, error } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .insert([{
+                        student_id: overrideForm.studentId,
+                        target_classroom_id: classroomId,
+                        override_date: overrideForm.date,
+                        reason: overrideForm.reason || null
+                    }])
+                    .select(`
+                        id,
+                        student_id,
+                        override_date,
+                        reason,
+                        users!student_id(name, profile_pic_url, level)
+                    `)
+                    .single();
+
+                if (error) throw error;
+
+                setSessionOverrides(prev => [...prev, data].sort((a, b) => a.override_date.localeCompare(b.override_date)));
+                setShowOverrideModal(false);
+            }
         } catch (err: any) {
-            console.error('Error creating override:', err);
+            console.error('Error saving override:', err);
             alert(`Failed to save makeup: ${err.message || err}`);
         } finally {
             setIsSavingOverride(false);
@@ -1221,17 +1305,32 @@ export default function ClassroomDashboardPage({
         if (selectedToAdd.size === 0) return;
         setIsAddingStudents(true);
         try {
-            const rows = Array.from(selectedToAdd).map(studentId => ({
-                classroom_id: classroomId,
-                student_id: studentId,
-                joined_at: new Date().toISOString(),
-            }));
+            if (classroom?.type === 'temporary') {
+                const rows = Array.from(selectedToAdd).map(studentId => ({
+                    student_id: studentId,
+                    target_classroom_id: classroomId,
+                    override_date: classroom.class_date || new Date().toISOString().split('T')[0],
+                    reason: 'Temporary Class Session'
+                }));
 
-            const { error } = await supabaseAuth
-                .from('classroom_students')
-                .insert(rows);
+                const { error } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .insert(rows);
 
-            if (error) throw error;
+                if (error) throw error;
+            } else {
+                const rows = Array.from(selectedToAdd).map(studentId => ({
+                    classroom_id: classroomId,
+                    student_id: studentId,
+                    joined_at: new Date().toISOString(),
+                }));
+
+                const { error } = await supabaseAuth
+                    .from('classroom_students')
+                    .insert(rows);
+
+                if (error) throw error;
+            }
 
             // Optimistically add to local state with mock metrics
             const statusOptions: ('Consistent' | 'Improving' | 'At Risk')[] = ['Consistent', 'Improving', 'At Risk'];
@@ -1245,7 +1344,7 @@ export default function ClassroomDashboardPage({
                         student_id: ds.id,
                         name: ds.name,
                         profile_pic_url: ds.profile_pic_url,
-                        joined_at: new Date().toISOString(),
+                        joined_at: classroom?.class_date || new Date().toISOString(),
                         mock_score: 6 + ((seed % 40) / 10),
                         mock_progress: 50 + (seed % 50),
                         mock_attendance: 70 + (seed % 30),
@@ -1269,13 +1368,23 @@ export default function ClassroomDashboardPage({
         if (!window.confirm(`Remove "${enrolledStudent.name}" from this classroom? Their student record will be kept.`)) return;
         setRemovingStudentId(enrolledStudent.id);
         try {
-            const { error } = await supabaseAuth
-                .from('classroom_students')
-                .delete()
-                .eq('classroom_id', classroomId)
-                .eq('student_id', enrolledStudent.student_id);
+            if (classroom?.type === 'temporary') {
+                const { error } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .delete()
+                    .eq('target_classroom_id', classroomId)
+                    .eq('student_id', enrolledStudent.student_id);
 
-            if (error) throw error;
+                if (error) throw error;
+            } else {
+                const { error } = await supabaseAuth
+                    .from('classroom_students')
+                    .delete()
+                    .eq('classroom_id', classroomId)
+                    .eq('student_id', enrolledStudent.student_id);
+
+                if (error) throw error;
+            }
             setStudents(prev => prev.filter(s => s.id !== enrolledStudent.id));
         } catch (err) {
             console.error('Error removing student:', err);
@@ -2449,8 +2558,12 @@ export default function ClassroomDashboardPage({
                                     <Calendar className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Schedule Makeup Allocation</h3>
-                                    <p className="text-xs text-slate-500">Allocate a temporary student for a specific date</p>
+                                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                                        {editingOverrideId ? 'Reschedule Makeup Allocation' : 'Schedule Makeup Allocation'}
+                                    </h3>
+                                    <p className="text-xs text-slate-500">
+                                        {editingOverrideId ? 'Update details or reschedule class date' : 'Allocate a temporary student for a specific date'}
+                                    </p>
                                 </div>
                             </div>
                             <button onClick={() => setShowOverrideModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
@@ -2477,7 +2590,8 @@ export default function ClassroomDashboardPage({
                                         <select
                                             value={overrideForm.studentId}
                                             onChange={e => setOverrideForm(f => ({ ...f, studentId: e.target.value }))}
-                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all cursor-pointer"
+                                            disabled={!!editingOverrideId}
+                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                                         >
                                             {directoryStudentsForOverride.map(s => (
                                                 <option key={s.id} value={s.id}>{s.name} ({s.level || 'Beginner'})</option>
@@ -2522,7 +2636,7 @@ export default function ClassroomDashboardPage({
                                 className="px-5 py-2 text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/25 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                             >
                                 {isSavingOverride ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                {isSavingOverride ? 'Saving...' : 'Confirm Makeup'}
+                                {isSavingOverride ? 'Saving...' : editingOverrideId ? 'Save Changes' : 'Confirm Makeup'}
                             </button>
                         </div>
                     </div>
@@ -4567,24 +4681,34 @@ export default function ClassroomDashboardPage({
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                                                            {new Date(override.override_date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                                            {formatLocalDate(override.override_date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4 text-sm font-medium text-slate-600 dark:text-slate-400 italic">
                                                         {override.reason || 'No details provided'}
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <button
-                                                            onClick={() => handleDeleteOverride(override.id)}
-                                                            disabled={isDeletingOverrideId === override.id}
-                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50"
-                                                            title="Cancel temporary allocation"
-                                                        >
-                                                            {isDeletingOverrideId === override.id
-                                                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                                : <Trash2 className="w-3.5 h-3.5" />}
-                                                            Cancel Roster Booking
-                                                        </button>
+                                                        <div className="flex justify-end items-center gap-2">
+                                                            <button
+                                                                onClick={() => openRescheduleModal(override)}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 rounded-lg transition-all"
+                                                                title="Reschedule makeup allocation"
+                                                            >
+                                                                <Calendar className="w-3.5 h-3.5" />
+                                                                Reschedule
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteOverride(override.id)}
+                                                                disabled={isDeletingOverrideId === override.id}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50"
+                                                                title="Cancel temporary allocation"
+                                                            >
+                                                                {isDeletingOverrideId === override.id
+                                                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                    : <Trash2 className="w-3.5 h-3.5" />}
+                                                                Cancel
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -5525,7 +5649,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                         </div>
                                                         <div>
                                                             <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight">{student.name}</h4>
-                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Joined {new Date(student.joined_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Joined {formatLocalDate(student.joined_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                                                         </div>
                                                     </div>
 

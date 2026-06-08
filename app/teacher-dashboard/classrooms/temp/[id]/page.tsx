@@ -35,6 +35,7 @@ const TIME_OPTIONS = generateTimeOptions();
 
 interface TempClass {
     id: string;
+    classroom_id: string;
     title: string;
     class_date: string;
     start_time: string;
@@ -107,9 +108,9 @@ export default function TempClassManagePage() {
 
                 // 3. Fetch Assigned Students
                 const { data: assignedData } = await supabaseAuth
-                    .from('temporary_class_students')
+                    .from('session_student_overrides')
                     .select('student_id')
-                    .eq('temporary_class_id', classId);
+                    .eq('target_classroom_id', roomData.classroom_id);
                 
                 setSelectedStudents((assignedData || []).map(a => a.student_id));
 
@@ -147,17 +148,19 @@ export default function TempClassManagePage() {
 
             // 2. Sync Students
             await supabaseAuth
-                .from('temporary_class_students')
+                .from('session_student_overrides')
                 .delete()
-                .eq('temporary_class_id', classId);
+                .eq('target_classroom_id', tempClass.classroom_id);
             
             if (selectedStudents.length > 0) {
                 const inserts = selectedStudents.map(sid => ({
-                    temporary_class_id: classId,
-                    student_id: sid
+                    student_id: sid,
+                    target_classroom_id: tempClass.classroom_id,
+                    override_date: tempClass.class_date,
+                    reason: 'Temporary Class Session'
                 }));
                 const { error: insertError } = await supabaseAuth
-                    .from('temporary_class_students')
+                    .from('session_student_overrides')
                     .insert(inserts);
                 if (insertError) throw insertError;
             }

@@ -217,11 +217,13 @@ export default function CreateClassPage() {
                 // 2. Assign Students to Temporary Class
                 if (selectedStudents.length > 0) {
                     const studentInserts = selectedStudents.map(studentId => ({
-                        temporary_class_id: tempClass.id,
-                        student_id: studentId
+                        student_id: studentId,
+                        target_classroom_id: classroom.id,
+                        override_date: formData.classDate,
+                        reason: 'Temporary Class Session'
                     }));
                     const { error: tempAssignmentError } = await supabaseAuth
-                        .from('temporary_class_students')
+                        .from('session_student_overrides')
                         .insert(studentInserts);
                     if (tempAssignmentError) throw tempAssignmentError;
                 }
