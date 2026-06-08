@@ -125,6 +125,13 @@ export default function ClassroomDashboardPage({
     const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
     const [activeTab, setActiveTab] = useState('Overview');
     const [currentPage, setCurrentPage] = useState(1);
+    const [activeClassroomIds, setActiveClassroomIds] = useState<string[]>([classroomId]);
+
+    useEffect(() => {
+        if (classroomId) {
+            setActiveClassroomIds([classroomId]);
+        }
+    }, [classroomId]);
 
     // ── Temporary session overrides (Makeup Classes) states ─────────────────────
     const [sessionOverrides, setSessionOverrides] = useState<any[]>([]);
@@ -673,6 +680,28 @@ export default function ClassroomDashboardPage({
                     console.error('Failed to load session overrides:', e);
                 }
 
+                // 5c. Fetch home classroom IDs of all students (enrolled + overrides)
+                let classroomIds = [classroomId];
+                try {
+                    const studentIds = [
+                        ...formattedRoster.map(s => s.student_id),
+                        ...(overridesData || []).map((o: any) => o.student_id)
+                    ];
+                    if (studentIds.length > 0) {
+                        const { data: homeRooms } = await supabaseAuth
+                            .from('classroom_students')
+                            .select('classroom_id')
+                            .in('student_id', studentIds);
+                        if (homeRooms) {
+                            const ids = homeRooms.map(r => r.classroom_id).filter(Boolean);
+                            classroomIds = Array.from(new Set([classroomId, ...ids]));
+                        }
+                    }
+                    setActiveClassroomIds(classroomIds);
+                } catch (e) {
+                    console.error('Failed to load home classrooms:', e);
+                }
+
                 // 6. Fetch Schedules
                 const { data: scheduleData } = await supabaseAuth
                     .from('batch_schedules')
@@ -804,7 +833,7 @@ export default function ClassroomDashboardPage({
                     const { data: curriculumData, error: curriculumError } = await supabaseAuth
                         .from('classroom_inventory_allocation')
                         .select('*')
-                        .eq('classroom_id', classroomId);
+                        .in('classroom_id', classroomIds);
                     if (!curriculumError && curriculumData) {
                         setClassroomInventoryAllocations(curriculumData);
                     } else if (curriculumError) {
@@ -916,7 +945,7 @@ export default function ClassroomDashboardPage({
             const { data, error } = await supabaseAuth
                 .from('classroom_inventory_allocation')
                 .select('*')
-                .eq('classroom_id', classroomId);
+                .in('classroom_id', activeClassroomIds);
             if (error) {
                 console.error('Error fetching curriculum allocations — code:', error.code, '| msg:', error.message);
                 setDbSetupError(true);
@@ -926,7 +955,7 @@ export default function ClassroomDashboardPage({
         } catch (err: any) {
             console.error('Error fetching curriculum allocations (exception):', err?.message || err);
         }
-    }, [classroomId]);
+    }, [classroomId, activeClassroomIds]);
 
     const handleOpenReviewModal = (student: AssignmentStudent, assignment: Assignment) => {
         setSelectedReviewStudent(student);
@@ -1880,8 +1909,21 @@ export default function ClassroomDashboardPage({
             }
         });
 
+        // Also add any lessons the selected student has progress on (completed or unlocked)
+        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+            studentProgress.forEach(p => {
+                if (p.student_id === selectedStudentForCurriculum.student_id && (p.status === 'completed' || p.status === 'unlocked')) {
+                    const lesson = courseLessons.find(l => l.id === p.lesson_id);
+                    if (lesson && !lessonsSet.has(lesson.id)) {
+                        lessonsSet.add(lesson.id);
+                        uniqueLessons.push(lesson);
+                    }
+                }
+            });
+        }
+
         return uniqueLessons.sort((a, b) => a.lesson_number - b.lesson_number);
-    }, [allocatedInventoryItems, courseChapters, courseLessons, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions]);
+    }, [allocatedInventoryItems, courseChapters, courseLessons, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress]);
 
     const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
         if (syllabusLessons.length === 0) return defaultMockVal;
