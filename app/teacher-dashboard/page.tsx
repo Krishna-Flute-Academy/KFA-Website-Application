@@ -13,6 +13,7 @@ import {
 import TeacherSidebar from '../../src/components/TeacherSidebar';
 import TeacherHeader from '../../src/components/TeacherHeader';
 import Link from 'next/link';
+import { useToast } from '../../src/lib/ToastContext';
 
 interface Submission {
     id: string;
@@ -101,6 +102,7 @@ const TIME_OPTIONS = generateTimeOptions();
 
 export default function TeacherDashboard() {
     const router = useRouter();
+    const { showToast } = useToast();
     const [loading, setLoading] = useState(true);
     const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string } | null>(null);
     const [stats, setStats] = useState({
@@ -584,13 +586,17 @@ export default function TeacherDashboard() {
             setShowTempModal(false);
             setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '' });
             setTempSelectedStudents([]);
-        } catch (e) { console.error(e); }
+            showToast('Temporary class created successfully!', 'success');
+        } catch (e) { 
+            console.error(e); 
+            showToast('Failed to create temporary class.', 'error');
+        }
     };
 
     const handleSaveNote = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!noteForm.title.trim() || !noteForm.classroom_id) {
-            alert('Please fill out the title and select a classroom.');
+            showToast('Please fill out the title and select a classroom.', 'error');
             return;
         }
         setIsSavingNote(true);
@@ -642,9 +648,10 @@ export default function TeacherDashboard() {
             }
             setShowNoteModal(false);
             setNoteForm({ id: '', title: '', content: '', color: 'yellow', classroom_id: '' });
+            showToast(noteForm.id ? 'Note updated successfully!' : 'Note created successfully!', 'success');
         } catch (err) {
             console.error('Error saving note:', err);
-            alert('Failed to save note.');
+            showToast('Failed to save note.', 'error');
         } finally {
             setIsSavingNote(false);
         }
@@ -660,9 +667,10 @@ export default function TeacherDashboard() {
             if (error) throw error;
 
             setNotes(prev => prev.filter(n => n.id !== noteId));
+            showToast('Note deleted successfully!', 'success');
         } catch (err) {
             console.error('Error deleting note:', err);
-            alert('Failed to delete note.');
+            showToast('Failed to delete note.', 'error');
         }
     };
 
