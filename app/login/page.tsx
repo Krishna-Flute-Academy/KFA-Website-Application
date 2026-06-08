@@ -46,7 +46,7 @@ function LoginContent() {
                     .from('users')
                     .select('role')
                     .eq('id', data.user.id)
-                    .single();
+                    .maybeSingle(); // maybeSingle() returns null (not a 406) when no row exists
 
                 if (!userError && userData && userData.role) {
                     userRole = userData.role;
@@ -60,7 +60,7 @@ function LoginContent() {
             if (normalizedRole === 'teacher') {
                 router.push('/teacher-dashboard');
             } else {
-                router.push('/');
+                router.push('/student-dashboard');
             }
         }
     };
@@ -133,6 +133,7 @@ function LoginContent() {
                                         className="w-full h-12 px-4 pr-12 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
                                         placeholder="Enter your password"
                                         type={showPassword ? "text" : "password"}
+                                        autoComplete="current-password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         disabled={loading}

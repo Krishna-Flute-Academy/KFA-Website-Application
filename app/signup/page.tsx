@@ -40,6 +40,8 @@ export default function SignupPage() {
         }
 
         setLoading(true);
+
+        // Step 1: Create auth user
         const { data, error: signUpError } = await supabaseAuth.auth.signUp({
             email,
             password,
@@ -55,14 +57,40 @@ export default function SignupPage() {
         if (signUpError) {
             setError(signUpError.message);
             setLoading(false);
-        } else {
-            setSuccessMessage('Account created successfully! Please check your email to verify your account.');
-            setLoading(false);
-            // Optional: redirect after some time
-            setTimeout(() => {
-                router.push('/login');
-            }, 3000);
+            return;
         }
+
+        // Step 2: Insert a row in public.users so the student/teacher appears in the dashboard.
+        // This works when email confirmation is disabled (session is available immediately).
+        // If email confirmation is enabled, data.session is null — in that case, a
+        // database trigger (or the user's first login) must handle the insert.
+        if (data.user && data.session) {
+            const { error: dbError } = await supabaseAuth
+                .from('users')
+                .insert([{
+                    id: data.user.id,
+                    name: name,
+                    email: email,
+                    phone: phone || null,
+                    role: role,
+                    status: 'active',
+                    join_date: new Date().toISOString().split('T')[0],
+                }]);
+
+            if (dbError) {
+                // Auth user created but DB insert failed — show a soft warning
+                console.error('DB insert error after signup:', dbError);
+                setError(`Account created but profile setup failed: ${dbError.message}. Please contact support.`);
+                setLoading(false);
+                return;
+            }
+        }
+
+        setSuccessMessage('Account created! Redirecting you to login…');
+        setLoading(false);
+        setTimeout(() => {
+            router.push('/login');
+        }, 2500);
     };
 
     return (
