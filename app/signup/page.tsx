@@ -67,7 +67,7 @@ export default function SignupPage() {
         if (data.user && data.session) {
             const { error: dbError } = await supabaseAuth
                 .from('users')
-                .insert([{
+                .upsert([{
                     id: data.user.id,
                     name: name,
                     email: email,
@@ -75,7 +75,7 @@ export default function SignupPage() {
                     role: role,
                     status: 'active',
                     join_date: new Date().toISOString().split('T')[0],
-                }]);
+                }], { onConflict: 'id', ignoreDuplicates: true });
 
             if (dbError) {
                 // Auth user created but DB insert failed — show a soft warning
