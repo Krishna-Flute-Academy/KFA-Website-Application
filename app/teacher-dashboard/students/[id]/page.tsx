@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle } from 'lucide-react';
+import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle, Send } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -56,6 +56,12 @@ export default function StudentProfilePage() {
     const [activeTab, setActiveTab] = useState('profile'); // profile, tasks, history, attendance, curriculum
     const [studentTasks, setStudentTasks] = useState<any[]>([]);
     const [selectedStudentTask, setSelectedStudentTask] = useState<any | null>(null);
+
+    // Direct Messaging States
+    const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+    const [messageSubject, setMessageSubject] = useState('');
+    const [messageContent, setMessageContent] = useState('');
+    const [isSendingMessage, setIsSendingMessage] = useState(false);
 
     const [reloadTrigger, setReloadTrigger] = useState(0);
 
@@ -660,6 +666,66 @@ export default function StudentProfilePage() {
         }
     };
 
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!teacherProfile || isSendingMessage || !studentInfo) return;
+
+        const subjectStr = messageSubject.trim();
+        const contentStr = messageContent.trim();
+
+        if (!subjectStr) {
+            alert('Please specify a broadcast subject!');
+            return;
+        }
+        if (!contentStr) {
+            alert('Please compose your broadcast message!');
+            return;
+        }
+
+        setIsSendingMessage(true);
+
+        const newBroadcast: any = {
+            teacher_id: teacherProfile.id,
+            channel: 'announcements',
+            recipients: [{ id: studentInfo.id, name: studentInfo.name, type: 'student' }],
+            subject: subjectStr,
+            content: contentStr,
+            created_at: new Date().toISOString()
+        };
+
+        try {
+            const { data, error } = await supabaseAuth
+                .from('broadcasts')
+                .insert(newBroadcast)
+                .select('*');
+
+            if (error) {
+                console.error('Database write error:', error);
+                // Fallback local save if database write fails (same as messages dashboard)
+                const localBroadcasts = localStorage.getItem('kfa_local_broadcasts');
+                const list = localBroadcasts ? JSON.parse(localBroadcasts) : [];
+                const localList = [
+                    { id: `local-${Date.now()}`, ...newBroadcast },
+                    ...list
+                ];
+                localStorage.setItem('kfa_local_broadcasts', JSON.stringify(localList));
+                alert('Notification saved locally (offline fallback mode)!');
+            } else {
+                alert('Notification sent & saved successfully!');
+            }
+
+            // Reset compose form and close
+            setMessageSubject('');
+            setMessageContent('');
+            setIsMessageModalOpen(false);
+        } catch (err: any) {
+            console.error('Exception during broadcast save:', err);
+            alert('An unexpected issue occurred while sending.');
+        } finally {
+            setIsSendingMessage(false);
+        }
+    };
+
     if (loading || !studentInfo) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6]">
@@ -742,7 +808,10 @@ export default function StudentProfilePage() {
                         <div className="flex gap-3">
                             {teacherProfile?.role !== 'student' && (
                                 <>
-                                    <button className="px-5 py-2.5 border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all text-sm flex items-center gap-2 shadow-sm">
+                                    <button 
+                                        onClick={() => setIsMessageModalOpen(true)}
+                                        className="px-5 py-2.5 border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all text-sm flex items-center gap-2 shadow-sm"
+                                    >
                                         <Mail className="size-4" /> Message
                                     </button>
                                     <Link 
@@ -1729,6 +1798,90 @@ export default function StudentProfilePage() {
                                 Close Details
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Quick Message Compose Dialog Modal */}
+            {isMessageModalOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left">
+                        {/* Header */}
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Message {studentInfo.name}</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Send a direct dashboard notification to this student</p>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setIsMessageModalOpen(false);
+                                    setMessageSubject('');
+                                    setMessageContent('');
+                                }} 
+                                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Form Body */}
+                        <form onSubmit={handleSendMessage} className="p-6 space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Recipient</label>
+                                <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                    {studentInfo.name} (ID: #{studentInfo.id.slice(0, 4).toUpperCase()})
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label htmlFor="msg-subject" className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Subject</label>
+                                <input 
+                                    id="msg-subject"
+                                    type="text"
+                                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#ecb613] font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                                    placeholder="e.g., practice feedback, weekly update"
+                                    value={messageSubject}
+                                    onChange={(e) => setMessageSubject(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label htmlFor="msg-content" className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Message Content</label>
+                                <textarea 
+                                    id="msg-content"
+                                    rows={5}
+                                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#ecb613] font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none"
+                                    placeholder="Type your message here..."
+                                    value={messageContent}
+                                    onChange={(e) => setMessageContent(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            {/* Footer / Actions */}
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                                <button 
+                                    type="button"
+                                    onClick={() => {
+                                        setIsMessageModalOpen(false);
+                                        setMessageSubject('');
+                                        setMessageContent('');
+                                    }}
+                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-605 dark:text-slate-300 text-xs font-bold rounded-xl transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={isSendingMessage}
+                                    className="px-5 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-md hover:shadow-lg disabled:bg-stone-300 disabled:text-slate-500 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0"
+                                >
+                                    {isSendingMessage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                                    Send Message
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

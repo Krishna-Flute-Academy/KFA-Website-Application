@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
@@ -73,8 +73,12 @@ const INITIAL_MOCK_BROADCASTS: Broadcast[] = [
     }
 ];
 
-export default function MessagesDashboardPage() {
+function MessagesDashboardContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const paramStudentId = searchParams.get('studentId');
+    const paramStudentName = searchParams.get('studentName');
+    const lastProcessedStudentIdRef = useRef<string | null>(null);
 
     // ── Global states ──────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true);
@@ -432,6 +436,20 @@ export default function MessagesDashboardPage() {
     
     // Compose Form
     const [selectedRecipients, setSelectedRecipients] = useState<Array<{ id: string; name: string; type: 'class' | 'student' | 'global' | 'custom' }>>([]);
+
+    useEffect(() => {
+        if (paramStudentId && paramStudentName && lastProcessedStudentIdRef.current !== paramStudentId) {
+            setSelectedRecipients([
+                {
+                    id: paramStudentId,
+                    name: decodeURIComponent(paramStudentName),
+                    type: 'student'
+                }
+            ]);
+            lastProcessedStudentIdRef.current = paramStudentId;
+        }
+    }, [paramStudentId, paramStudentName]);
+
     const [subject, setSubject] = useState('');
     const [content, setContent] = useState('');
     const [isSending, setIsSending] = useState(false);
@@ -1956,5 +1974,17 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                 </div>
             )}
         </div>
+    );
+}
+
+export default function MessagesDashboardPage() {
+    return (
+        <Suspense fallback={
+            <div className="h-screen w-full flex items-center justify-center bg-[#f8fafc]">
+                <Loader2 className="w-8 h-8 animate-spin text-[#ecb613]" />
+            </div>
+        }>
+            <MessagesDashboardContent />
+        </Suspense>
     );
 }
