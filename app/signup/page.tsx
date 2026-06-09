@@ -19,6 +19,23 @@ export default function SignupPage() {
     const [loading, setLoading] = useState(false);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+    const [accessCode, setAccessCode] = useState('');
+    const [isCodeVerified, setIsCodeVerified] = useState(false);
+    const [codeError, setCodeError] = useState<string | null>(null);
+
+    const handleVerifyCode = (e: React.FormEvent) => {
+        e.preventDefault();
+        setCodeError(null);
+        
+        const masterCode = process.env.NEXT_PUBLIC_SIGNUP_ACCESS_CODE || 'KFA-START';
+        
+        if (accessCode.trim().toUpperCase() === masterCode.toUpperCase()) {
+            setIsCodeVerified(true);
+        } else {
+            setCodeError('Invalid access code. Please contact the admin to be enrolled.');
+        }
+    };
+
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -130,7 +147,35 @@ export default function SignupPage() {
                         </div>
 
                         {/* Form */}
-                        <form className="space-y-4" onSubmit={handleSignup}>
+                        {!isCodeVerified ? (
+                            <form className="space-y-4" onSubmit={handleVerifyCode}>
+                                {codeError && (
+                                    <div className="p-3 bg-red-100 border border-red-400 text-red-700 text-sm rounded">
+                                        {codeError}
+                                    </div>
+                                )}
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Academy Access Code</label>
+                                    <input
+                                        className="w-full h-12 px-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all uppercase"
+                                        placeholder="Enter your access code"
+                                        type="text"
+                                        value={accessCode}
+                                        onChange={(e) => setAccessCode(e.target.value)}
+                                        required
+                                    />
+                                    <p className="text-xs text-slate-500">You must receive this code from your teacher.</p>
+                                </div>
+                                <button
+                                    type="submit"
+                                    className="w-full h-12 mt-4 bg-[#a15912] text-white font-bold rounded-lg shadow-lg shadow-[#a15912]/20 hover:bg-[#8a4b0f] transition-all flex items-center justify-center gap-2 group"
+                                >
+                                    <span>Continue to Sign Up</span>
+                                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                                </button>
+                            </form>
+                        ) : (
+                        <form className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500" onSubmit={handleSignup}>
                             {error && (
                                 <div className="p-3 bg-red-100 border border-red-400 text-red-700 text-sm rounded">
                                     {error}
@@ -262,6 +307,7 @@ export default function SignupPage() {
                                 {!loading && !successMessage && <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />}
                             </button>
                         </form>
+                        )}
 
                         {/* Footer */}
                         <div className="mt-8 text-center text-sm text-slate-600 dark:text-slate-400">

@@ -47,6 +47,8 @@ export default function StudentDirectory() {
     const [filterMode, setFilterMode] = useState<'all' | 'recent' | 'unassigned'>('all');
     const [unassignedStudents, setUnassignedStudents] = useState<StudentData[]>([]);
     const [claimingId, setClaimingId] = useState<string | null>(null);
+    const [showClaimModal, setShowClaimModal] = useState<StudentData | null>(null);
+    const [claimBatchId, setClaimBatchId] = useState('');
     const [selectedBatch, setSelectedBatch] = useState<string>('All Batches');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
     const [searchQuery, setSearchQuery] = useState('');
@@ -222,6 +224,36 @@ export default function StudentDirectory() {
         };
 
         checkAuthAndFetchData();
+
+        // Real-time subscription to listen for new student signups instantly!
+        const channel = supabaseAuth
+            .channel('realtime-unassigned-students')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'users' },
+                (payload) => {
+                    const newStudent = payload.new;
+                    // Only add them if they are a student and not assigned yet
+                    if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
+                        setUnassignedStudents(prev => [{
+                            id: newStudent.id,
+                            user_id: newStudent.id,
+                            name: newStudent.name,
+                            student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
+                            batch: 'Unassigned',
+                            attendance_pct: 0,
+                            profile_pic_url: newStudent.profile_pic_url,
+                            status: newStudent.status === 'active' ? 'Active' : 'Inactive',
+                            created_at: newStudent.created_at || new Date().toISOString()
+                        }, ...prev]);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(channel);
+        };
     }, [router]);
 
     const handleLogout = async () => {
@@ -229,27 +261,49 @@ export default function StudentDirectory() {
         router.push('/');
     };
 
-    const claimStudent = async (studentId: string) => {
-        if (!teacherProfile) return;
-        setClaimingId(studentId);
+    const claimStudent = async () => {
+        if (!teacherProfile || !showClaimModal || !claimBatchId) {
+            alert('Please select a batch.');
+            return;
+        }
+        
+        setClaimingId(showClaimModal.id);
         try {
-            const { error } = await supabaseAuth
+            // 1. Update teacher_id
+            const { error: userError } = await supabaseAuth
                 .from('users')
                 .update({ teacher_id: teacherProfile.id })
-                .eq('id', studentId);
+                .eq('id', showClaimModal.id);
 
-            if (error) throw error;
+            if (userError) throw userError;
+
+            // 2. Add to classroom_students
+            const { error: classError } = await supabaseAuth
+                .from('classroom_students')
+                .insert([{
+                    classroom_id: claimBatchId,
+                    student_id: showClaimModal.id,
+                    joined_at: new Date().toISOString(),
+                }]);
+                
+            if (classError) throw classError;
+
+            const selectedClassroom = classrooms.find(c => c.id === claimBatchId);
+            const batchName = selectedClassroom?.name || 'Assigned';
 
             // Find the claimed student from the unassigned list
-            const claimed = unassignedStudents.find(s => s.id === studentId);
+            const claimed = unassignedStudents.find(s => s.id === showClaimModal.id);
             if (claimed) {
                 // Add to assigned students and remove from unassigned students
-                setStudents(prev => [...prev, claimed]);
-                setUnassignedStudents(prev => prev.filter(s => s.id !== studentId));
+                setStudents(prev => [...prev, { ...claimed, batch: batchName }]);
+                setUnassignedStudents(prev => prev.filter(s => s.id !== showClaimModal.id));
             }
+            
+            setShowClaimModal(null);
+            setClaimBatchId('');
         } catch (err) {
             console.error('Error claiming student:', err);
-            alert('Failed to assign student to your profile. Please try again.');
+            alert('Failed to assign student to your profile and batch. Please try again.');
         } finally {
             setClaimingId(null);
         }
@@ -652,6 +706,56 @@ export default function StudentDirectory() {
                                 ) : (
                                     <><span className="material-symbols-outlined text-lg">delete_sweep</span>Delete {selectedIds.size} Student{selectedIds.size !== 1 ? 's' : ''}</>
                                 )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Claim & Assign Student Modal ─────────────────────────────────────── */}
+            {showClaimModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6">
+                            <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-4">
+                                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400 text-2xl">person_add</span>
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Claim Student</h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                                You are about to approve <span className="font-bold text-slate-700 dark:text-slate-300">{showClaimModal.name}</span>. Please assign them to a batch so their student dashboard can unlock.
+                            </p>
+                            
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Select Batch</label>
+                                <select
+                                    value={claimBatchId}
+                                    onChange={e => setClaimBatchId(e.target.value)}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                >
+                                    <option value="" disabled>Choose a batch...</option>
+                                    {classrooms.map(room => (
+                                        <option key={room.id} value={room.id}>{room.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                            <button 
+                                onClick={() => { setShowClaimModal(null); setClaimBatchId(''); }}
+                                disabled={claimingId === showClaimModal.id}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={claimStudent}
+                                disabled={claimingId === showClaimModal.id || !claimBatchId}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+                                {claimingId === showClaimModal.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <span className="material-symbols-outlined text-lg">check_circle</span>
+                                )}
+                                {claimingId === showClaimModal.id ? 'Approving...' : 'Approve & Assign'}
                             </button>
                         </div>
                     </div>
@@ -1122,7 +1226,7 @@ export default function StudentDirectory() {
                                                                         disabled={claimingId === student.id}
                                                                         onClick={(e) => {
                                                                             e.preventDefault();
-                                                                            claimStudent(student.id);
+                                                                            setShowClaimModal(student);
                                                                         }}
                                                                         className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
                                                                     >
@@ -1135,7 +1239,20 @@ export default function StudentDirectory() {
                                                                     </button>
                                                                 </div>
                                                             ) : (
-                                                                <div className="flex items-center justify-center gap-4">
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    {student.batch === 'Unassigned' && (
+                                                                        <button 
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                setShowClaimModal(student);
+                                                                            }}
+                                                                            disabled={claimingId === student.id}
+                                                                            className="flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50"
+                                                                            title="Assign to a Batch"
+                                                                        >
+                                                                            Assign Batch
+                                                                        </button>
+                                                                    )}
                                                                     <button className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Message Student">
                                                                         <span className="material-symbols-outlined text-xl">chat</span>
                                                                     </button>

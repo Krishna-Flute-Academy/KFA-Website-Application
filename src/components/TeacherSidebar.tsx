@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { supabaseAuth } from '../lib/supabase-auth';
 
 interface TeacherSidebarProps {
     teacherProfile: { name: string; email: string } | null;
@@ -19,6 +20,31 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         startedAt: number;
     } | null>(null);
     const [secondsElapsed, setSecondsElapsed] = useState(0);
+    const [unassignedCount, setUnassignedCount] = useState(0);
+
+    useEffect(() => {
+        const fetchUnassignedCount = async () => {
+            try {
+                const { count } = await supabaseAuth
+                    .from('users')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('role', 'student')
+                    .is('teacher_id', null);
+                
+                if (count !== null) {
+                    setUnassignedCount(count);
+                }
+            } catch (error) {
+                console.error('Error fetching unassigned count:', error);
+            }
+        };
+
+        fetchUnassignedCount();
+        
+        // Polling every 30 seconds for new signups
+        const pollingInterval = setInterval(fetchUnassignedCount, 30000);
+        return () => clearInterval(pollingInterval);
+    }, []);
 
     useEffect(() => {
         const checkSession = () => {
@@ -84,7 +110,12 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                             href={item.href}
                         >
                             <span className="material-symbols-outlined text-[22px] select-none">{item.icon}</span>
-                            <span className="text-sm font-semibold">{item.name}</span>
+                            <span className="text-sm font-semibold flex-1">{item.name}</span>
+                            {item.name === 'Students' && unassignedCount > 0 && (
+                                <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
+                                    {unassignedCount} New
+                                </span>
+                            )}
                         </Link>
                     );
                 })}

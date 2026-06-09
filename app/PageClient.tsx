@@ -413,30 +413,11 @@ Hello Krishna Flute Academy, I have an inquiry!
                                     </a>
                                 </div>
 
-                                <div className="hidden sm:flex items-center relative group">
-                                    <button className="flex items-center justify-center space-x-2 px-5 py-2 bg-[#a15912] text-white rounded-full font-semibold md:text-sm text-xs transition-all duration-300 shadow-md">
+                                <div className="hidden sm:flex items-center">
+                                    <a href="/login" className="flex items-center justify-center space-x-2 px-5 py-2 bg-[#a15912] text-white rounded-full font-semibold md:text-sm text-xs transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105">
                                         <User className="w-4 h-4" />
                                         <span>Login</span>
-                                    </button>
-
-                                    {/* Dropdown Menu */}
-                                    <div className="absolute top-full right-0 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 w-40 z-50">
-                                        <div className="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-100 py-2">
-                                            <a
-                                                href="/login?type=student"
-                                                className="block px-4 py-3 text-sm font-medium text-slate-700 hover:bg-[#a15912]/10 hover:text-[#a15912] transition-colors"
-                                            >
-                                                Student Login
-                                            </a>
-                                            <div className="h-px bg-slate-100 mx-4"></div>
-                                            <a
-                                                href="/login?type=teacher"
-                                                className="block px-4 py-3 text-sm font-medium text-slate-700 hover:bg-[#a15912]/10 hover:text-[#a15912] transition-colors"
-                                            >
-                                                Teacher Login
-                                            </a>
-                                        </div>
-                                    </div>
+                                    </a>
                                 </div>
 
                                 <button
