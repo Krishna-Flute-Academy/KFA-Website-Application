@@ -13,6 +13,7 @@ import dynamic from 'next/dynamic';
 
 const MetronomeModal = dynamic(() => import('../../src/components/MetronomeModal'), { ssr: false });
 const TanpuraModal = dynamic(() => import('../../src/components/TanpuraModal'), { ssr: false });
+const TablaModal = dynamic(() => import('../../src/components/TablaModal'), { ssr: false });
 
 interface StudentProfile {
     id: string;
@@ -106,6 +107,7 @@ export default function StudentDashboard() {
     const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library'>('overview');
     const [showMetronome, setShowMetronome] = useState(false);
     const [showTanpura, setShowTanpura] = useState(false);
+    const [showTabla, setShowTabla] = useState(false);
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
@@ -473,6 +475,7 @@ export default function StudentDashboard() {
         <>
         {showMetronome && <MetronomeModal onClose={() => setShowMetronome(false)} />}
         {showTanpura && <TanpuraModal onClose={() => setShowTanpura(false)} />}
+        {showTabla && <TablaModal onClose={() => setShowTabla(false)} />}
         
         <div className="flex min-h-screen bg-[#f8fafc]" style={{ fontFamily: 'Lexend, sans-serif' }}>
             {/* Google Fonts */}
@@ -767,7 +770,7 @@ export default function StudentDashboard() {
                                             <Music className="w-5 h-5 text-amber-500" />
                                             Practice Tools
                                         </h3>
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-4 gap-2">
                                             <button 
                                                 onClick={() => setShowMetronome(true)} 
                                                 className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
@@ -782,6 +785,14 @@ export default function StudentDashboard() {
                                             >
                                                 <Music className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
                                                 <span className="text-[9px] font-extrabold text-slate-600">Tanpura</span>
+                                            </button>
+
+                                            <button 
+                                                onClick={() => setShowTabla(true)} 
+                                                className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
+                                            >
+                                                <span className="material-symbols-outlined text-amber-500 text-2xl group-hover:scale-115 transition-transform w-6 h-6 flex items-center justify-center">toll</span>
+                                                <span className="text-[9px] font-extrabold text-slate-600">Tabla</span>
                                             </button>
 
                                             <button 
@@ -1312,7 +1323,7 @@ export default function StudentDashboard() {
                                 <h3 className="font-extrabold text-slate-800 text-base mb-1">Practice Tools</h3>
                                 <p className="text-xs text-slate-500 mb-6">Interactive instruments to support your flute rehearsal sessions</p>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
                                         <div className="flex items-start gap-3">
                                             <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0 border border-amber-100">
@@ -1350,6 +1361,26 @@ export default function StudentDashboard() {
                                             className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
                                         >
                                             Open Tanpura
+                                        </button>
+                                    </div>
+
+                                    <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-[#d46211]/10 text-[#d46211] flex items-center justify-center shrink-0 border border-[#d46211]/20">
+                                                <span className="material-symbols-outlined text-xl font-bold">toll</span>
+                                            </div>
+                                            <div className="text-left">
+                                                <h4 className="font-extrabold text-xs md:text-sm text-slate-800">Tabla Metronome</h4>
+                                                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                    An acoustic Tabla drum synthesizer playing traditional cycles like Teental, Jhaptal, Dadra, and Rupak.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={() => setShowTabla(true)}
+                                            className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
+                                        >
+                                            Open Tabla
                                         </button>
                                     </div>
                                 </div>
