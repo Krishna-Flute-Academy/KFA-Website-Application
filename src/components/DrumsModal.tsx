@@ -2,22 +2,77 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Volume2, Play, Square, X, Sliders, Trash2, HelpCircle } from 'lucide-react';
 
+interface GroupingOption {
+    name: string;
+    label: string;
+    dividers: number[]; // step indices (0-indexed) where a vertical divider should be drawn BEFORE
+}
+
 interface TimeSignature {
     name: string;
     beats: number;
     stepsPerBeat: number;
     totalSteps: number;
-    groupSize: number;
     description: string;
+    groupings: GroupingOption[];
 }
 
 const TIME_SIGNATURES: TimeSignature[] = [
-    { name: '4/4', beats: 4, stepsPerBeat: 4, totalSteps: 16, groupSize: 4, description: 'Common time (Rock, Pop, Funk)' },
-    { name: '3/4', beats: 3, stepsPerBeat: 4, totalSteps: 12, groupSize: 4, description: 'Waltz time (3 beats per measure)' },
-    { name: '2/4', beats: 2, stepsPerBeat: 4, totalSteps: 8, groupSize: 4, description: 'March/Polka time (2 beats per measure)' },
-    { name: '6/8', beats: 2, stepsPerBeat: 6, totalSteps: 12, groupSize: 6, description: 'Double triplet time (Swing, Latin)' },
-    { name: '5/4', beats: 5, stepsPerBeat: 4, totalSteps: 20, groupSize: 4, description: 'Odd meter (Take Five, 5 beats)' },
-    { name: '7/8', beats: 7, stepsPerBeat: 2, totalSteps: 14, groupSize: 2, description: 'Odd meter (7 beats, Indian classical style)' }
+    { 
+        name: '4/4', 
+        beats: 4, 
+        stepsPerBeat: 4, 
+        totalSteps: 16, 
+        description: 'Common time (Rock, Pop, Funk)',
+        groupings: [{ name: 'Standard', label: '4 + 4 + 4 + 4', dividers: [4, 8, 12] }]
+    },
+    { 
+        name: '3/4', 
+        beats: 3, 
+        stepsPerBeat: 4, 
+        totalSteps: 12, 
+        description: 'Waltz time (3 beats per measure)',
+        groupings: [{ name: 'Standard', label: '4 + 4 + 4', dividers: [4, 8] }]
+    },
+    { 
+        name: '2/4', 
+        beats: 2, 
+        stepsPerBeat: 4, 
+        totalSteps: 8, 
+        description: 'March/Polka time (2 beats per measure)',
+        groupings: [{ name: 'Standard', label: '4 + 4', dividers: [4] }]
+    },
+    { 
+        name: '6/8', 
+        beats: 2, 
+        stepsPerBeat: 6, 
+        totalSteps: 12, 
+        description: 'Double triplet time (Swing, Latin)',
+        groupings: [{ name: 'Standard', label: '6 + 6', dividers: [6] }]
+    },
+    { 
+        name: '5/4', 
+        beats: 5, 
+        stepsPerBeat: 4, 
+        totalSteps: 20, 
+        description: 'Odd meter (Take Five, 5 beats)',
+        groupings: [
+            { name: '3+2', label: '3 + 2 Feel', dividers: [12] }, // 3 beats (12 steps) + 2 beats (8 steps)
+            { name: '2+3', label: '2 + 3 Feel', dividers: [8] }   // 2 beats (8 steps) + 3 beats (12 steps)
+        ]
+    },
+    { 
+        name: '7/8', 
+        beats: 7, 
+        stepsPerBeat: 2, 
+        totalSteps: 14, 
+        description: 'Odd meter (7 beats, Indian classical style)',
+        groupings: [
+            { name: '3+2+2', label: '3 + 2 + 2 Feel (Rupak)', dividers: [6, 10] }, // 3 eighths (6 steps) + 2 eighths (4 steps) + 2 eighths (4 steps)
+            { name: '2+2+3', label: '2 + 2 + 3 Feel', dividers: [4, 8] },
+            { name: '2+3+2', label: '2 + 3 + 2 Feel', dividers: [4, 10] }
+        ]
+    }
 ];
 
 interface Preset {
@@ -25,6 +80,7 @@ interface Preset {
     description: string;
     steps: number; 
     timeSigName: string;
+    groupingName: string;
     grid: boolean[][]; // [4][steps]
 }
 
@@ -34,6 +90,7 @@ const PRESETS: Preset[] = [
         description: 'Standard 4/4 rock and pop groove',
         steps: 16,
         timeSigName: '4/4',
+        groupingName: 'Standard',
         grid: [
             // Kick
             [true, false, false, false, false, false, false, false, true, false, true, false, false, false, false, false],
@@ -50,6 +107,7 @@ const PRESETS: Preset[] = [
         description: 'Syncopated funk beat with active shaker',
         steps: 16,
         timeSigName: '4/4',
+        groupingName: 'Standard',
         grid: [
             // Kick
             [true, false, false, false, false, false, true, false, true, false, false, true, false, false, false, false],
@@ -66,6 +124,7 @@ const PRESETS: Preset[] = [
         description: 'Traditional swing ride pattern (6/8 rhythm)',
         steps: 12,
         timeSigName: '6/8',
+        groupingName: 'Standard',
         grid: [
             // Kick
             [true, false, false, false, false, false, true, false, false, false, false, false],
@@ -82,6 +141,7 @@ const PRESETS: Preset[] = [
         description: 'Classical 3/4 waltz rhythm (12 steps)',
         steps: 12,
         timeSigName: '3/4',
+        groupingName: 'Standard',
         grid: [
             // Kick
             [true, false, false, false, false, false, false, false, false, false, false, false],
@@ -94,19 +154,37 @@ const PRESETS: Preset[] = [
         ]
     },
     {
-        name: 'Metronome Pop',
-        description: 'Metronome click with accented downbeats',
-        steps: 16,
-        timeSigName: '4/4',
+        name: 'Take Five (5/4)',
+        description: 'Famous 5/4 jazz beat grouped as 3 + 2',
+        steps: 20,
+        timeSigName: '5/4',
+        groupingName: '3+2',
         grid: [
-            // Kick
-            [true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
-            // Snare
-            [false, false, false, false, true, false, false, false, true, false, false, false, true, false, false, false],
-            // Hi-hat
-            [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+            // Kick (hits on 1 and 4)
+            [true, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false],
+            // Snare (hits on 2 and 5)
+            [false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false],
+            // Hi-hat (steady ride pattern)
+            [true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false],
             // Shaker
-            [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+            [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+        ]
+    },
+    {
+        name: 'Rupak (7/8)',
+        description: '7/8 classical groove grouped as 3 + 2 + 2',
+        steps: 14,
+        timeSigName: '7/8',
+        groupingName: '3+2+2',
+        grid: [
+            // Kick (accents on start of groups: 1, 4, 6 eighths)
+            [true, false, false, false, false, false, true, false, false, false, true, false, false, false],
+            // Snare (fills)
+            [false, false, false, false, false, false, false, false, true, false, false, false, true, false],
+            // Hi-hat
+            [true, false, true, false, true, false, true, false, true, false, true, false, true, false],
+            // Shaker
+            [false, false, false, false, false, false, false, false, false, false, false, false, false, false],
         ]
     }
 ];
@@ -116,6 +194,7 @@ const TRACK_NAMES = ['Kick Drum', 'Snare Drum', 'Hi-hat', 'Shaker'];
 export default function DrumsModal({ onClose }: { onClose: () => void }) {
     const [selectedPresetName, setSelectedPresetName] = useState(PRESETS[0].name);
     const [selectedTimeSig, setSelectedTimeSig] = useState<TimeSignature>(TIME_SIGNATURES[0]);
+    const [selectedGrouping, setSelectedGrouping] = useState<GroupingOption>(TIME_SIGNATURES[0].groupings[0]);
     const [bpm, setBpm] = useState(105);
     const [isPlaying, setIsPlaying] = useState(false);
     const [volume, setVolume] = useState(0.65);
@@ -327,6 +406,10 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
         setSelectedTimeSig(sig);
         setActiveStepsCount(sig.totalSteps);
 
+        // Find grouping
+        const grouping = sig.groupings.find(g => g.name === preset.groupingName) || sig.groupings[0];
+        setSelectedGrouping(grouping);
+
         // Load preset values into a padded 24-step grid
         const newGrid = Array.from({ length: 4 }, () => Array(24).fill(false));
         for (let track = 0; track < 4; track++) {
@@ -348,6 +431,7 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
     // Handle Time Signature manual change
     const handleTimeSigChange = (sig: TimeSignature) => {
         setSelectedTimeSig(sig);
+        setSelectedGrouping(sig.groupings[0]);
         setActiveStepsCount(sig.totalSteps);
         setSelectedPresetName('Custom Beat');
 
@@ -358,6 +442,12 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
         } else {
             setCurrentStep(-1);
         }
+    };
+
+    // Handle Grouping Feel manual change
+    const handleGroupingChange = (grouping: GroupingOption) => {
+        setSelectedGrouping(grouping);
+        setSelectedPresetName('Custom Beat');
     };
 
     // Toggle single node in the sequencer grid
@@ -407,18 +497,18 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
 
                 <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto">
                     {/* Left Panel: Controls & Presets */}
-                    <div className="lg:w-80 p-6 border-r border-[#d46211]/10 flex flex-col gap-6 text-left shrink-0">
+                    <div className="lg:w-80 p-6 border-r border-[#d46211]/10 flex flex-col gap-5 text-left shrink-0">
                         {/* Presets */}
                         <div>
-                            <h3 className="text-[#d46211]/70 text-xs font-bold uppercase tracking-widest mb-3">Select Rhythm Preset</h3>
-                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 scrollbar-thin">
+                            <h3 className="text-[#d46211]/70 text-xs font-bold uppercase tracking-widest mb-2.5">Select Rhythm Preset</h3>
+                            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1 scrollbar-thin">
                                 {PRESETS.map((preset) => (
                                     <button
                                         key={preset.name}
                                         onClick={() => loadPreset(preset)}
-                                        className={`w-full text-left p-3 rounded-2xl border transition-all ${
+                                        className={`w-full text-left p-2.5 rounded-xl border transition-all ${
                                             selectedPresetName === preset.name 
-                                                ? 'bg-[#d46211]/10 border-[#d46211] text-white shadow-xs' 
+                                                ? 'bg-[#d46211]/10 border-[#d46211] text-white' 
                                                 : 'border-white/5 text-white/50 hover:border-white/10 hover:text-white/80'
                                         }`}
                                     >
@@ -428,7 +518,6 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
                                                 {preset.timeSigName}
                                             </span>
                                         </div>
-                                        <p className="text-[9px] text-white/40 mt-1 leading-normal">{preset.description}</p>
                                     </button>
                                 ))}
                             </div>
@@ -436,8 +525,8 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
 
                         {/* Time Signature options */}
                         <div>
-                            <h3 className="text-[#d46211]/70 text-xs font-bold uppercase tracking-widest mb-3">Time Signature</h3>
-                            <div className="grid grid-cols-3 gap-2">
+                            <h3 className="text-[#d46211]/70 text-xs font-bold uppercase tracking-widest mb-2.5">Time Signature</h3>
+                            <div className="grid grid-cols-3 gap-1.5">
                                 {TIME_SIGNATURES.map((sig) => (
                                     <button
                                         key={sig.name}
@@ -455,6 +544,28 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
                             </div>
                         </div>
 
+                        {/* Grouping Feel Selector (Dynamic based on selected time signature) */}
+                        {selectedTimeSig.groupings.length > 1 && (
+                            <div>
+                                <h3 className="text-[#d46211]/70 text-xs font-bold uppercase tracking-widest mb-2.5">Grouping Feel</h3>
+                                <div className="flex gap-2">
+                                    {selectedTimeSig.groupings.map((group) => (
+                                        <button
+                                            key={group.name}
+                                            onClick={() => handleGroupingChange(group)}
+                                            className={`flex-1 py-1.5 px-2 rounded-lg text-center font-extrabold text-[10px] transition-all border ${
+                                                selectedGrouping.name === group.name
+                                                    ? 'bg-[#d46211]/10 border-[#d46211] text-white'
+                                                    : 'border-white/5 text-white/40 hover:border-white/10 hover:text-white/60'
+                                            }`}
+                                        >
+                                            {group.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Adjusters (Sliders) */}
                         <div className="space-y-4">
                             <h3 className="text-[#d46211]/70 text-xs font-bold uppercase tracking-widest flex items-center gap-1.5">
@@ -462,8 +573,8 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
                             </h3>
                             
                             {/* BPM Slider */}
-                            <div className="flex flex-col bg-white/5 border border-white/5 px-4 py-2.5 rounded-2xl text-left">
-                                <div className="flex justify-between items-center text-[9px] font-black text-white/50 uppercase tracking-widest mb-1.5">
+                            <div className="flex flex-col bg-white/5 border border-white/5 px-4 py-2 rounded-2xl text-left">
+                                <div className="flex justify-between items-center text-[9px] font-black text-white/50 uppercase tracking-widest mb-1">
                                     <span>Tempo (BPM)</span>
                                     <span className="text-[#d46211] font-mono">{bpm} BPM</span>
                                 </div>
@@ -479,8 +590,8 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
                             </div>
 
                             {/* Volume Slider */}
-                            <div className="flex flex-col bg-white/5 border border-white/5 px-4 py-2.5 rounded-2xl text-left">
-                                <div className="flex justify-between items-center text-[9px] font-black text-white/50 uppercase tracking-widest mb-1.5">
+                            <div className="flex flex-col bg-white/5 border border-white/5 px-4 py-2 rounded-2xl text-left">
+                                <div className="flex justify-between items-center text-[9px] font-black text-white/50 uppercase tracking-widest mb-1">
                                     <span>Master Volume</span>
                                     <span className="text-[#d46211] font-mono">{Math.round(volume * 100)}%</span>
                                 </div>
@@ -508,10 +619,10 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
                                 <div className="w-24 shrink-0"></div>
                                 <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
                                     {Array.from({ length: activeStepsCount }).map((_, stepIdx) => {
-                                        const isGroupStart = stepIdx % selectedTimeSig.groupSize === 0 && stepIdx > 0;
+                                        const isGroupStart = selectedGrouping.dividers.includes(stepIdx);
                                         return (
                                             <React.Fragment key={stepIdx}>
-                                                {isGroupStart && <div className="w-1.5 h-full shrink-0 border-l border-white/10"></div>}
+                                                {isGroupStart && <div className="w-2.5 h-full shrink-0 border-l border-white/20"></div>}
                                                 <div 
                                                     className={`text-[8px] font-black w-full text-center tracking-tight transition-colors ${
                                                         currentStep === stepIdx 
@@ -543,10 +654,10 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
                                             {Array.from({ length: activeStepsCount }).map((_, stepIdx) => {
                                                 const isActive = grid[trackIdx][stepIdx];
                                                 const isCurrent = currentStep === stepIdx;
-                                                const isGroupStart = stepIdx % selectedTimeSig.groupSize === 0 && stepIdx > 0;
+                                                const isGroupStart = selectedGrouping.dividers.includes(stepIdx);
                                                 return (
                                                     <React.Fragment key={stepIdx}>
-                                                        {isGroupStart && <div className="w-1.5 h-full shrink-0 border-l border-white/10"></div>}
+                                                        {isGroupStart && <div className="w-2.5 h-full shrink-0 border-l border-white/20"></div>}
                                                         <button
                                                             onClick={() => handleToggleNode(trackIdx, stepIdx)}
                                                             className={`aspect-square w-full rounded-lg border transition-all relative ${
@@ -573,10 +684,10 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
                                 <div className="w-24 shrink-0"></div>
                                 <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
                                     {Array.from({ length: activeStepsCount }).map((_, stepIdx) => {
-                                        const isGroupStart = stepIdx % selectedTimeSig.groupSize === 0 && stepIdx > 0;
+                                        const isGroupStart = selectedGrouping.dividers.includes(stepIdx);
                                         return (
                                             <React.Fragment key={stepIdx}>
-                                                {isGroupStart && <div className="w-1.5 h-full shrink-0 border-l border-white/10"></div>}
+                                                {isGroupStart && <div className="w-2.5 h-full shrink-0 border-l border-white/20"></div>}
                                                 <div 
                                                     className={`h-1.5 rounded-full transition-all w-full ${
                                                         currentStep === stepIdx 
@@ -625,7 +736,7 @@ export default function DrumsModal({ onClose }: { onClose: () => void }) {
                             {/* Help tip */}
                             <div className="hidden sm:flex items-center gap-2 bg-white/5 px-4 py-2 rounded-2xl text-[10px] text-white/40 border border-white/5">
                                 <HelpCircle className="w-4 h-4 text-[#d46211] shrink-0" />
-                                <span>Tip: Click nodes on the grid to customise or compose your own drum rhythms!</span>
+                                <span>Tip: Select grouping feels like 3+2 or 3+2+2 to automatically align vertical grid dividers!</span>
                             </div>
                         </div>
                     </div>
