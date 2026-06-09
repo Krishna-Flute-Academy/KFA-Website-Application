@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Loader2, Music, Volume2, Play, Square, X, Sliders, Info } from 'lucide-react';
+import { Music, Volume2, Play, Square, X, Sliders } from 'lucide-react';
 
 const SHRU_PITCHES = [
     { label: 'C (Kali 1)', freq: 261.63 },
@@ -12,41 +12,35 @@ const SHRU_PITCHES = [
     { label: 'F# (Safed 5)', freq: 369.99 },
     { label: 'G (Safed 6)', freq: 392.00 },
     { label: 'G# (Safed 7)', freq: 415.30 },
-    { label: 'A (Safed 1)', freq: 220.00 }, // lower octave G#/A base
+    { label: 'A (Safed 1)', freq: 220.00 }, 
     { label: 'A# (Safed 2)', freq: 233.08 },
     { label: 'B (Safed 3)', freq: 246.94 },
 ];
 
 const TUNING_MODES = [
-    { id: 'Pa', label: 'Pa - Sa - Sa - Sa (Standard)', desc: 'Perfect 5th (standard tuning for most Ragas)', mult: 0.75 },
-    { id: 'Ma', label: 'Ma - Sa - Sa - Sa (Madhyam)', desc: 'Perfect 4th (for Ragas without Pa, like Malkauns)', mult: 0.6667 },
-    { id: 'Ni', label: 'Ni - Sa - Sa - Sa (Nishad)', desc: 'Major 7th (for Ragas like Yaman, Puriya, Marwa)', mult: 0.9375 },
-    { id: 'Sa', label: 'Sa - Sa - Sa - Sa (Kharaj)', desc: 'Lower Octave Sa (for deep meditative drone)', mult: 0.5 }
+    { id: 'Pa', label: 'Sa - Pa Drone', desc: 'Sa (Fundamental) + Pa (Perfect 5th) + Sa Octaves', mult: 1.5 },
+    { id: 'Ma', label: 'Sa - Ma Drone', desc: 'Sa (Fundamental) + Ma (Perfect 4th) + Sa Octaves', mult: 1.3333 },
+    { id: 'Ni', label: 'Sa - Ni Drone', desc: 'Sa (Fundamental) + Ni (Major 7th) + Sa Octaves', mult: 1.875 },
+    { id: 'Sa', label: 'Sa - Sa Drone', desc: 'Sa (Fundamental) + Sa Octaves Only', mult: 2.0 }
 ];
+
+interface ActiveNode {
+    osc1: OscillatorNode;
+    osc2: OscillatorNode;
+    gainNode: GainNode;
+}
 
 export default function TanpuraModal({ onClose }: { onClose: () => void }) {
     const [selectedPitch, setSelectedPitch] = useState(SHRU_PITCHES[0]);
     const [selectedMode, setSelectedMode] = useState(TUNING_MODES[0]);
     const [isPlaying, setIsPlaying] = useState(false);
     const [volume, setVolume] = useState(0.5);
-    const [pluckSpeed, setPluckSpeed] = useState(1.0); // Pluck interval in seconds
-    const [activeString, setActiveString] = useState<number | null>(null);
 
     const audioCtxRef = useRef<AudioContext | null>(null);
-    const timerRef = useRef<NodeJS.Timeout | null>(null);
-    const currentPluckRef = useRef(0);
-    const isPlayingRef = useRef(isPlaying);
+    const activeNodesRef = useRef<ActiveNode[]>([]);
+    
     const volumeRef = useRef(volume);
-    const speedRef = useRef(pluckSpeed);
-    const pitchRef = useRef(selectedPitch);
-    const modeRef = useRef(selectedMode);
-
-    // Sync refs
-    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
     useEffect(() => { volumeRef.current = volume; }, [volume]);
-    useEffect(() => { speedRef.current = pluckSpeed; }, [pluckSpeed]);
-    useEffect(() => { pitchRef.current = selectedPitch; }, [selectedPitch]);
-    useEffect(() => { modeRef.current = selectedMode; }, [selectedMode]);
 
     const getCtx = () => {
         if (!audioCtxRef.current) {
@@ -55,151 +49,138 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
         return audioCtxRef.current;
     };
 
-    // Synthesize a rich pluck with overtones
-    const triggerStringPluck = useCallback((stringIndex: number, freq: number) => {
+    // Synthesize a continuous harmonium/reed tone voice
+    const startDroneNode = useCallback((ctx: AudioContext, freq: number, mixVolume: number): ActiveNode => {
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        // Warm fundamental: triangle wave
+        osc1.type = 'triangle';
+        osc1.frequency.value = freq;
+
+        // Reed/Harmonium buzz: sawtooth wave detuned slightly to add chorus/warmth
+        osc2.type = 'sawtooth';
+        osc2.frequency.value = freq + 0.35; // slightly detuned
+
+        const osc2Gain = ctx.createGain();
+        osc2Gain.gain.value = 0.22; // keep reed sawtooth low to avoid harshness
+
+        // Lowpass filter to make it sound warm and cut out harsh buzzing highs
+        filter.type = 'lowpass';
+        filter.frequency.value = freq * 3.5;
+
+        // Initial gain set to 0, then fade in
+        gainNode.gain.setValueAtTime(0, ctx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(volumeRef.current * mixVolume * 0.22, ctx.currentTime + 0.25); // smooth fade-in
+
+        // Connections
+        osc1.connect(filter);
+        osc2.connect(osc2Gain);
+        osc2Gain.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        osc1.start();
+        osc2.start();
+
+        return { osc1, osc2, gainNode };
+    }, []);
+
+    // Stop all active synthesizers
+    const stopAllNodes = useCallback(() => {
+        const ctx = audioCtxRef.current;
+        activeNodesRef.current.forEach((node) => {
+            try {
+                if (ctx) {
+                    node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
+                    node.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35); // smooth fade-out
+                }
+                setTimeout(() => {
+                    try {
+                        node.osc1.stop();
+                        node.osc2.stop();
+                    } catch (_) {}
+                }, 400);
+            } catch (_) {}
+        });
+        activeNodesRef.current = [];
+    }, []);
+
+    // Start all 4 drone notes together
+    const startDrone = useCallback(() => {
         try {
             const ctx = getCtx();
             if (ctx.state === 'suspended') {
                 ctx.resume();
             }
 
-            const now = ctx.currentTime;
-            const duration = 4.5; // string ring time
+            const baseFreq = selectedPitch.freq;
+            const mode = selectedMode;
 
-            // Harmonic multipliers & gains to synthesize jawari (buzzing bridge)
-            // Tanpura strings are rich in 2nd, 3rd, 4th, 5th, and 6th harmonics
-            const harmonics = [
-                { mult: 1, gain: 0.5 },
-                { mult: 2, gain: 0.25 },
-                { mult: 3, gain: 0.15 },
-                { mult: 4, gain: 0.08 },
-                { mult: 5, gain: 0.04 },
-                { mult: 6, gain: 0.02 }
+            // 4 Notes mix:
+            // 1. Low Sa (base octave): freq * 0.5 (Mix Volume: 1.0)
+            // 2. Middle Sa (fundamental): freq (Mix Volume: 0.8)
+            // 3. Pa/Ma/Ni (tuning note): freq * multiplier (Mix Volume: 0.75)
+            // 4. High Sa (octave): freq * 2.0 (Mix Volume: 0.45)
+            const frequencies = [
+                baseFreq * 0.5,
+                baseFreq,
+                baseFreq * mode.mult,
+                baseFreq * 2.0
             ];
+            const mixVolumes = [1.0, 0.8, 0.75, 0.45];
 
-            const masterGain = ctx.createGain();
-            masterGain.gain.setValueAtTime(0, now);
-            masterGain.gain.linearRampToValueAtTime(volumeRef.current * 0.4, now + 0.05); // quick pluck attack
-            masterGain.gain.exponentialRampToValueAtTime(0.0001, now + duration); // long string decay
+            const nodes = frequencies.map((freq, idx) => 
+                startDroneNode(ctx, freq, mixVolumes[idx])
+            );
 
-            masterGain.connect(ctx.destination);
-
-            harmonics.forEach(({ mult, gain }) => {
-                const osc = ctx.createOscillator();
-                const nodeGain = ctx.createGain();
-                const filter = ctx.createBiquadFilter();
-
-                // Sawtooth gives all integer harmonics, perfect for brassy buzzing sound
-                osc.type = 'sawtooth';
-                osc.frequency.value = freq * mult;
-
-                // LFO (vibrato) to simulate human pluck string tension variation
-                const lfo = ctx.createOscillator();
-                const lfoGain = ctx.createGain();
-                lfo.frequency.value = 5.5 + Math.random(); // rate
-                lfoGain.gain.value = (freq * mult) * 0.005; // depth
-                lfo.connect(lfoGain);
-                lfoGain.connect(osc.frequency);
-                lfo.start(now);
-                lfo.stop(now + duration);
-
-                // Sweeping bandpass/lowpass filter to simulate string pluck tone decay
-                filter.type = 'lowpass';
-                filter.frequency.setValueAtTime((freq * mult) * 4, now);
-                filter.frequency.exponentialRampToValueAtTime((freq * mult) * 1.2, now + 2.0);
-
-                nodeGain.gain.value = gain;
-
-                osc.connect(filter);
-                filter.connect(nodeGain);
-                nodeGain.connect(masterGain);
-
-                osc.start(now);
-                osc.stop(now + duration);
-            });
-
-            // Pluck transient noise (simulates fingernail/plectrum pluck)
-            const noise = ctx.createBufferSource();
-            const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.02, ctx.sampleRate);
-            const data = noiseBuffer.getChannelData(0);
-            for (let i = 0; i < data.length; i++) {
-                data[i] = Math.random() * 2 - 1;
-            }
-            noise.buffer = noiseBuffer;
-            const noiseFilter = ctx.createBiquadFilter();
-            noiseFilter.type = 'bandpass';
-            noiseFilter.frequency.value = 1000;
-            const noiseGain = ctx.createGain();
-            noiseGain.gain.setValueAtTime(volumeRef.current * 0.12, now);
-            noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
-
-            noise.connect(noiseFilter);
-            noiseFilter.connect(noiseGain);
-            noiseGain.connect(ctx.destination);
-            noise.start(now);
-
+            activeNodesRef.current = nodes;
         } catch (err) {
-            console.error('Web Audio pluck trigger failed:', err);
+            console.error('Failed to start Tanpura drone:', err);
         }
-    }, []);
+    }, [selectedPitch, selectedMode, startDroneNode]);
 
-    // Tanpura loop scheduler
-    const scheduleNextPluck = useCallback(() => {
-        if (!isPlayingRef.current) return;
-
-        const stringIndex = currentPluckRef.current;
-        const baseFreq = pitchRef.current.freq;
-        const mode = modeRef.current;
-
-        let pluckFreq = baseFreq;
-
-        if (stringIndex === 0) {
-            // String 1: Pa (0.75), Ma (0.6667), Ni (0.9375), Sa (0.5)
-            pluckFreq = baseFreq * mode.mult;
-        } else if (stringIndex === 1 || stringIndex === 2) {
-            // String 2 & 3: Sa (middle octave)
-            pluckFreq = baseFreq;
-        } else if (stringIndex === 3) {
-            // String 4: Sa (lower octave)
-            pluckFreq = baseFreq * 0.5;
-        }
-
-        // Trigger synth pluck
-        triggerStringPluck(stringIndex, pluckFreq);
-        setActiveString(stringIndex);
-
-        // Highlight pluck visual then fade
-        setTimeout(() => {
-            setActiveString(null);
-        }, 300);
-
-        // Advanced to next string (0, 1, 2, 3)
-        // Standard loop: String 1 -> String 2 -> String 3 -> String 4 -> Pause -> Repeat
-        // We schedule next pluck after pluckSpeed seconds
-        currentPluckRef.current = (stringIndex + 1) % 4;
-
-        // Pluck 4 is followed by a slightly longer pause to emulate traditional cycle (Sa-Pa-Sa-Sa loop)
-        const delay = stringIndex === 3 ? speedRef.current * 2.0 : speedRef.current;
-        timerRef.current = setTimeout(scheduleNextPluck, delay * 1000);
-
-    }, [triggerStringPluck]);
-
-    // Play/Stop toggle
+    // Handle play state changes
     useEffect(() => {
         if (isPlaying) {
-            currentPluckRef.current = 0;
-            scheduleNextPluck();
+            startDrone();
         } else {
-            if (timerRef.current) clearTimeout(timerRef.current);
-            setActiveString(null);
+            stopAllNodes();
         }
-        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [isPlaying, scheduleNextPluck]);
+        return () => {
+            stopAllNodes();
+        };
+    }, [isPlaying, startDrone, stopAllNodes]);
+
+    // Update volume in real-time
+    useEffect(() => {
+        const ctx = audioCtxRef.current;
+        if (!ctx || activeNodesRef.current.length === 0) return;
+
+        const mixVolumes = [1.0, 0.8, 0.75, 0.45];
+        activeNodesRef.current.forEach((node, idx) => {
+            try {
+                const targetGain = volume * mixVolumes[idx] * 0.22;
+                node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
+                node.gainNode.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.1);
+            } catch (_) {}
+        });
+    }, [volume]);
+
+    // Seamless pitch transition if changed while playing
+    useEffect(() => {
+        if (isPlaying) {
+            stopAllNodes();
+            startDrone();
+        }
+    }, [selectedPitch, selectedMode, isPlaying, startDrone, stopAllNodes]);
 
     // Handle closing modal
     const handleClose = () => {
         setIsPlaying(false);
-        if (timerRef.current) clearTimeout(timerRef.current);
+        stopAllNodes();
         onClose();
     };
 
@@ -215,7 +196,7 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
                         </div>
                         <div>
                             <h2 className="text-white font-bold text-base md:text-lg tracking-tight">Electronic Tanpura Drone</h2>
-                            <p className="text-[#d46211]/60 text-xs">Meditative Shruti box & pluck synthesizer</p>
+                            <p className="text-[#d46211]/60 text-xs">Continuous Shruti Box drone synthesizer</p>
                         </div>
                     </div>
                     <button 
@@ -228,7 +209,7 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
 
                 <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto">
                     {/* Left Panel: Pitch and Tuning Selectors */}
-                    <div className="lg:w-72 p-6 border-r border-[#d46211]/10 flex flex-col gap-6 text-left">
+                    <div className="lg:w-72 p-6 border-r border-[#d46211]/10 flex flex-col gap-6 text-left shrink-0">
                         {/* Scale / Shruti Select */}
                         <div>
                             <h3 className="text-[#d46211]/70 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-1.5">
@@ -238,11 +219,7 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
                                 {SHRU_PITCHES.map((pitch) => (
                                     <button
                                         key={pitch.label}
-                                        onClick={() => {
-                                            setSelectedPitch(pitch);
-                                            // Trigger momentary pluck preview if playing
-                                            if (isPlaying) currentPluckRef.current = 0;
-                                        }}
+                                        onClick={() => setSelectedPitch(pitch)}
                                         className={`px-2 py-2 rounded-xl text-center font-bold text-[10px] md:text-xs transition-all border ${
                                             selectedPitch.label === pitch.label 
                                                 ? 'bg-[#d46211] border-[#d46211] text-white shadow-md shadow-orange-500/15' 
@@ -262,17 +239,14 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
                                 {TUNING_MODES.map((mode) => (
                                     <button
                                         key={mode.id}
-                                        onClick={() => {
-                                            setSelectedMode(mode);
-                                            if (isPlaying) currentPluckRef.current = 0;
-                                        }}
+                                        onClick={() => setSelectedMode(mode)}
                                         className={`w-full text-left p-3 rounded-2xl border transition-all ${
                                             selectedMode.id === mode.id 
                                                 ? 'bg-[#d46211]/10 border-[#d46211] text-white' 
                                                 : 'border-[#d46211]/10 text-white/50 hover:border-[#d46211]/30 hover:text-white/80'
                                         }`}
                                     >
-                                        <p className="font-bold text-xs text-[#d46211]">{mode.label.split(' ')[0]}</p>
+                                        <p className="font-bold text-xs text-[#d46211]">{mode.label}</p>
                                         <p className="text-[10px] text-white/40 mt-0.5 leading-normal">{mode.desc}</p>
                                     </button>
                                 ))}
@@ -288,13 +262,12 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
                             <div className="absolute inset-0 bg-radial-gradient from-orange-500/5 to-transparent pointer-events-none"></div>
 
                             {[0, 1, 2, 3].map((idx) => {
-                                const active = activeString === idx;
                                 const stringLabel = idx === 0 ? selectedMode.id : idx === 3 ? 'Sa (Base)' : 'Sa';
                                 return (
                                     <div key={idx} className="flex flex-col items-center justify-between py-2 relative w-16">
                                         {/* Label top */}
                                         <span className={`text-[10px] font-extrabold uppercase tracking-wide transition-colors ${
-                                            active ? 'text-amber-400' : 'text-white/40'
+                                            isPlaying ? 'text-amber-400 animate-pulse' : 'text-white/40'
                                         }`}>
                                             {stringLabel}
                                         </span>
@@ -303,24 +276,17 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
                                         <div className="relative flex-1 flex items-center justify-center w-full my-4">
                                             {/* Vibrating String Line */}
                                             <div 
-                                                className={`w-[2px] h-full transition-all duration-75 ${
-                                                    active 
-                                                        ? 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.8)] scale-x-150 animate-pulse' 
+                                                className={`w-[2.5px] h-full transition-all duration-300 ${
+                                                    isPlaying 
+                                                        ? 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.8)] animate-pulse' 
                                                         : 'bg-gradient-to-b from-[#d46211]/10 via-[#d46211]/40 to-[#d46211]/10'
                                                 }`}
-                                                style={{
-                                                    transform: active ? 'skewX(1deg) scaleX(1.8)' : 'none',
-                                                }}
                                             />
-                                            {/* Visual ripple pluck circle */}
-                                            {active && (
-                                                <div className="absolute w-8 h-8 rounded-full border border-amber-400 animate-ping opacity-75"></div>
-                                            )}
                                         </div>
 
                                         {/* Peg/Key bottom */}
                                         <div className={`w-3.5 h-3.5 rounded-full border-2 transition-all ${
-                                            active 
+                                            isPlaying 
                                                 ? 'bg-[#d46211] border-amber-400 scale-110 shadow-md shadow-orange-500/40' 
                                                 : 'bg-[#120b04] border-[#d46211]/40'
                                         }`} />
@@ -350,26 +316,6 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
                                     />
                                 </div>
                             </div>
-
-                            {/* Pluck Speed Slider */}
-                            <div className="flex items-center gap-4 bg-white/5 border border-white/5 px-4 py-3 rounded-2xl">
-                                <Sliders className="w-4 h-4 text-[#d46211] shrink-0" />
-                                <div className="flex-1 flex flex-col text-left">
-                                    <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1.5">
-                                        <span>Pluck Speed</span>
-                                        <span className="text-[#d46211] font-mono">{(pluckSpeed).toFixed(1)}s / string</span>
-                                    </div>
-                                    <input 
-                                        type="range"
-                                        min="0.6"
-                                        max="1.8"
-                                        step="0.1"
-                                        value={pluckSpeed}
-                                        onChange={(e) => setPluckSpeed(parseFloat(e.target.value))}
-                                        className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                    />
-                                </div>
-                            </div>
                         </div>
 
                         {/* Playing Buttons */}
@@ -384,11 +330,11 @@ export default function TanpuraModal({ onClose }: { onClose: () => void }) {
                             >
                                 {isPlaying ? (
                                     <>
-                                        <Square className="w-4 h-4 fill-white" /> Stop
+                                        <Square className="w-4 h-4 fill-white" /> Stop Drone
                                     </>
                                 ) : (
                                     <>
-                                        <Play className="w-4 h-4 fill-white" /> Play Tanpura
+                                        <Play className="w-4 h-4 fill-white" /> Play Drone
                                     </>
                                 )}
                             </button>
