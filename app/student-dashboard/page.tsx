@@ -11,9 +11,7 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
-const MetronomeModal = dynamic(() => import('../../src/components/MetronomeModal'), { ssr: false });
-const TanpuraModal = dynamic(() => import('../../src/components/TanpuraModal'), { ssr: false });
-const DrumsModal = dynamic(() => import('../../src/components/DrumsModal'), { ssr: false });
+const PracticeSuiteModal = dynamic(() => import('../../src/components/PracticeSuiteModal'), { ssr: false });
 
 interface StudentProfile {
     id: string;
@@ -105,9 +103,8 @@ export default function StudentDashboard() {
 
     // UI Navigation state
     const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library'>('overview');
-    const [showMetronome, setShowMetronome] = useState(false);
-    const [showTanpura, setShowTanpura] = useState(false);
-    const [showDrums, setShowDrums] = useState(false);
+    const [showPracticeSuite, setShowPracticeSuite] = useState(false);
+    const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'drums'>('metronome');
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
@@ -473,9 +470,12 @@ export default function StudentDashboard() {
 
     return (
         <>
-        {showMetronome && <MetronomeModal onClose={() => setShowMetronome(false)} />}
-        {showTanpura && <TanpuraModal onClose={() => setShowTanpura(false)} />}
-        {showDrums && <DrumsModal onClose={() => setShowDrums(false)} />}
+        {showPracticeSuite && (
+            <PracticeSuiteModal 
+                defaultTab={practiceSuiteTab} 
+                onClose={() => setShowPracticeSuite(false)} 
+            />
+        )}
         
         <div className="flex min-h-screen bg-[#f8fafc]" style={{ fontFamily: 'Lexend, sans-serif' }}>
             {/* Google Fonts */}
@@ -772,23 +772,32 @@ export default function StudentDashboard() {
                                         </h3>
                                         <div className="grid grid-cols-4 gap-2">
                                             <button 
-                                                onClick={() => setShowMetronome(true)} 
+                                                onClick={() => {
+                                                    setPracticeSuiteTab('metronome');
+                                                    setShowPracticeSuite(true);
+                                                }} 
                                                 className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
                                             >
                                                 <Volume2 className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
                                                 <span className="text-[9px] font-extrabold text-slate-600">Metronome</span>
                                             </button>
-
+ 
                                             <button 
-                                                onClick={() => setShowTanpura(true)} 
+                                                onClick={() => {
+                                                    setPracticeSuiteTab('metronome');
+                                                    setShowPracticeSuite(true);
+                                                }} 
                                                 className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
                                             >
                                                 <Music className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
                                                 <span className="text-[9px] font-extrabold text-slate-600">Tanpura</span>
                                             </button>
-
+ 
                                             <button 
-                                                onClick={() => setShowDrums(true)} 
+                                                onClick={() => {
+                                                    setPracticeSuiteTab('drums');
+                                                    setShowPracticeSuite(true);
+                                                }} 
                                                 className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
                                             >
                                                 <span className="material-symbols-outlined text-amber-500 text-2xl group-hover:scale-115 transition-transform w-6 h-6 flex items-center justify-center">album</span>
@@ -1337,13 +1346,16 @@ export default function StudentDashboard() {
                                             </div>
                                         </div>
                                         <button 
-                                            onClick={() => setShowMetronome(true)}
+                                            onClick={() => {
+                                                setPracticeSuiteTab('metronome');
+                                                setShowPracticeSuite(true);
+                                            }}
                                             className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
                                         >
                                             Open Metronome
                                         </button>
                                     </div>
-
+ 
                                     <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
                                         <div className="flex items-start gap-3">
                                             <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#d46211] flex items-center justify-center shrink-0 border border-orange-100">
@@ -1357,13 +1369,16 @@ export default function StudentDashboard() {
                                             </div>
                                         </div>
                                         <button 
-                                            onClick={() => setShowTanpura(true)}
+                                            onClick={() => {
+                                                setPracticeSuiteTab('metronome');
+                                                setShowPracticeSuite(true);
+                                            }}
                                             className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
                                         >
                                             Open Tanpura
                                         </button>
                                     </div>
-
+ 
                                     <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
                                         <div className="flex items-start gap-3">
                                             <div className="w-10 h-10 rounded-xl bg-[#d46211]/10 text-[#d46211] flex items-center justify-center shrink-0 border border-[#d46211]/20">
@@ -1377,7 +1392,10 @@ export default function StudentDashboard() {
                                             </div>
                                         </div>
                                         <button 
-                                            onClick={() => setShowDrums(true)}
+                                            onClick={() => {
+                                                setPracticeSuiteTab('drums');
+                                                setShowPracticeSuite(true);
+                                            }}
                                             className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
                                         >
                                             Open Drum Beats
