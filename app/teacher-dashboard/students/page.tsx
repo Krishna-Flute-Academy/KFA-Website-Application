@@ -44,7 +44,9 @@ export default function StudentDirectory() {
         avgAttendance: 0,
         submissionRate: 76, // Mocked for now
     });
-    const [filterMode, setFilterMode] = useState<'all' | 'recent'>('all');
+    const [filterMode, setFilterMode] = useState<'all' | 'recent' | 'unassigned'>('all');
+    const [unassignedStudents, setUnassignedStudents] = useState<StudentData[]>([]);
+    const [claimingId, setClaimingId] = useState<string | null>(null);
     const [selectedBatch, setSelectedBatch] = useState<string>('All Batches');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
     const [searchQuery, setSearchQuery] = useState('');
@@ -177,6 +179,41 @@ export default function StudentDirectory() {
                     }
                 }
 
+                // 5. Fetch Unassigned Students
+                const { data: unassignedData, error: unassignedError } = await supabaseAuth
+                    .from('users')
+                    .select(`
+                        id,
+                        name,
+                        status,
+                        profile_pic_url,
+                        created_at,
+                        classroom_students(
+                            classrooms(name)
+                        )
+                    `)
+                    .eq('role', 'student')
+                    .is('teacher_id', null);
+
+                if (unassignedError) {
+                    console.error('Supabase error fetching unassigned students:', unassignedError);
+                }
+
+                if (unassignedData) {
+                    const formattedUnassigned = unassignedData.map((s: any) => ({
+                        id: s.id,
+                        user_id: s.id,
+                        name: s.name,
+                        student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
+                        batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
+                        attendance_pct: 0,
+                        profile_pic_url: s.profile_pic_url,
+                        status: s.status === 'active' ? 'Active' : 'Inactive',
+                        created_at: s.created_at
+                    }));
+                    setUnassignedStudents(formattedUnassigned);
+                }
+
             } catch (err) {
                 console.error('Error fetching students:', err);
             } finally {
@@ -190,6 +227,32 @@ export default function StudentDirectory() {
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/');
+    };
+
+    const claimStudent = async (studentId: string) => {
+        if (!teacherProfile) return;
+        setClaimingId(studentId);
+        try {
+            const { error } = await supabaseAuth
+                .from('users')
+                .update({ teacher_id: teacherProfile.id })
+                .eq('id', studentId);
+
+            if (error) throw error;
+
+            // Find the claimed student from the unassigned list
+            const claimed = unassignedStudents.find(s => s.id === studentId);
+            if (claimed) {
+                // Add to assigned students and remove from unassigned students
+                setStudents(prev => [...prev, claimed]);
+                setUnassignedStudents(prev => prev.filter(s => s.id !== studentId));
+            }
+        } catch (err) {
+            console.error('Error claiming student:', err);
+            alert('Failed to assign student to your profile. Please try again.');
+        } finally {
+            setClaimingId(null);
+        }
     };
 
     const toggleStudentStatus = async (studentId: string, currentStatus: string) => {
@@ -440,17 +503,19 @@ export default function StudentDirectory() {
     const availableBatches = Array.from(new Set(students.map(s => s.batch).filter(b => b !== 'Unassigned'))).sort();
 
     const displayedStudents = React.useMemo(() => {
-        let result = [...students];
+        let result = filterMode === 'unassigned' ? [...unassignedStudents] : [...students];
 
-        if (selectedBatch !== 'All Batches') {
-            result = result.filter(s => s.batch === selectedBatch);
+        if (filterMode !== 'unassigned') {
+            if (selectedBatch !== 'All Batches') {
+                result = result.filter(s => s.batch === selectedBatch);
+            }
+
+            if (statusFilter !== 'all') {
+                result = result.filter(s => s.status.toLowerCase() === statusFilter);
+            }
         }
 
-        if (statusFilter !== 'all') {
-            result = result.filter(s => s.status.toLowerCase() === statusFilter);
-        }
-
-        if (filterMode === 'recent') {
+        if (filterMode === 'recent' || filterMode === 'unassigned') {
             result = result.sort((a, b) => {
                 const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
                 const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -470,7 +535,7 @@ export default function StudentDirectory() {
         }
 
         return result;
-    }, [students, filterMode, selectedBatch, statusFilter, searchQuery]);
+    }, [students, unassignedStudents, filterMode, selectedBatch, statusFilter, searchQuery]);
 
     const totalPages = Math.ceil(displayedStudents.length / ITEMS_PER_PAGE);
     const paginatedStudents = displayedStudents.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -915,27 +980,34 @@ export default function StudentDirectory() {
                                                 <button 
                                                     onClick={() => setFilterMode('recent')}
                                                     className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'recent' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Recent</button>
+                                                <button 
+                                                    onClick={() => setFilterMode('unassigned')}
+                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({unassignedStudents.length})</button>
                                             </div>
-                                            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
-                                            <select 
-                                                value={selectedBatch} 
-                                                onChange={(e) => setSelectedBatch(e.target.value)} 
-                                                className="text-sm font-medium bg-transparent border-none focus:ring-0 text-slate-600 dark:text-slate-400 py-1 pl-1 pr-8 cursor-pointer">
-                                                <option value="All Batches">All Batches</option>
-                                                {availableBatches.map(batch => (
-                                                    <option key={batch} value={batch}>{batch}</option>
-                                                ))}
-                                                <option value="Unassigned">Unassigned</option>
-                                            </select>
-                                            <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
-                                            <select 
-                                                value={statusFilter} 
-                                                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')} 
-                                                className="text-sm font-medium bg-transparent border-none focus:ring-0 text-slate-600 dark:text-slate-400 py-1 pl-1 pr-8 cursor-pointer">
-                                                <option value="all">All Status</option>
-                                                <option value="active">Active Only</option>
-                                                <option value="inactive">Inactive Only</option>
-                                            </select>
+                                            {filterMode !== 'unassigned' && (
+                                                <>
+                                                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                                                    <select 
+                                                        value={selectedBatch} 
+                                                        onChange={(e) => setSelectedBatch(e.target.value)} 
+                                                        className="text-sm font-medium bg-transparent border-none focus:ring-0 text-slate-600 dark:text-slate-400 py-1 pl-1 pr-8 cursor-pointer">
+                                                        <option value="All Batches">All Batches</option>
+                                                        {availableBatches.map(batch => (
+                                                            <option key={batch} value={batch}>{batch}</option>
+                                                        ))}
+                                                        <option value="Unassigned">Unassigned</option>
+                                                    </select>
+                                                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                                                    <select 
+                                                        value={statusFilter} 
+                                                        onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')} 
+                                                        className="text-sm font-medium bg-transparent border-none focus:ring-0 text-slate-600 dark:text-slate-400 py-1 pl-1 pr-8 cursor-pointer">
+                                                        <option value="all">All Status</option>
+                                                        <option value="active">Active Only</option>
+                                                        <option value="inactive">Inactive Only</option>
+                                                    </select>
+                                                </>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <button 
@@ -953,20 +1025,24 @@ export default function StudentDirectory() {
                                                 <tr className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
                                                     {/* Select All Checkbox */}
                                                     <th className="px-4 py-4 w-10">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={allPageSelected}
-                                                            ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
-                                                            onChange={toggleSelectAll}
-                                                            className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
-                                                            title="Select all on this page"
-                                                        />
+                                                        {filterMode !== 'unassigned' ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={allPageSelected}
+                                                                ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
+                                                                onChange={toggleSelectAll}
+                                                                className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
+                                                                title="Select all on this page"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-slate-400">—</span>
+                                                        )}
                                                     </th>
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student Name</th>
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Batch</th>
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Attendance</th>
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Contact</th>
+                                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">{filterMode === 'unassigned' ? 'Action' : 'Contact'}</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -974,12 +1050,16 @@ export default function StudentDirectory() {
                                                     <tr key={student.id} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
                                                         {/* Row checkbox */}
                                                         <td className="px-4 py-4">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selectedIds.has(student.id)}
-                                                                onChange={() => toggleSelectStudent(student.id)}
-                                                                className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
-                                                            />
+                                                            {filterMode !== 'unassigned' ? (
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedIds.has(student.id)}
+                                                                    onChange={() => toggleSelectStudent(student.id)}
+                                                                    className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
+                                                            )}
                                                         </td>
                                                         <td className="px-6 py-4">
                                                             <div className="flex items-center gap-3">
@@ -1010,15 +1090,19 @@ export default function StudentDirectory() {
                                                             <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.batch}</span>
                                                         </td>
                                                         <td className="px-6 py-4">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="flex-1 w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                                    <div
-                                                                        className={`h-full ${student.attendance_pct >= 90 ? 'bg-green-500' : student.attendance_pct >= 75 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                                                                        style={{ width: `${student.attendance_pct}%` }}
-                                                                    ></div>
+                                                            {filterMode === 'unassigned' ? (
+                                                                <span className="text-sm text-slate-400">—</span>
+                                                            ) : (
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex-1 w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                                                        <div
+                                                                            className={`h-full ${student.attendance_pct >= 90 ? 'bg-green-500' : student.attendance_pct >= 75 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                                                            style={{ width: `${student.attendance_pct}%` }}
+                                                                        ></div>
+                                                                    </div>
+                                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{student.attendance_pct}%</span>
                                                                 </div>
-                                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{student.attendance_pct}%</span>
-                                                            </div>
+                                                            )}
                                                         </td>
                                                         <td className="px-6 py-4">
                                                             <button 
@@ -1032,27 +1116,47 @@ export default function StudentDirectory() {
                                                             </button>
                                                         </td>
                                                         <td className="px-6 py-4">
-                                                            <div className="flex items-center justify-center gap-4">
-                                                                <button className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Message Student">
-                                                                    <span className="material-symbols-outlined text-xl">chat</span>
-                                                                </button>
-                                                                <button 
-                                                                    onClick={(e) => {
-                                                                        e.preventDefault();
-                                                                        setStudentToDelete({ id: student.id, name: student.name });
-                                                                    }}
-                                                                    className="p-2 text-rose-500 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/20 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all"
-                                                                    title="Delete Student">
-                                                                    <span className="material-symbols-outlined text-xl">delete</span>
-                                                                </button>
-                                                            </div>
+                                                            {filterMode === 'unassigned' ? (
+                                                                <div className="flex items-center justify-center">
+                                                                    <button 
+                                                                        disabled={claimingId === student.id}
+                                                                        onClick={(e) => {
+                                                                            e.preventDefault();
+                                                                            claimStudent(student.id);
+                                                                        }}
+                                                                        className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
+                                                                    >
+                                                                        {claimingId === student.id ? (
+                                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                        ) : (
+                                                                            <span className="material-symbols-outlined text-[16px]">person_add</span>
+                                                                        )}
+                                                                        {claimingId === student.id ? 'Assigning...' : 'Assign to Me'}
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-center justify-center gap-4">
+                                                                    <button className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Message Student">
+                                                                        <span className="material-symbols-outlined text-xl">chat</span>
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => {
+                                                                            e.preventDefault();
+                                                                            setStudentToDelete({ id: student.id, name: student.name });
+                                                                        }}
+                                                                        className="p-2 text-rose-500 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/20 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all"
+                                                                        title="Delete Student">
+                                                                        <span className="material-symbols-outlined text-xl">delete</span>
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 ))}
                                                 {paginatedStudents.length === 0 && (
                                                     <tr>
                                                         <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
-                                                            No students found in your directory.
+                                                            {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
                                                         </td>
                                                     </tr>
                                                 )}

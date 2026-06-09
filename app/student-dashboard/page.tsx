@@ -14,6 +14,7 @@ interface StudentProfile {
     email: string;
     level?: string;
     profile_pic_url?: string;
+    role?: string;
 }
 
 interface TaskItem {
@@ -50,7 +51,7 @@ export default function StudentDashboard() {
             // 1. Fetch student profile
             const { data: user } = await supabaseAuth
                 .from('users')
-                .select('id, name, email, level, profile_pic_url')
+                .select('id, name, email, level, profile_pic_url, role')
                 .eq('id', userId)
                 .maybeSingle();
 
