@@ -12,6 +12,7 @@ import {
 import dynamic from 'next/dynamic';
 
 const MetronomeModal = dynamic(() => import('../../src/components/MetronomeModal'), { ssr: false });
+const TanpuraModal = dynamic(() => import('../../src/components/TanpuraModal'), { ssr: false });
 
 interface StudentProfile {
     id: string;
@@ -104,6 +105,7 @@ export default function StudentDashboard() {
     // UI Navigation state
     const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library'>('overview');
     const [showMetronome, setShowMetronome] = useState(false);
+    const [showTanpura, setShowTanpura] = useState(false);
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
@@ -470,6 +472,7 @@ export default function StudentDashboard() {
     return (
         <>
         {showMetronome && <MetronomeModal onClose={() => setShowMetronome(false)} />}
+        {showTanpura && <TanpuraModal onClose={() => setShowTanpura(false)} />}
         
         <div className="flex min-h-screen bg-[#f8fafc]" style={{ fontFamily: 'Lexend, sans-serif' }}>
             {/* Google Fonts */}
@@ -764,21 +767,29 @@ export default function StudentDashboard() {
                                             <Music className="w-5 h-5 text-amber-500" />
                                             Practice Tools
                                         </h3>
-                                        <div className="grid grid-cols-2 gap-3.5">
+                                        <div className="grid grid-cols-3 gap-2">
                                             <button 
                                                 onClick={() => setShowMetronome(true)} 
-                                                className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-2 transition-all group shrink-0"
+                                                className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
                                             >
-                                                <Volume2 className="w-8 h-8 text-amber-500 group-hover:scale-110 transition-transform" />
-                                                <span className="text-[10px] font-extrabold text-slate-600">Metronome</span>
+                                                <Volume2 className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
+                                                <span className="text-[9px] font-extrabold text-slate-600">Metronome</span>
+                                            </button>
+
+                                            <button 
+                                                onClick={() => setShowTanpura(true)} 
+                                                className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
+                                            >
+                                                <Music className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
+                                                <span className="text-[9px] font-extrabold text-slate-600">Tanpura</span>
                                             </button>
 
                                             <button 
                                                 onClick={() => setActiveTab('library')}
-                                                className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-2 transition-all group shrink-0"
+                                                className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
                                             >
-                                                <FileText className="w-8 h-8 text-amber-500 group-hover:scale-110 transition-transform" />
-                                                <span className="text-[10px] font-extrabold text-slate-600">Sheet Music</span>
+                                                <FileText className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
+                                                <span className="text-[9px] font-extrabold text-slate-600">Library</span>
                                             </button>
                                         </div>
                                     </div>
@@ -1294,6 +1305,54 @@ export default function StudentDashboard() {
                                         })}
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Practice Tools */}
+                            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs text-left">
+                                <h3 className="font-extrabold text-slate-800 text-base mb-1">Practice Tools</h3>
+                                <p className="text-xs text-slate-500 mb-6">Interactive instruments to support your flute rehearsal sessions</p>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0 border border-amber-100">
+                                                <Volume2 className="w-5 h-5" />
+                                            </div>
+                                            <div className="text-left">
+                                                <h4 className="font-extrabold text-xs md:text-sm text-slate-800">Practice Metronome</h4>
+                                                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                    Keep perfect time with speed adjustments, custom beats, subdivisions, and ramp acceleration modes.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={() => setShowMetronome(true)}
+                                            className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
+                                        >
+                                            Open Metronome
+                                        </button>
+                                    </div>
+
+                                    <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#d46211] flex items-center justify-center shrink-0 border border-orange-100">
+                                                <Music className="w-5 h-5" />
+                                            </div>
+                                            <div className="text-left">
+                                                <h4 className="font-extrabold text-xs md:text-sm text-slate-800">Tanpura Drone</h4>
+                                                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                    A plucked Indian classical string drone to align your shruti (pitch scales) and tune your flute.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={() => setShowTanpura(true)}
+                                            className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
+                                        >
+                                            Open Tanpura
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
