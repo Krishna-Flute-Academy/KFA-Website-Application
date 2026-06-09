@@ -70,6 +70,53 @@ const TABLA_PITCHES = [
     { label: 'B (Safed 3)', freq: 246.94 },
 ];
 
+// Helper to generate a short white noise buffer for strike transients
+const createNoiseBuffer = (ctx: AudioContext, duration: number): AudioBuffer => {
+    const sampleRate = ctx.sampleRate;
+    const bufferSize = Math.max(sampleRate * duration, 1);
+    const buffer = ctx.createBuffer(1, bufferSize, sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+    return buffer;
+};
+
+// Helper to play a short transient noise burst with customizable filtering
+const playNoise = (
+    ctx: AudioContext, 
+    filterType: BiquadFilterType, 
+    filterFreq: number, 
+    Q: number, 
+    volume: number, 
+    duration: number, 
+    now: number
+) => {
+    try {
+        const noiseSource = ctx.createBufferSource();
+        noiseSource.buffer = createNoiseBuffer(ctx, duration);
+
+        const noiseFilter = ctx.createBiquadFilter();
+        noiseFilter.type = filterType;
+        noiseFilter.frequency.value = filterFreq;
+        noiseFilter.Q.value = Q;
+
+        const noiseGain = ctx.createGain();
+        noiseGain.gain.setValueAtTime(0, now);
+        noiseGain.gain.linearRampToValueAtTime(volume, now + 0.002);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+        noiseSource.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(ctx.destination);
+
+        noiseSource.start(now);
+        noiseSource.stop(now + duration + 0.05);
+    } catch (e) {
+        console.error('Failed to synthesize transient noise:', e);
+    }
+};
+
 export default function TablaModal({ onClose }: { onClose: () => void }) {
     const [selectedTaal, setSelectedTaal] = useState<Taal>(TAALS[0]);
     const [selectedPitch, setSelectedPitch] = useState(TABLA_PITCHES[2]); // Default D
@@ -110,40 +157,52 @@ export default function TablaModal({ onClose }: { onClose: () => void }) {
     // Tin / Na: Metallic ringing stroke
     const playTrebleRing = useCallback((ctx: AudioContext, freq: number, duration: number, isStrong: boolean) => {
         const now = ctx.currentTime;
-        
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gainNode = ctx.createGain();
+        const vol = volumeRef.current;
+        const strokeVol = vol * (isStrong ? 0.7 : 0.45);
+
+        // 1. Play high-frequency impact noise transient (finger slap skin sound)
+        playNoise(ctx, 'bandpass', 1200, 3.0, strokeVol * 0.45, 0.02, now);
+
+        // 2. Play additive membrane oscillators with pitch-bend transient
+        // Indian Tabla Dayan has prominent overtones at 1.0 (Sa), 1.5 (Pa), 2.0 (octave Sa), 3.0, 4.0
+        const overtones = [
+            { ratio: 1.0, volMult: 0.6, decayMult: 1.0, pitchMod: true },   // Fundamental Sa
+            { ratio: 1.5, volMult: 0.5, decayMult: 1.2, pitchMod: true },   // Ringing Fifth Pa (dominant ring)
+            { ratio: 2.0, volMult: 0.35, decayMult: 0.75, pitchMod: true }, // Octave Sa
+            { ratio: 3.0, volMult: 0.18, decayMult: 0.45, pitchMod: false },// Harmonic
+            { ratio: 4.0, volMult: 0.08, decayMult: 0.2, pitchMod: false }  // High sheath
+        ];
+
         const filter = ctx.createBiquadFilter();
-
-        osc1.type = 'sine';
-        osc1.frequency.value = freq;
-
-        // Harmonic resonance at 1.5x (perfect 5th) gives treble ringing texture
-        osc2.type = 'sine';
-        osc2.frequency.value = freq * 1.5;
-
-        const osc2Gain = ctx.createGain();
-        osc2Gain.gain.value = 0.25;
-
         filter.type = 'lowpass';
-        filter.frequency.value = freq * 4.5;
+        filter.frequency.value = freq * 3.5;
 
-        gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(volumeRef.current * (isStrong ? 0.45 : 0.25), now + 0.015);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        overtones.forEach(({ ratio, volMult, decayMult, pitchMod }) => {
+            const osc = ctx.createOscillator();
+            osc.type = 'sine';
 
-        osc1.connect(filter);
-        osc2.connect(osc2Gain);
-        osc2Gain.connect(filter);
-        filter.connect(gainNode);
-        gainNode.connect(ctx.destination);
+            const targetFreq = freq * ratio;
+            if (pitchMod) {
+                // Natural pitch tension drop: strike peaks and drops slightly
+                osc.frequency.setValueAtTime(targetFreq * 1.035, now);
+                osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.025);
+            } else {
+                osc.frequency.value = targetFreq;
+            }
 
-        osc1.start(now);
-        osc1.stop(now + duration + 0.1);
-        osc2.start(now);
-        osc2.stop(now + duration + 0.1);
-        
+            const oscGain = ctx.createGain();
+            oscGain.gain.setValueAtTime(0, now);
+            oscGain.gain.linearRampToValueAtTime(strokeVol * volMult, now + 0.012);
+            oscGain.gain.exponentialRampToValueAtTime(0.001, now + (duration * decayMult));
+
+            osc.connect(filter);
+            filter.connect(oscGain);
+            oscGain.connect(ctx.destination);
+
+            osc.start(now);
+            osc.stop(now + (duration * decayMult) + 0.05);
+        });
+
         // Trigger right drum visual
         setPlayDayan(true);
         setTimeout(() => setPlayDayan(false), 120);
@@ -152,26 +211,42 @@ export default function TablaModal({ onClose }: { onClose: () => void }) {
     // Ta: Closed flat stroke
     const playTrebleFlat = useCallback((ctx: AudioContext, freq: number, duration: number) => {
         const now = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gainNode = ctx.createGain();
+        const vol = volumeRef.current;
+        const strokeVol = vol * 0.45;
+
+        // 1. Attack noise transient (woody knock)
+        playNoise(ctx, 'bandpass', 1400, 2.0, strokeVol * 0.65, 0.045, now);
+
+        // 2. Short decaying damped oscillators
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
         const filter = ctx.createBiquadFilter();
 
-        osc.type = 'triangle';
-        osc.frequency.value = freq;
+        osc1.type = 'triangle';
+        osc1.frequency.setValueAtTime(freq * 1.05, now);
+        osc1.frequency.exponentialRampToValueAtTime(freq, now + 0.015);
+
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(freq * 2.2, now);
 
         filter.type = 'bandpass';
-        filter.frequency.value = freq * 1.8;
+        filter.frequency.value = freq * 1.6;
+        filter.Q.value = 2.0;
 
+        const gainNode = ctx.createGain();
         gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(volumeRef.current * 0.3, now + 0.005);
+        gainNode.gain.linearRampToValueAtTime(strokeVol * 0.55, now + 0.004);
         gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-        osc.connect(filter);
+        osc1.connect(filter);
+        osc2.connect(filter);
         filter.connect(gainNode);
         gainNode.connect(ctx.destination);
 
-        osc.start(now);
-        osc.stop(now + duration + 0.05);
+        osc1.start(now);
+        osc1.stop(now + duration + 0.05);
+        osc2.start(now);
+        osc2.stop(now + duration + 0.05);
 
         setPlayDayan(true);
         setTimeout(() => setPlayDayan(false), 120);
@@ -181,30 +256,67 @@ export default function TablaModal({ onClose }: { onClose: () => void }) {
     // Ge: Resonant sliding bass
     const playBassSlide = useCallback((ctx: AudioContext, baseFreq: number, duration: number) => {
         const now = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gainNode = ctx.createGain();
+        const vol = volumeRef.current;
+        const strokeVol = vol * 0.75;
+
+        // 1. Play soft low-frequency slap noise transient
+        playNoise(ctx, 'bandpass', 280, 1.5, strokeVol * 0.38, 0.035, now);
+
+        // 2. Play sliding oscillators (Fundamental + Second harmonic for speaker presence)
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
         const filter = ctx.createBiquadFilter();
 
-        osc.type = 'triangle';
-        // Pitch sweep / sliding slide representing Bayan hand pressure
-        const startFreq = baseFreq * 0.32; // e.g., 90Hz
-        const endFreq = baseFreq * 0.44;   // e.g., 125Hz
-        osc.frequency.setValueAtTime(startFreq, now);
-        osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.16);
+        osc1.type = 'sine';
+        osc2.type = 'triangle'; // triangle adds warm harmonics for small speakers/phones
 
+        const startFreq = baseFreq * 0.28; // e.g. ~73Hz for D
+        const endFreq = baseFreq * 0.44;   // e.g. ~115Hz for D
+
+        // Organic Pitch Bend: Strike tension drop + palm pressure slide
+        // 1. Strike tension drop: starts higher and drops to startFreq in 20ms
+        const strikePeak = startFreq * 1.35;
+        osc1.frequency.setValueAtTime(strikePeak, now);
+        osc1.frequency.exponentialRampToValueAtTime(startFreq, now + 0.02);
+        // 2. Palm pressure slide: slides up to endFreq by 180ms
+        osc1.frequency.setValueAtTime(startFreq, now + 0.02);
+        osc1.frequency.exponentialRampToValueAtTime(endFreq, now + 0.18);
+
+        // Second harmonic tracks fundamental * 2.0
+        osc2.frequency.setValueAtTime(strikePeak * 2.0, now);
+        osc2.frequency.exponentialRampToValueAtTime(startFreq * 2.0, now + 0.02);
+        osc2.frequency.setValueAtTime(startFreq * 2.0, now + 0.02);
+        osc2.frequency.exponentialRampToValueAtTime(endFreq * 2.0, now + 0.18);
+
+        // Resonant filter sweeps along with the slide to mimic chamber acoustics
         filter.type = 'lowpass';
-        filter.frequency.value = baseFreq * 1.5;
+        filter.frequency.setValueAtTime(strikePeak * 2.2, now);
+        filter.frequency.exponentialRampToValueAtTime(startFreq * 2.2, now + 0.02);
+        filter.frequency.setValueAtTime(startFreq * 2.2, now + 0.02);
+        filter.frequency.exponentialRampToValueAtTime(endFreq * 2.2, now + 0.18);
+        filter.Q.value = 4.5; // High Q for vocal "ooh-aah" resonant quality
 
-        gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(volumeRef.current * 0.55, now + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        const gain1 = ctx.createGain();
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(strokeVol * 0.75, now + 0.015);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-        osc.connect(filter);
-        filter.connect(gainNode);
-        gainNode.connect(ctx.destination);
+        const gain2 = ctx.createGain();
+        gain2.gain.setValueAtTime(0, now);
+        gain2.gain.linearRampToValueAtTime(strokeVol * 0.25, now + 0.015);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + (duration * 0.65));
 
-        osc.start(now);
-        osc.stop(now + duration + 0.1);
+        osc2.connect(gain2);
+        gain2.connect(filter);
+        
+        osc1.connect(filter);
+        filter.connect(gain1);
+        gain1.connect(ctx.destination);
+
+        osc1.start(now);
+        osc1.stop(now + duration + 0.1);
+        osc2.start(now);
+        osc2.stop(now + duration + 0.1);
 
         setPlayBayan(true);
         setTimeout(() => setPlayBayan(false), 120);
@@ -213,14 +325,21 @@ export default function TablaModal({ onClose }: { onClose: () => void }) {
     // Ke / Ka: Short flat bass stroke
     const playBassFlat = useCallback((ctx: AudioContext, baseFreq: number, duration: number) => {
         const now = ctx.currentTime;
+        const vol = volumeRef.current;
+        const strokeVol = vol * 0.6;
+
+        // 1. Damped slap noise
+        playNoise(ctx, 'lowpass', 350, 1.0, strokeVol * 0.75, 0.065, now);
+
+        // 2. Damped low sine oscillator
         const osc = ctx.createOscillator();
         const gainNode = ctx.createGain();
 
         osc.type = 'sine';
-        osc.frequency.value = baseFreq * 0.35; // e.g., ~100Hz
+        osc.frequency.value = baseFreq * 0.32; // e.g. ~83Hz for D
 
         gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(volumeRef.current * 0.45, now + 0.005);
+        gainNode.gain.linearRampToValueAtTime(strokeVol * 0.55, now + 0.006);
         gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
         osc.connect(gainNode);
