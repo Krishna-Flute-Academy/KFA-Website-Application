@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../src/lib/supabase-auth';
 import { 
@@ -89,6 +89,7 @@ export default function StudentDashboard() {
     const [classmates, setClassmates] = useState<Classmate[]>([]);
     const [assignments, setAssignments] = useState<EnrichedAssignment[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+    const [sessionLogs, setSessionLogs] = useState<any[]>([]);
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
     const [classNotes, setClassNotes] = useState<ClassNote[]>([]);
     
@@ -228,6 +229,18 @@ export default function StudentDashboard() {
                 .order('date', { ascending: false });
             setAttendance(att || []);
 
+            // Fetch classroom session logs
+            if (classroomId) {
+                const { data: logs, error: logsErr } = await supabaseAuth
+                    .from('classroom_session_logs')
+                    .select('*')
+                    .eq('classroom_id', classroomId)
+                    .order('started_at', { ascending: false });
+                if (!logsErr) {
+                    setSessionLogs(logs || []);
+                }
+            }
+
             // 5. Fetch Messages (Broadcasts) targeted to this student or classroom
             const { data: broadcastsData } = await supabaseAuth
                 .from('broadcasts')
@@ -278,6 +291,34 @@ export default function StudentDashboard() {
         };
         init();
     }, [router]);
+
+    // Merged logs for rendering past sessions - placed before conditional early returns
+    const mergedLogs = useMemo(() => {
+        const logsMap = new Map<string, any>();
+        sessionLogs.forEach(log => {
+            logsMap.set(log.session_date, log);
+        });
+
+        const allDates = new Set<string>([
+            ...sessionLogs.map(log => log.session_date),
+            ...attendance.map(a => a.date)
+        ]);
+
+        const sortedDates = Array.from(allDates).sort((a, b) => b.localeCompare(a));
+
+        return sortedDates.map(dateStr => {
+            const log = logsMap.get(dateStr);
+            const att = attendance.find(a => a.date === dateStr);
+            return {
+                date: dateStr,
+                id: log?.id || att?.id || dateStr,
+                started_at: log?.started_at || null,
+                duration_seconds: log?.duration_seconds || null,
+                session_type: log?.session_type || null,
+                status: att?.status || 'unmarked'
+            };
+        });
+    }, [sessionLogs, attendance]);
 
     const handleLogout = async () => {
         if (audioRef.current) {
@@ -1226,33 +1267,75 @@ export default function StudentDashboard() {
                                     </div>
                                 </div>
 
-                                {attendance.length === 0 ? (
+                                {mergedLogs.length === 0 ? (
                                     <div className="py-12 border border-dashed border-slate-100 rounded-2xl text-center bg-slate-50/50">
                                         <Calendar className="w-10 h-10 text-slate-350 mx-auto mb-2" />
-                                        <p className="text-xs font-bold text-slate-700">No attendance logs.</p>
-                                        <p className="text-[10px] text-slate-400 mt-0.5">Your teacher has not marked attendance for you yet.</p>
+                                        <p className="text-xs font-bold text-slate-700">No classroom logs found.</p>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Your teacher has not logged any classroom sessions yet.</p>
                                     </div>
                                 ) : (
                                     <div className="border border-slate-150 rounded-2xl overflow-hidden">
                                         <table className="w-full border-collapse">
                                             <thead>
                                                 <tr className="bg-slate-50 text-left border-b border-slate-150">
-                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
-                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date & Start Time</th>
+                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Class Type</th>
+                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Duration</th>
+                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">My Attendance</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                                {attendance.map((row) => {
+                                                {mergedLogs.map((row) => {
                                                     const badgeClass =
                                                         row.status === 'present' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                                         row.status === 'late' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                                         row.status === 'absent' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                                                        'bg-blue-50 text-blue-700 border-blue-200';
+                                                        row.status === 'excused' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                        'bg-slate-50 text-slate-500 border-slate-200';
+
+                                                    const formattedDate = row.started_at
+                                                        ? new Date(row.started_at).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                                                        : new Date(row.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                                                    
+                                                    const formattedTime = row.started_at
+                                                        ? new Date(row.started_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+                                                        : null;
+
+                                                    let durationStr = '—';
+                                                    if (row.duration_seconds !== null) {
+                                                        const durationMins = Math.floor(row.duration_seconds / 60);
+                                                        const durationHrs = Math.floor(durationMins / 60);
+                                                        const remMins = durationMins % 60;
+                                                        durationStr = durationHrs > 0 
+                                                            ? `${durationHrs}h ${remMins}m`
+                                                            : `${durationMins} min${durationMins !== 1 ? 's' : ''}`;
+                                                    }
 
                                                     return (
                                                         <tr key={row.id} className="hover:bg-slate-50/30">
                                                             <td className="px-5 py-3.5 text-xs font-bold text-slate-800">
-                                                                {new Date(row.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                                                <div>{formattedDate}</div>
+                                                                {formattedTime && (
+                                                                    <div className="text-[10px] text-slate-400 font-semibold mt-0.5">at {formattedTime}</div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-5 py-3.5 text-xs">
+                                                                {row.session_type === 'online' ? (
+                                                                    <span className="px-2 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-full font-black text-[9px] uppercase tracking-wider">
+                                                                        Online Video Class
+                                                                    </span>
+                                                                ) : row.session_type === 'offline' ? (
+                                                                    <span className="px-2 py-0.5 bg-amber-50 text-amber-600 border border-amber-100 rounded-full font-black text-[9px] uppercase tracking-wider">
+                                                                        In-Person Class
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 rounded-full font-black text-[9px] uppercase tracking-wider">
+                                                                        Manual Entry
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-5 py-3.5 text-xs font-bold text-slate-600">
+                                                                {durationStr}
                                                             </td>
                                                             <td className="px-5 py-3.5">
                                                                 <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${badgeClass}`}>

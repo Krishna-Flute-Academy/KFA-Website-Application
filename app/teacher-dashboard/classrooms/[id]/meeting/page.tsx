@@ -247,6 +247,60 @@ export default function MeetingPage() {
         }
     };
 
+    const endActiveSession = async () => {
+        try {
+            // Retrieve starting time from localStorage, fallback to elapsed calculation
+            const activeSessionStr = localStorage.getItem('active_class_session');
+            let startedAtTime = Date.now() - secondsElapsed * 1000;
+            if (activeSessionStr) {
+                try {
+                    const parsed = JSON.parse(activeSessionStr);
+                    if (parsed.startedAt) {
+                        startedAtTime = parsed.startedAt;
+                    }
+                } catch (e) {
+                    console.error('Error parsing startedAt from active session:', e);
+                }
+            }
+
+            const endedAtTime = Date.now();
+            const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
+
+            // Calculate attendance counts from the students state
+            const present = students.filter(s => s.attendance === 'present').length;
+            const absent = students.filter(s => s.attendance === 'absent').length;
+            const late = students.filter(s => s.attendance === 'late').length;
+            const excused = students.filter(s => s.attendance === 'excused').length;
+
+            const logRow = {
+                classroom_id: classroomId,
+                session_date: sessionDate,
+                session_type: sessionType || 'online',
+                started_at: new Date(startedAtTime).toISOString(),
+                ended_at: new Date(endedAtTime).toISOString(),
+                duration_seconds: durationSecs,
+                present_count: present,
+                absent_count: absent,
+                late_count: late,
+                excused_count: excused
+            };
+
+            const { error } = await supabaseAuth
+                .from('classroom_session_logs')
+                .insert([logRow]);
+
+            if (error) {
+                console.error('Error saving session logs:', error);
+                alert(`Failed to save classroom session log: ${error.message || 'Unknown error'}`);
+            }
+        } catch (err: any) {
+            console.error('Unexpected error ending active session:', err);
+        } finally {
+            localStorage.removeItem('active_class_session');
+            router.push(`/teacher-dashboard/classrooms/${classroomId}`);
+        }
+    };
+
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/');
@@ -263,10 +317,7 @@ export default function MeetingPage() {
                 sessionDate={sessionDate}
                 secondsElapsed={secondsElapsed}
                 onMinimizeSession={() => router.push(`/teacher-dashboard/classrooms/${classroomId}`)}
-                onEndSession={() => {
-                    localStorage.removeItem('active_class_session');
-                    router.push(`/teacher-dashboard/classrooms/${classroomId}`);
-                }}
+                onEndSession={endActiveSession}
             />
         );
     }
