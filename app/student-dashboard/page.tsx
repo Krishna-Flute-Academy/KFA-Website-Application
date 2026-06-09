@@ -13,7 +13,7 @@ import dynamic from 'next/dynamic';
 
 const MetronomeModal = dynamic(() => import('../../src/components/MetronomeModal'), { ssr: false });
 const TanpuraModal = dynamic(() => import('../../src/components/TanpuraModal'), { ssr: false });
-const TablaModal = dynamic(() => import('../../src/components/TablaModal'), { ssr: false });
+const DrumsModal = dynamic(() => import('../../src/components/DrumsModal'), { ssr: false });
 
 interface StudentProfile {
     id: string;
@@ -107,7 +107,7 @@ export default function StudentDashboard() {
     const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library'>('overview');
     const [showMetronome, setShowMetronome] = useState(false);
     const [showTanpura, setShowTanpura] = useState(false);
-    const [showTabla, setShowTabla] = useState(false);
+    const [showDrums, setShowDrums] = useState(false);
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
@@ -475,7 +475,7 @@ export default function StudentDashboard() {
         <>
         {showMetronome && <MetronomeModal onClose={() => setShowMetronome(false)} />}
         {showTanpura && <TanpuraModal onClose={() => setShowTanpura(false)} />}
-        {showTabla && <TablaModal onClose={() => setShowTabla(false)} />}
+        {showDrums && <DrumsModal onClose={() => setShowDrums(false)} />}
         
         <div className="flex min-h-screen bg-[#f8fafc]" style={{ fontFamily: 'Lexend, sans-serif' }}>
             {/* Google Fonts */}
@@ -788,11 +788,11 @@ export default function StudentDashboard() {
                                             </button>
 
                                             <button 
-                                                onClick={() => setShowTabla(true)} 
+                                                onClick={() => setShowDrums(true)} 
                                                 className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
                                             >
-                                                <span className="material-symbols-outlined text-amber-500 text-2xl group-hover:scale-115 transition-transform w-6 h-6 flex items-center justify-center">toll</span>
-                                                <span className="text-[9px] font-extrabold text-slate-600">Tabla</span>
+                                                <span className="material-symbols-outlined text-amber-500 text-2xl group-hover:scale-115 transition-transform w-6 h-6 flex items-center justify-center">album</span>
+                                                <span className="text-[9px] font-extrabold text-slate-600">Drum Beats</span>
                                             </button>
 
                                             <button 
@@ -1367,20 +1367,20 @@ export default function StudentDashboard() {
                                     <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
                                         <div className="flex items-start gap-3">
                                             <div className="w-10 h-10 rounded-xl bg-[#d46211]/10 text-[#d46211] flex items-center justify-center shrink-0 border border-[#d46211]/20">
-                                                <span className="material-symbols-outlined text-xl font-bold">toll</span>
+                                                <span className="material-symbols-outlined text-xl font-bold">album</span>
                                             </div>
                                             <div className="text-left">
-                                                <h4 className="font-extrabold text-xs md:text-sm text-slate-800">Tabla Metronome</h4>
+                                                <h4 className="font-extrabold text-xs md:text-sm text-slate-800">Drum Beats Sequencer</h4>
                                                 <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                                                    An acoustic Tabla drum synthesizer playing traditional cycles like Teental, Jhaptal, Dadra, and Rupak.
+                                                    An interactive step sequencer featuring synthesized Kick, Snare, Hi-hat, and Shaker drums to practice flute play-along grooves.
                                                 </p>
                                             </div>
                                         </div>
                                         <button 
-                                            onClick={() => setShowTabla(true)}
+                                            onClick={() => setShowDrums(true)}
                                             className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
                                         >
-                                            Open Tabla
+                                            Open Drum Beats
                                         </button>
                                     </div>
                                 </div>
