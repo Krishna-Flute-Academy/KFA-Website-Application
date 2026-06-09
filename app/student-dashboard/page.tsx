@@ -483,16 +483,18 @@ export default function StudentDashboard() {
             <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
 
             {/* Sidebar Navigation */}
-            <aside className="w-64 border-r border-slate-200 bg-white flex flex-col shrink-0 sticky top-0 h-screen hidden md:flex">
-                <div className="h-16 px-6 border-b border-slate-100 flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20">
-                        <Music className="w-5 h-5" />
-                    </div>
-                    <span className="font-extrabold text-sm text-slate-800 tracking-tight leading-none">Krishna Flute<br/><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Academy</span></span>
+            <aside className="w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 sticky top-0 h-screen hidden md:flex">
+                <div className="p-6 flex flex-col justify-center border-b border-slate-150">
+                    <h1 className="font-black text-xl leading-tight text-slate-950 select-none">
+                        Krishna Flute
+                    </h1>
+                    <p className="text-xs font-semibold text-[#b45309] mt-0.5 uppercase tracking-wider select-none">
+                        Academy Portal
+                    </p>
                 </div>
 
                 {/* Sidebar Profile Card */}
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                <div className="p-4 border-b border-slate-150 bg-slate-50/50">
                     <div className="flex items-center gap-3">
                         <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#ecb613]/25 to-amber-50 flex items-center justify-center overflow-hidden border border-slate-100 shadow-xs">
                             {profile?.profile_pic_url ? (
@@ -524,14 +526,14 @@ export default function StudentDashboard() {
                             <button
                                 key={item.id}
                                 onClick={() => setActiveTab(item.id as any)}
-                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
+                                className={`w-full flex items-center gap-3 py-3 transition-all relative ${
                                     active 
-                                        ? 'bg-amber-500/10 text-amber-600 shadow-xs' 
-                                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                                        ? 'bg-gradient-to-r from-amber-500/10 to-amber-500/0 text-[#b45309] font-black border-l-4 border-[#d46211] pl-3.5 pr-4 rounded-r-2xl' 
+                                        : 'text-slate-600 hover:bg-slate-100/70 hover:text-slate-800 px-4 rounded-xl'
                                 }`}
                             >
-                                <Icon className={`w-4 h-4 ${active ? 'text-amber-500' : 'text-slate-400'}`} />
-                                {item.label}
+                                <Icon className={`w-[22px] h-[22px] shrink-0 ${active ? 'text-[#d46211]' : 'text-slate-400'}`} />
+                                <span className="text-sm font-semibold">{item.label}</span>
                                 {item.id === 'tasks' && assignments.filter(a => a.status === 'pending').length > 0 && (
                                     <span className="ml-auto w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center">
                                         {assignments.filter(a => a.status === 'pending').length}
@@ -546,13 +548,13 @@ export default function StudentDashboard() {
                 </nav>
 
                 {/* Logout Button Footer */}
-                <div className="p-4 border-t border-slate-100">
+                <div className="p-4 border-t border-slate-150">
                     <button
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-bold text-xs text-rose-500 hover:bg-rose-50 transition-colors"
+                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-red-600 hover:bg-red-50 transition-colors"
                     >
-                        <LogOut className="w-4 h-4 text-rose-400" />
-                        Log out
+                        <LogOut className="w-[22px] h-[22px] shrink-0 text-red-500" />
+                        <span className="text-sm font-semibold">Logout</span>
                     </button>
                 </div>
             </aside>
