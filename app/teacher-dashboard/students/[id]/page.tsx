@@ -164,6 +164,7 @@ export default function StudentProfilePage() {
                         fees_amount,
                         fees_collection_date,
                         fees_classes_paid,
+                        teacher_id,
                         classroom_students(classroom_id, classrooms(name))
                     `)
                     .eq('id', studentId)
@@ -172,6 +173,14 @@ export default function StudentProfilePage() {
 
                 if (userError || !userData) {
                     console.error('Error fetching student:', userError);
+                    router.push('/teacher-dashboard/students');
+                    return;
+                }
+
+                // Authorization check for teachers
+                if (profile && profile.role !== 'admin' && userData.teacher_id !== profile.id) {
+                    alert('You are not authorized to view this student profile.');
+                    router.push('/teacher-dashboard/students');
                     return;
                 }
 

@@ -103,7 +103,18 @@ export default function TeacherDashboard() {
     const router = useRouter();
     const { showToast } = useToast();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id?: string; name: string; email: string; role?: string } | null>(null);
+    const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
+    const [roleFromStorage, setRoleFromStorage] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const savedRole = localStorage.getItem('kfa-user-role');
+            if (savedRole) {
+                setRoleFromStorage(savedRole);
+            }
+        }
+    }, []);
     const [stats, setStats] = useState({
         totalStudents: 0,
         activeClassrooms: 0,
@@ -122,7 +133,7 @@ export default function TeacherDashboard() {
     const [panelLoading, setPanelLoading] = useState(false);
     const [showTempModal, setShowTempModal] = useState(false);
     const [tempModalDate, setTempModalDate] = useState('');
-    const [tempForm, setTempForm] = useState({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '' });
+    const [tempForm, setTempForm] = useState({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: '' });
     const [classrooms, setClassrooms] = useState<{ id: string; name: string }[]>([]);
     const [allStudents, setAllStudents] = useState<{ id: string; name: string }[]>([]);
     const [tempSelectedStudents, setTempSelectedStudents] = useState<string[]>([]);
@@ -202,42 +213,67 @@ export default function TeacherDashboard() {
 
                 const userId = session.user.id;
 
-                // 2. Verify Teacher Role & Profile
+                // 2. Verify Teacher/Admin Role & Profile
                 const { data: profile, error: profileError } = await supabaseAuth
                     .from('users')
-                    .select('name, email, role')
+                    .select('id, name, email, role')
                     .eq('id', userId)
                     .single();
 
-                if (profileError || profile?.role !== 'teacher') {
-                    console.error('Access denied: User is not a teacher or error fetching profile');
+                if (profileError || (profile?.role !== 'teacher' && profile?.role !== 'admin')) {
+                    console.error('Access denied: User is not a teacher/admin or error fetching profile');
                     router.push('/');
                     return;
                 }
 
-                setTeacherProfile({ name: profile.name, email: profile.email });
+                if (typeof window !== 'undefined' && profile?.role) {
+                    localStorage.setItem('kfa-user-role', profile.role.toLowerCase());
+                }
+
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
+                const isAdminUser = profile.role === 'admin';
 
                 // 3. Fetch Stats & Roster data in Parallel
                 const today = getLocalDateString(new Date());
 
                 const [studentRes, classroomRes, pendingRes] = await Promise.all([
-                    supabaseAuth.from('users').select('*', { count: 'exact', head: true }).eq('role', 'student').eq('teacher_id', userId),
-                    supabaseAuth.from('classrooms').select('id, name').eq('teacher_id', userId),
-                    supabaseAuth.from('task_attempts').select('id, users!student_id(teacher_id)', { count: 'exact', head: true }).eq('status', 'submitted').eq('users.teacher_id', userId)
+                    isAdminUser
+                        ? supabaseAuth.from('users').select('*', { count: 'exact', head: true }).eq('role', 'student')
+                        : supabaseAuth.from('users').select('*', { count: 'exact', head: true }).eq('role', 'student').eq('teacher_id', userId),
+                    isAdminUser
+                        ? supabaseAuth.from('classrooms').select('id, name')
+                        : supabaseAuth.from('classrooms').select('id, name').eq('teacher_id', userId),
+                    isAdminUser
+                        ? supabaseAuth.from('task_attempts').select('id', { count: 'exact', head: true }).eq('status', 'submitted')
+                        : supabaseAuth.from('task_attempts').select('id, users!student_id(teacher_id)', { count: 'exact', head: true }).eq('status', 'submitted').eq('users.teacher_id', userId)
                 ]);
 
                 const roomList = classroomRes.data || [];
                 setClassrooms(roomList);
 
                 // Fetch student profiles for fees due calculation
-                const { data: teacherStudents } = await supabaseAuth
+                const studentQuery = supabaseAuth
                     .from('users')
                     .select('id, name, fees_classes_paid, fees_collection_date, fees_basis')
-                    .eq('role', 'student')
-                    .eq('teacher_id', userId);
+                    .eq('role', 'student');
+
+                const { data: teacherStudents } = isAdminUser
+                    ? await studentQuery
+                    : await studentQuery.eq('teacher_id', userId);
 
                 const studentList = teacherStudents || [];
                 setAllStudents(studentList.map(s => ({ id: s.id, name: s.name })));
+
+                if (isAdminUser) {
+                    const { data: teachersData } = await supabaseAuth
+                        .from('users')
+                        .select('id, name')
+                        .eq('role', 'teacher')
+                        .eq('status', 'active');
+                    if (teachersData) {
+                        setTeachers(teachersData);
+                    }
+                }
 
                 // Calculate stats counts
                 setStats({
@@ -274,7 +310,7 @@ export default function TeacherDashboard() {
                 });
 
                 // 4. Fetch Recent Submissions
-                const { data: submissionsData, error: subErr } = await supabaseAuth
+                const submissionsQuery = supabaseAuth
                     .from('task_attempts')
                     .select(`
                         id,
@@ -283,43 +319,56 @@ export default function TeacherDashboard() {
                         users!student_id(name, teacher_id, profile_pic_url),
                         tasks!task_id(title)
                     `)
-                    .eq('users.teacher_id', userId)
                     .order('submitted_at', { ascending: false })
                     .limit(5);
 
+                const { data: submissionsData, error: subErr } = isAdminUser
+                    ? await submissionsQuery
+                    : await submissionsQuery.eq('users.teacher_id', userId);
+
                 if (!subErr && submissionsData) {
-                    const formatted: Submission[] = (submissionsData as any[]).map(s => ({
-                        id: s.id,
-                        student_name: s.users?.name || 'Unknown',
-                        student_profile_pic_url: s.users?.profile_pic_url,
-                        task_title: s.tasks?.title || 'Unknown Task',
-                        status: s.status,
-                        submitted_at: s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : 'N/A'
-                    }));
+                    const formatted: Submission[] = (submissionsData as any[])
+                        .filter(s => isAdminUser || s.users !== null)
+                        .map(s => ({
+                            id: s.id,
+                            student_name: s.users?.name || 'Unknown',
+                            student_profile_pic_url: s.users?.profile_pic_url,
+                            task_title: s.tasks?.title || 'Unknown Task',
+                            status: s.status,
+                            submitted_at: s.submitted_at ? new Date(s.submitted_at).toLocaleDateString() : 'N/A'
+                        }));
                     setRecentSubmissions(formatted);
                 }
 
                 // 5. Fetch Batch Schedules (for calendar & today's schedule)
-                const { data: schedData } = await supabaseAuth
+                const schedQuery = supabaseAuth
                     .from('batch_schedules')
-                    .select('id, classroom_id, day_of_week, start_time, end_time, classrooms(name, teacher_id)')
-                    .eq('classrooms.teacher_id', userId);
+                    .select('id, classroom_id, day_of_week, start_time, end_time, classrooms(name, teacher_id)');
+
+                const { data: schedData } = isAdminUser
+                    ? await schedQuery
+                    : await schedQuery.eq('classrooms.teacher_id', userId);
                 
                 let loadedSchedules: BatchSchedule[] = [];
                 if (schedData) {
-                    loadedSchedules = (schedData as any[]).map(s => ({
-                        id: s.id, classroom_id: s.classroom_id, day_of_week: s.day_of_week,
-                        start_time: s.start_time, end_time: s.end_time,
-                        classroom_name: s.classrooms?.name || 'Unknown'
-                    }));
+                    loadedSchedules = (schedData as any[])
+                        .filter(s => isAdminUser || s.classrooms !== null)
+                        .map(s => ({
+                            id: s.id, classroom_id: s.classroom_id, day_of_week: s.day_of_week,
+                            start_time: s.start_time, end_time: s.end_time,
+                            classroom_name: s.classrooms?.name || 'Unknown'
+                        }));
                     setBatchSchedules(loadedSchedules);
                 }
 
                 // 6. Fetch Temporary Classes (for calendar & today's schedule)
-                const { data: tempData } = await supabaseAuth
+                const tempQuery = supabaseAuth
                     .from('temporary_classes')
-                    .select('id, classroom_id, title, class_date, start_time, end_time, classrooms(name)')
-                    .eq('teacher_id', userId);
+                    .select('id, classroom_id, title, class_date, start_time, end_time, classrooms(name)');
+
+                const { data: tempData } = isAdminUser
+                    ? await tempQuery
+                    : await tempQuery.eq('teacher_id', userId);
                 
                 let loadedTemps: TemporaryClass[] = [];
                 if (tempData) {
@@ -386,11 +435,14 @@ export default function TeacherDashboard() {
                 }));
 
                 // 8. Fetch Personal Notes (class_notes)
-                const { data: notesData } = await supabaseAuth
+                const notesQuery = supabaseAuth
                     .from('class_notes')
                     .select('id, title, content, color, classroom_id, created_at, classrooms(name)')
-                    .eq('teacher_id', userId)
                     .order('created_at', { ascending: false });
+
+                const { data: notesData } = isAdminUser
+                    ? await notesQuery
+                    : await notesQuery.eq('teacher_id', userId);
 
                 if (notesData) {
                     setNotes((notesData as any[]).map(n => ({
@@ -548,15 +600,103 @@ export default function TeacherDashboard() {
         }
     };
 
+    const checkSchedulingConflicts = async (
+        teacherId: string,
+        classDate: string,
+        startTime: string,
+        endTime: string
+    ) => {
+        const { data: classrooms, error: classErr } = await supabaseAuth
+            .from('classrooms')
+            .select('id, name')
+            .eq('teacher_id', teacherId);
+        
+        if (classErr || !classrooms || classrooms.length === 0) return null;
+        const classroomMap = new Map<string, string>(classrooms.map(c => [c.id, c.name]));
+        const classroomIds = classrooms.map(c => c.id);
+
+        const [schedRes, tempRes] = await Promise.all([
+            supabaseAuth
+                .from('batch_schedules')
+                .select('classroom_id, day_of_week, start_time, end_time')
+                .in('classroom_id', classroomIds),
+            supabaseAuth
+                .from('temporary_classes')
+                .select('classroom_id, title, class_date, start_time, end_time')
+                .eq('teacher_id', teacherId)
+        ]);
+
+        const batchSchedules = schedRes.data || [];
+        const temporaryClasses = tempRes.data || [];
+
+        const newStart = startTime.slice(0, 5);
+        const newEnd = endTime.slice(0, 5);
+
+        const checkOverlap = (s1: string, e1: string, s2: string, e2: string) => {
+            return s1.slice(0, 5) < e2.slice(0, 5) && s2.slice(0, 5) < e1.slice(0, 5);
+        };
+
+        const parts = classDate.split('-').map(Number);
+        const targetDate = new Date(parts[0], parts[1] - 1, parts[2]);
+        const targetDow = targetDate.getDay();
+        const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        // Check temporary classes on same date
+        for (const tc of temporaryClasses) {
+            if (tc.class_date === classDate && checkOverlap(newStart, newEnd, tc.start_time, tc.end_time)) {
+                return {
+                    className: tc.title || classroomMap.get(tc.classroom_id) || 'Temporary Class',
+                    type: 'temporary',
+                    dayOrDate: classDate,
+                    time: `${tc.start_time.slice(0, 5)} - ${tc.end_time.slice(0, 5)}`
+                };
+            }
+        }
+
+        // Check permanent classes on same day of week
+        for (const bs of batchSchedules) {
+            if (bs.day_of_week === targetDow && checkOverlap(newStart, newEnd, bs.start_time, bs.end_time)) {
+                return {
+                    className: classroomMap.get(bs.classroom_id) || 'Permanent Class',
+                    type: 'permanent',
+                    dayOrDate: DAY_FULL[targetDow],
+                    time: `${bs.start_time.slice(0, 5)} - ${bs.end_time.slice(0, 5)}`
+                };
+            }
+        }
+
+        return null;
+    };
+
     const handleCreateTempClass = async () => {
         try {
             const { data: { session } } = await supabaseAuth.auth.getSession();
             if (!session) return;
+
+            const selectedTeacherId = tempForm.teacher_id || session.user.id;
+            if (!selectedTeacherId) {
+                alert('Please select a teacher.');
+                return;
+            }
+
+            // Check conflicts
+            const conflict = await checkSchedulingConflicts(
+                selectedTeacherId,
+                tempModalDate,
+                tempForm.start_time,
+                tempForm.end_time
+            );
+
+            if (conflict) {
+                alert(`Scheduling Conflict: This instructor is already allocated to "${conflict.className}" (${conflict.type} class) on ${conflict.dayOrDate} at ${conflict.time}.`);
+                return;
+            }
+
             // 1. Create a shadow classroom first
             const { data: classroom, error: clError } = await supabaseAuth
                 .from('classrooms')
                 .insert([{
-                    teacher_id: session.user.id,
+                    teacher_id: selectedTeacherId,
                     name: tempForm.title || 'Temporary Class',
                     description: 'Temporary class session',
                     type: 'temporary'
@@ -572,7 +712,7 @@ export default function TeacherDashboard() {
 
             // 2. Create the Temporary Class record linking to it
             const { data: tempClassData, error } = await supabaseAuth.from('temporary_classes').insert({
-                teacher_id: session.user.id,
+                teacher_id: selectedTeacherId,
                 classroom_id: classroom.id,
                 title: tempForm.title || 'Temporary Class',
                 class_date: tempModalDate,
@@ -593,10 +733,14 @@ export default function TeacherDashboard() {
             }
 
             // Refresh temp classes
-            const { data: tempData } = await supabaseAuth
+            const isAdmin = teacherProfile?.role?.toLowerCase() === 'admin';
+            const tempQuery = supabaseAuth
                 .from('temporary_classes')
-                .select('id, classroom_id, title, class_date, start_time, end_time, classrooms(name)')
-                .eq('teacher_id', session.user.id);
+                .select('id, classroom_id, title, class_date, start_time, end_time, classrooms(name)');
+            const { data: tempData } = isAdmin
+                ? await tempQuery
+                : await tempQuery.eq('teacher_id', session.user.id);
+
             if (tempData) {
                 setTempClasses((tempData as any[]).map(t => ({
                     id: t.id, classroom_id: t.classroom_id, title: t.title,
@@ -605,7 +749,7 @@ export default function TeacherDashboard() {
                 })));
             }
             setShowTempModal(false);
-            setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '' });
+            setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: '' });
             setTempSelectedStudents([]);
             showToast('Temporary class created successfully!', 'success');
         } catch (e) { 
@@ -700,11 +844,14 @@ export default function TeacherDashboard() {
         router.push('/');
     };
 
+    const isAdmin = teacherProfile?.role?.toLowerCase() === 'admin' || roleFromStorage === 'admin';
+
     if (loading) {
+        const portalName = roleFromStorage === 'admin' ? 'Admin Portal' : (roleFromStorage === 'teacher' ? 'Teacher Portal' : 'Portal');
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6] dark:bg-[#1a1608]">
                 <Loader2 className="w-10 h-10 animate-spin text-[#ecb613] mb-4" />
-                <p className="font-medium text-slate-600 dark:text-slate-400">Loading your teacher portal...</p>
+                <p className="font-medium text-slate-600 dark:text-slate-400">Loading your {portalName}...</p>
             </div>
         );
     }
@@ -715,7 +862,7 @@ export default function TeacherDashboard() {
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
                 <main className="flex-1 flex flex-col">
-                    <TeacherHeader title="Dashboard Overview" />
+                    <TeacherHeader title={isAdmin ? "Admin-dashboard" : "Dashboard Overview"} />
 
                     <div className="p-8 space-y-8 max-w-[1400px] mx-auto w-full">
                         {/* Stats Section */}
@@ -1184,6 +1331,7 @@ export default function TeacherDashboard() {
                                     onClick={() => {
                                         setTempModalDate(selectedDateStr);
                                         setTempSelectedStudents([]);
+                                        setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '' });
                                         setShowTempModal(true);
                                     }} 
                                     className="px-3 py-1.5 flex items-center gap-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50 transition-colors text-xs font-bold"
@@ -1253,6 +1401,7 @@ export default function TeacherDashboard() {
                                         onClick={() => {
                                             setTempModalDate(selectedDateStr);
                                             setTempSelectedStudents([]);
+                                            setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '' });
                                             setShowTempModal(true);
                                         }}
                                         className="mt-4 text-xs font-bold text-[#ecb613] hover:underline"
@@ -1289,6 +1438,22 @@ export default function TeacherDashboard() {
                                     className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
                                 />
                             </div>
+                            {isAdmin && (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Assign Instructor (Teacher)</label>
+                                    <select
+                                        required
+                                        value={tempForm.teacher_id}
+                                        onChange={e => setTempForm({ ...tempForm, teacher_id: e.target.value })}
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    >
+                                        <option value="">Select a Teacher</option>
+                                        {teachers.map(teacher => (
+                                            <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time</label>

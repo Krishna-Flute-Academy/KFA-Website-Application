@@ -19,7 +19,8 @@ export default function CreateClassPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
     const [students, setStudents] = useState<Student[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
@@ -31,7 +32,8 @@ export default function CreateClassPage() {
         selectedDays: [] as number[], // 0=Sun, 1=Mon, ..., 6=Sat
         classDate: new Date().toISOString().split('T')[0],
         startTime: '10:00',
-        endTime: '11:00'
+        endTime: '11:00',
+        teacherId: ''
     });
 
     function formatTime12hr(time24: string) {
@@ -81,17 +83,30 @@ export default function CreateClassPage() {
                     return;
                 }
 
-                // 2. Fetch Teacher Profile
+                // 2. Fetch User Profile
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email')
+                    .select('id, name, email, role')
                     .eq('id', session.user.id)
                     .single();
-                setTeacherProfile(profile);
 
-                if (!profile) return;
+                if (!profile || profile.role !== 'admin') {
+                    router.push('/teacher-dashboard');
+                    return;
+                }
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
 
-                // 3. Fetch Students directly from users table
+                // 3. Fetch active teachers
+                const { data: teachersData } = await supabaseAuth
+                    .from('users')
+                    .select('id, name')
+                    .eq('role', 'teacher')
+                    .eq('status', 'active');
+                if (teachersData) {
+                    setTeachers(teachersData);
+                }
+
+                // 4. Fetch Students directly from users table
                 const { data: studentsData, error: studentsError } = await supabaseAuth
                     .from('users')
                     .select(`
@@ -100,8 +115,7 @@ export default function CreateClassPage() {
                         level,
                         profile_pic_url
                     `)
-                    .eq('role', 'student')
-                    .eq('teacher_id', profile.id);
+                    .eq('role', 'student');
 
                 if (studentsError) throw studentsError;
 
@@ -125,6 +139,102 @@ export default function CreateClassPage() {
         fetchData();
     }, [router]);
 
+    const checkSchedulingConflicts = async (
+        teacherId: string,
+        type: 'permanent' | 'temporary',
+        selectedDays: number[],
+        classDate: string,
+        startTime: string,
+        endTime: string
+    ) => {
+        const { data: classrooms, error: classErr } = await supabaseAuth
+            .from('classrooms')
+            .select('id, name')
+            .eq('teacher_id', teacherId);
+        
+        if (classErr || !classrooms || classrooms.length === 0) return null;
+        const classroomMap = new Map<string, string>(classrooms.map(c => [c.id, c.name]));
+        const classroomIds = classrooms.map(c => c.id);
+
+        const [schedRes, tempRes] = await Promise.all([
+            supabaseAuth
+                .from('batch_schedules')
+                .select('classroom_id, day_of_week, start_time, end_time')
+                .in('classroom_id', classroomIds),
+            supabaseAuth
+                .from('temporary_classes')
+                .select('classroom_id, title, class_date, start_time, end_time')
+                .eq('teacher_id', teacherId)
+        ]);
+
+        const batchSchedules = schedRes.data || [];
+        const temporaryClasses = tempRes.data || [];
+
+        const newStart = startTime.slice(0, 5);
+        const newEnd = endTime.slice(0, 5);
+
+        const checkOverlap = (s1: string, e1: string, s2: string, e2: string) => {
+            return s1.slice(0, 5) < e2.slice(0, 5) && s2.slice(0, 5) < e1.slice(0, 5);
+        };
+
+        if (type === 'temporary') {
+            const targetDate = new Date(classDate);
+            const targetDow = targetDate.getDay();
+
+            // Check temporary classes on same date
+            for (const tc of temporaryClasses) {
+                if (tc.class_date === classDate && checkOverlap(newStart, newEnd, tc.start_time, tc.end_time)) {
+                    return {
+                        className: tc.title || classroomMap.get(tc.classroom_id) || 'Temporary Class',
+                        type: 'temporary',
+                        dayOrDate: classDate,
+                        time: `${tc.start_time.slice(0, 5)} - ${tc.end_time.slice(0, 5)}`
+                    };
+                }
+            }
+
+            // Check permanent classes on same day of week
+            for (const bs of batchSchedules) {
+                if (bs.day_of_week === targetDow && checkOverlap(newStart, newEnd, bs.start_time, bs.end_time)) {
+                    return {
+                        className: classroomMap.get(bs.classroom_id) || 'Permanent Class',
+                        type: 'permanent',
+                        dayOrDate: DAY_FULL[targetDow],
+                        time: `${bs.start_time.slice(0, 5)} - ${bs.end_time.slice(0, 5)}`
+                    };
+                }
+            }
+        } else {
+            // Check for each selected day of the permanent class
+            for (const day of selectedDays) {
+                for (const bs of batchSchedules) {
+                    if (bs.day_of_week === day && checkOverlap(newStart, newEnd, bs.start_time, bs.end_time)) {
+                        return {
+                            className: classroomMap.get(bs.classroom_id) || 'Permanent Class',
+                            type: 'permanent',
+                            dayOrDate: DAY_FULL[day],
+                            time: `${bs.start_time.slice(0, 5)} - ${bs.end_time.slice(0, 5)}`
+                        };
+                    }
+                }
+
+                for (const tc of temporaryClasses) {
+                    const tcDate = new Date(tc.class_date);
+                    const tcDow = tcDate.getDay();
+                    if (tcDow === day && checkOverlap(newStart, newEnd, tc.start_time, tc.end_time)) {
+                        return {
+                            className: tc.title || classroomMap.get(tc.classroom_id) || 'Temporary Class',
+                            type: 'temporary',
+                            dayOrDate: `${DAY_FULL[day]} (${tc.class_date})`,
+                            time: `${tc.start_time.slice(0, 5)} - ${tc.end_time.slice(0, 5)}`
+                        };
+                    }
+                }
+            }
+        }
+        return null;
+    };
+
     const handleCreateClass = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!teacherProfile) return;
@@ -132,9 +242,32 @@ export default function CreateClassPage() {
             alert('Please enter a class name.');
             return;
         }
+        if (!formData.teacherId) {
+            alert('Please select an instructor/teacher.');
+            return;
+        }
+        if (formData.type === 'permanent' && formData.selectedDays.length === 0) {
+            alert('Please select at least one schedule day.');
+            return;
+        }
 
         setSubmitting(true);
         try {
+            // Check for scheduling conflicts
+            const conflict = await checkSchedulingConflicts(
+                formData.teacherId,
+                formData.type as 'permanent' | 'temporary',
+                formData.selectedDays,
+                formData.classDate,
+                formData.startTime,
+                formData.endTime
+            );
+
+            if (conflict) {
+                alert(`Scheduling Conflict: This instructor is already allocated to "${conflict.className}" (${conflict.type} class) on ${conflict.dayOrDate} at ${conflict.time}.`);
+                setSubmitting(false);
+                return;
+            }
             if (formData.type === 'permanent') {
                 // Build schedule text for display
                 const scheduleText = formData.selectedDays.length > 0
@@ -145,7 +278,7 @@ export default function CreateClassPage() {
                 const { data: classroom, error: classroomError } = await supabaseAuth
                     .from('classrooms')
                     .insert([{
-                        teacher_id: teacherProfile.id,
+                        teacher_id: formData.teacherId,
                         name: formData.name,
                         description: formData.description,
                         type: formData.type
@@ -171,6 +304,12 @@ export default function CreateClassPage() {
 
                 // 3. Assign Students
                 if (selectedStudents.length > 0) {
+                    // Delete these students from any other classrooms first to enforce one classroom per student
+                    await supabaseAuth
+                        .from('classroom_students')
+                        .delete()
+                        .in('student_id', selectedStudents);
+
                     const assignments = selectedStudents.map(studentId => ({
                         classroom_id: classroom.id,
                         student_id: studentId,
@@ -188,7 +327,7 @@ export default function CreateClassPage() {
                 const { data: classroom, error: classroomError } = await supabaseAuth
                     .from('classrooms')
                     .insert([{
-                        teacher_id: teacherProfile.id,
+                        teacher_id: formData.teacherId,
                         name: formData.name,
                         description: formData.description || 'Temporary class session',
                         type: 'temporary'
@@ -202,7 +341,7 @@ export default function CreateClassPage() {
                 const { data: tempClass, error: tempError } = await supabaseAuth
                     .from('temporary_classes')
                     .insert([{
-                        teacher_id: teacherProfile.id,
+                        teacher_id: formData.teacherId,
                         classroom_id: classroom.id,
                         title: formData.name,
                         class_date: formData.classDate,
@@ -301,6 +440,25 @@ export default function CreateClassPage() {
                                             placeholder="e.g. Morning Raag Basics - Intermediate"
                                             type="text"
                                         />
+                                    </div>
+
+                                    {/* Instructor/Teacher Assignment */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Assign Instructor (Teacher)</label>
+                                        <div className="relative">
+                                            <select
+                                                required
+                                                value={formData.teacherId}
+                                                onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
+                                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all appearance-none text-sm font-medium"
+                                            >
+                                                <option value="">Select a Teacher</option>
+                                                {teachers.map(teacher => (
+                                                    <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                                                ))}
+                                            </select>
+                                            <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                        </div>
                                     </div>
 
                                     {/* Description */}

@@ -82,7 +82,7 @@ function MessagesDashboardContent() {
 
     // ── Global states ──────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     const [dbSetupError, setDbSetupError] = useState(false);
     const [dbChecking, setDbChecking] = useState(true);
     const [sqlCopied, setSqlCopied] = useState(false);
@@ -477,39 +477,54 @@ function MessagesDashboardContent() {
 
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email')
+                    .select('id, name, email, role')
                     .eq('id', session.user.id)
                     .single();
-                setTeacherProfile(profile);
+
+                if (profile?.role !== 'teacher' && profile?.role !== 'admin') {
+                    router.push('/');
+                    return;
+                }
+
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
 
                 if (!profile) return;
 
+                const isAdmin = profile.role === 'admin';
+
                 // 2. Pre-fetch Classrooms and Students for recipients modal
-                const { data: rooms } = await supabaseAuth
+                let roomsQuery = supabaseAuth
                     .from('classrooms')
-                    .select('id, name')
-                    .eq('teacher_id', profile.id);
+                    .select('id, name');
+                if (!isAdmin) {
+                    roomsQuery = roomsQuery.eq('teacher_id', profile.id);
+                }
+                const { data: rooms } = await roomsQuery;
                 setClassrooms(rooms || []);
 
-                const { data: roster } = await supabaseAuth
-                    .from('classroom_students')
-                    .select(`
-                        id,
-                        student_id,
-                        users!student_id(name)
-                    `);
-                
-                const uniqueStudents = Array.from(
-                    new Map((roster || []).map((r: any) => [r.student_id, { id: r.student_id, name: r.users?.name || 'Unknown' }])).values()
-                );
+                let studentsQuery = supabaseAuth
+                    .from('users')
+                    .select('id, name')
+                    .eq('role', 'student');
+                if (!isAdmin) {
+                    studentsQuery = studentsQuery.eq('teacher_id', profile.id);
+                }
+                const { data: studentList } = await studentsQuery;
+                const uniqueStudents = (studentList || []).map((s: any) => ({
+                    id: s.id,
+                    name: s.name || 'Unknown'
+                }));
                 setStudents(uniqueStudents);
 
                 // 3. Test/Query Broadcasts Table
                 try {
-                    const { data: dbBroadcasts, error: bError } = await supabaseAuth
+                    let broadcastQuery = supabaseAuth
                         .from('broadcasts')
-                        .select('*')
-                        .order('created_at', { ascending: false });
+                        .select('*');
+                    if (!isAdmin) {
+                        broadcastQuery = broadcastQuery.eq('teacher_id', profile.id);
+                    }
+                    const { data: dbBroadcasts, error: bError } = await broadcastQuery.order('created_at', { ascending: false });
 
                     if (bError) {
                         console.warn('[Messages] Broadcasts table check failed:', bError.message);
@@ -531,10 +546,13 @@ function MessagesDashboardContent() {
 
                 // 4. Test/Query Custom Recipient Groups Table
                 try {
-                    const { data: grpData, error: grpError } = await supabaseAuth
+                    let grpQuery = supabaseAuth
                         .from('custom_recipient_groups')
-                        .select('*')
-                        .order('created_at', { ascending: false });
+                        .select('*');
+                    if (!isAdmin) {
+                        grpQuery = grpQuery.eq('teacher_id', profile.id);
+                    }
+                    const { data: grpData, error: grpError } = await grpQuery.order('created_at', { ascending: false });
 
                     if (grpError) {
                         console.warn('[Messages] Custom recipient groups table check failed:', grpError.message);
@@ -559,10 +577,13 @@ function MessagesDashboardContent() {
 
                 // 5. Test/Query Message Templates Table
                 try {
-                    const { data: tplData, error: tplError } = await supabaseAuth
+                    let tplQuery = supabaseAuth
                         .from('message_templates')
-                        .select('*')
-                        .order('created_at', { ascending: false });
+                        .select('*');
+                    if (!isAdmin) {
+                        tplQuery = tplQuery.eq('teacher_id', profile.id);
+                    }
+                    const { data: tplData, error: tplError } = await tplQuery.order('created_at', { ascending: false });
 
                     if (tplError) {
                         console.warn('[Messages] Message templates table check failed:', tplError.message);

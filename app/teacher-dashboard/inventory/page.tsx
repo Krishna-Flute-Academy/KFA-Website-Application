@@ -58,7 +58,7 @@ export default function InventoryLibrary() {
     
     // Auth & Status States
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     
     // Core Data States
@@ -122,10 +122,16 @@ export default function InventoryLibrary() {
                 }
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email')
+                    .select('id, name, email, role')
                     .eq('id', session.user.id)
                     .single();
-                setTeacherProfile(profile);
+
+                if (profile?.role !== 'teacher' && profile?.role !== 'admin') {
+                    router.push('/');
+                    return;
+                }
+
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
                 
                 // Load Curriculum details dynamically from live Supabase tables
                 await loadDatabaseData();

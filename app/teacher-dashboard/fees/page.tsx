@@ -44,7 +44,7 @@ interface NotificationRecord {
 export default function FeesManagementDashboard() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     const [students, setStudents] = useState<StudentFeesData[]>([]);
     const [payments, setPayments] = useState<PaymentRecord[]>([]);
     
@@ -101,12 +101,12 @@ export default function FeesManagementDashboard() {
                 .eq('id', userId)
                 .single();
 
-            if (profileError || profile?.role !== 'teacher') {
-                router.push('/');
+            if (profileError || profile?.role !== 'admin') {
+                router.push('/teacher-dashboard');
                 return;
             }
 
-            setTeacherProfile({ id: userId, name: profile.name, email: profile.email });
+            setTeacherProfile({ id: userId, name: profile.name, email: profile.email, role: profile.role });
 
             // 3. Fetch Students with Fees columns
             const { data: studentsData, error: studentsError } = await supabaseAuth

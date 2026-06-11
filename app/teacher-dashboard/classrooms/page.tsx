@@ -18,6 +18,17 @@ function formatTime12hr(time24: string) {
     return `${hours}:${m} ${ampm}`;
 }
 
+function parseClassDate(dateStr?: string): Date | null {
+    if (!dateStr) return null;
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return null;
+    const yr = parseInt(parts[0], 10);
+    const mo = parseInt(parts[1], 10);
+    const dy = parseInt(parts[2], 10);
+    if (isNaN(yr) || isNaN(mo) || isNaN(dy)) return null;
+    return new Date(yr, mo - 1, dy);
+}
+
 function calculateDuration(startTime: string, endTime: string) {
     if (!startTime || !endTime) return '';
     const [sh, sm] = startTime.split(':').map(Number);
@@ -58,7 +69,7 @@ interface Classroom {
 export default function ClassroomsPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     const [tempClassrooms, setTempClassrooms] = useState<Classroom[]>([]);
     const [activeView, setActiveView] = useState<'today' | 'permanent' | 'temporary'>('today');
@@ -200,17 +211,37 @@ export default function ClassroomsPage() {
 
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email')
+                    .select('id, name, email, role')
                     .eq('id', session.user.id)
                     .single();
                 setTeacherProfile(profile);
 
                 if (!profile) return;
 
-                const { data: roomsData, error: roomsError } = await supabaseAuth
+                const isAdminUser = profile.role === 'admin';
+
+                // Fetch all active teachers/admins to map their names in memory
+                const { data: teachersData, error: teachersError } = await supabaseAuth
+                    .from('users')
+                    .select('id, name')
+                    .in('role', ['teacher', 'admin']);
+                if (teachersError) {
+                    console.error('Error fetching teachersData for mapping:', teachersError);
+                }
+                const teacherMap: Record<string, string> = {};
+                if (teachersData) {
+                    teachersData.forEach(t => {
+                        teacherMap[t.id] = t.name;
+                    });
+                }
+
+                const classroomsQuery = supabaseAuth
                     .from('classrooms')
-                    .select('*')
-                    .eq('teacher_id', profile.id);
+                    .select('*');
+
+                const { data: roomsData, error: roomsError } = isAdminUser
+                    ? await classroomsQuery
+                    : await classroomsQuery.eq('teacher_id', profile.id);
 
                 if (roomsError) throw roomsError;
 
@@ -253,6 +284,7 @@ export default function ClassroomsPage() {
 
                     return {
                         ...room,
+                        teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
                         schedule: scheduleMap[room.id] || room.schedule || 'No schedule set',
                         student_count: count || 0,
                         status: 'Active',
@@ -263,11 +295,14 @@ export default function ClassroomsPage() {
                 setClassrooms(roomsWithCounts);
 
                 // Fetch Temporary Classes
-                const { data: tempRoomsData } = await supabaseAuth
+                const tempQuery = supabaseAuth
                     .from('temporary_classes')
                     .select('*')
-                    .eq('teacher_id', profile.id)
                     .order('class_date', { ascending: false });
+
+                const { data: tempRoomsData } = isAdminUser
+                    ? await tempQuery
+                    : await tempQuery.eq('teacher_id', profile.id);
                 
                 const tempRoomsWithCounts = await Promise.all((tempRoomsData || []).map(async (room) => {
                     const { count } = await supabaseAuth
@@ -279,7 +314,12 @@ export default function ClassroomsPage() {
                         id: room.id,
                         name: room.title || 'Temporary Class',
                         description: `Temporary Session on ${room.class_date}`,
-                        schedule: `${new Date(room.class_date).toLocaleDateString('en-US', {weekday:'short'})} • ${formatTime12hr(room.start_time.slice(0,5))} - ${formatTime12hr(room.end_time.slice(0,5))}`,
+                        schedule: (() => {
+                            const parsed = parseClassDate(room.class_date);
+                            const dayName = parsed ? parsed.toLocaleDateString('en-US', { weekday: 'short' }) : 'Invalid Date';
+                            return `${dayName} • ${formatTime12hr(room.start_time.slice(0,5))} - ${formatTime12hr(room.end_time.slice(0,5))}`;
+                        })(),
+                        teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
                         student_count: count || 0,
                         status: 'Active',
                         class_date: room.class_date,
@@ -341,14 +381,16 @@ export default function ClassroomsPage() {
     }, [rawSchedules, tempClassrooms]);
 
     const hasClassesOnDate = React.useCallback((dateStr: string) => {
-        const dateObj = new Date(dateStr);
+        const dateObj = parseClassDate(dateStr);
+        if (!dateObj) return false;
         const dayOfWeek = dateObj.getDay();
         return scheduledDatesSet.scheduledDaysOfWeek.has(dayOfWeek) || scheduledDatesSet.tempDates.has(dateStr);
     }, [scheduledDatesSet]);
 
     const getClassesForDate = React.useCallback((dateStr: string) => {
         if (!dateStr) return [];
-        const dateObj = new Date(dateStr);
+        const dateObj = parseClassDate(dateStr);
+        if (!dateObj) return [];
         const dayOfWeek = dateObj.getDay();
 
         // Filter permanent classes with matching day_of_week
@@ -392,7 +434,7 @@ export default function ClassroomsPage() {
         );
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = formatDate(new Date());
     let displayedClassrooms = activeView === 'today' 
         ? getClassesForDate(todayStr) 
         : (activeView === 'permanent' ? classrooms : tempClassrooms);
@@ -441,14 +483,16 @@ export default function ClassroomsPage() {
                             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">Classroom Management</h1>
                             <p className="text-slate-500 dark:text-slate-400 font-medium">Manage your active music sessions, schedules, and student enrollment.</p>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <Link href="/teacher-dashboard/classrooms/add">
-                                <button className="flex items-center gap-2 px-6 py-2.5 bg-[#ecb613] text-slate-900 font-bold rounded-xl shadow-sm hover:shadow-md transition-all">
-                                    <PlusCircle className="size-5" />
-                                    Configure New Class
-                                </button>
-                            </Link>
-                        </div>
+                        {teacherProfile?.role === 'admin' && (
+                            <div className="flex items-center gap-3">
+                                <Link href="/teacher-dashboard/classrooms/add">
+                                    <button className="flex items-center gap-2 px-6 py-2.5 bg-[#ecb613] text-slate-900 font-bold rounded-xl shadow-sm hover:shadow-md transition-all">
+                                        <PlusCircle className="size-5" />
+                                        Configure New Class
+                                    </button>
+                                </Link>
+                            </div>
+                        )}
                     </div>
 
                     {/* Filter Bar */}
@@ -646,7 +690,10 @@ export default function ClassroomsPage() {
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{getCleanDescription(room.description)}</p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                                            {getCleanDescription(room.description)}
+                                                            {(room as any).teacher?.name && ` • Instructor: ${(room as any).teacher.name}`}
+                                                        </p>
                                                         <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
                                                             <span className="flex items-center gap-1"><Users className="size-4 text-slate-400" /> {room.student_count} Enrolled</span>
                                                             <span className="flex items-center gap-1">
@@ -826,7 +873,10 @@ export default function ClassroomsPage() {
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">ID: {room.id.substring(0, 8).toUpperCase()}</p>
+                                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                                                        ID: {room.id.substring(0, 8).toUpperCase()}
+                                                                        {(room as any).teacher?.name && ` • Instructor: ${(room as any).teacher.name}`}
+                                                                    </p>
                                                                 </div>
                                                             </div>
                                                         </td>
@@ -856,7 +906,10 @@ export default function ClassroomsPage() {
                                                              ) : room.type === 'temporary' ? (
                                                                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 min-w-[150px] text-left">
                                                                      <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wide">
-                                                                         {new Date(room.class_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                                         {(() => {
+                                                                             const parsed = parseClassDate(room.class_date);
+                                                                             return parsed ? parsed.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : 'Invalid Date';
+                                                                         })()}
                                                                      </span>
                                                                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">
                                                                          {room.start_time ? formatTime12hr(room.start_time.slice(0, 5)) : ''} - {room.end_time ? formatTime12hr(room.end_time.slice(0, 5)) : ''}

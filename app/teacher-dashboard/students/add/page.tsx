@@ -28,8 +28,9 @@ export default function AddStudentPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string } | null>(null);
-    const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string; role?: string } | null>(null);
+    const [classrooms, setClassrooms] = useState<(Classroom & { teacher_id?: string })[]>([]);
+    const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -44,7 +45,8 @@ export default function AddStudentPage() {
         feesBasis: 'monthly',
         feesAmount: '0',
         feesCollectionDate: new Date().toISOString().split('T')[0],
-        feesClassesPaid: '4'
+        feesClassesPaid: '4',
+        teacherId: ''
     });
 
     useEffect(() => {
@@ -60,27 +62,40 @@ export default function AddStudentPage() {
 
                 const userId = session.user.id;
 
-                // 2. Fetch Teacher Profile
+                // 2. Fetch User Profile
                 const { data: profile } = await supabaseAuth
                     .from('users')
                     .select('id, name, email, role')
                     .eq('id', userId)
                     .single();
 
-                if (!profile || profile.role !== 'teacher') {
+                if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
                     router.push('/');
                     return;
                 }
-                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email });
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
 
-                // 3. Fetch Classrooms for this teacher
-                const { data: rooms } = await supabaseAuth
+                // 3. Fetch Classrooms
+                const roomsQuery = supabaseAuth
                     .from('classrooms')
-                    .select('id, name')
-                    .eq('teacher_id', userId);
+                    .select('id, name, teacher_id');
+
+                const { data: rooms } = profile.role === 'admin'
+                    ? await roomsQuery
+                    : await roomsQuery.eq('teacher_id', userId);
 
                 if (rooms) {
                     setClassrooms(rooms);
+                }
+
+                if (profile.role === 'admin') {
+                    const { data: teachersData } = await supabaseAuth
+                        .from('users')
+                        .select('id, name')
+                        .eq('role', 'teacher');
+                    if (teachersData) {
+                        setTeachers(teachersData);
+                    }
                 }
 
             } catch (err) {
@@ -107,6 +122,11 @@ export default function AddStudentPage() {
                 finalCollectionDate = dateObj.toISOString().split('T')[0];
             }
 
+            const selectedClassroom = classrooms.find(r => r.id === formData.batchId);
+            const assignedTeacherId = teacherProfile.role === 'admin'
+                ? (formData.teacherId || selectedClassroom?.teacher_id || null)
+                : teacherProfile.id;
+
             // Step 1: Create user in public.users with all student details
             // Level, Notes, Join Date, and Teacher ID are now directly in public.users
             const { data: userData, error: userError } = await supabaseAuth
@@ -118,7 +138,7 @@ export default function AddStudentPage() {
                     phone: formData.phone,
                     role: 'student',
                     status: 'active',
-                    teacher_id: teacherProfile.id,
+                    teacher_id: assignedTeacherId,
                     join_date: formData.startDate,
                     level: formData.level,
                     profile_pic_url: formData.profilePicUrl,
@@ -259,7 +279,15 @@ export default function AddStudentPage() {
                                                 <select
                                                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                     value={formData.batchId}
-                                                    onChange={(e) => setFormData({ ...formData, batchId: e.target.value })}
+                                                    onChange={(e) => {
+                                                        const newBatchId = e.target.value;
+                                                        const room = classrooms.find(r => r.id === newBatchId);
+                                                        setFormData({ 
+                                                            ...formData, 
+                                                            batchId: newBatchId,
+                                                            teacherId: room?.teacher_id || formData.teacherId
+                                                        });
+                                                    }}
                                                 >
                                                     <option value="" disabled>Select an active batch...</option>
                                                     {classrooms.map(room => (
@@ -269,6 +297,25 @@ export default function AddStudentPage() {
                                                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                             </div>
                                         </div>
+
+                                        {teacherProfile?.role === 'admin' && (
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-bold text-slate-700 block">Teacher Assignment</label>
+                                                <div className="relative">
+                                                    <select
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                        value={formData.teacherId}
+                                                        onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
+                                                    >
+                                                        <option value="">Unassigned</option>
+                                                        {teachers.map(teacher => (
+                                                            <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="space-y-2">
                                             <label className="text-sm font-bold text-slate-700 block">Experience Level</label>
                                             <div className="relative">

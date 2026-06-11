@@ -11,6 +11,7 @@ import Link from 'next/link';
 interface Classroom {
     id: string;
     name: string;
+    teacher_id?: string | null;
 }
 
 export default function EditStudentPage() {
@@ -20,8 +21,10 @@ export default function EditStudentPage() {
 
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string; role?: string } | null>(null);
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+    const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
+    const isAdmin = teacherProfile?.role === 'admin';
 
     // Form State
     const [formData, setFormData] = useState({
@@ -37,7 +40,8 @@ export default function EditStudentPage() {
         feesBasis: 'monthly',
         feesAmount: '0',
         feesCollectionDate: '',
-        feesClassesPaid: '0'
+        feesClassesPaid: '0',
+        teacherId: ''
     });
 
     useEffect(() => {
@@ -53,27 +57,40 @@ export default function EditStudentPage() {
 
                 const userId = session.user.id;
 
-                // 2. Fetch Teacher Profile
+                // 2. Fetch Teacher/Admin Profile
                 const { data: profile } = await supabaseAuth
                     .from('users')
                     .select('id, name, email, role')
                     .eq('id', userId)
                     .single();
 
-                if (!profile || profile.role !== 'teacher') {
+                if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
                     router.push('/');
                     return;
                 }
-                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email });
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
 
-                // 3. Fetch Classrooms for this teacher
-                const { data: rooms } = await supabaseAuth
+                // 3. Fetch Classrooms
+                const roomsQuery = supabaseAuth
                     .from('classrooms')
-                    .select('id, name')
-                    .eq('teacher_id', userId);
+                    .select('id, name, teacher_id');
+
+                const { data: rooms } = profile.role === 'admin'
+                    ? await roomsQuery
+                    : await roomsQuery.eq('teacher_id', userId);
 
                 if (rooms) {
                     setClassrooms(rooms);
+                }
+
+                if (profile.role === 'admin') {
+                    const { data: teachersData } = await supabaseAuth
+                        .from('users')
+                        .select('id, name')
+                        .eq('role', 'teacher');
+                    if (teachersData) {
+                        setTeachers(teachersData);
+                    }
                 }
 
                 // 4. Fetch Student Data
@@ -93,14 +110,22 @@ export default function EditStudentPage() {
                         fees_amount,
                         fees_collection_date,
                         fees_classes_paid,
+                        teacher_id,
                         classroom_students(classroom_id)
                     `)
                     .eq('id', studentId)
                     .single();
-
+ 
                 if (studentError || !student) {
                     console.error('Error fetching student:', studentError);
                     alert('Student not found.');
+                    router.push('/teacher-dashboard/students');
+                    return;
+                }
+
+                // Authorization check for teachers
+                if (profile && profile.role !== 'admin' && student.teacher_id !== profile.id) {
+                    alert('You are not authorized to edit this student profile.');
                     router.push('/teacher-dashboard/students');
                     return;
                 }
@@ -127,7 +152,8 @@ export default function EditStudentPage() {
                     feesBasis: student.fees_basis || 'monthly',
                     feesAmount: String(student.fees_amount || 0),
                     feesCollectionDate: baseCollectionDateStr,
-                    feesClassesPaid: String(student.fees_classes_paid || 0)
+                    feesClassesPaid: String(student.fees_classes_paid || 0),
+                    teacherId: student.teacher_id || ''
                 });
 
             } catch (err) {
@@ -144,6 +170,7 @@ export default function EditStudentPage() {
         e.preventDefault();
         if (!teacherProfile) return;
 
+        const isAdmin = teacherProfile.role === 'admin';
         setSubmitting(true);
         try {
             // Calculate Next Fees Collection Date as base fees collection date + 30 days
@@ -155,43 +182,51 @@ export default function EditStudentPage() {
             }
 
             // Step 1: Update user in public.users
+            const updatePayload: any = {
+                name: formData.fullName,
+                email: formData.email,
+                phone: formData.phone,
+                status: formData.status,
+                join_date: formData.startDate,
+                level: formData.level,
+                profile_pic_url: formData.profilePicUrl,
+                notes: formData.notes
+            };
+
+            if (isAdmin) {
+                updatePayload.fees_basis = formData.feesBasis;
+                updatePayload.fees_amount = Number(formData.feesAmount) || 0;
+                updatePayload.fees_collection_date = finalCollectionDate;
+                updatePayload.fees_classes_paid = Number(formData.feesClassesPaid) || 0;
+                updatePayload.teacher_id = formData.teacherId || null;
+            }
+
             const { error: userError } = await supabaseAuth
                 .from('users')
-                .update({
-                    name: formData.fullName,
-                    email: formData.email,
-                    phone: formData.phone,
-                    status: formData.status,
-                    join_date: formData.startDate,
-                    level: formData.level,
-                    profile_pic_url: formData.profilePicUrl,
-                    notes: formData.notes,
-                    fees_basis: formData.feesBasis,
-                    fees_amount: Number(formData.feesAmount) || 0,
-                    fees_collection_date: finalCollectionDate,
-                    fees_classes_paid: Number(formData.feesClassesPaid) || 0
-                })
+                .update(updatePayload)
                 .eq('id', studentId);
 
             if (userError) throw userError;
 
-            // Step 2: Handle Batch Re-assignment
-            // First, remove existing assignments (Simple approach for 1 batch per student)
-            await supabaseAuth
-                .from('classroom_students')
-                .delete()
-                .eq('student_id', studentId);
-
-            if (formData.batchId) {
-                const { error: classroomError } = await supabaseAuth
+            if (isAdmin) {
+                // Step 2: Handle Batch Re-assignment
+                // First, remove existing assignments (Simple approach for 1 batch per student)
+                await supabaseAuth
                     .from('classroom_students')
-                    .insert([{
-                        classroom_id: formData.batchId,
-                        student_id: studentId,
-                        joined_at: new Date().toISOString()
-                    }]);
+                    .delete()
+                    .eq('student_id', studentId);
 
-                if (classroomError) console.error('Error linking to batch:', classroomError);
+                if (formData.batchId) {
+                    const { error: classroomError } = await supabaseAuth
+                        .from('classroom_students')
+                        .insert([{
+                            classroom_id: formData.batchId,
+                            student_id: studentId,
+                            joined_at: new Date().toISOString()
+                        }]);
+
+                    if (classroomError) console.error('Error linking to batch:', classroomError);
+                }
             }
 
             // Success!
@@ -326,9 +361,18 @@ export default function EditStudentPage() {
                                             <label className="text-sm font-bold text-slate-700 block">Batch Assignment</label>
                                             <div className="relative">
                                                 <select
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
+                                                    disabled={!isAdmin}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
                                                     value={formData.batchId}
-                                                    onChange={(e) => setFormData({ ...formData, batchId: e.target.value })}
+                                                    onChange={(e) => {
+                                                        const newBatchId = e.target.value;
+                                                        const room = classrooms.find(r => r.id === newBatchId);
+                                                        setFormData({ 
+                                                            ...formData, 
+                                                            batchId: newBatchId,
+                                                            teacherId: room?.teacher_id || formData.teacherId
+                                                        });
+                                                    }}
                                                 >
                                                     <option value="">Unassigned</option>
                                                     {classrooms.map(room => (
@@ -338,6 +382,24 @@ export default function EditStudentPage() {
                                                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                             </div>
                                         </div>
+                                        {isAdmin && (
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-bold text-slate-700 block">Teacher Assignment</label>
+                                                <div className="relative">
+                                                    <select
+                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                        value={formData.teacherId}
+                                                        onChange={(e) => setFormData({ ...formData, teacherId: e.target.value })}
+                                                    >
+                                                        <option value="">Unassigned</option>
+                                                        {teachers.map(teacher => (
+                                                            <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                                                        ))}
+                                                    </select>
+                                                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="space-y-2">
                                             <label className="text-sm font-bold text-slate-700 block">Join Date</label>
                                             <input
@@ -360,7 +422,8 @@ export default function EditStudentPage() {
                                             <label className="text-sm font-bold text-slate-700 block">Fees Payment Basis</label>
                                             <div className="relative">
                                                 <select
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
+                                                    disabled={!isAdmin}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed"
                                                     value={formData.feesBasis}
                                                     onChange={(e) => setFormData({ ...formData, feesBasis: e.target.value })}
                                                 >
@@ -374,8 +437,9 @@ export default function EditStudentPage() {
                                             <label className="text-sm font-bold text-slate-700 block">Fees Amount</label>
                                             <input
                                                 required
+                                                disabled={!isAdmin}
                                                 type="number"
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                                                 placeholder="e.g. 2000"
                                                 value={formData.feesAmount}
                                                 onChange={(e) => setFormData({ ...formData, feesAmount: e.target.value })}
@@ -385,8 +449,9 @@ export default function EditStudentPage() {
                                             <label className="text-sm font-bold text-slate-700 block">Fees Collection Date</label>
                                             <input
                                                 required
+                                                disabled={!isAdmin}
                                                 type="date"
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                                                 value={formData.feesCollectionDate}
                                                 onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
                                             />
@@ -395,8 +460,9 @@ export default function EditStudentPage() {
                                             <label className="text-sm font-bold text-slate-700 block">Prepaid Classes Balance</label>
                                             <input
                                                 required
+                                                disabled={!isAdmin}
                                                 type="number"
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                                                 placeholder="e.g. 4"
                                                 value={formData.feesClassesPaid}
                                                 onChange={(e) => setFormData({ ...formData, feesClassesPaid: e.target.value })}

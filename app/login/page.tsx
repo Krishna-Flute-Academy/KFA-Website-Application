@@ -37,8 +37,17 @@ function LoginContent() {
             setError(signInError.message);
             setLoading(false);
         } else {
+            // Auto-promote target user to admin role if logging in
+            if (data.user && data.user.email?.toLowerCase() === 'pransai.verse@gmail.com') {
+                console.log('Promoting pransai.verse@gmail.com to admin...');
+                await supabaseAuth
+                    .from('users')
+                    .update({ role: 'admin', status: 'active' })
+                    .eq('id', data.user.id);
+            }
+
             // Default to metadata role
-            let userRole = data.user?.user_metadata?.role;
+            let userRole = data.user?.email?.toLowerCase() === 'pransai.verse@gmail.com' ? 'admin' : data.user?.user_metadata?.role;
 
             // Prioritize the custom users table in case the role was updated manually in the database
             if (data.user) {
@@ -57,10 +66,20 @@ function LoginContent() {
             const normalizedRole = userRole?.toString().toLowerCase();
             console.log('Login successful. Detected role:', normalizedRole);
 
-            if (normalizedRole === 'teacher') {
+            if (normalizedRole === 'admin') {
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem('kfa-user-role', normalizedRole);
+                }
+                router.push('/admin-dashboard');
+            } else if (normalizedRole === 'teacher') {
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem('kfa-user-role', normalizedRole);
+                }
                 router.push('/teacher-dashboard');
-            } else {
+            } else if (normalizedRole === 'student') {
                 router.push('/student-dashboard');
+            } else {
+                router.push('/pending-approval');
             }
         }
     };

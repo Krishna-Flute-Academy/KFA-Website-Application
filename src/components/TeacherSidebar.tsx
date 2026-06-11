@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { supabaseAuth } from '../lib/supabase-auth';
 
 interface TeacherSidebarProps {
-    teacherProfile: { name: string; email: string } | null;
+    teacherProfile: { name: string; email: string; role?: string } | null;
     handleLogout: () => void;
 }
 
@@ -22,7 +22,11 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     const [secondsElapsed, setSecondsElapsed] = useState(0);
     const [unassignedCount, setUnassignedCount] = useState(0);
 
+    const userRole = teacherProfile?.role?.toLowerCase() || 'teacher';
+
     useEffect(() => {
+        if (userRole !== 'admin') return;
+
         const fetchUnassignedCount = async () => {
             try {
                 const { count } = await supabaseAuth
@@ -44,7 +48,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         // Polling every 30 seconds for new signups
         const pollingInterval = setInterval(fetchUnassignedCount, 30000);
         return () => clearInterval(pollingInterval);
-    }, []);
+    }, [userRole]);
 
     useEffect(() => {
         const checkSession = () => {
@@ -70,34 +74,42 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     }, []);
 
     const isMeetingPage = pathname?.endsWith('/meeting');
+    const basePath = userRole === 'admin' ? '/admin-dashboard' : '/teacher-dashboard';
 
     const menuItems = [
-        { name: 'Dashboard', icon: 'dashboard', href: '/teacher-dashboard' },
-        { name: 'Students', icon: 'group', href: '/teacher-dashboard/students' },
-        { name: 'Classrooms', icon: 'meeting_room', href: '/teacher-dashboard/classrooms' },
-        { name: 'Tasks', icon: 'assignment', href: '/teacher-dashboard/tasks' },
-        { name: 'Inventory Library', icon: 'inventory_2', href: '/teacher-dashboard/inventory' },
-        { name: 'Attendance', icon: 'calendar_today', href: '/teacher-dashboard/attendance' },
-        { name: 'Fees', icon: 'payments', href: '/teacher-dashboard/fees' },
-        { name: 'Messages', icon: 'chat_bubble', href: '/teacher-dashboard/messages' },
-        { name: 'Reports', icon: 'analytics', href: '/teacher-dashboard/reports' },
+        { name: userRole === 'admin' ? 'Admin-dashboard' : 'Dashboard', icon: 'dashboard', href: basePath },
+        { name: 'Students', icon: 'group', href: `${basePath}/students` },
+        { name: 'Classrooms', icon: 'meeting_room', href: `${basePath}/classrooms` },
+        { name: 'Tasks', icon: 'assignment', href: `${basePath}/tasks` },
+        { name: 'Inventory Library', icon: 'inventory_2', href: `${basePath}/inventory` },
+        { name: 'Attendance', icon: 'calendar_today', href: `${basePath}/attendance` },
+        ...(userRole === 'admin' ? [{ name: 'Fees', icon: 'payments', href: `${basePath}/fees` }] : []),
+        { name: 'Messages', icon: 'chat_bubble', href: `${basePath}/messages` },
+        ...(userRole === 'admin' ? [{ name: 'Role Allocation', icon: 'manage_accounts', href: `${basePath}/role-allocation` }] : []),
     ];
+
+    const handleLogoutWithClear = () => {
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('kfa-user-role');
+        }
+        handleLogout();
+    };
 
     return (
         <>
             <aside className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col sticky top-0 h-screen shrink-0">
             <div className="p-6 flex flex-col justify-center">
                 <h1 className="font-black text-xl leading-tight text-slate-950 dark:text-white select-none">
-                    Music Admin
+                    {userRole === 'admin' ? 'Music Admin' : 'Teacher Portal'}
                 </h1>
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5 uppercase tracking-wider select-none">
-                    Teacher Portal
+                    {userRole === 'admin' ? 'Admin Portal' : 'Instructor View'}
                 </p>
             </div>
 
             <nav className="flex-1 px-3 space-y-1.5 mt-6 overflow-y-auto">
                 {menuItems.map((item) => {
-                    const isActive = item.href === '/teacher-dashboard' 
+                    const isActive = item.href === basePath 
                         ? pathname === item.href 
                         : pathname?.startsWith(item.href);
                     return (
@@ -111,7 +123,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                         >
                             <span className="material-symbols-outlined text-[22px] select-none">{item.icon}</span>
                             <span className="text-sm font-semibold flex-1">{item.name}</span>
-                            {item.name === 'Students' && unassignedCount > 0 && (
+                            {item.name === 'Students' && userRole === 'admin' && unassignedCount > 0 && (
                                 <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
                                     {unassignedCount} New
                                 </span>
@@ -140,7 +152,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     <span className="text-sm font-semibold">Settings</span>
                 </Link>
                 <button
-                    onClick={handleLogout}
+                    onClick={handleLogoutWithClear}
                     className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
                 >
                     <span className="material-symbols-outlined">logout</span>
@@ -157,7 +169,9 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     </div>
                     <div className="overflow-hidden min-w-0">
                         <p className="text-sm font-black truncate text-slate-900 dark:text-white">{teacherProfile?.name || 'Krishna Gopal'}</p>
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Senior Instructor</p>
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                            {userRole === 'admin' ? 'Administrator' : 'Instructor'}
+                        </p>
                     </div>
                 </div>
             </div>

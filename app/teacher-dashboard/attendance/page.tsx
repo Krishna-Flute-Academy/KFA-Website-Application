@@ -78,7 +78,7 @@ interface AttendanceLog {
 export default function AttendancePage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     
     // UI State
     const [mode, setMode] = useState<'class' | 'individual' | 'missed'>('class');
@@ -243,18 +243,21 @@ export default function AttendancePage() {
                     .eq('id', session.user.id)
                     .single();
 
-                if (profile?.role !== 'teacher') {
+                if (profile?.role !== 'teacher' && profile?.role !== 'admin') {
                     router.push('/');
                     return;
                 }
 
-                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email });
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
+                const isAdmin = profile.role === 'admin';
                 
                 // 1. Fetch classrooms
-                const { data: classesData } = await supabaseAuth
+                const classesQuery = supabaseAuth
                     .from('classrooms')
-                    .select('id, name')
-                    .eq('teacher_id', session.user.id);
+                    .select('id, name');
+                const { data: classesData } = isAdmin
+                    ? await classesQuery
+                    : await classesQuery.eq('teacher_id', session.user.id);
                 
                 const loadedClassrooms = classesData || [];
                 setClassrooms(loadedClassrooms);
@@ -271,12 +274,24 @@ export default function AttendancePage() {
                 }
 
                 // 3. Fetch all temporary classes
-                const { data: tempClassesData } = await supabaseAuth
+                const tempClassesQuery = supabaseAuth
                     .from('temporary_classes')
-                    .select('*')
-                    .eq('teacher_id', session.user.id);
+                    .select('*');
+                const { data: tempClassesData } = isAdmin
+                    ? await tempClassesQuery
+                    : await tempClassesQuery.eq('teacher_id', session.user.id);
                 
-                setTemporaryClasses(tempClassesData || []);
+                const loadedTempClasses = tempClassesData || [];
+                setTemporaryClasses(loadedTempClasses);
+
+                // Validate expandedBatchId from URL
+                if (expandedBatchId && !isAdmin) {
+                    const isOwnClass = loadedTempClasses.some(tc => tc.id === expandedBatchId) ||
+                                       loadedClassrooms.some(c => c.id === expandedBatchId);
+                    if (!isOwnClass) {
+                        setExpandedBatchId(null);
+                    }
+                }
 
             } catch (err) {
                 console.error('Error on initial load:', err);
@@ -411,6 +426,19 @@ export default function AttendancePage() {
             return;
         }
 
+        const isAdmin = teacherProfile?.role === 'admin';
+        if (!isAdmin) {
+            const isOwnClass = isTemporary
+                ? temporaryClasses.some(tc => tc.id === batchId)
+                : classrooms.some(c => c.id === batchId);
+            if (!isOwnClass) {
+                console.error("Authorization error: batch does not belong to this teacher.");
+                alert("You are not authorized to view this classroom's attendance.");
+                setExpandedBatchId(null);
+                return;
+            }
+        }
+
         setExpandedBatchId(batchId);
 
         // Always show loading for fresh attendance data
@@ -494,6 +522,16 @@ export default function AttendancePage() {
         status: 'present' | 'absent' | 'late' | 'excused'
     ) => {
         if (!teacherProfile) return;
+
+        const isAdmin = teacherProfile.role === 'admin';
+        if (!isAdmin) {
+            const isOwnClass = temporaryClasses.some(tc => tc.id === batchId) ||
+                               classrooms.some(c => c.id === batchId);
+            if (!isOwnClass) {
+                alert("You are not authorized to mark attendance for this class.");
+                return;
+            }
+        }
 
         // Optimistically update
         setBatchAttendanceMap(prev => {
@@ -593,12 +631,15 @@ export default function AttendancePage() {
 
             setIndividualLoading(true);
             try {
-                const { data } = await supabaseAuth
+                const studentsQuery = supabaseAuth
                     .from('users')
                     .select('id, name, profile_pic_url')
                     .eq('role', 'student')
-                    .eq('teacher_id', teacherProfile.id)
                     .ilike('name', `%${searchQuery}%`);
+                
+                const { data } = teacherProfile.role === 'admin'
+                    ? await studentsQuery
+                    : await studentsQuery.eq('teacher_id', teacherProfile.id);
                 
                 setIndividualStudents(data || []);
             } catch (err) {
@@ -686,12 +727,15 @@ export default function AttendancePage() {
         if (!teacherProfile) return;
         setMissedLoading(true);
         try {
-            // 1. Fetch teacher's student IDs
-            const { data: studentsData, error: studentsErr } = await supabaseAuth
+            // 1. Fetch teacher's/all student IDs
+            const studentsQuery = supabaseAuth
                 .from('users')
                 .select('id')
-                .eq('role', 'student')
-                .eq('teacher_id', teacherProfile.id);
+                .eq('role', 'student');
+
+            const { data: studentsData, error: studentsErr } = teacherProfile.role === 'admin'
+                ? await studentsQuery
+                : await studentsQuery.eq('teacher_id', teacherProfile.id);
 
             if (studentsErr) throw studentsErr;
             const studentIds = (studentsData || []).map(s => s.id);

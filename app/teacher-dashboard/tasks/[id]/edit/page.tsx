@@ -15,6 +15,7 @@ import Link from 'next/link';
 interface Classroom {
     id: string;
     name: string;
+    teacher_id?: string;
 }
 
 interface Student {
@@ -43,7 +44,7 @@ export default function EditTaskPage() {
 
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     const [assignment, setAssignment] = useState<Assignment | null>(null);
     
     // Form state
@@ -74,18 +75,21 @@ export default function EditTaskPage() {
                 .eq('id', session.user.id)
                 .single();
 
-            if (profile?.role !== 'teacher') {
+            if (profile?.role !== 'teacher' && profile?.role !== 'admin') {
                 router.push('/');
                 return;
             }
 
-            setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email });
+            setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
+            const isAdmin = profile.role === 'admin';
             
             // Fetch classrooms
-            const { data: classes } = await supabaseAuth
+            const classesQuery = supabaseAuth
                 .from('classrooms')
-                .select('id, name')
-                .eq('teacher_id', session.user.id);
+                .select('id, name, teacher_id');
+            const { data: classes } = isAdmin
+                ? await classesQuery
+                : await classesQuery.eq('teacher_id', session.user.id);
             
             if (classes) {
                 setClassrooms(classes);
@@ -108,11 +112,22 @@ export default function EditTaskPage() {
                     .eq('id', assignmentId)
                     .single();
 
-                if (asgError) {
+                if (asgError || !asg) {
                     console.error('Error fetching assignment:', asgError);
                     alert('Could not load assignment details.');
                     router.push('/teacher-dashboard/tasks');
                     return;
+                }
+
+                // Restrict access for teachers
+                const isAdmin = teacherProfile.role === 'admin';
+                if (!isAdmin) {
+                    const ownsClassroom = classrooms.some(c => c.id === asg.classroom_id);
+                    if (!ownsClassroom) {
+                        alert('You are not authorized to edit this task.');
+                        router.push('/teacher-dashboard/tasks');
+                        return;
+                    }
                 }
                 
                 assignmentData = asg;
@@ -280,11 +295,24 @@ export default function EditTaskPage() {
             // Step 1: Update/Publish the original assignment with the first group
             const [primaryClassId, primaryStudentIds] = classGroups[0] || [assignment.classroom_id, []];
             
+            const isAdmin = teacherProfile.role === 'admin';
+            if (!isAdmin) {
+                const ownsClassroom = classrooms.some(c => c.id === primaryClassId);
+                if (!ownsClassroom) {
+                    alert("You are not authorized to assign tasks to this classroom.");
+                    return;
+                }
+            }
+
+            const primaryClassroomObj = classrooms.find(c => c.id === primaryClassId);
+            const primaryTeacherId = primaryClassroomObj?.teacher_id || teacherProfile.id;
+
             const updateData: any = {
                 title,
                 description,
                 due_date: dueDate || null,
                 classroom_id: primaryClassId,
+                teacher_id: primaryTeacherId,
                 target_type: selectedClassroom === 'all' && selectAll ? 'all' : 'individual',
                 status: isDraft ? 'draft' : 'active'
             };
@@ -356,9 +384,12 @@ export default function EditTaskPage() {
                     const [classId, studentIds] = classGroups[i];
                     if (studentIds.length === 0) continue;
 
+                    const classroomObj = classrooms.find(c => c.id === classId);
+                    const classTeacherId = classroomObj?.teacher_id || teacherProfile.id;
+
                     const newInsertData: any = {
                         classroom_id: classId,
-                        teacher_id: teacherProfile.id,
+                        teacher_id: classTeacherId,
                         title,
                         description,
                         due_date: dueDate || null,

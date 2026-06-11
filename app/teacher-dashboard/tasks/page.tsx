@@ -11,6 +11,7 @@ import Link from 'next/link';
 interface Classroom {
     id: string;
     name: string;
+    teacher_id?: string;
 }
 
 interface Student {
@@ -51,7 +52,7 @@ interface TaskSubmission {
 export default function TaskReviewPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; role?: string } | null>(null);
     const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
     const [filteredSubmissions, setFilteredSubmissions] = useState<TaskSubmission[]>([]);
     const [selectedSub, setSelectedSub] = useState<TaskSubmission | null>(null);
@@ -170,15 +171,18 @@ export default function TaskReviewPage() {
     const [feedback, setFeedback] = useState('');
     const [reassign, setReassign] = useState(false);
 
-    const fetchSubmissions = useCallback(async (userId: string) => {
-        console.log('Fetching submissions for teacher:', userId);
+    const fetchSubmissions = useCallback(async (userId: string, isAdmin: boolean = false) => {
+        console.log('Fetching submissions for teacher:', userId, 'isAdmin:', isAdmin);
         
         try {
-            // Step 1: Get this teacher's classroom IDs and names
-            const { data: classrooms, error: classroomError } = await supabaseAuth
+            // Step 1: Get classroom IDs and names (filtered if not admin)
+            let classroomQuery = supabaseAuth
                 .from('classrooms')
-                .select('id, name')
-                .eq('teacher_id', userId);
+                .select('id, name');
+            if (!isAdmin) {
+                classroomQuery = classroomQuery.eq('teacher_id', userId);
+            }
+            const { data: classrooms, error: classroomError } = await classroomQuery;
 
             if (classroomError) {
                 console.error('Error fetching classrooms:', classroomError);
@@ -479,14 +483,15 @@ export default function TaskReviewPage() {
                 .eq('id', session.user.id)
                 .single();
 
-            if (profile?.role !== 'teacher') {
+            if (profile?.role !== 'teacher' && profile?.role !== 'admin') {
                 router.push('/');
                 return;
             }
 
-            setTeacherProfile({ name: profile.name, email: profile.email });
-            await fetchSubmissions(session.user.id);
-            await loadCreationData(session.user.id);
+            const isAdmin = profile.role === 'admin';
+            setTeacherProfile({ name: profile.name, email: profile.email, role: profile.role });
+            await fetchSubmissions(session.user.id, isAdmin);
+            await loadCreationData(session.user.id, isAdmin);
             setLoading(false);
         };
 
@@ -602,23 +607,29 @@ export default function TaskReviewPage() {
         }
     };
 
-    const loadCreationData = async (teacherId: string) => {
+    const loadCreationData = async (teacherId: string, isAdmin: boolean = false) => {
         try {
             // Fetch classrooms
-            const { data: classes } = await supabaseAuth
+            let classroomQuery = supabaseAuth
                 .from('classrooms')
-                .select('id, name')
-                .eq('teacher_id', teacherId);
+                .select('id, name, teacher_id');
+            if (!isAdmin) {
+                classroomQuery = classroomQuery.eq('teacher_id', teacherId);
+            }
+            const { data: classes } = await classroomQuery;
             
             if (classes) {
                 setCreateClassrooms(classes);
             }
 
             // Fetch previous assignments
-            const { data: prevTasks } = await supabaseAuth
+            let prevTasksQuery = supabaseAuth
                 .from('assignments')
-                .select('id, title, description, due_date, classroom_id, target_type, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
-                .eq('teacher_id', teacherId);
+                .select('id, title, description, due_date, classroom_id, target_type, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size');
+            if (!isAdmin) {
+                prevTasksQuery = prevTasksQuery.eq('teacher_id', teacherId);
+            }
+            const { data: prevTasks } = await prevTasksQuery;
             
             if (prevTasks) {
                 const manualPrevTasks = prevTasks.filter((t: any) => {
@@ -1093,11 +1104,16 @@ export default function TaskReviewPage() {
         setIsSaving(true);
         try {
             if (editingTaskId) {
+                const classId = createSelectedClassroom === 'all' ? (createClassrooms[0]?.id || null) : createSelectedClassroom;
+                const classroomObj = createClassrooms.find(c => c.id === classId);
+                const classTeacherId = classroomObj?.teacher_id || session.user.id;
+
                 const updateData: any = {
                     title: createTitle,
                     description: createDescription,
                     due_date: createDueDate || null,
-                    classroom_id: createSelectedClassroom === 'all' ? (createClassrooms[0]?.id || null) : createSelectedClassroom,
+                    classroom_id: classId,
+                    teacher_id: classTeacherId,
                     target_type: createSelectedClassroom === 'all' && createSelectAll ? 'all' : 'individual',
                     status: isDraft ? 'draft' : 'active',
                     file_url: createFileUrl || null,
@@ -1175,10 +1191,14 @@ export default function TaskReviewPage() {
                     let assignmentIdToUse = '';
                     let assignmentError = null;
 
+                    const classroomObj = createClassrooms.find(c => c.id === classId);
+                    const classTeacherId = classroomObj?.teacher_id || session.user.id;
+
                     const updateData: any = {
                         title: createTitle,
                         description: createDescription,
                         due_date: createDueDate || null,
+                        teacher_id: classTeacherId,
                         target_type: createSelectedClassroom === 'all' && createSelectAll ? 'all' : 'individual',
                         status: isDraft ? 'draft' : 'active',
                         file_url: createFileUrl || null,
@@ -1209,7 +1229,7 @@ export default function TaskReviewPage() {
                     } else {
                         const insertData = {
                             classroom_id: classId,
-                            teacher_id: session.user.id,
+                            teacher_id: classTeacherId,
                             ...updateData,
                             created_at: new Date().toISOString()
                         };

@@ -17,6 +17,15 @@ const nextConfig = {
 
     // Optimization for Supabase Client
     serverExternalPackages: ['@supabase/supabase-js'],
+
+    async rewrites() {
+        return [
+            {
+                source: '/admin-dashboard/:path*',
+                destination: '/teacher-dashboard/:path*',
+            },
+        ];
+    },
 };
 
 export default nextConfig;

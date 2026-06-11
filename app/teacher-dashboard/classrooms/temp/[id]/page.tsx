@@ -18,6 +18,17 @@ function formatTime12hr(time24: string) {
     return `${hours}:${m} ${ampm}`;
 }
 
+function parseClassDate(dateStr?: string): Date | null {
+    if (!dateStr) return null;
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return null;
+    const yr = parseInt(parts[0], 10);
+    const mo = parseInt(parts[1], 10);
+    const dy = parseInt(parts[2], 10);
+    if (isNaN(yr) || isNaN(mo) || isNaN(dy)) return null;
+    return new Date(yr, mo - 1, dy);
+}
+
 const generateTimeOptions = () => {
     const options = [];
     for (let h = 5; h <= 23; h++) {
@@ -39,6 +50,8 @@ interface TempClass {
     class_date: string;
     start_time: string;
     end_time: string;
+    teacher_id?: string;
+    teacher_name?: string;
 }
 
 interface Student {
@@ -77,7 +90,7 @@ export default function TempClassManagePage() {
 
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email')
+                    .select('id, name, email, role')
                     .eq('id', session.user.id)
                     .single();
                 setTeacherProfile(profile);
@@ -85,24 +98,54 @@ export default function TempClassManagePage() {
                 if (!profile) return;
 
                 // 1. Fetch Class Data
-                const { data: roomData, error: roomError } = await supabaseAuth
+                const tempQuery = supabaseAuth
                     .from('temporary_classes')
                     .select('*')
-                    .eq('id', classId)
-                    .eq('teacher_id', profile.id)
-                    .single();
+                    .eq('id', classId);
+
+                const { data: roomData, error: roomError } = profile.role === 'admin'
+                    ? await tempQuery.single()
+                    : await tempQuery.eq('teacher_id', profile.id).single();
                 
-                if (roomError) throw roomError;
-                setTempClass(roomData);
+                if (roomError || !roomData) {
+                    alert('Classroom not found or access denied.');
+                    router.push('/teacher-dashboard/classrooms');
+                    return;
+                }
+
+                let teacherName = '';
+                if (roomData?.teacher_id) {
+                    const { data: tProfile, error: tErr } = await supabaseAuth
+                        .from('users')
+                        .select('name')
+                        .eq('id', roomData.teacher_id)
+                        .maybeSingle();
+                    if (tErr) {
+                        console.error('Error fetching teacher name profile:', tErr);
+                    }
+                    if (tProfile) {
+                        teacherName = tProfile.name;
+                    }
+                }
+
+                setTempClass({
+                    ...roomData,
+                    teacher_name: teacherName
+                });
                 setStartTime(roomData?.start_time ? roomData.start_time.slice(0, 5) : '10:00');
                 setEndTime(roomData?.end_time ? roomData.end_time.slice(0, 5) : '11:00');
 
                 // 2. Fetch All Students
-                const { data: studentsData } = await supabaseAuth
+                const studentsQuery = supabaseAuth
                     .from('users')
                     .select('id, name, profile_pic_url')
                     .eq('role', 'student')
                     .order('name');
+ 
+                const { data: studentsData } = profile.role === 'admin'
+                    ? await studentsQuery
+                    : await studentsQuery.eq('teacher_id', profile.id);
+ 
                 setAllStudents(studentsData || []);
 
                 // 3. Fetch Assigned Students
@@ -130,10 +173,93 @@ export default function TempClassManagePage() {
         fetchData();
     }, [classId, router]);
 
+    const checkSchedulingConflicts = async (
+        teacherId: string,
+        classDate: string,
+        startTimeStr: string,
+        endTimeStr: string,
+        excludeTemporaryClassId: string
+    ) => {
+        const { data: classrooms, error: classErr } = await supabaseAuth
+            .from('classrooms')
+            .select('id, name')
+            .eq('teacher_id', teacherId);
+        
+        if (classErr || !classrooms || classrooms.length === 0) return null;
+        const classroomMap = new Map<string, string>(classrooms.map(c => [c.id, c.name]));
+        const classroomIds = classrooms.map(c => c.id);
+
+        const [schedRes, tempRes] = await Promise.all([
+            supabaseAuth
+                .from('batch_schedules')
+                .select('classroom_id, day_of_week, start_time, end_time')
+                .in('classroom_id', classroomIds),
+            supabaseAuth
+                .from('temporary_classes')
+                .select('id, classroom_id, title, class_date, start_time, end_time')
+                .eq('teacher_id', teacherId)
+        ]);
+
+        const batchSchedules = schedRes.data || [];
+        const temporaryClasses = tempRes.data || [];
+
+        const newStart = startTimeStr.slice(0, 5);
+        const newEnd = endTimeStr.slice(0, 5);
+
+        const checkOverlap = (s1: string, e1: string, s2: string, e2: string) => {
+            return s1.slice(0, 5) < e2.slice(0, 5) && s2.slice(0, 5) < e1.slice(0, 5);
+        };
+
+        const targetDate = new Date(classDate);
+        const targetDow = targetDate.getDay();
+        const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        // Check temporary classes on same date (excluding the current one)
+        for (const tc of temporaryClasses) {
+            if (tc.id !== excludeTemporaryClassId && tc.class_date === classDate && checkOverlap(newStart, newEnd, tc.start_time, tc.end_time)) {
+                return {
+                    className: tc.title || classroomMap.get(tc.classroom_id) || 'Temporary Class',
+                    type: 'temporary',
+                    dayOrDate: classDate,
+                    time: `${tc.start_time.slice(0, 5)} - ${tc.end_time.slice(0, 5)}`
+                };
+            }
+        }
+
+        // Check permanent classes on same day of week
+        for (const bs of batchSchedules) {
+            if (bs.day_of_week === targetDow && checkOverlap(newStart, newEnd, bs.start_time, bs.end_time)) {
+                return {
+                    className: classroomMap.get(bs.classroom_id) || 'Permanent Class',
+                    type: 'permanent',
+                    dayOrDate: DAY_FULL[targetDow],
+                    time: `${bs.start_time.slice(0, 5)} - ${bs.end_time.slice(0, 5)}`
+                };
+            }
+        }
+
+        return null;
+    };
+
     const handleSave = async () => {
         if (!tempClass || !teacherProfile) return;
         setSaving(true);
         try {
+            // Check for scheduling conflicts
+            const conflict = await checkSchedulingConflicts(
+                tempClass.teacher_id || teacherProfile.id,
+                tempClass.class_date,
+                startTime,
+                endTime,
+                classId
+            );
+
+            if (conflict) {
+                alert(`Scheduling Conflict: This instructor is already allocated to "${conflict.className}" (${conflict.type} class) on ${conflict.dayOrDate} at ${conflict.time}.`);
+                setSaving(false);
+                return;
+            }
+
             // 1. Update Timings
             const { error: updateError } = await supabaseAuth
                 .from('temporary_classes')
@@ -212,9 +338,26 @@ export default function TempClassManagePage() {
                         <Link href="/teacher-dashboard/classrooms" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
                             <Back className="size-6" />
                         </Link>
-                        <div>
-                            <h1 className="text-2xl font-black tracking-tight">{tempClass.title}</h1>
-                            <p className="text-xs font-bold text-[#ecb613] uppercase tracking-widest mt-1">Manage Temporary Session</p>
+                        <div className="flex flex-col gap-1 text-left">
+                            <div className="flex items-center gap-3">
+                                <h1 className="text-2xl font-black tracking-tight">{tempClass.title}</h1>
+                                <span className="px-2 py-0.5 bg-[#ecb613]/10 text-[#ecb613] text-[9px] font-black rounded-md uppercase tracking-wider">Temporary Session</span>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1">
+                                {tempClass.teacher_name && (
+                                    <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded flex items-center gap-1 border border-emerald-200/50 dark:border-emerald-900/30">
+                                        Instructor: {tempClass.teacher_name}
+                                    </span>
+                                )}
+                                {tempClass.class_date && (
+                                    <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded flex items-center gap-1 border border-amber-200/50 dark:border-amber-900/30">
+                                        Date: {(() => {
+                                            const parsed = parseClassDate(tempClass.class_date);
+                                            return parsed ? parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Invalid Date';
+                                        })()}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                     <button 
@@ -283,7 +426,12 @@ export default function TempClassManagePage() {
                         </div>
 
                         <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                            <p className="text-sm font-medium text-slate-500">Date: <span className="font-bold text-slate-900 dark:text-white">{new Date(tempClass.class_date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span></p>
+                            <p className="text-sm font-medium text-slate-500">Date: <span className="font-bold text-slate-900 dark:text-white">
+                                {(() => {
+                                    const parsed = parseClassDate(tempClass.class_date);
+                                    return parsed ? parsed.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Invalid Date';
+                                })()}
+                            </span></p>
                             <span className="text-xs font-black bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-4 py-1.5 rounded-full uppercase tracking-widest">Confirmed Session</span>
                         </div>
                     </section>

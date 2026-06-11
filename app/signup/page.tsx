@@ -11,7 +11,7 @@ export default function SignupPage() {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
-    const [role, setRole] = useState('student');
+    const [role, setRole] = useState('pending');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -66,7 +66,7 @@ export default function SignupPage() {
                 data: {
                     full_name: name,
                     phone: phone,
-                    role: role,
+                    role: 'pending',
                 }
             }
         });
@@ -89,8 +89,8 @@ export default function SignupPage() {
                     name: name,
                     email: email,
                     phone: phone || null,
-                    role: role,
-                    status: 'active',
+                    role: 'pending',
+                    status: 'pending',
                     join_date: new Date().toISOString().split('T')[0],
                 }], { onConflict: 'id', ignoreDuplicates: true });
 
@@ -229,34 +229,6 @@ export default function SignupPage() {
                                         onChange={(e) => setPhone(e.target.value)}
                                         disabled={loading || !!successMessage}
                                     />
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col gap-2">
-                                <label className="text-sm font-medium text-slate-700 dark:text-slate-300">I am joining as a</label>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => setRole('student')}
-                                        disabled={loading || !!successMessage}
-                                        className={`h-12 rounded-lg border font-medium transition-all ${role === 'student'
-                                                ? 'border-[#a15912] bg-[#a15912]/10 text-[#a15912]'
-                                                : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                            }`}
-                                    >
-                                        Student
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setRole('teacher')}
-                                        disabled={loading || !!successMessage}
-                                        className={`h-12 rounded-lg border font-medium transition-all ${role === 'teacher'
-                                                ? 'border-[#a15912] bg-[#a15912]/10 text-[#a15912]'
-                                                : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                            }`}
-                                    >
-                                        Teacher
-                                    </button>
                                 </div>
                             </div>
 

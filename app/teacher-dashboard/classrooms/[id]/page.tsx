@@ -16,6 +16,9 @@ interface ClassroomDetails {
     created_at: string;
     type?: string;
     class_date?: string;
+    teacher_name?: string;
+    start_time?: string;
+    end_time?: string;
 }
 
 interface ScheduleEntry {
@@ -119,7 +122,7 @@ export default function ClassroomDashboardPage({
 
 
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     const [classroom, setClassroom] = useState<ClassroomDetails | null>(null);
     const [students, setStudents] = useState<EnrolledStudent[]>([]);
     const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
@@ -566,7 +569,7 @@ export default function ClassroomDashboardPage({
                 // 2. Fetch Teacher Profile
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email')
+                    .select('id, name, email, role')
                     .eq('id', session.user.id)
                     .single();
                 setTeacherProfile(profile);
@@ -574,15 +577,34 @@ export default function ClassroomDashboardPage({
                 if (!profile) return;
 
                 // 3. Fetch Classroom
-                const { data: roomData, error: roomError } = await supabaseAuth
+                const classroomsQuery = supabaseAuth
                     .from('classrooms')
                     .select('*')
-                    .eq('id', classroomId)
-                    .eq('teacher_id', profile.id)
-                    .single();
+                    .eq('id', classroomId);
+
+                const { data: roomData, error: roomError } = profile.role === 'admin'
+                    ? await classroomsQuery.single()
+                    : await classroomsQuery.eq('teacher_id', profile.id).single();
                 
                 if (roomError) throw roomError;
-                const classroomData = { ...roomData, status: roomData.status || 'active' };
+
+                let teacherName = '';
+                if (roomData.teacher_id) {
+                    const { data: tProfile } = await supabaseAuth
+                        .from('users')
+                        .select('name')
+                        .eq('id', roomData.teacher_id)
+                        .maybeSingle();
+                    if (tProfile) {
+                        teacherName = tProfile.name;
+                    }
+                }
+
+                const classroomData = { 
+                    ...roomData, 
+                    status: roomData.status || 'active',
+                    teacher_name: teacherName
+                };
                 setClassroom(classroomData);
 
                 // 4. Fetch Enrolled Students
@@ -591,12 +613,14 @@ export default function ClassroomDashboardPage({
                 if (classroomData.type === 'temporary') {
                     const { data: tempClassData } = await supabaseAuth
                         .from('temporary_classes')
-                        .select('id, class_date')
+                        .select('id, class_date, start_time, end_time')
                         .eq('classroom_id', classroomId)
                         .maybeSingle();
 
                     if (tempClassData) {
                         classroomData.class_date = tempClassData.class_date;
+                        classroomData.start_time = tempClassData.start_time;
+                        classroomData.end_time = tempClassData.end_time;
                         const { data: tempRoster, error: tempRosterError } = await supabaseAuth
                             .from('session_student_overrides')
                             .select(`
@@ -1208,12 +1232,14 @@ export default function ClassroomDashboardPage({
         setOverrideForm({ studentId: '', date: new Date().toISOString().split('T')[0], reason: '' });
         try {
             const enrolledIds = new Set(students.map(s => s.student_id));
-            const { data, error } = await supabaseAuth
+            const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, level')
-                .eq('role', 'student')
-                .eq('teacher_id', teacherProfile.id)
-                .order('name', { ascending: true });
+                .eq('role', 'student');
+
+            const { data, error } = teacherProfile.role === 'admin'
+                ? await usersQuery.order('name', { ascending: true })
+                : await usersQuery.eq('teacher_id', teacherProfile.id).order('name', { ascending: true });
 
             if (error) throw error;
             // Only show students who are not already permanently enrolled in this classroom
@@ -1241,12 +1267,14 @@ export default function ClassroomDashboardPage({
         });
         try {
             const enrolledIds = new Set(students.map(s => s.student_id));
-            const { data, error } = await supabaseAuth
+            const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, level')
-                .eq('role', 'student')
-                .eq('teacher_id', teacherProfile.id)
-                .order('name', { ascending: true });
+                .eq('role', 'student');
+
+            const { data, error } = teacherProfile.role === 'admin'
+                ? await usersQuery.order('name', { ascending: true })
+                : await usersQuery.eq('teacher_id', teacherProfile.id).order('name', { ascending: true });
 
             if (error) throw error;
             // Only show students who are not already permanently enrolled in this classroom
@@ -1363,11 +1391,14 @@ export default function ClassroomDashboardPage({
         setDirectorySearch('');
         try {
             const enrolledIds = new Set(students.map(s => s.student_id));
-            const { data, error } = await supabaseAuth
+            const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, status')
-                .eq('role', 'student')
-                .eq('teacher_id', teacherProfile.id);
+                .eq('role', 'student');
+
+            const { data, error } = teacherProfile.role === 'admin'
+                ? await usersQuery
+                : await usersQuery.eq('teacher_id', teacherProfile.id);
 
             if (error) throw error;
             // Filter out already-enrolled students
@@ -1399,7 +1430,15 @@ export default function ClassroomDashboardPage({
 
                 if (error) throw error;
             } else {
-                const rows = Array.from(selectedToAdd).map(studentId => ({
+                const studentIds = Array.from(selectedToAdd);
+                
+                // Delete these students from any other classrooms first to enforce one classroom per student
+                await supabaseAuth
+                    .from('classroom_students')
+                    .delete()
+                    .in('student_id', studentIds);
+
+                const rows = studentIds.map(studentId => ({
                     classroom_id: classroomId,
                     student_id: studentId,
                     joined_at: new Date().toISOString(),
@@ -2964,6 +3003,25 @@ export default function ClassroomDashboardPage({
                             </Link>
                             <h2 className="text-xl font-bold text-[#ecb613] dark:text-[#ecb613]">{classroom?.name || 'Classroom'}</h2>
                             <span className="px-2 py-1 bg-[#ecb613]/10 text-[#ecb613] dark:bg-[#ecb613]/20 dark:text-[#ecb613] text-[10px] font-bold rounded uppercase tracking-wider">{classroom?.status || 'Active'}</span>
+                            {classroom?.type === 'temporary' && classroom.class_date && (
+                                <span className="px-2.5 py-1 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 text-xs font-bold rounded flex items-center gap-1.5 border border-amber-200/50 dark:border-amber-900/30">
+                                    <Calendar className="w-3.5 h-3.5" />
+                                    {formatLocalDate(classroom.class_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    {classroom.start_time && ` (${formatTime12hr(classroom.start_time.slice(0,5))} – ${formatTime12hr(classroom.end_time?.slice(0,5) || '')})`}
+                                </span>
+                            )}
+                            {classroom?.type === 'permanent' && schedules.length > 0 && (
+                                <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 text-xs font-bold rounded flex items-center gap-1.5 border border-blue-200/50 dark:border-blue-900/30">
+                                    <Calendar className="w-3.5 h-3.5" />
+                                    {schedules.map(s => `${DAY_NAMES[s.day_of_week].slice(0,3)} at ${formatTime12hr(s.start_time.slice(0,5))}`).join(', ')}
+                                </span>
+                            )}
+                            {classroom?.teacher_name && (
+                                <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded flex items-center gap-1.5 border border-emerald-200/50 dark:border-emerald-900/30">
+                                    <User className="w-3.5 h-3.5" />
+                                    Instructor: {classroom.teacher_name}
+                                </span>
+                            )}
                         </div>
                         <div className="flex items-center gap-6">
                             <div className="relative hidden md:block">
@@ -3349,13 +3407,53 @@ export default function ClassroomDashboardPage({
                                         </div>
                                     )}
 
+                                    {classroom?.teacher_name && (
+                                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                                            <div className="flex justify-between items-center mb-4">
+                                                <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Instructor</h4>
+                                                <User className="w-5 h-5 text-emerald-500" />
+                                            </div>
+                                            <div className="flex items-center gap-3 bg-emerald-50/50 dark:bg-emerald-950/10 p-3 rounded-xl border border-emerald-200/50 dark:border-emerald-900/30">
+                                                <div className="w-8 h-8 rounded-full bg-[#ecb613]/15 flex items-center justify-center font-bold text-[#ecb613] text-xs">
+                                                    {classroom.teacher_name.charAt(0)}
+                                                </div>
+                                                <div className="flex flex-col text-left">
+                                                    <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                                        {classroom.teacher_name}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-0.5">
+                                                        Primary Teacher
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                                         <div className="flex justify-between items-center mb-4">
                                             <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Schedule</h4>
                                             <Clock className="w-5 h-5 text-[#ecb613]" />
                                         </div>
                                         <div className="space-y-3">
-                                            {schedules.length === 0 ? (
+                                            {classroom?.type === 'temporary' ? (
+                                                classroom.class_date ? (
+                                                    <div className="flex justify-between items-center bg-amber-50/50 dark:bg-amber-950/10 p-3 rounded-xl border border-amber-200/50 dark:border-amber-900/30">
+                                                        <div className="flex flex-col text-left">
+                                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                                {formatLocalDate(classroom.class_date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
+                                                            </span>
+                                                            {classroom.start_time && (
+                                                                <span className="text-[10px] text-slate-450 dark:text-slate-400 font-medium mt-0.5">
+                                                                    {formatTime12hr(classroom.start_time.slice(0,5))} – {formatTime12hr(classroom.end_time?.slice(0,5) || '')}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <Calendar className="w-4 h-4 text-amber-500" />
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-slate-400 italic">No schedule set</p>
+                                                )
+                                            ) : schedules.length === 0 ? (
                                                 <p className="text-xs text-slate-400 italic">No schedule set</p>
                                             ) : (
                                                 schedules.slice(0, 3).map(slot => (

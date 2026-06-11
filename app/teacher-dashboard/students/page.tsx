@@ -18,6 +18,8 @@ interface StudentData {
     attendance_pct: number;
     status: string;
     created_at?: string;
+    teacher_id?: string | null;
+    teacher_name?: string;
 }
 
 interface BulkEnrollRow {
@@ -32,12 +34,13 @@ interface BulkEnrollRow {
 interface Classroom {
     id: string;
     name: string;
+    teacher_id?: string | null;
 }
 
 export default function StudentDirectory() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string; role?: string } | null>(null);
     const [students, setStudents] = useState<StudentData[]>([]);
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     const [stats, setStats] = useState({
@@ -49,6 +52,8 @@ export default function StudentDirectory() {
     const [claimingId, setClaimingId] = useState<string | null>(null);
     const [showClaimModal, setShowClaimModal] = useState<StudentData | null>(null);
     const [claimBatchId, setClaimBatchId] = useState('');
+    const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
+    const [claimTeacherId, setClaimTeacherId] = useState('');
     const [selectedBatch, setSelectedBatch] = useState<string>('All Batches');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
     const [searchQuery, setSearchQuery] = useState('');
@@ -98,29 +103,45 @@ export default function StudentDirectory() {
 
                 const userId = session.user.id;
 
-                // 2. Verify Teacher Role & Get Profile
+                // 2. Verify Teacher/Admin Role & Get Profile
                 const { data: profile, error: profileError } = await supabaseAuth
                     .from('users')
                     .select('name, email, role')
                     .eq('id', userId)
                     .single();
 
-                if (profileError || profile?.role !== 'teacher') {
+                if (profileError || (profile?.role !== 'teacher' && profile?.role !== 'admin')) {
                     router.push('/');
                     return;
                 }
 
-                setTeacherProfile({ id: userId, name: profile.name, email: profile.email });
+                setTeacherProfile({ id: userId, name: profile.name, email: profile.email, role: profile.role });
+                const isAdminUser = profile.role === 'admin';
 
-                // 3. Fetch classrooms for bulk enroll
-                const { data: rooms } = await supabaseAuth
+                // 3. Fetch classrooms
+                const roomsQuery = supabaseAuth
                     .from('classrooms')
-                    .select('id, name')
-                    .eq('teacher_id', userId);
+                    .select('id, name, teacher_id');
+                const { data: rooms } = isAdminUser
+                    ? await roomsQuery
+                    : await roomsQuery.eq('teacher_id', userId);
+
                 if (rooms) setClassrooms(rooms);
 
+                // Fetch teachers and build teacher name mapping
+                const teacherMap = new Map<string, string>();
+                const { data: teachersData } = await supabaseAuth
+                    .from('users')
+                    .select('id, name')
+                    .eq('role', 'teacher');
+                
+                if (teachersData) {
+                    setTeachers(teachersData);
+                    teachersData.forEach(t => teacherMap.set(t.id, t.name));
+                }
+
                 // 4. Fetch Students directly from users table
-                const { data: studentsData, error: studentsError } = await supabaseAuth
+                const studentsQuery = supabaseAuth
                     .from('users')
                     .select(`
                         id,
@@ -128,23 +149,23 @@ export default function StudentDirectory() {
                         status,
                         profile_pic_url,
                         created_at,
+                        teacher_id,
                         classroom_students(
                             classrooms(name)
                         )
                     `)
-                    .eq('role', 'student')
-                    .eq('teacher_id', userId);
+                    .eq('role', 'student');
+
+                const { data: studentsData, error: studentsError } = isAdminUser
+                    ? await studentsQuery
+                    : await studentsQuery.eq('teacher_id', userId);
 
                 if (studentsError) {
                     console.error('Supabase error fetching students:', studentsError);
                 }
 
-                console.log('Students raw data:', studentsData);
-
                 if (studentsData) {
-                    // Fetch attendance count for each student to calculate %
                     const formatted: StudentData[] = await Promise.all(studentsData.map(async (s: any) => {
-                        // Get attendance (student_id now references users.id)
                         const { data: attendanceData } = await supabaseAuth
                             .from('attendance')
                             .select('status')
@@ -155,65 +176,97 @@ export default function StudentDirectory() {
                             const presentCount = attendanceData.filter(a => a.status === 'present' || a.status === 'late').length;
                             attendancePct = Math.round((presentCount / attendanceData.length) * 100);
                         } else {
-                            // Default or mock for empty data so it looks good
                             attendancePct = Math.floor(Math.random() * 20) + 70;
                         }
 
                         return {
                             id: s.id,
-                            user_id: s.id, // now they are the same
+                            user_id: s.id,
                             name: s.name,
                             student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
                             batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
                             attendance_pct: attendancePct,
                             profile_pic_url: s.profile_pic_url,
                             status: s.status === 'active' ? 'Active' : 'Inactive',
-                            created_at: s.created_at
+                            created_at: s.created_at,
+                            teacher_id: s.teacher_id,
+                            teacher_name: s.teacher_id ? (teacherMap.get(s.teacher_id) || 'Unknown Teacher') : 'Unassigned'
                         };
                     }));
 
                     setStudents(formatted);
 
-                    // Calculate Avg Attendance
                     if (formatted.length > 0) {
                         const avg = Math.round(formatted.reduce((acc, curr) => acc + curr.attendance_pct, 0) / formatted.length);
                         setStats(prev => ({ ...prev, avgAttendance: avg }));
                     }
                 }
 
-                // 5. Fetch Unassigned Students
-                const { data: unassignedData, error: unassignedError } = await supabaseAuth
-                    .from('users')
-                    .select(`
-                        id,
-                        name,
-                        status,
-                        profile_pic_url,
-                        created_at,
-                        classroom_students(
-                            classrooms(name)
-                        )
-                    `)
-                    .eq('role', 'student')
-                    .is('teacher_id', null);
+                // 5. Fetch Unassigned Students (Admins only)
+                if (isAdminUser) {
+                    const { data: unassignedData, error: unassignedError } = await supabaseAuth
+                        .from('users')
+                        .select(`
+                            id,
+                            name,
+                            status,
+                            profile_pic_url,
+                            created_at,
+                            teacher_id,
+                            classroom_students(
+                                classrooms(name)
+                            )
+                        `)
+                        .eq('role', 'student')
+                        .is('teacher_id', null);
 
-                if (unassignedError) {
-                    console.error('Supabase error fetching unassigned students:', unassignedError);
+                    if (unassignedError) {
+                        console.error('Supabase error fetching unassigned students:', unassignedError);
+                    }
+
+                    if (unassignedData) {
+                        const formattedUnassigned = unassignedData.map((s: any) => ({
+                            id: s.id,
+                            user_id: s.id,
+                            name: s.name,
+                            student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
+                            batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
+                            attendance_pct: 0,
+                            profile_pic_url: s.profile_pic_url,
+                            status: s.status === 'active' ? 'Active' : 'Inactive',
+                            created_at: s.created_at,
+                            teacher_id: s.teacher_id,
+                            teacher_name: 'Unassigned'
+                        }));
+                        setUnassignedStudents(formattedUnassigned);
+                    }
                 }
 
-                if (unassignedData) {
-                    const formattedUnassigned = unassignedData.map((s: any) => ({
-                        id: s.id,
-                        user_id: s.id,
-                        name: s.name,
-                        student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
-                        batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
-                        attendance_pct: 0,
-                        profile_pic_url: s.profile_pic_url,
-                        status: s.status === 'active' ? 'Active' : 'Inactive',
-                        created_at: s.created_at
-                    }));
-                    setUnassignedStudents(formattedUnassigned);
+                if (isAdminUser) {
+                    // Real-time subscription to listen for new student signups instantly!
+                    channel = supabaseAuth
+                        .channel('realtime-unassigned-students')
+                        .on(
+                            'postgres_changes',
+                            { event: 'INSERT', schema: 'public', table: 'users' },
+                            (payload) => {
+                                const newStudent = payload.new;
+                                if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
+                                    setUnassignedStudents(prev => [{
+                                        id: newStudent.id,
+                                        user_id: newStudent.id,
+                                        name: newStudent.name,
+                                        student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
+                                        batch: 'Unassigned',
+                                        attendance_pct: 0,
+                                        profile_pic_url: newStudent.profile_pic_url,
+                                        status: newStudent.status === 'active' ? 'Active' : 'Inactive',
+                                        created_at: newStudent.created_at || new Date().toISOString()
+                                    }, ...prev]);
+                                }
+                            }
+                        )
+                        .subscribe();
                 }
 
             } catch (err) {
@@ -223,36 +276,13 @@ export default function StudentDirectory() {
             }
         };
 
+        let channel: any = null;
         checkAuthAndFetchData();
 
-        // Real-time subscription to listen for new student signups instantly!
-        const channel = supabaseAuth
-            .channel('realtime-unassigned-students')
-            .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'users' },
-                (payload) => {
-                    const newStudent = payload.new;
-                    // Only add them if they are a student and not assigned yet
-                    if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
-                        setUnassignedStudents(prev => [{
-                            id: newStudent.id,
-                            user_id: newStudent.id,
-                            name: newStudent.name,
-                            student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
-                            batch: 'Unassigned',
-                            attendance_pct: 0,
-                            profile_pic_url: newStudent.profile_pic_url,
-                            status: newStudent.status === 'active' ? 'Active' : 'Inactive',
-                            created_at: newStudent.created_at || new Date().toISOString()
-                        }, ...prev]);
-                    }
-                }
-            )
-            .subscribe();
-
         return () => {
-            supabaseAuth.removeChannel(channel);
+            if (channel) {
+                supabaseAuth.removeChannel(channel);
+            }
         };
     }, [router]);
 
@@ -269,10 +299,19 @@ export default function StudentDirectory() {
         
         setClaimingId(showClaimModal.id);
         try {
+            const isAdmin = teacherProfile.role === 'admin';
+            const assignedTeacherId = isAdmin ? claimTeacherId : teacherProfile.id;
+
+            if (isAdmin && !assignedTeacherId) {
+                alert('Please select a teacher.');
+                setClaimingId(null);
+                return;
+            }
+
             // 1. Update teacher_id
             const { error: userError } = await supabaseAuth
                 .from('users')
-                .update({ teacher_id: teacherProfile.id })
+                .update({ teacher_id: assignedTeacherId })
                 .eq('id', showClaimModal.id);
 
             if (userError) throw userError;
@@ -294,16 +333,23 @@ export default function StudentDirectory() {
             // Find the claimed student from the unassigned list
             const claimed = unassignedStudents.find(s => s.id === showClaimModal.id);
             if (claimed) {
+                const assignedTeacherName = teachers.find(t => t.id === assignedTeacherId)?.name || 'Unknown Teacher';
                 // Add to assigned students and remove from unassigned students
-                setStudents(prev => [...prev, { ...claimed, batch: batchName }]);
+                setStudents(prev => [...prev, { 
+                    ...claimed, 
+                    batch: batchName,
+                    teacher_id: assignedTeacherId,
+                    teacher_name: assignedTeacherName
+                }]);
                 setUnassignedStudents(prev => prev.filter(s => s.id !== showClaimModal.id));
             }
             
             setShowClaimModal(null);
             setClaimBatchId('');
+            setClaimTeacherId('');
         } catch (err) {
             console.error('Error claiming student:', err);
-            alert('Failed to assign student to your profile and batch. Please try again.');
+            alert('Failed to assign student. Please try again.');
         } finally {
             setClaimingId(null);
         }
@@ -729,7 +775,16 @@ export default function StudentDirectory() {
                                 <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Select Batch</label>
                                 <select
                                     value={claimBatchId}
-                                    onChange={e => setClaimBatchId(e.target.value)}
+                                    onChange={e => {
+                                        const newBatchId = e.target.value;
+                                        setClaimBatchId(newBatchId);
+                                        if (teacherProfile?.role === 'admin') {
+                                            const room = classrooms.find(c => c.id === newBatchId);
+                                            if (room?.teacher_id) {
+                                                setClaimTeacherId(room.teacher_id);
+                                            }
+                                        }
+                                    }}
                                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                 >
                                     <option value="" disabled>Choose a batch...</option>
@@ -738,6 +793,22 @@ export default function StudentDirectory() {
                                     ))}
                                 </select>
                             </div>
+
+                            {teacherProfile?.role === 'admin' && (
+                                <div className="space-y-2 mt-4">
+                                    <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Select Teacher</label>
+                                    <select
+                                        value={claimTeacherId}
+                                        onChange={e => setClaimTeacherId(e.target.value)}
+                                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
+                                    >
+                                        <option value="" disabled>Choose a teacher...</option>
+                                        {teachers.map(teacher => (
+                                            <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                         </div>
                         <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
                             <button 
@@ -748,7 +819,7 @@ export default function StudentDirectory() {
                             </button>
                             <button 
                                 onClick={claimStudent}
-                                disabled={claimingId === showClaimModal.id || !claimBatchId}
+                                disabled={claimingId === showClaimModal.id || !claimBatchId || (teacherProfile?.role === 'admin' && !claimTeacherId)}
                                 className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
                                 {claimingId === showClaimModal.id ? (
                                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1038,13 +1109,15 @@ export default function StudentDirectory() {
                                         <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Student Directory</h2>
                                         <p className="text-sm text-slate-500 mt-1">Manage and track progress for {students.length} enrolled students.</p>
                                     </div>
-                                    <Link
-                                        href="/teacher-dashboard/students/add"
-                                        className="bg-black dark:bg-[#ecb613] dark:text-slate-900 hover:bg-slate-800 text-white px-5 h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-all"
-                                    >
-                                        <span className="material-symbols-outlined text-lg">person_add</span>
-                                        Add New Student
-                                    </Link>
+                                    {teacherProfile?.role === 'admin' && (
+                                        <Link
+                                            href="/teacher-dashboard/students/add"
+                                            className="bg-black dark:bg-[#ecb613] dark:text-slate-900 hover:bg-slate-800 text-white px-5 h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-all"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">person_add</span>
+                                            Add New Student
+                                        </Link>
+                                    )}
                                 </div>
 
                                 {/* Bulk action bar — shown when students are selected */}
@@ -1084,9 +1157,11 @@ export default function StudentDirectory() {
                                                 <button 
                                                     onClick={() => setFilterMode('recent')}
                                                     className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'recent' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Recent</button>
-                                                <button 
-                                                    onClick={() => setFilterMode('unassigned')}
-                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({unassignedStudents.length})</button>
+                                                {teacherProfile?.role === 'admin' && (
+                                                    <button 
+                                                        onClick={() => setFilterMode('unassigned')}
+                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({unassignedStudents.length})</button>
+                                                )}
                                             </div>
                                             {filterMode !== 'unassigned' && (
                                                 <>
@@ -1144,6 +1219,9 @@ export default function StudentDirectory() {
                                                     </th>
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student Name</th>
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Batch</th>
+                                                    {teacherProfile?.role === 'admin' && (
+                                                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Teacher</th>
+                                                    )}
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Attendance</th>
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
                                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">{filterMode === 'unassigned' ? 'Action' : 'Contact'}</th>
@@ -1193,6 +1271,11 @@ export default function StudentDirectory() {
                                                         <td className="px-6 py-4">
                                                             <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.batch}</span>
                                                         </td>
+                                                        {teacherProfile?.role === 'admin' && (
+                                                            <td className="px-6 py-4">
+                                                                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.teacher_name || 'Unassigned'}</span>
+                                                            </td>
+                                                        )}
                                                         <td className="px-6 py-4">
                                                             {filterMode === 'unassigned' ? (
                                                                 <span className="text-sm text-slate-400">—</span>
@@ -1235,7 +1318,7 @@ export default function StudentDirectory() {
                                                                         ) : (
                                                                             <span className="material-symbols-outlined text-[16px]">person_add</span>
                                                                         )}
-                                                                        {claimingId === student.id ? 'Assigning...' : 'Assign to Me'}
+                                                                        {claimingId === student.id ? 'Assigning...' : (teacherProfile?.role === 'admin' ? 'Assign Student' : 'Assign to Me')}
                                                                     </button>
                                                                 </div>
                                                             ) : (
@@ -1272,7 +1355,7 @@ export default function StudentDirectory() {
                                                 ))}
                                                 {paginatedStudents.length === 0 && (
                                                     <tr>
-                                                        <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
+                                                        <td colSpan={teacherProfile?.role === 'admin' ? 7 : 6} className="px-6 py-10 text-center text-slate-500">
                                                             {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
                                                         </td>
                                                     </tr>
@@ -1367,16 +1450,20 @@ export default function StudentDirectory() {
                                     <div className="p-6">
                                         <h3 className="font-bold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
                                         <div className="grid grid-cols-2 gap-3">
-                                            <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
-                                                <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">person_add</span>
-                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Invite Student</span>
-                                            </button>
-                                            <button 
-                                                onClick={() => setShowBulkEnrollModal(true)}
-                                                className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
-                                                <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">assignment_ind</span>
-                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Bulk Enroll</span>
-                                            </button>
+                                            {teacherProfile?.role === 'admin' && (
+                                                <>
+                                                    <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
+                                                        <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">person_add</span>
+                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Invite Student</span>
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setShowBulkEnrollModal(true)}
+                                                        className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
+                                                        <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">assignment_ind</span>
+                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Bulk Enroll</span>
+                                                    </button>
+                                                </>
+                                            )}
                                             <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
                                                 <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">mail</span>
                                                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Announce</span>
