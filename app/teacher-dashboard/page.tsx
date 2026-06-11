@@ -283,31 +283,33 @@ export default function TeacherDashboard() {
                     todayClasses: 0 // Will be set dynamically by today's classes list
                 });
 
-                // Fetch fees payments for this month
-                const startOfMonth = new Date();
-                startOfMonth.setDate(1);
-                const startOfMonthStr = getLocalDateString(startOfMonth);
-                const { data: paymentsData } = await supabaseAuth
-                    .from('fees_payments')
-                    .select('amount, student_id')
-                    .gte('payment_date', startOfMonthStr);
+                if (isAdminUser) {
+                    // Fetch fees payments for this month
+                    const startOfMonth = new Date();
+                    startOfMonth.setDate(1);
+                    const startOfMonthStr = getLocalDateString(startOfMonth);
+                    const { data: paymentsData } = await supabaseAuth
+                        .from('fees_payments')
+                        .select('amount, student_id')
+                        .gte('payment_date', startOfMonthStr);
 
-                const studentIds = studentList.map(s => s.id);
-                const totalCollected = (paymentsData || [])
-                    .filter(p => studentIds.includes(p.student_id))
-                    .reduce((sum, p) => sum + Number(p.amount), 0);
+                    const studentIds = studentList.map(s => s.id);
+                    const totalCollected = (paymentsData || [])
+                        .filter(p => studentIds.includes(p.student_id))
+                        .reduce((sum, p) => sum + Number(p.amount), 0);
 
-                const dueCount = studentList.filter(s => {
-                    const classesPaid = s.fees_classes_paid ?? 0;
-                    const isLowClasses = classesPaid <= 1;
-                    const isPassDueDate = s.fees_basis === 'monthly' && s.fees_collection_date && s.fees_collection_date <= today;
-                    return isLowClasses || isPassDueDate;
-                }).length;
+                    const dueCount = studentList.filter(s => {
+                        const classesPaid = s.fees_classes_paid ?? 0;
+                        const isLowClasses = classesPaid <= 1;
+                        const isPassDueDate = s.fees_basis === 'monthly' && s.fees_collection_date && s.fees_collection_date <= today;
+                        return isLowClasses || isPassDueDate;
+                    }).length;
 
-                setFeesStats({
-                    collectedThisMonth: totalCollected,
-                    dueStudentsCount: dueCount
-                });
+                    setFeesStats({
+                        collectedThisMonth: totalCollected,
+                        dueStudentsCount: dueCount
+                    });
+                }
 
                 // 4. Fetch Recent Submissions
                 const submissionsQuery = supabaseAuth
@@ -866,12 +868,12 @@ export default function TeacherDashboard() {
 
                     <div className="p-8 space-y-8 max-w-[1400px] mx-auto w-full">
                         {/* Stats Section */}
-                        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <section className={`grid grid-cols-1 gap-6 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'}`}>
                             {[
                                 { label: 'Total Students', value: stats.totalStudents, icon: 'person', color: 'blue', status: 'Live', href: '/teacher-dashboard/students' },
                                 { label: 'Active Classrooms', value: stats.activeClassrooms, icon: 'meeting_room', color: 'amber', status: 'Active', href: '/teacher-dashboard/classrooms' },
                                 { label: 'Pending Submissions', value: stats.pendingSubmissions, icon: 'assignment_late', color: 'purple', status: 'Review', href: '/teacher-dashboard/submissions' },
-                                { label: 'Fees Collection (Month)', value: `₹${feesStats.collectedThisMonth.toLocaleString('en-IN')}`, icon: 'payments', color: 'emerald', status: feesStats.dueStudentsCount > 0 ? `${feesStats.dueStudentsCount} Due` : 'Paid', href: '/teacher-dashboard/fees' }
+                                ...(isAdmin ? [{ label: 'Fees Collection (Month)', value: `₹${feesStats.collectedThisMonth.toLocaleString('en-IN')}`, icon: 'payments', color: 'emerald', status: feesStats.dueStudentsCount > 0 ? `${feesStats.dueStudentsCount} Due` : 'Paid', href: '/teacher-dashboard/fees' }] : [])
                             ].map((stat, i) => (
                                 <Link key={i} href={stat.href} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:scale-[1.02] hover:shadow-md block">
                                     <div className="flex items-center justify-between mb-4">
@@ -882,7 +884,7 @@ export default function TeacherDashboard() {
                                             stat.label === 'Total Students' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 
                                             stat.label === 'Active Classrooms' ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' : 
                                             stat.label === 'Pending Submissions' ? 'text-purple-600 bg-purple-50 dark:bg-purple-900/20' : 
-                                            feesStats.dueStudentsCount > 0 ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 animate-pulse' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20'
+                                            feesStats.dueStudentsCount > 0 ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 animate-pulse' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20'
                                         }`}>
                                             {stat.status}
                                         </span>
