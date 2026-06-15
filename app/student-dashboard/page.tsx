@@ -263,32 +263,65 @@ export default function StudentDashboard() {
                 }
             }
 
-            // 3. Fetch Tasks and Task Attempts (tasks & task_attempts)
-            // Bypassing RLS by fetching via task_attempts directly which the student owns
+            // 3. Fetch Tasks and Task Attempts (two-pronged approach)
+            // Prong A: Fetch all tasks assigned to student's classroom (so new students see tasks even before any submission)
+            let classroomTasks: any[] = [];
+            if (classroomId && classroomId !== 'synthetic-classroom') {
+                const { data: ctData } = await supabaseAuth
+                    .from('tasks')
+                    .select('*')
+                    .eq('classroom_id', classroomId)
+                    .order('created_at', { ascending: false });
+                if (ctData) classroomTasks = ctData;
+            }
+
+            // Prong B: Fetch actual attempt records for this student (contains status, score, feedback)
             const { data: attempts } = await supabaseAuth
                 .from('task_attempts')
-                .select('id, status, feedback_text, score, submitted_at, file_url, tasks(*)')
-                .eq('student_id', userId)
-                .order('id', { ascending: false });
+                .select('id, task_id, status, feedback_text, score, submitted_at, file_url')
+                .eq('student_id', userId);
 
-            // Ensure compatibility with the dashboard UI which expects "assignments"
-            const enriched: EnrichedAssignment[] = (attempts || [])
-                .map((a: any) => {
-                    const task = a.tasks || {};
-                    return {
-                        id: task.id || a.id,
-                        title: task.title || 'Task',
-                        description: task.description || '',
-                        due_date: task.due_date || '',
-                        file_url: task.file_url || a.file_url,
-                        file_name: task.file_name,
-                        file_size: task.file_size,
-                        status: a.status || 'pending',
-                        score: a.score,
-                        feedback_text: a.feedback_text,
-                        submitted_at: a.submitted_at
-                    };
-                });
+            // Build a quick lookup map: task_id → attempt
+            const attemptMap = new Map<string, any>();
+            (attempts || []).forEach((a: any) => {
+                if (a.task_id) attemptMap.set(a.task_id, a);
+            });
+
+            // Merge: start from classroom tasks (ensures tasks appear even with 0 submissions)
+            const taskMap = new Map<string, any>();
+            classroomTasks.forEach(t => taskMap.set(t.id, t));
+
+            // Also include any tasks found only via attempts (edge case: task moved classrooms)
+            (attempts || []).forEach((a: any) => {
+                if (a.tasks && !taskMap.has(a.tasks.id)) {
+                    taskMap.set(a.tasks.id, a.tasks);
+                }
+            });
+
+            const enriched: EnrichedAssignment[] = Array.from(taskMap.values()).map((task: any) => {
+                const attempt = attemptMap.get(task.id);
+                return {
+                    id: task.id,
+                    title: task.title || 'Task',
+                    description: task.description || '',
+                    due_date: task.due_date || '',
+                    file_url: task.file_url,
+                    file_name: task.file_name,
+                    file_size: task.file_size,
+                    // If no attempt yet → show as pending; otherwise use actual status
+                    status: attempt?.status || 'pending',
+                    score: attempt?.score ?? null,
+                    feedback_text: attempt?.feedback_text ?? null,
+                    submitted_at: attempt?.submitted_at ?? null,
+                };
+            });
+
+            // Sort: pending first, then by due date
+            enriched.sort((a, b) => {
+                if (a.status === 'pending' && b.status !== 'pending') return -1;
+                if (a.status !== 'pending' && b.status === 'pending') return 1;
+                return new Date(a.due_date || 0).getTime() - new Date(b.due_date || 0).getTime();
+            });
 
             setAssignments(enriched);
 
