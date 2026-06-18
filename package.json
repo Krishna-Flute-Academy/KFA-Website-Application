@@ -10,6 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@netlify/plugin-nextjs": "^5.15.11",
     "@supabase/supabase-js": "^2.75.0",
     "@tiptap/extension-color": "^2.27.2",
     "@tiptap/extension-font-family": "^2.27.2",
