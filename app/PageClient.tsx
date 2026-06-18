@@ -15,6 +15,7 @@ const BlogAdmin = dynamic(() => import('../src/components/BlogAdmin').then(modul
 const GalleryFull = dynamic(() => import('../src/components/GalleryFull').then(module => module.GalleryFull), { ssr: false });
 
 import { supabase, BlogPost, GalleryItem } from '../src/lib/supabase';
+import { supabaseAuth } from '../src/lib/supabase-auth';
 import { Carousel } from 'react-responsive-carousel';
 import "react-responsive-carousel/lib/styles/carousel.min.css";
 import { useSearchParams } from 'next/navigation';
@@ -126,6 +127,74 @@ export function PageClient() {
     }, [postFromUrl]);
 
     const [scrolled, setScrolled] = useState(false);
+    const [userSession, setUserSession] = useState<any>(null);
+    const [userRole, setUserRole] = useState<string | null>(null);
+
+    // Track auth session
+    useEffect(() => {
+        const checkSession = async () => {
+            try {
+                const { data: { session } } = await supabaseAuth.auth.getSession();
+                setUserSession(session);
+                if (session?.user) {
+                    const { data: userData } = await supabaseAuth
+                        .from('users')
+                        .select('role')
+                        .eq('id', session.user.id)
+                        .maybeSingle();
+                    if (userData?.role) {
+                        setUserRole(userData.role);
+                    } else {
+                        setUserRole(session.user.user_metadata?.role || 'student');
+                    }
+                }
+            } catch (err) {
+                console.error('Error fetching session:', err);
+            }
+        };
+
+        checkSession();
+
+        const { data: { subscription } } = supabaseAuth.auth.onAuthStateChange(async (_event, session) => {
+            setUserSession(session);
+            if (session?.user) {
+                try {
+                    const { data } = await supabaseAuth
+                        .from('users')
+                        .select('role')
+                        .eq('id', session.user.id)
+                        .maybeSingle();
+                    if (data?.role) {
+                        setUserRole(data.role);
+                    } else {
+                        setUserRole(session.user.user_metadata?.role || 'student');
+                    }
+                } catch (err) {
+                    console.error('Error getting role on auth change:', err);
+                    setUserRole(session.user.user_metadata?.role || 'student');
+                }
+            } else {
+                setUserRole(null);
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
+    }, []);
+
+    const getDashboardLink = () => {
+        if (!userSession) return '/login';
+        const role = userRole?.toLowerCase();
+        if (role === 'admin') return '/admin-dashboard';
+        if (role === 'teacher') return '/teacher-dashboard';
+        return '/student-dashboard';
+    };
+
+    const getAuthButtonLabel = () => {
+        return userSession ? 'Dashboard' : 'Login';
+    };
+
     const [visibleSections, setVisibleSections] = useState<Record<string, boolean>>({});
     const [currentView, setCurrentView] = useState<'home' | 'blog' | 'admin' | 'gallery'>('home');
     const [recentBlogPosts, setRecentBlogPosts] = useState<BlogPost[]>([]);
@@ -413,10 +482,10 @@ Hello Krishna Flute Academy, I have an inquiry!
                                     </a>
                                 </div>
 
-                                <div className="hidden sm:flex items-center">
-                                    <a href="/login" className="flex items-center justify-center space-x-2 px-5 py-2 bg-[#a15912] text-white rounded-full font-semibold md:text-sm text-xs transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105">
-                                        <User className="w-4 h-4" />
-                                        <span>Login</span>
+                                <div className="flex items-center mr-2 sm:mr-0">
+                                    <a href={getDashboardLink()} className="flex items-center justify-center space-x-1.5 px-3 py-1.5 sm:px-5 sm:py-2 bg-[#a15912] text-white rounded-full font-semibold md:text-sm text-xs transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105">
+                                        <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                        <span>{getAuthButtonLabel()}</span>
                                     </a>
                                 </div>
 
@@ -467,7 +536,19 @@ Hello Krishna Flute Academy, I have an inquiry!
                                     <button onClick={() => { setCurrentView('gallery'); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Gallery</button>
                                     <a href="/blog/" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Blog</a>
                                     <button onClick={() => { scrollToSection('contact'); setMobileMenuOpen(false); }} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2">Contact</button>
-                                    <a href="/login" className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>Login</a>
+                                    <a href={getDashboardLink()} className="block w-full text-left text-lg font-semibold text-blue-900 transition-colors py-2" onClick={() => setMobileMenuOpen(false)}>{getAuthButtonLabel()}</a>
+                                    {userSession && (
+                                        <button
+                                            onClick={async () => {
+                                                await supabaseAuth.auth.signOut();
+                                                setMobileMenuOpen(false);
+                                                window.location.reload();
+                                            }}
+                                            className="block w-full text-left text-lg font-semibold text-red-600 transition-colors py-2"
+                                        >
+                                            Logout
+                                        </button>
+                                    )}
 
                                     <div className="pt-6 border-t border-gray-200">
                                         <div className="flex space-x-4">
