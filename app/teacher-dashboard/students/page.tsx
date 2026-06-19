@@ -1099,6 +1099,7 @@ export default function StudentDirectory() {
                         title="Student Directory" 
                         searchQuery={searchQuery}
                         onSearchChange={setSearchQuery}
+                        backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 
                     <div className="flex-1 overflow-y-auto p-8">

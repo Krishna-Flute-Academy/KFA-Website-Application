@@ -3004,20 +3004,20 @@ export default function ClassroomDashboardPage({
                             <h2 className="text-xl font-bold text-[#ecb613] dark:text-[#ecb613]">{classroom?.name || 'Classroom'}</h2>
                             <span className="px-2 py-1 bg-[#ecb613]/10 text-[#ecb613] dark:bg-[#ecb613]/20 dark:text-[#ecb613] text-[10px] font-bold rounded uppercase tracking-wider">{classroom?.status || 'Active'}</span>
                             {classroom?.type === 'temporary' && classroom.class_date && (
-                                <span className="px-2.5 py-1 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 text-xs font-bold rounded flex items-center gap-1.5 border border-amber-200/50 dark:border-amber-900/30">
+                                <span className="hidden sm:flex px-2.5 py-1 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 text-xs font-bold rounded items-center gap-1.5 border border-amber-200/50 dark:border-amber-900/30">
                                     <Calendar className="w-3.5 h-3.5" />
                                     {formatLocalDate(classroom.class_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                     {classroom.start_time && ` (${formatTime12hr(classroom.start_time.slice(0,5))} – ${formatTime12hr(classroom.end_time?.slice(0,5) || '')})`}
                                 </span>
                             )}
                             {classroom?.type === 'permanent' && schedules.length > 0 && (
-                                <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 text-xs font-bold rounded flex items-center gap-1.5 border border-blue-200/50 dark:border-blue-900/30">
+                                <span className="hidden sm:flex px-2.5 py-1 bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 text-xs font-bold rounded items-center gap-1.5 border border-blue-200/50 dark:border-blue-900/30">
                                     <Calendar className="w-3.5 h-3.5" />
                                     {schedules.map(s => `${DAY_NAMES[s.day_of_week].slice(0,3)} at ${formatTime12hr(s.start_time.slice(0,5))}`).join(', ')}
                                 </span>
                             )}
                             {classroom?.teacher_name && (
-                                <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded flex items-center gap-1.5 border border-emerald-200/50 dark:border-emerald-900/30">
+                                <span className="hidden md:flex px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded items-center gap-1.5 border border-emerald-200/50 dark:border-emerald-900/30">
                                     <User className="w-3.5 h-3.5" />
                                     Instructor: {classroom.teacher_name}
                                 </span>

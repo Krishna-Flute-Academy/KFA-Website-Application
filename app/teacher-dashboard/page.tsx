@@ -866,31 +866,34 @@ export default function TeacherDashboard() {
                 <main className="flex-1 flex flex-col">
                     <TeacherHeader title={isAdmin ? "Admin-dashboard" : "Dashboard Overview"} />
 
-                    <div className="p-8 space-y-8 max-w-[1400px] mx-auto w-full">
+                    <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 max-w-[1400px] mx-auto w-full">
                         {/* Stats Section */}
-                        <section className={`grid grid-cols-1 gap-6 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-3'}`}>
+                        <section className={`grid grid-cols-2 gap-3 sm:gap-6 ${isAdmin ? 'lg:grid-cols-4' : 'md:grid-cols-3'}`}>
                             {[
-                                { label: 'Total Students', value: stats.totalStudents, icon: 'person', color: 'blue', status: 'Live', href: '/teacher-dashboard/students' },
-                                { label: 'Active Classrooms', value: stats.activeClassrooms, icon: 'meeting_room', color: 'amber', status: 'Active', href: '/teacher-dashboard/classrooms' },
-                                { label: 'Pending Submissions', value: stats.pendingSubmissions, icon: 'assignment_late', color: 'purple', status: 'Review', href: '/teacher-dashboard/submissions' },
-                                ...(isAdmin ? [{ label: 'Fees Collection (Month)', value: `₹${feesStats.collectedThisMonth.toLocaleString('en-IN')}`, icon: 'payments', color: 'emerald', status: feesStats.dueStudentsCount > 0 ? `${feesStats.dueStudentsCount} Due` : 'Paid', href: '/teacher-dashboard/fees' }] : [])
+                                { label: 'Total Students', value: stats.totalStudents, icon: 'person', colorClass: 'bg-blue-50 dark:bg-blue-950/20 text-blue-600', borderClass: 'border-l-4 border-blue-500', status: 'Live', statusClass: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20', href: '/teacher-dashboard/students' },
+                                { label: 'Active Classrooms', value: stats.activeClassrooms, icon: 'meeting_room', colorClass: 'bg-amber-50 dark:bg-amber-950/20 text-amber-600', borderClass: 'border-l-4 border-amber-500', status: 'Active', statusClass: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', href: '/teacher-dashboard/classrooms' },
+                                { label: 'Pending Submissions', value: stats.pendingSubmissions, icon: 'assignment_late', colorClass: 'bg-purple-50 dark:bg-purple-950/20 text-purple-600', borderClass: 'border-l-4 border-purple-500', status: 'Review', statusClass: 'text-purple-600 bg-purple-50 dark:bg-purple-900/20', href: '/teacher-dashboard/submissions' },
+                                ...(isAdmin ? [{ label: 'Fees Collection', value: `₹${feesStats.collectedThisMonth.toLocaleString('en-IN')}`, icon: 'payments', colorClass: 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600', borderClass: 'border-l-4 border-emerald-500', status: feesStats.dueStudentsCount > 0 ? `${feesStats.dueStudentsCount} Due` : 'Paid', statusClass: feesStats.dueStudentsCount > 0 ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 animate-pulse' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20', href: '/teacher-dashboard/fees' }] : [])
                             ].map((stat, i) => (
-                                <Link key={i} href={stat.href} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:scale-[1.02] hover:shadow-md block">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <div className={`p-2 bg-${stat.color === 'emerald' ? 'emerald-50 dark:bg-emerald-950/20 text-emerald-600' : `${stat.color}-50 dark:bg-${stat.color}-900/20 text-${stat.color}-600`} rounded-lg`}>
-                                            <span className="material-symbols-outlined">{stat.icon}</span>
+                                <Link key={i} href={stat.href} className={`bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-r-2xl rounded-l-md border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:scale-[1.02] hover:shadow-md flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 items-start ${stat.borderClass}`}>
+                                    <div className="flex items-center justify-between w-full sm:w-auto sm:block">
+                                        <div className={`p-1.5 sm:p-2 rounded-lg ${stat.colorClass} shrink-0`}>
+                                            <span className="material-symbols-outlined text-lg sm:text-2xl block">{stat.icon}</span>
                                         </div>
-                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                                            stat.label === 'Total Students' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 
-                                            stat.label === 'Active Classrooms' ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' : 
-                                            stat.label === 'Pending Submissions' ? 'text-purple-600 bg-purple-50 dark:bg-purple-900/20' : 
-                                            feesStats.dueStudentsCount > 0 ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 animate-pulse' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20'
-                                        }`}>
+                                        <span className={`sm:hidden text-[9px] font-semibold px-2 py-0.5 rounded-full ${stat.statusClass}`}>
                                             {stat.status}
                                         </span>
                                     </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">{stat.label}</p>
-                                    <h3 className="text-2xl font-bold mt-1">{stat.value}</h3>
+                                    <div className="min-w-0 flex-1 w-full">
+                                        <div className="hidden sm:flex items-center justify-between">
+                                            <p className="text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">{stat.label}</p>
+                                            <span className={`text-[9px] sm:text-xs font-semibold px-2 py-0.5 rounded-full ${stat.statusClass}`}>
+                                                {stat.status}
+                                            </span>
+                                        </div>
+                                        <p className="sm:hidden text-slate-500 dark:text-slate-400 text-[9px] font-extrabold uppercase tracking-widest leading-none">{stat.label}</p>
+                                        <h3 className="text-base sm:text-xl font-black text-slate-800 dark:text-white mt-1 sm:mt-0.5 truncate">{stat.value}</h3>
+                                    </div>
                                 </Link>
                             ))}
                         </section>
@@ -899,26 +902,26 @@ export default function TeacherDashboard() {
                             {/* Main Content: Submissions & Announcements */}
                             <section className="lg:col-span-2 space-y-8">
                                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                    <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                                        <h3 className="font-bold text-lg">Recent Student Submissions</h3>
-                                        <Link className="text-sm font-semibold text-[#ecb613] hover:underline" href="/teacher-dashboard/submissions">View All</Link>
+                                    <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-950/10 dark:to-orange-950/5">
+                                        <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Recent Student Submissions</h3>
+                                        <Link className="text-xs sm:text-sm font-semibold text-[#ecb613] hover:underline" href="/teacher-dashboard/submissions">View All</Link>
                                     </div>
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left">
                                             <thead>
-                                                <tr className="text-xs font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800 uppercase tracking-wider">
-                                                    <th className="px-6 py-4">Student</th>
-                                                    <th className="px-6 py-4">Task</th>
-                                                    <th className="px-6 py-4">Status</th>
-                                                    <th className="px-6 py-4 text-right">Date</th>
+                                                <tr className="text-[10px] sm:text-xs font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800 uppercase tracking-wider">
+                                                    <th className="px-4 py-3 sm:px-6 sm:py-4">Student</th>
+                                                    <th className="px-4 py-3 sm:px-6 sm:py-4">Task</th>
+                                                    <th className="px-4 py-3 sm:px-6 sm:py-4">Status</th>
+                                                    <th className="px-4 py-3 sm:px-6 sm:py-4 text-right">Date</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
                                                 {recentSubmissions.map((sub) => (
                                                     <tr key={sub.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                                                        <td className="px-6 py-4">
+                                                        <td className="px-4 py-3 sm:px-6 sm:py-4">
                                                             <div className="flex items-center gap-3">
-                                                                <div className="size-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
+                                                                <div className="size-7 sm:size-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
                                                                     {sub.student_profile_pic_url ? (
                                                                         <img 
                                                                             src={sub.student_profile_pic_url} 
@@ -930,12 +933,12 @@ export default function TeacherDashboard() {
                                                                         <span className="text-[10px] font-bold">{sub.student_name.charAt(0)}</span>
                                                                     )}
                                                                 </div>
-                                                                <span className="text-sm font-medium">{sub.student_name}</span>
+                                                                <span className="text-xs sm:text-sm font-medium">{sub.student_name}</span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{sub.task_title}</td>
-                                                        <td className="px-6 py-4">
-                                                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                                        <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-slate-600 dark:text-slate-400">{sub.task_title}</td>
+                                                        <td className="px-4 py-3 sm:px-6 sm:py-4">
+                                                            <span className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-semibold ${
                                                                 sub.status === 'approved'
                                                                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                                                                 : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
@@ -943,7 +946,7 @@ export default function TeacherDashboard() {
                                                                 {sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}
                                                             </span>
                                                         </td>
-                                                        <td className="px-6 py-4 text-sm text-slate-500 text-right">{sub.submitted_at}</td>
+                                                        <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-slate-500 text-right">{sub.submitted_at}</td>
                                                     </tr>
                                                 ))}
                                                 {recentSubmissions.length === 0 && (
@@ -958,14 +961,14 @@ export default function TeacherDashboard() {
                                     </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden text-[#5a5e0d] dark:text-[#ecb613]">
-                                    <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                                        <h3 className="font-bold text-lg">Recent Announcements</h3>
-                                        <button className="size-8 flex items-center justify-center rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-[#ecb613] hover:text-white transition-all">
-                                            <span className="material-symbols-outlined text-xl">add</span>
+                                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                                    <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-950/10 dark:to-orange-950/5">
+                                        <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Recent Announcements</h3>
+                                        <button className="size-7 sm:size-8 flex items-center justify-center rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-[#ecb613] hover:text-white transition-all">
+                                            <span className="material-symbols-outlined text-base sm:text-xl">add</span>
                                         </button>
                                     </div>
-                                    <div className="p-6 space-y-4">
+                                    <div className="p-4 sm:p-6 space-y-4">
                                         <div className="flex gap-4 p-4 rounded-xl bg-[#ecb613]/5 border border-[#ecb613]/10">
                                             <span className="material-symbols-outlined text-[#ecb613] text-2xl">campaign</span>
                                             <div>
@@ -979,25 +982,25 @@ export default function TeacherDashboard() {
 
                                 {/* Class Calendar */}
                                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                    <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <h3 className="font-bold text-lg">Class Calendar</h3>
-                                            <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider">
-                                                <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-blue-500"></span> Recurring</span>
-                                                <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-orange-500"></span> Temporary</span>
+                                    <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-950/10 dark:to-orange-950/5">
+                                        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                                            <h3 className="font-bold text-base sm:text-lg">Class Calendar</h3>
+                                            <div className="flex items-center gap-3 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">
+                                                <span className="flex items-center gap-1.5"><span className="size-2 sm:size-2.5 rounded-full bg-blue-500"></span> Recurring</span>
+                                                <span className="flex items-center gap-1.5"><span className="size-2 sm:size-2.5 rounded-full bg-orange-500"></span> Temporary</span>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} className="size-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                                <ChevronLeft size={18} />
+                                        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+                                            <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} className="size-7 sm:size-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                                <ChevronLeft size={16} />
                                             </button>
-                                            <span className="text-sm font-bold px-2">{calendarMonth}</span>
-                                            <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))} className="size-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                                <ChevronRight size={18} />
+                                            <span className="text-xs sm:text-sm font-bold px-2">{calendarMonth}</span>
+                                            <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))} className="size-7 sm:size-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                                <ChevronRight size={16} />
                                             </button>
                                         </div>
                                     </div>
-                                    <div className="p-6">
+                                    <div className="p-3 sm:p-6">
                                         <div className="grid grid-cols-7 gap-px bg-slate-100 dark:bg-slate-800 rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800">
                                             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
                                                 <div key={day} className="bg-slate-50 dark:bg-slate-900 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -1012,27 +1015,44 @@ export default function TeacherDashboard() {
                                                             handleEventClick(cell.events, cell.date);
                                                         }
                                                     }}
-                                                    className={`bg-white dark:bg-slate-900 h-24 p-2 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${
+                                                    className={`bg-white dark:bg-slate-900 h-14 sm:h-24 p-1 sm:p-2 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${
                                                         cell.current ? 'text-slate-900 dark:text-white font-semibold' : 'text-slate-300 dark:text-slate-600'
                                                     } ${cell.isToday ? 'ring-2 ring-[#ecb613] ring-inset bg-[#ecb613]/5' : ''}`}
                                                 >
-                                                    <span className={`text-xs ${cell.isToday ? 'text-[#ecb613] font-bold' : ''}`}>{cell.day}</span>
-                                                    <div className="mt-1 space-y-1 overflow-hidden">
-                                                        {cell.events.slice(0, 2).map((evt, j) => (
-                                                            <div
-                                                                key={j}
-                                                                className={`w-full text-left text-[9px] font-bold px-1.5 py-0.5 rounded truncate ${
-                                                                    evt.type === 'recurring'
-                                                                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                                                                        : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-                                                                }`}
-                                                            >
-                                                                {evt.name}
-                                                            </div>
-                                                        ))}
-                                                        {cell.events.length > 2 && (
-                                                            <span className="text-[9px] text-slate-400 font-bold">+{cell.events.length - 2} more</span>
-                                                        )}
+                                                    <span className={`text-[10px] sm:text-xs ${cell.isToday ? 'text-[#ecb613] font-bold' : ''}`}>{cell.day}</span>
+                                                    <div className="mt-0.5 sm:mt-1 overflow-hidden">
+                                                        {/* Desktop events list */}
+                                                        <div className="hidden sm:block space-y-1">
+                                                            {cell.events.slice(0, 2).map((evt, j) => (
+                                                                <div
+                                                                    key={j}
+                                                                    className={`w-full text-left text-[9px] font-bold px-1.5 py-0.5 rounded truncate ${
+                                                                        evt.type === 'recurring'
+                                                                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                                                            : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                                                                    }`}
+                                                                >
+                                                                    {evt.name}
+                                                                </div>
+                                                            ))}
+                                                            {cell.events.length > 2 && (
+                                                                <span className="text-[9px] text-slate-400 font-bold">+{cell.events.length - 2} more</span>
+                                                            )}
+                                                        </div>
+                                                        {/* Mobile event indicator dots */}
+                                                        <div className="flex sm:hidden flex-wrap gap-0.5 justify-center mt-0.5">
+                                                            {cell.events.slice(0, 3).map((evt, j) => (
+                                                                <span
+                                                                    key={j}
+                                                                    className={`size-1 rounded-full ${
+                                                                        evt.type === 'recurring' ? 'bg-blue-500' : 'bg-orange-500'
+                                                                    }`}
+                                                                />
+                                                            ))}
+                                                            {cell.events.length > 3 && (
+                                                                <span className="text-[7px] text-slate-400 font-bold leading-none">+</span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))}
@@ -1044,23 +1064,23 @@ export default function TeacherDashboard() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     {/* Personal Idea Notebook */}
                                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[480px]">
-                                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20">
+                                        <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-950/10 dark:to-orange-950/5">
                                             <div className="flex items-center gap-2">
-                                                <StickyNote className="w-5 h-5 text-[#ecb613]" />
-                                                <h3 className="font-bold text-lg">Personal Idea Notebook</h3>
+                                                <StickyNote className="w-4 h-4 sm:w-5 sm:h-5 text-[#ecb613]" />
+                                                <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Personal Notebook</h3>
                                             </div>
                                             <button 
                                                 onClick={() => {
                                                     setNoteForm({ id: '', title: '', content: '', color: 'yellow', classroom_id: classrooms[0]?.id || '' });
                                                     setShowNoteModal(true);
                                                 }}
-                                                className="px-3 py-1.5 flex items-center gap-1 bg-[#ecb613]/10 hover:bg-[#ecb613]/20 text-[#ecb613] rounded-lg transition-colors text-xs font-bold"
+                                                className="px-2.5 py-1.5 flex items-center gap-1 bg-[#ecb613]/10 hover:bg-[#ecb613]/20 text-[#ecb613] rounded-lg transition-colors text-[10px] sm:text-xs font-bold"
                                             >
-                                                <Plus size={14} /> Add Note
+                                                <Plus size={12} /> Add
                                             </button>
                                         </div>
                                         
-                                        <div className="p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-slate-900/10">
+                                        <div className="p-3 sm:p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-slate-900/10">
                                             {notesLoading ? (
                                                 <div className="flex flex-col items-center justify-center h-full space-y-2">
                                                     <Loader2 className="w-6 h-6 animate-spin text-[#ecb613]" />
@@ -1125,15 +1145,15 @@ export default function TeacherDashboard() {
 
                                     {/* Student Messages / Website Inquiries */}
                                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[480px]">
-                                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/20">
+                                        <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-950/10 dark:to-orange-950/5">
                                             <div className="flex items-center gap-2">
-                                                <MessageSquare className="w-5 h-5 text-[#ecb613]" />
-                                                <h3 className="font-bold text-lg">Student Inquiries & Messages</h3>
+                                                <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-[#ecb613]" />
+                                                <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Messages & Inquiries</h3>
                                             </div>
-                                            <Link className="text-xs font-bold text-[#ecb613] hover:underline" href="/teacher-dashboard/messages">Compose Reply</Link>
+                                            <Link className="text-[10px] sm:text-xs font-bold text-[#ecb613] hover:underline" href="/teacher-dashboard/messages">Reply</Link>
                                         </div>
                                         
-                                        <div className="p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-slate-900/10">
+                                        <div className="p-3 sm:p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-slate-900/10">
                                             {inquiriesLoading ? (
                                                 <div className="flex flex-col items-center justify-center h-full space-y-2">
                                                     <Loader2 className="w-6 h-6 animate-spin text-[#ecb613]" />
@@ -1203,13 +1223,13 @@ export default function TeacherDashboard() {
                             {/* Sidebar: Upcoming Classes & Tasks */}
                             <section className="space-y-8">
                                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                    <div className="p-6 border-b border-slate-200 dark:border-slate-800">
-                                        <h3 className="font-bold text-lg">Today's Classes</h3>
-                                        <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-semibold">
+                                    <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-950/10 dark:to-orange-950/5">
+                                        <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Today's Classes</h3>
+                                        <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 uppercase tracking-wider font-semibold">
                                             {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                                         </p>
                                     </div>
-                                    <div className="p-6 space-y-6">
+                                    <div className="p-4 sm:p-6 space-y-6">
                                         {upcomingClasses.map((cl, idx) => {
                                             const now = new Date();
                                             const curTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -1256,13 +1276,13 @@ export default function TeacherDashboard() {
                                     </div>
                                 </div>
 
-                                <div className="bg-[#0d5e5b] p-6 rounded-2xl shadow-xl shadow-[#0d5e5b]/20 text-white relative overflow-hidden group">
+                                <div className="bg-[#0d5e5b] p-4 sm:p-6 rounded-2xl shadow-xl shadow-[#0d5e5b]/20 text-white relative overflow-hidden group">
                                     <div className="absolute -right-4 -top-4 opacity-10 group-hover:scale-110 transition-transform duration-500">
                                         <AlertCircle className="w-24 h-24" />
                                     </div>
                                     <div className="relative z-10">
                                         <div className="flex items-center justify-between mb-4">
-                                            <h4 className="font-bold text-lg">Priority Tasks</h4>
+                                            <h4 className="font-bold text-base sm:text-lg">Priority Tasks</h4>
                                             <span className="bg-red-500 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">Urgent</span>
                                         </div>
                                         <div className="space-y-4">
@@ -1322,10 +1342,10 @@ export default function TeacherDashboard() {
             {sidePanelOpen && (
                 <>
                     <div className="fixed inset-0 bg-black/30 z-40 backdrop-blur-sm" onClick={() => setSidePanelOpen(false)} />
-                    <div className="fixed right-0 top-0 h-full w-[450px] bg-white dark:bg-slate-900 z-50 shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-right">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+                    <div className="fixed right-0 top-0 h-full w-full sm:w-[450px] bg-white dark:bg-slate-900 z-50 shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-right">
+                        <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
                             <div>
-                                <h3 className="font-bold text-lg">Classes for {selectedDateStr}</h3>
+                                <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Classes for {selectedDateStr}</h3>
                                 <p className="text-xs text-slate-500 mt-1">{selectedDateEvents.length} class(es) scheduled</p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -1421,9 +1441,9 @@ export default function TeacherDashboard() {
             {showTempModal && (
                 <>
                     <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => setShowTempModal(false)} />
-                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6">
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6">
                         <div className="flex items-center justify-between mb-6">
-                            <h3 className="font-bold text-lg">Add Temporary Class</h3>
+                            <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Add Temporary Class</h3>
                             <button onClick={() => { setShowTempModal(false); setTempSelectedStudents([]); }} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <X size={18} />
                             </button>
@@ -1517,9 +1537,9 @@ export default function TeacherDashboard() {
             {showNoteModal && (
                 <>
                     <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => setShowNoteModal(false)} />
-                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 animate-in fade-in zoom-in duration-200">
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-[450px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 animate-in fade-in zoom-in duration-200">
                         <div className="flex items-center justify-between mb-6">
-                            <h3 className="font-bold text-lg">{noteForm.id ? 'Edit Idea / Note' : 'Add New Idea / Note'}</h3>
+                            <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">{noteForm.id ? 'Edit Idea / Note' : 'Add New Idea / Note'}</h3>
                             <button onClick={() => setShowNoteModal(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <X size={18} />
                             </button>

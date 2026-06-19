@@ -21,6 +21,18 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     } | null>(null);
     const [secondsElapsed, setSecondsElapsed] = useState(0);
     const [unassignedCount, setUnassignedCount] = useState(0);
+    const [isOpen, setIsOpen] = useState(false);
+
+    useEffect(() => {
+        const handleToggle = () => setIsOpen(prev => !prev);
+        const handleClose = () => setIsOpen(false);
+        window.addEventListener('kfa-toggle-sidebar', handleToggle);
+        window.addEventListener('kfa-close-sidebar', handleClose);
+        return () => {
+            window.removeEventListener('kfa-toggle-sidebar', handleToggle);
+            window.removeEventListener('kfa-close-sidebar', handleClose);
+        };
+    }, []);
 
     const userRole = teacherProfile?.role?.toLowerCase() || 'teacher';
 
@@ -97,7 +109,18 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
     return (
         <>
-            <aside className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col sticky top-0 h-screen shrink-0">
+            {/* Sidebar Overlay Backdrop for Mobile */}
+            {isOpen && (
+                <div 
+                    className="fixed inset-0 z-40 bg-black/50 backdrop-blur-xs md:hidden"
+                    onClick={() => setIsOpen(false)}
+                />
+            )}
+            <aside className={`
+                w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0
+                fixed md:sticky top-0 left-0 h-screen z-40 transition-transform duration-300 md:translate-x-0
+                ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+            `}>
             <div className="p-6 flex flex-col justify-center">
                 <h1 className="font-black text-xl leading-tight text-slate-950 dark:text-white select-none">
                     {userRole === 'admin' ? 'Music Admin' : 'Teacher Portal'}
@@ -120,6 +143,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/70 px-4 rounded-xl'
                                 }`}
                             href={item.href}
+                            onClick={() => setIsOpen(false)}
                         >
                             <span className="material-symbols-outlined text-[22px] select-none">{item.icon}</span>
                             <span className="text-sm font-semibold flex-1">{item.name}</span>
@@ -147,7 +171,11 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     </div>
                 </div>
 
-                <Link className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/70 transition-colors" href="#">
+                <Link 
+                    className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/70 transition-colors" 
+                    href="#"
+                    onClick={() => setIsOpen(false)}
+                >
                     <span className="material-symbols-outlined">settings</span>
                     <span className="text-sm font-semibold">Settings</span>
                 </Link>

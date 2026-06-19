@@ -1039,6 +1039,7 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
                         searchQuery={searchQuery}
                         onSearchChange={setSearchQuery}
                         placeholder="Search messages, students, or broadcasts..."
+                        backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 
                     {/* Sub-body workspace flow */}

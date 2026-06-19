@@ -298,7 +298,10 @@ export default function RoleAllocationDashboard() {
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
                 <main className="flex-1 flex flex-col min-w-0">
-                    <TeacherHeader title="Role Allocation" />
+                    <TeacherHeader 
+                        title="Role Allocation" 
+                        backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
+                    />
 
                     <div className="flex-1 overflow-y-auto p-8 lg:p-12">
                         <div className="max-w-7xl mx-auto space-y-8">

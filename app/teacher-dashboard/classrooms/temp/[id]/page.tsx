@@ -343,14 +343,14 @@ export default function TempClassManagePage() {
                                 <h1 className="text-2xl font-black tracking-tight">{tempClass.title}</h1>
                                 <span className="px-2 py-0.5 bg-[#ecb613]/10 text-[#ecb613] text-[9px] font-black rounded-md uppercase tracking-wider">Temporary Session</span>
                             </div>
-                            <div className="flex items-center gap-3 mt-1">
+                             <div className="flex items-center gap-3 mt-1">
                                 {tempClass.teacher_name && (
-                                    <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded flex items-center gap-1 border border-emerald-200/50 dark:border-emerald-900/30">
+                                    <span className="hidden md:flex px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded items-center gap-1 border border-emerald-200/50 dark:border-emerald-900/30">
                                         Instructor: {tempClass.teacher_name}
                                     </span>
                                 )}
                                 {tempClass.class_date && (
-                                    <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded flex items-center gap-1 border border-amber-200/50 dark:border-amber-900/30">
+                                    <span className="hidden sm:flex px-2 py-0.5 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold rounded items-center gap-1 border border-amber-200/50 dark:border-amber-900/30">
                                         Date: {(() => {
                                             const parsed = parseClassDate(tempClass.class_date);
                                             return parsed ? parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Invalid Date';

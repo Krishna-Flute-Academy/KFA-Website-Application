@@ -462,22 +462,15 @@ export default function ClassroomsPage() {
 
             <main className="flex-1 flex flex-col min-w-0">
                 {/* TopAppBar */}
-                <header className="sticky top-0 z-40 flex justify-between items-center px-8 h-16 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm">
-                    <div className="flex items-center gap-4 flex-1">
-                        <div className="relative w-full max-w-md">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-5" />
-                            <input 
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-full text-sm focus:ring-2 focus:ring-[#fef3c7]" 
-                                placeholder="Search classes, students..." 
-                                type="text"
-                            />
-                        </div>
-                    </div>
-                </header>
+                <TeacherHeader 
+                    title="Classrooms" 
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    placeholder="Search classes..."
+                    backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
+                />
 
-                <div className="p-8 max-w-7xl mx-auto w-full flex-1 overflow-y-auto">
+                <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full flex-1 overflow-y-auto">
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                         <div>
                             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">Classroom Management</h1>
@@ -497,24 +490,24 @@ export default function ClassroomsPage() {
 
                     {/* Filter Bar */}
                     <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-                        <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 w-full md:w-auto">
+                        <div className="flex flex-wrap items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 w-full md:w-auto gap-1">
                             {viewMode === 'list' ? (
                                 <>
                                     <button 
                                         onClick={() => setActiveView('today')}
-                                        className={`px-6 py-2 text-sm font-bold rounded-lg shadow-sm w-full md:w-auto transition-colors ${activeView === 'today' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'today' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Today's Classes
                                     </button>
                                     <button 
                                         onClick={() => setActiveView('permanent')}
-                                        className={`px-6 py-2 text-sm font-bold rounded-lg shadow-sm w-full md:w-auto transition-colors ${activeView === 'permanent' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'permanent' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Permanent Classes
                                     </button>
                                     <button 
                                         onClick={() => setActiveView('temporary')}
-                                        className={`px-6 py-2 text-sm font-bold rounded-lg shadow-sm w-full md:w-auto transition-colors ${activeView === 'temporary' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'temporary' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Temporary Sessions
                                     </button>
@@ -648,12 +641,12 @@ export default function ClassroomsPage() {
                                         const isOngoing = activeSession && activeSession.classroomId === room.id;
 
                                         return (
-                                            <div key={`${room.id}-${idx}`} className={`p-6 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group ${
+                                            <div key={`${room.id}-${idx}`} className={`p-4 sm:p-6 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group ${
                                                 isOngoing
                                                     ? 'bg-rose-50/15 dark:bg-rose-950/10 border-rose-200 dark:border-rose-800 shadow-md shadow-rose-500/5'
                                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
                                             }`}>
-                                                <div className="flex items-center gap-4">
+                                                <div className="flex items-center gap-3 sm:gap-4">
                                                     <input 
                                                         type="checkbox"
                                                         checked={selectedIds.includes(room.id)}
@@ -664,61 +657,60 @@ export default function ClassroomsPage() {
                                                                 setSelectedIds(prev => prev.filter(id => id !== room.id));
                                                             }
                                                         }}
-                                                        className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 mr-2"
+                                                        className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 mr-1 sm:mr-2"
                                                     />
-                                                    <div className={`w-12 h-12 rounded-xl ${styleConfig.bg} flex items-center justify-center ${styleConfig.text}`}>
-                                                        <IconComponent className="size-6" />
+                                                    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl ${styleConfig.bg} flex items-center justify-center ${styleConfig.text} shrink-0`}>
+                                                        <IconComponent className="size-5 sm:size-6" />
                                                     </div>
                                                     <div>
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-lg text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
+                                                            <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-base sm:text-lg text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
                                                                 {room.name}
                                                             </Link>
                                                             {isOngoing && (
-                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-500 text-white tracking-wider animate-pulse shadow-md shadow-rose-500/25">
-                                                                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-                                                                    Live Session
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-rose-500 text-white tracking-wider animate-pulse shadow-md">
+                                                                    Live
                                                                 </span>
                                                             )}
                                                             {room.type === 'temporary' ? (
-                                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
-                                                                    Temporary
+                                                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                                                                    Temp
                                                                 </span>
                                                             ) : (
-                                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                                                    Permanent
+                                                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                                                    Perm
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 sm:mt-1">
                                                             {getCleanDescription(room.description)}
-                                                            {(room as any).teacher?.name && ` • Instructor: ${(room as any).teacher.name}`}
+                                                            {(room as any).teacher?.name && ` • ${(room as any).teacher.name}`}
                                                         </p>
-                                                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                                                            <span className="flex items-center gap-1"><Users className="size-4 text-slate-400" /> {room.student_count} Enrolled</span>
-                                                            <span className="flex items-center gap-1">
-                                                                <Clock className="size-4 text-slate-400" />
-                                                                {room.displayTime} {room.start_time && room.end_time && `(${calculateDuration(room.start_time, room.end_time)})`}
+                                                        <div className="flex items-center gap-3 sm:gap-4 mt-1 sm:mt-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                                            <span className="flex items-center gap-1"><Users className="size-3.5 text-slate-400" /> {room.student_count}</span>
+                                                            <span className="flex items-center gap-1 truncate max-w-[150px] sm:max-w-none">
+                                                                <Clock className="size-3.5 text-slate-400" />
+                                                                {room.displayTime}
                                                             </span>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2 self-end md:self-auto">
-                                                    <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`}>
-                                                        <button className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
+                                                <div className="flex items-center gap-2 mt-2 md:mt-0 justify-end w-full md:w-auto border-t md:border-t-0 border-slate-100 dark:border-slate-800/60 pt-2 md:pt-0">
+                                                    <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="flex-1 md:flex-initial">
+                                                        <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
                                                             Manage
                                                         </button>
                                                     </Link>
                                                     {isOngoing ? (
-                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                            <button className="px-4 py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center gap-1.5 animate-pulse">
+                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} className="flex-1 md:flex-initial">
+                                                            <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center justify-center gap-1.5 animate-pulse">
                                                                 <Activity className="size-3.5 animate-spin" />
                                                                 Resume
                                                             </button>
                                                         </Link>
                                                     ) : (
-                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                            <button className="px-4 py-2.5 bg-[#0d5a5e] text-white text-xs font-bold rounded-lg hover:bg-[#115e59] transition-colors shadow-sm">
+                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} className="flex-1 md:flex-initial">
+                                                            <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-[#0d5a5e] text-white text-xs font-bold rounded-lg hover:bg-[#115e59] transition-colors shadow-sm">
                                                                 Start
                                                             </button>
                                                         </Link>
@@ -726,7 +718,7 @@ export default function ClassroomsPage() {
                                                     <button
                                                         onClick={() => handleDeleteClassroom(room)}
                                                         disabled={isDeletingId === room.id}
-                                                        className="p-2.5 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed animate-in fade-in"
+                                                        className="p-2 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                                                         title="Delete class"
                                                     >
                                                         <Trash2 className="size-4" />
@@ -752,40 +744,139 @@ export default function ClassroomsPage() {
                     ) : (
                         <>
                             {/* Stats Overview */}
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600 dark:text-amber-400 mb-4">
-                                        <Users className="size-6" />
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6 mb-8">
+                                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600 dark:text-amber-400 mb-2 sm:mb-4">
+                                        <Users className="size-5 sm:size-6" />
                                     </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-1">Total Students</p>
-                                    <p className="text-2xl font-black text-slate-900 dark:text-white">{displayedClassrooms.reduce((acc, r) => acc + r.student_count, 0)}</p>
+                                    <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1">Total Students</p>
+                                    <p className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white">{displayedClassrooms.reduce((acc, r) => acc + r.student_count, 0)}</p>
                                 </div>
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-4">
-                                        <Video className="size-6" />
+                                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-2 sm:mb-4">
+                                        <Video className="size-5 sm:size-6" />
                                     </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-1">Online Classes</p>
-                                    <p className="text-2xl font-black text-slate-900 dark:text-white">0</p>
+                                    <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1">Online Classes</p>
+                                    <p className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white">0</p>
                                 </div>
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-4">
-                                        <MapPin className="size-6" />
+                                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-2 sm:mb-4">
+                                        <MapPin className="size-5 sm:size-6" />
                                     </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-1">Offline Classes</p>
-                                    <p className="text-2xl font-black text-slate-900 dark:text-white">{displayedClassrooms.length}</p>
+                                    <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1">Offline Classes</p>
+                                    <p className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white">{displayedClassrooms.length}</p>
                                 </div>
-                                <div className="bg-[#ecb613] p-6 rounded-2xl border border-[#ecb613] shadow-sm hover:shadow-md transition-shadow text-slate-900">
-                                    <div className="w-12 h-12 rounded-xl bg-white/30 flex items-center justify-center text-slate-900 mb-4">
-                                        <Clock className="size-6" />
+                                <div className="bg-[#ecb613] p-4 sm:p-6 rounded-2xl border border-[#ecb613] shadow-sm hover:shadow-md transition-shadow text-slate-900">
+                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/30 flex items-center justify-center text-slate-900 mb-2 sm:mb-4">
+                                        <Clock className="size-5 sm:size-6" />
                                     </div>
-                                    <p className="text-slate-900/80 text-sm font-medium mb-1">Total Classes</p>
-                                    <p className="text-2xl font-black">{displayedClassrooms.length}</p>
+                                    <p className="text-slate-900/80 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1">Total Classes</p>
+                                    <p className="text-lg sm:text-2xl font-black">{displayedClassrooms.length}</p>
                                 </div>
                             </div>
 
                             {/* Class Management List Table */}
                             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-md mb-10">
-                                <div className="overflow-x-auto">
+                                {/* Mobile view of list */}
+                                <div className="block md:hidden p-3 space-y-3">
+                                    {displayedClassrooms.map((room, idx) => {
+                                        const iconColors = [
+                                            { bg: 'bg-[#fef3c7]/60 dark:bg-[#ecb613]/20', text: 'text-[#ecb613]', icon: Music },
+                                            { bg: 'bg-blue-100/30 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400', icon: Activity },
+                                            { bg: 'bg-orange-100/30 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400', icon: Mic },
+                                            { bg: 'bg-purple-100/30 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-400', icon: Disc }
+                                        ];
+                                        const styleConfig = iconColors[idx % iconColors.length];
+                                        const IconComponent = styleConfig.icon;
+                                        const isOngoing = activeSession && activeSession.classroomId === room.id;
+
+                                        return (
+                                            <div key={room.id} className={`p-3 rounded-xl border transition-all flex flex-col gap-2.5 ${
+                                                isOngoing
+                                                    ? 'bg-rose-50/15 dark:bg-rose-950/10 border-rose-200 dark:border-rose-800 shadow-sm'
+                                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm'
+                                            }`}>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={selectedIds.includes(room.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setSelectedIds(prev => [...prev, room.id]);
+                                                                } else {
+                                                                    setSelectedIds(prev => prev.filter(id => id !== room.id));
+                                                                }
+                                                            }}
+                                                            className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 shrink-0"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-sm text-slate-900 dark:text-white hover:text-[#ecb613] transition-colors truncate block max-w-[150px] sm:max-w-none">
+                                                                    {room.name}
+                                                                </Link>
+                                                                {isOngoing && (
+                                                                    <span className="px-1.5 py-0.5 rounded-full text-[7px] font-black uppercase bg-rose-500 text-white tracking-wider animate-pulse shrink-0">
+                                                                        Live
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[210px] sm:max-w-none">
+                                                                {room.student_count} Enrolled • {room.schedule || 'No schedule'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider shrink-0 ${
+                                                        room.type === 'temporary'
+                                                            ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-600'
+                                                            : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600'
+                                                    }`}>
+                                                        {room.type === 'temporary' ? 'Temp' : 'Perm'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800/60 pt-2 text-[11px]">
+                                                    <div className="text-[10px] text-slate-400 font-mono">
+                                                        ID: {room.id.substring(0, 4).toUpperCase()}
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`}>
+                                                            <button className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-md hover:bg-slate-200 transition-colors">
+                                                                Manage
+                                                            </button>
+                                                        </Link>
+                                                        {isOngoing ? (
+                                                            <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
+                                                                <button className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5">
+                                                                    <Activity className="size-3 animate-spin" />
+                                                                    Resume
+                                                                </button>
+                                                            </Link>
+                                                        ) : (
+                                                            <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
+                                                                <button className="px-2.5 py-1 bg-[#0d5a5e] hover:bg-[#115e59] text-white font-bold rounded-md transition-colors">
+                                                                    Start
+                                                                </button>
+                                                            </Link>
+                                                        )}
+                                                        <button
+                                                            onClick={() => handleDeleteClassroom(room)}
+                                                            disabled={isDeletingId === room.id}
+                                                            className="p-1 border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-md disabled:opacity-50"
+                                                            title="Delete class"
+                                                        >
+                                                            <Trash2 className="size-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {displayedClassrooms.length === 0 && (
+                                        <p className="text-center text-slate-400 text-xs py-8">No classrooms found.</p>
+                                    )}
+                                </div>
+                                <div className="overflow-x-auto hidden md:block">
                                     <table className="w-full text-left border-collapse min-w-[800px]">
                                         <thead>
                                             <tr className="bg-slate-100/50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">

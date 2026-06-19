@@ -1507,6 +1507,7 @@ export default function TaskReviewPage() {
                     title="Task Review" 
                     searchQuery={searchQuery}
                     onSearchChange={setSearchQuery}
+                    backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
                 <div className="p-8 grid grid-cols-12 gap-8 max-w-[1600px] mx-auto w-full flex-1">

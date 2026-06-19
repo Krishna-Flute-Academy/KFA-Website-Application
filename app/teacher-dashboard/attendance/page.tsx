@@ -30,6 +30,7 @@ import {
     ArrowRight
 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
+import TeacherHeader from '../../../src/components/TeacherHeader';
 
 interface Classroom {
     id: string;
@@ -1321,78 +1322,75 @@ export default function AttendancePage() {
             <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
             <main className="flex-1 flex flex-col min-w-0">
-                <header className="sticky top-0 z-30 flex items-center justify-between px-8 h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm">
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Attendance Management</h2>
-                        <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800 mx-2"></div>
-                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm font-medium">
-                            <CalendarIcon className="w-4 h-4" />
-                            <span>{formatLocalDateStr(selectedDate, true, 'en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
-                        </div>
-                    </div>
-                </header>
+                <TeacherHeader 
+                    title="Attendance" 
+                    backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
+                />
 
-                <div className="p-6 space-y-6 max-w-[1600px] mx-auto w-full flex-1 overflow-y-auto">
+                <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-[1600px] mx-auto w-full flex-1 overflow-y-auto">
                     {/* Summary Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
                             <div>
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Today's Batches</p>
-                                <h3 className="text-2xl font-black text-slate-950 dark:text-white mt-1">{activeBatchesOnSelectedDate.length}</h3>
+                                <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest">Today's Batches</p>
+                                <h3 className="text-lg sm:text-2xl font-black text-slate-950 dark:text-white mt-1">{activeBatchesOnSelectedDate.length}</h3>
                             </div>
-                            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 text-[#ecb613] rounded-xl">
-                                <School className="w-5 h-5" />
+                            <div className="p-2 sm:p-3 bg-amber-50 dark:bg-amber-950/20 text-[#ecb613] rounded-xl shrink-0">
+                                <School className="w-4 h-4 sm:w-5 sm:h-5" />
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+                        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
                             <div>
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest font-sans">Total Scheduled Students</p>
-                                <h3 className="text-2xl font-black text-slate-950 dark:text-white mt-1">{stats.total}</h3>
+                                <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest font-sans">Scheduled Students</p>
+                                <h3 className="text-lg sm:text-2xl font-black text-slate-950 dark:text-white mt-1">{stats.total}</h3>
                             </div>
-                            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 text-blue-600 rounded-xl">
-                                <Users className="w-5 h-5" />
+                            <div className="p-2 sm:p-3 bg-blue-50 dark:bg-blue-950/20 text-blue-600 rounded-xl shrink-0">
+                                <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+                        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
                             <div>
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest font-sans">Present / Late Today</p>
-                                <h3 className="text-2xl font-black text-slate-950 dark:text-white mt-1 text-emerald-600">{stats.present}</h3>
+                                <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest font-sans">Present / Late</p>
+                                <h3 className="text-lg sm:text-2xl font-black text-slate-950 dark:text-white mt-1 text-emerald-600">{stats.present}</h3>
                             </div>
-                            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 rounded-xl">
-                                <CheckCircle2 className="w-5 h-5" />
+                            <div className="p-2 sm:p-3 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 rounded-xl shrink-0">
+                                <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
                             </div>
                         </div>
-                        <div className="bg-[#ecb613] p-5 rounded-2xl shadow-lg shadow-[#ecb613]/10 flex items-center justify-between text-slate-900">
+                        <div className="bg-[#ecb613] p-4 sm:p-5 rounded-2xl shadow-lg shadow-[#ecb613]/10 flex items-center justify-between text-slate-900">
                             <div>
-                                <p className="text-xs font-bold opacity-80 uppercase tracking-widest font-sans">Avg. Presence Rate</p>
-                                <h3 className="text-3xl font-black">{stats.rate}</h3>
+                                <p className="text-[10px] sm:text-xs font-bold opacity-80 uppercase tracking-widest font-sans">Presence Rate</p>
+                                <h3 className="text-lg sm:text-3xl font-black">{stats.rate}</h3>
                             </div>
-                            <div className="p-3 bg-white/20 rounded-xl">
-                                <TrendingUp className="w-5 h-5 text-slate-950" />
+                            <div className="p-2 sm:p-3 bg-white/20 rounded-xl shrink-0">
+                                <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-slate-950" />
                             </div>
                         </div>
                     </div>
 
                     {/* Mode Selector */}
-                    <div className="flex items-center justify-between">
-                        <div className="bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 flex gap-1 shadow-sm">
+                    <div className="flex items-center justify-between w-full">
+                        <div className="bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap sm:flex-nowrap gap-1 shadow-sm w-full sm:w-auto">
                             <button 
                                 onClick={() => setMode('class')}
-                                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${mode === 'class' ? 'bg-[#ecb613] text-slate-900 shadow-lg shadow-[#ecb613]/10' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                                className={`px-2 py-2 sm:px-6 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-initial text-center ${mode === 'class' ? 'bg-[#ecb613] text-slate-900 shadow-lg shadow-[#ecb613]/10' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
                             >
-                                Class Accordion Report
+                                <span className="hidden sm:inline">Class Accordion Report</span>
+                                <span className="sm:hidden">Class Batches</span>
                             </button>
                             <button 
                                 onClick={() => setMode('individual')}
-                                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${mode === 'individual' ? 'bg-[#ecb613] text-slate-900 shadow-lg shadow-[#ecb613]/10' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                                className={`px-2 py-2 sm:px-6 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-initial text-center ${mode === 'individual' ? 'bg-[#ecb613] text-slate-900 shadow-lg shadow-[#ecb613]/10' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
                             >
-                                Individual Range Report
+                                <span className="hidden sm:inline">Individual Range Report</span>
+                                <span className="sm:hidden">Individual</span>
                             </button>
                             <button 
                                 onClick={() => setMode('missed')}
-                                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${mode === 'missed' ? 'bg-[#ecb613] text-slate-900 shadow-lg shadow-[#ecb613]/10' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                                className={`px-2 py-2 sm:px-6 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-initial text-center ${mode === 'missed' ? 'bg-[#ecb613] text-slate-900 shadow-lg shadow-[#ecb613]/10' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
                             >
-                                Missed Classes Report
+                                <span className="hidden sm:inline">Missed Classes Report</span>
+                                <span className="sm:hidden">Missed</span>
                             </button>
                         </div>
                     </div>
@@ -1567,23 +1565,24 @@ export default function AttendancePage() {
                                                                                 <h6 className="font-extrabold text-slate-900 dark:text-white text-sm">{student.name}</h6>
                                                                             </div>
 
-                                                                            <div className="flex items-center gap-1.5">
+                                                                            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-end">
                                                                                 {([
-                                                                                    { key: 'present', label: 'Present', activeClass: 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 border-emerald-500', inactiveClass: 'border-emerald-100 text-emerald-600 dark:border-emerald-950/20' },
-                                                                                    { key: 'absent', label: 'Absent', activeClass: 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 border-rose-500', inactiveClass: 'border-rose-100 text-rose-600 dark:border-rose-950/20' },
-                                                                                    { key: 'late', label: 'Late', activeClass: 'bg-amber-500 text-white shadow-lg shadow-amber-500/25 border-amber-500', inactiveClass: 'border-amber-100 text-amber-600 dark:border-amber-950/20' },
-                                                                                    { key: 'excused', label: 'Excused', activeClass: 'bg-slate-600 text-white shadow-lg shadow-slate-600/25 border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-750' }
+                                                                                    { key: 'present', label: 'Present', shortLabel: 'P', activeClass: 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 border-emerald-500', inactiveClass: 'border-emerald-100 text-emerald-600 dark:border-emerald-950/20' },
+                                                                                    { key: 'absent', label: 'Absent', shortLabel: 'A', activeClass: 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 border-rose-500', inactiveClass: 'border-rose-100 text-rose-600 dark:border-rose-950/20' },
+                                                                                    { key: 'late', label: 'Late', shortLabel: 'L', activeClass: 'bg-amber-500 text-white shadow-lg shadow-amber-500/25 border-amber-500', inactiveClass: 'border-amber-100 text-amber-600 dark:border-amber-950/20' },
+                                                                                    { key: 'excused', label: 'Excused', shortLabel: 'E', activeClass: 'bg-slate-600 text-white shadow-lg shadow-slate-600/25 border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-750' }
                                                                                 ] as const).map(opt => {
                                                                                     const isActive = status === opt.key;
                                                                                     return (
                                                                                         <button
                                                                                             key={opt.key}
                                                                                             onClick={() => handleMarkBatchAttendance(batch.id, student.id, opt.key)}
-                                                                                            className={`px-3.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border-2 transition-all duration-200 ${
+                                                                                            className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all duration-200 ${
                                                                                                 isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800`
                                                                                             }`}
                                                                                         >
-                                                                                            {opt.label}
+                                                                                            <span className="hidden sm:inline">{opt.label}</span>
+                                                                                            <span className="sm:hidden">{opt.shortLabel}</span>
                                                                                         </button>
                                                                                     );
                                                                                 })}
@@ -1740,18 +1739,54 @@ export default function AttendancePage() {
                                                         <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Querying history logs...</p>
                                                     </div>
                                                 ) : attendanceLogs.length > 0 ? (
-                                                    <div className="overflow-x-auto">
-                                                        <table className="w-full text-left border-collapse min-w-[500px]">
-                                                            <thead>
-                                                                <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
-                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Date</th>
-                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Classroom / Batch</th>
-                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Type</th>
-                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Status</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
-                                                                {attendanceLogs.map((log) => (
+                                                    <div>
+                                                        {/* Mobile view of logs (visible on mobile only) */}
+                                                        <div className="block sm:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
+                                                            {attendanceLogs.map((log) => (
+                                                                <div key={log.id} className="p-4 flex justify-between items-center bg-white dark:bg-slate-900">
+                                                                    <div className="min-w-0 flex-1 pr-3">
+                                                                        <h6 className="font-extrabold text-slate-900 dark:text-white text-xs truncate">{log.classroom_name}</h6>
+                                                                        <div className="flex items-center gap-2 mt-1">
+                                                                            <span className="text-[10px] text-slate-400 font-bold">{formatLocalDateStr(log.date, true)}</span>
+                                                                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                                                                                log.is_temporary
+                                                                                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
+                                                                                    : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                                                            }`}>
+                                                                                {log.is_temporary ? 'Temp' : 'Perm'}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="shrink-0">
+                                                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                                                            log.status === 'present'
+                                                                                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20'
+                                                                                : log.status === 'absent'
+                                                                                ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20'
+                                                                                : log.status === 'late'
+                                                                                ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20'
+                                                                                : log.status === 'excused'
+                                                                                ? 'bg-slate-50 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400'
+                                                                                : 'bg-slate-50 text-slate-500 dark:bg-slate-800'
+                                                                        }`}>
+                                                                            {log.status}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="overflow-x-auto hidden sm:block">
+                                                            <table className="w-full text-left border-collapse min-w-[500px]">
+                                                                <thead>
+                                                                    <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
+                                                                        <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Date</th>
+                                                                        <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Classroom / Batch</th>
+                                                                        <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Type</th>
+                                                                        <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Status</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
+                                                                    {attendanceLogs.map((log) => (
                                                                     <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
                                                                         <td className="px-5 py-4 text-xs font-bold text-slate-800 dark:text-slate-300">
                                                                             {formatLocalDateStr(log.date, true)}
@@ -1785,8 +1820,9 @@ export default function AttendancePage() {
                                                                         </td>
                                                                     </tr>
                                                                 ))}
-                                                            </tbody>
-                                                        </table>
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
                                                     </div>
                                                 ) : (
                                                     <div className="py-12 text-center">
@@ -1881,19 +1917,110 @@ export default function AttendancePage() {
                                                 <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Querying missed classes...</p>
                                             </div>
                                         ) : missedLogs.length > 0 ? (
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-left border-collapse min-w-[700px]">
-                                                    <thead>
-                                                        <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
-                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Student</th>
-                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Classroom / Batch</th>
-                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Missed Date</th>
-                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Missed Status</th>
-                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Alternative Class (Makeup)</th>
-                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Action</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
+                                            <div>
+                                                {/* Mobile view of missed logs (visible on mobile only) */}
+                                                <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
+                                                    {missedLogs.map((log) => {
+                                                        const scheduledMakeup = studentOverrides.find(o => {
+                                                            if (!o.override_date || !log.date) return false;
+                                                            const oDate = o.override_date.split('T')[0].split(' ')[0];
+                                                            const lDate = log.date.split('T')[0].split(' ')[0];
+                                                            return o.student_id === log.student_id && oDate >= lDate;
+                                                        });
+
+                                                        return (
+                                                            <div key={log.id} className="p-4 flex flex-col gap-3 bg-white dark:bg-slate-900 text-left">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span 
+                                                                        onClick={() => fetchStudentHistory(log.student_id, log.student_name)}
+                                                                        className="text-xs font-extrabold text-slate-900 dark:text-white hover:underline cursor-pointer"
+                                                                    >
+                                                                        {log.student_name}
+                                                                    </span>
+                                                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                                                                        log.status === 'absent' ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20' : 'bg-blue-50 text-blue-700 dark:bg-blue-900/30'
+                                                                    }`}>
+                                                                        {log.status === 'absent' ? 'Absent' : 'Excused'}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="text-xs space-y-1 bg-slate-50 dark:bg-slate-800/30 p-2 rounded-lg border border-slate-100 dark:border-slate-800/50">
+                                                                    <div className="flex justify-between">
+                                                                        <span className="text-slate-400 font-medium">Batch:</span>
+                                                                        <span className="font-semibold text-slate-700 dark:text-slate-300">{log.classroom_name}</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between">
+                                                                        <span className="text-slate-400 font-medium">Missed Date:</span>
+                                                                        <span className="font-semibold text-slate-700 dark:text-slate-300">{formatLocalDateStr(log.date, true)}</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-start">
+                                                                        <span className="text-slate-400 font-medium shrink-0">Makeup status:</span>
+                                                                        <span className="font-semibold text-slate-700 dark:text-slate-300 text-right ml-2">
+                                                                            {log.scheduledMakeup ? (
+                                                                                <span className={log.isMakeupMissed ? 'text-rose-600' : 'text-emerald-600'}>
+                                                                                    {log.isMakeupMissed ? 'Missed Makeup' : 'Scheduled'} ({formatLocalDateStr(log.scheduledMakeup.override_date)})
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="text-slate-400 italic">No makeup</span>
+                                                                            )}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex justify-end pt-1">
+                                                                    {log.scheduledMakeup && !log.isMakeupMissed ? (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setMakeupStudent(log);
+                                                                                setMakeupDate(log.scheduledMakeup.override_date);
+                                                                                setMakeupClassroomId(log.scheduledMakeup.target_classroom_id);
+                                                                                setMakeupReason(stripMissedDateTag(log.scheduledMakeup.reason || ''));
+                                                                                setEditingMakeupId(log.scheduledMakeup.id);
+                                                                                setShowMakeupModal(true);
+                                                                            }}
+                                                                            className="w-full py-1.5 bg-[#ecb613]/10 hover:bg-[#ecb613]/25 text-[#92400e] dark:text-[#ecb613] text-[10px] font-extrabold uppercase tracking-wider rounded-lg border border-[#ecb613]/30"
+                                                                        >
+                                                                            Reschedule
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const targetLog = log.isMakeupMissed ? {
+                                                                                    student_id: log.student_id,
+                                                                                    student_name: log.student_name,
+                                                                                    date: log.scheduledMakeup.override_date,
+                                                                                    classroom_name: classrooms.find(c => c.id === log.scheduledMakeup.target_classroom_id)?.name || 'Makeup Classroom',
+                                                                                    classroom_id: log.scheduledMakeup.target_classroom_id,
+                                                                                    status: 'absent'
+                                                                                } : log;
+                                                                                setMakeupStudent(targetLog);
+                                                                                setMakeupDate(targetLog.date);
+                                                                                setMakeupClassroomId(classrooms[0]?.id || '');
+                                                                                setMakeupReason(`Makeup for missing ${targetLog.classroom_name} class on ${formatLocalDateStr(targetLog.date)}`);
+                                                                                setEditingMakeupId(null);
+                                                                                setShowMakeupModal(true);
+                                                                            }}
+                                                                            className="w-full py-1.5 bg-[#ecb613] text-slate-900 text-[10px] font-extrabold uppercase tracking-wider rounded-lg"
+                                                                        >
+                                                                            Schedule Makeup
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="overflow-x-auto hidden md:block">
+                                                    <table className="w-full text-left border-collapse min-w-[700px]">
+                                                        <thead>
+                                                            <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
+                                                                <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Student</th>
+                                                                <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Classroom / Batch</th>
+                                                                <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Missed Date</th>
+                                                                <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Missed Status</th>
+                                                                <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Alternative Class (Makeup)</th>
+                                                                <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Action</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
                                                         {missedLogs.map((log) => {
                                                             // Check if there is already an override scheduled on or after this missed date
                                                             const scheduledMakeup = studentOverrides.find(o => {
@@ -2004,6 +2131,7 @@ export default function AttendancePage() {
                                                     </tbody>
                                                 </table>
                                             </div>
+                                        </div>
                                         ) : (
                                             <div className="py-16 text-center">
                                                 <XCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />

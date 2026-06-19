@@ -1085,6 +1085,7 @@ export default function InventoryLibrary() {
                     title="Curriculum & Inventory Manager" 
                     searchQuery={searchQuery}
                     onSearchChange={setSearchQuery}
+                    backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
                 {/* Connection Status Subtitle Bar */}

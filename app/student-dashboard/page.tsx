@@ -7,7 +7,8 @@ import {
     Loader2, BookOpen, Calendar, Mail, FileText, CheckCircle, 
     Clock, Video, Play, Music, Award, Users, Search, PlayCircle, 
     Send, X, ClipboardList, Info, BarChart2, Plus, Volume2, 
-    HelpCircle, ChevronRight, Download, LogOut, Check
+    HelpCircle, ChevronRight, Download, LogOut, Check, Menu,
+    Sparkles
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -68,6 +69,10 @@ interface Broadcast {
     content: string;
     audio_attachment?: string | null;
     created_at: string;
+    sender?: {
+        name: string;
+        role: string;
+    } | null;
 }
 
 interface ClassNote {
@@ -104,6 +109,7 @@ export default function StudentDashboard() {
 
     // UI Navigation state
     const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library'>('overview');
+    const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'drums'>('metronome');
 
@@ -115,6 +121,16 @@ export default function StudentDashboard() {
     // Audio voice broadcast states
     const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+    const [audioDuration, setAudioDuration] = useState(0);
+    const [isAudioPaused, setIsAudioPaused] = useState(false);
+    const [audioVolume, setAudioVolume] = useState(0.8);
+
+    // Excuse Request Modal states
+    const [showExcuseModal, setShowExcuseModal] = useState(false);
+    const [excuseDate, setExcuseDate] = useState('');
+    const [excuseReason, setExcuseReason] = useState('');
+    const [isSubmittingExcuse, setIsSubmittingExcuse] = useState(false);
 
     const refreshData = async () => {
         try {
@@ -345,10 +361,10 @@ export default function StudentDashboard() {
                 }
             }
 
-            // 5. Fetch Messages (Broadcasts) targeted to this student or classroom
+            // 5. Fetch Messages (Broadcasts) targeted to this student or classroom, joining sender information
             const { data: broadcastsData } = await supabaseAuth
                 .from('broadcasts')
-                .select('*')
+                .select('*, sender:users!teacher_id(name, role)')
                 .order('created_at', { ascending: false });
 
             const studentBroadcasts = (broadcastsData || []).filter((b: any) => {
@@ -436,25 +452,83 @@ export default function StudentDashboard() {
     const playVoiceNote = (id: string, audioAttachment: string) => {
         if (audioRef.current) {
             audioRef.current.pause();
+            audioRef.current.onplay = null;
+            audioRef.current.onpause = null;
+            audioRef.current.ontimeupdate = null;
+            audioRef.current.onloadedmetadata = null;
+            audioRef.current.onended = null;
         }
 
         if (playingAudioId === id) {
             setPlayingAudioId(null);
+            setIsAudioPaused(false);
+            setAudioCurrentTime(0);
             return;
         }
 
         const audio = new Audio(audioAttachment);
+        audio.volume = audioVolume;
         audioRef.current = audio;
         setPlayingAudioId(id);
+        setIsAudioPaused(false);
 
         audio.play().catch(err => {
             console.error('Error playing audio note:', err);
             setPlayingAudioId(null);
         });
 
+        audio.onloadedmetadata = () => {
+            setAudioDuration(audio.duration);
+        };
+
+        audio.ontimeupdate = () => {
+            setAudioCurrentTime(audio.currentTime);
+        };
+
+        audio.onplay = () => {
+            setIsAudioPaused(false);
+        };
+
+        audio.onpause = () => {
+            setIsAudioPaused(true);
+        };
+
         audio.onended = () => {
             setPlayingAudioId(null);
+            setIsAudioPaused(false);
+            setAudioCurrentTime(0);
         };
+    };
+
+    const togglePlayback = () => {
+        if (!audioRef.current) return;
+        if (audioRef.current.paused) {
+            audioRef.current.play().catch(err => console.error(err));
+        } else {
+            audioRef.current.pause();
+        }
+    };
+
+    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!audioRef.current) return;
+        const newTime = parseFloat(e.target.value);
+        audioRef.current.currentTime = newTime;
+        setAudioCurrentTime(newTime);
+    };
+
+    const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = parseFloat(e.target.value);
+        setAudioVolume(val);
+        if (audioRef.current) {
+            audioRef.current.volume = val;
+        }
+    };
+
+    const formatAudioTime = (secs: number) => {
+        if (isNaN(secs) || !isFinite(secs)) return '00:00';
+        const mins = Math.floor(secs / 60);
+        const remainSecs = Math.floor(secs % 60);
+        return `${mins.toString().padStart(2, '0')}:${remainSecs.toString().padStart(2, '0')}`;
     };
 
     // Toggle lesson completed status
@@ -558,32 +632,94 @@ export default function StudentDashboard() {
         }
     };
 
-    if (loading) {
-        return (
-            <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8fafc]">
-                <Loader2 className="w-10 h-10 animate-spin text-[#d46211] mb-4" />
-                <p className="font-semibold text-slate-600 animate-pulse" style={{ fontFamily: 'Lexend, sans-serif' }}>Syncing Academy Files...</p>
-            </div>
-        );
-    }
+    const handleSubmitExcuse = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!profile || !classroom || isSubmittingExcuse) return;
 
-    if (!classroom) {
-        return (
-            <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8fafc] text-center p-6" style={{ fontFamily: 'Lexend, sans-serif' }}>
-                <div className="w-24 h-24 bg-amber-50 rounded-full flex items-center justify-center mb-6 border border-amber-100 shadow-sm">
-                    <Clock className="w-12 h-12 text-amber-500" />
-                </div>
-                <h1 className="text-2xl md:text-3xl font-black text-slate-800 mb-3 tracking-tight">Account Pending Assignment</h1>
-                <p className="text-slate-600 max-w-md font-medium leading-relaxed">
-                    Welcome to the Krishna Flute Academy! You have successfully created your account.
-                    Please wait for your instructor to assign you to a batch. You will have full access to your curriculum and dashboard once assigned.
-                </p>
-                <button onClick={handleLogout} className="mt-8 px-6 py-3 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
-                    <LogOut className="w-5 h-5" /> Sign Out
-                </button>
-            </div>
-        );
-    }
+        const dateStr = excuseDate.trim();
+        if (!dateStr) {
+            alert('Please select a date!');
+            return;
+        }
+
+        setIsSubmittingExcuse(true);
+
+        try {
+            // 1. Insert attendance record as 'excused'
+            const { error: attError } = await supabaseAuth
+                .from('attendance')
+                .insert({
+                    classroom_id: classroom.id,
+                    student_id: profile.id,
+                    date: dateStr,
+                    status: 'excused'
+                });
+
+            if (attError) throw attError;
+
+            // 2. Fetch admins to notify
+            const { data: admins, error: adminsError } = await supabaseAuth
+                .from('users')
+                .select('id')
+                .eq('role', 'admin');
+
+            if (adminsError) {
+                console.error('Error fetching admin users:', adminsError);
+            }
+
+            // 3. Prepare notifications for the classroom teacher and all admins
+            const notificationTitle = `Excuse Request: ${profile.name}`;
+            const notificationMsg = `${profile.name} requested an excuse for class on ${dateStr}.${excuseReason.trim() ? ` Reason: ${excuseReason.trim()}` : ''}`;
+            
+            const notificationInserts: any[] = [];
+            
+            // Notification for teacher
+            if (classroom.teacher_id) {
+                notificationInserts.push({
+                    user_id: classroom.teacher_id,
+                    title: notificationTitle,
+                    message: notificationMsg,
+                    type: 'reminder'
+                });
+            }
+
+            // Notifications for admins
+            (admins || []).forEach((adm: any) => {
+                if (adm.id !== classroom.teacher_id) { // Avoid duplicate if teacher is also admin
+                    notificationInserts.push({
+                        user_id: adm.id,
+                        title: notificationTitle,
+                        message: notificationMsg,
+                        type: 'reminder'
+                    });
+                }
+            });
+
+            if (notificationInserts.length > 0) {
+                const { error: notifError } = await supabaseAuth
+                    .from('notifications')
+                    .insert(notificationInserts);
+                if (notifError) {
+                    console.error('Error writing notifications:', notifError);
+                }
+            }
+
+            alert('Excuse submitted successfully! Your teacher and admins have been notified.');
+
+            // Refresh local data (re-fetches attendance and updates logs)
+            await refreshData();
+
+            // Reset modal state
+            setExcuseDate('');
+            setExcuseReason('');
+            setShowExcuseModal(false);
+        } catch (err: any) {
+            console.error('Error submitting class excuse:', err);
+            alert(`Failed to submit class excuse: ${err.message}`);
+        } finally {
+            setIsSubmittingExcuse(false);
+        }
+    };
 
     // Attendance stats
     const attendanceStats = {
@@ -629,7 +765,73 @@ export default function StudentDashboard() {
 
     const completedLessonsCount = studentProgress.filter(p => p.status === 'completed').length;
 
+    // Find the first unlocked but incomplete lesson to spotlight
+    const featuredLesson = useMemo(() => {
+        if (courseLessons.length === 0) return null;
+        for (const lesson of courseLessons) {
+            const status = getLessonStatus(lesson.id, lesson.chapter_id, lesson.module_id);
+            if (status === 'unlocked') {
+                return lesson;
+            }
+        }
+        // Fallback to first lesson
+        return courseLessons[0] || null;
+    }, [courseLessons, studentProgress, classroomInventoryAllocations]);
+
+    const completionPct = useMemo(() => {
+        const total = totalAllocatedLessons || courseLessons.length || 1;
+        return Math.min(100, Math.round((completedLessonsCount / total) * 100));
+    }, [completedLessonsCount, totalAllocatedLessons, courseLessons]);
+
     const recentFeedback = assignments.find(a => a.feedback_text);
+
+    // Track dismissed admin broadcasts in local storage to toggle highlights
+    const [dismissedAdminBroadcasts, setDismissedAdminBroadcasts] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const dismissed = JSON.parse(localStorage.getItem('kfa_dismissed_admin_messages') || '[]');
+            setDismissedAdminBroadcasts(dismissed);
+        }
+    }, []);
+
+    const handleDismissAdminBroadcast = (id: string) => {
+        const updated = [...dismissedAdminBroadcasts, id];
+        setDismissedAdminBroadcasts(updated);
+        localStorage.setItem('kfa_dismissed_admin_messages', JSON.stringify(updated));
+    };
+
+    // Calculate unread admin messages
+    const unreadAdminBroadcasts = useMemo(() => {
+        return broadcasts.filter(b => b.sender?.role === 'admin' && !dismissedAdminBroadcasts.includes(b.id));
+    }, [broadcasts, dismissedAdminBroadcasts]);
+
+    if (loading) {
+        return (
+            <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8fafc]">
+                <Loader2 className="w-10 h-10 animate-spin text-[#d46211] mb-4" />
+                <p className="font-semibold text-slate-600 animate-pulse" style={{ fontFamily: 'Lexend, sans-serif' }}>Syncing Academy Files...</p>
+            </div>
+        );
+    }
+
+    if (!classroom) {
+        return (
+            <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8fafc] text-center p-6" style={{ fontFamily: 'Lexend, sans-serif' }}>
+                <div className="w-24 h-24 bg-amber-50 rounded-full flex items-center justify-center mb-6 border border-amber-100 shadow-sm">
+                    <Clock className="w-12 h-12 text-amber-500" />
+                </div>
+                <h1 className="text-2xl md:text-3xl font-black text-slate-800 mb-3 tracking-tight">Account Pending Assignment</h1>
+                <p className="text-slate-600 max-w-md font-medium leading-relaxed">
+                    Welcome to the Krishna Flute Academy! You have successfully created your account.
+                    Please wait for your instructor to assign you to a batch. You will have full access to your curriculum and dashboard once assigned.
+                </p>
+                <button onClick={handleLogout} className="mt-8 px-6 py-3 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
+                    <LogOut className="w-5 h-5" /> Sign Out
+                </button>
+            </div>
+        );
+    }
 
     return (
         <>
@@ -640,13 +842,25 @@ export default function StudentDashboard() {
             />
         )}
         
-        <div className="flex min-h-screen bg-[#f8fafc]" style={{ fontFamily: 'Lexend, sans-serif' }}>
+        <div className="flex min-h-screen bg-[#FAF6F0]" style={{ fontFamily: 'Lexend, sans-serif' }}>
             {/* Google Fonts */}
             <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
             <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
 
+            {/* Sidebar Overlay Backdrop for Mobile */}
+            {mobileSidebarOpen && (
+                <div 
+                    className="fixed inset-0 z-40 bg-black/50 backdrop-blur-xs md:hidden"
+                    onClick={() => setMobileSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar Navigation */}
-            <aside className="w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 sticky top-0 h-screen hidden md:flex">
+            <aside className={`
+                w-72 border-r border-[#E6E1DA] bg-white flex flex-col shrink-0 z-40 transition-transform duration-300
+                fixed md:sticky top-0 left-0 h-screen
+                ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+            `}>
                 <div className="p-6 flex flex-col justify-center border-b border-slate-150">
                     <h1 className="font-black text-xl leading-tight text-slate-950 select-none">
                         Krishna Flute
@@ -688,22 +902,32 @@ export default function StudentDashboard() {
                         return (
                             <button
                                 key={item.id}
-                                onClick={() => setActiveTab(item.id as any)}
+                                onClick={() => {
+                                    setActiveTab(item.id as any);
+                                    setMobileSidebarOpen(false);
+                                }}
                                 className={`w-full flex items-center gap-3 py-3 transition-all relative ${
                                     active 
-                                        ? 'bg-gradient-to-r from-amber-500/10 to-amber-500/0 text-[#b45309] font-black border-l-4 border-[#d46211] pl-3.5 pr-4 rounded-r-2xl' 
-                                        : 'text-slate-600 hover:bg-slate-100/70 hover:text-slate-800 px-4 rounded-xl'
+                                        ? 'bg-[#FAF5EE] text-[#7C5E3F] font-black border-l-4 border-[#7C5E3F] pl-3.5 pr-4 rounded-r-2xl' 
+                                        : 'text-[#5C5852] hover:bg-[#FAF5EE]/50 hover:text-[#7C5E3F] px-4 rounded-xl'
                                 }`}
                             >
-                                <Icon className={`w-[22px] h-[22px] shrink-0 ${active ? 'text-[#d46211]' : 'text-slate-400'}`} />
+                                <Icon className={`w-[22px] h-[22px] shrink-0 ${active ? 'text-[#7C5E3F]' : 'text-slate-400'}`} />
                                 <span className="text-sm font-semibold">{item.label}</span>
                                 {item.id === 'tasks' && assignments.filter(a => a.status === 'pending').length > 0 && (
                                     <span className="ml-auto w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center">
                                         {assignments.filter(a => a.status === 'pending').length}
                                     </span>
                                 )}
-                                {item.id === 'messages' && broadcasts.length > 0 && (
-                                    <span className="ml-auto w-2 h-2 rounded-full bg-orange-500"></span>
+                                {item.id === 'messages' && (
+                                    unreadAdminBroadcasts.length > 0 ? (
+                                        <span className="ml-auto flex h-2 w-2 relative shrink-0">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#d49900] opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#d49900]"></span>
+                                        </span>
+                                    ) : broadcasts.length > 0 ? (
+                                        <span className="ml-auto w-2 h-2 rounded-full bg-orange-500 shrink-0"></span>
+                                    ) : null
                                 )}
                             </button>
                         );
@@ -724,288 +948,533 @@ export default function StudentDashboard() {
 
             {/* Mobile Header */}
             <div className="flex-1 flex flex-col min-w-0">
-                <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-6 md:px-8 sticky top-0 z-35 md:z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="md:hidden w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white">
-                            <Music className="w-4.5 h-4.5" />
+                <header className="h-16 bg-[#FAF6F0]/85 backdrop-blur-md border-b border-[#E6E1DA] flex items-center justify-between px-4 sm:px-6 md:px-8 sticky top-0 z-30">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        <button
+                            onClick={() => setMobileSidebarOpen(true)}
+                            className="md:hidden p-2 -ml-2 rounded-lg text-slate-700 hover:bg-[#FAF5EE] transition-colors"
+                            aria-label="Open Menu"
+                        >
+                            <Menu className="w-5.5 h-5.5 text-[#5C5852]" />
+                        </button>
+                        <div className="hidden md:flex text-[#7C5E3F]">
+                            <Music className="w-5 h-5" />
                         </div>
-                        <h2 className="text-slate-800 font-extrabold tracking-tight capitalize text-sm md:text-base">
+                        <h2 className="text-[#3E3A35] font-extrabold tracking-tight capitalize text-sm md:text-base">
                             {activeTab === 'library' ? 'Library & Tools' : activeTab === 'tasks' ? 'Tasks & Submissions' : activeTab}
                         </h2>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                        {/* Status badge for quick view */}
-                        <div className="hidden sm:flex items-center gap-1.5 bg-amber-50 border border-amber-100 rounded-full px-3 py-1">
-                            <Award className="w-3.5 h-3.5 text-amber-500" />
-                            <span className="text-[10px] font-black text-amber-700 tracking-wide uppercase">{levelLabel} Level</span>
-                        </div>
+                    <div className="flex items-center gap-4 text-[#5C5852]">
+                        <button className="p-1.5 hover:bg-[#FAF5EE] rounded-full transition-colors relative">
+                            <span className="material-symbols-outlined text-xl">notifications</span>
+                            {assignments.filter(a => a.status === 'pending').length > 0 && (
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-[#d49900] rounded-full"></span>
+                            )}
+                        </button>
+                        <button onClick={() => {
+                            setPracticeSuiteTab('metronome');
+                            setShowPracticeSuite(true);
+                        }} className="p-1.5 hover:bg-[#FAF5EE] rounded-full transition-colors">
+                            <span className="material-symbols-outlined text-xl">settings</span>
+                        </button>
+
+                        <div className="h-6 w-[1px] bg-[#E6E1DA] hidden sm:block"></div>
 
                         {profile?.profile_pic_url ? (
-                            <img src={profile.profile_pic_url} alt={profile.name} className="w-8 h-8 rounded-xl object-cover border border-slate-100 shadow-xs" />
+                            <img src={profile.profile_pic_url} alt={profile.name} className="w-8 h-8 rounded-xl object-cover border border-[#E6E1DA] shadow-xs" />
                         ) : (
-                            <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-[#d46211] font-bold text-xs">
+                            <div className="w-8 h-8 rounded-xl bg-[#FAF5EE] border border-[#E6E1DA] flex items-center justify-center text-[#7C5E3F] font-bold text-xs">
                                 {profile?.name?.charAt(0) || 'S'}
                             </div>
                         )}
                         
-                        <button onClick={handleLogout} className="md:hidden text-rose-500">
+                        <button onClick={handleLogout} className="md:hidden text-rose-500 p-2">
                             <LogOut className="w-4 h-4" />
                         </button>
                     </div>
                 </header>
 
                 {/* Main Content Area */}
-                <main className="flex-1 p-6 md:p-8 max-w-6xl mx-auto w-full">
+                <main className="flex-1 p-3 sm:p-6 md:p-8 w-full max-w-[1400px]">
                     {/* ──── OVERVIEW TAB ──── */}
                     {activeTab === 'overview' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
-                            {/* Welcome Glassmorphic Banner */}
-                            <div className="bg-gradient-to-r from-amber-400 via-orange-500 to-orange-600 rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-lg shadow-orange-500/10">
-                                <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-12 translate-x-12"></div>
-                                <div className="relative z-10 space-y-4 max-w-xl">
-                                    <span className="bg-white/20 text-white border border-white/20 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Flute Academy Student Portal</span>
-                                    <h1 className="text-2xl md:text-4xl font-black tracking-tight leading-tight">Welcome back, {profile?.name?.split(' ')[0]}!</h1>
-                                    <p className="text-sm font-medium text-white/80 leading-relaxed">
-                                        "Practice makes perfect. Find regular time to warm up your breathing, rehearse Alankars, and explore your repertoire."
-                                    </p>
-                                    {classroom && (
-                                        <div className="flex items-center gap-1.5 text-xs font-semibold bg-black/10 w-fit px-3 py-1.5 rounded-xl border border-white/10 backdrop-blur-xs">
-                                            <Users className="w-3.5 h-3.5" />
-                                            Enrolled: {classroom.name} · Instructor: {classroom.teacher_name}
+                            {/* Admin Broadcast Alert Banner */}
+                            {unreadAdminBroadcasts.length > 0 && (
+                                <div className="bg-[#FAF5EE] border-l-4 border-[#7C5E3F] rounded-2xl p-4 sm:p-5 shadow-xs flex items-start justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
+                                    <div className="flex items-start gap-3 text-left">
+                                        <div className="w-9 h-9 rounded-full bg-[#FAF5EE] border border-[#7C5E3F]/20 text-[#7C5E3F] flex items-center justify-center shrink-0 mt-0.5">
+                                            <span className="material-symbols-outlined text-lg">campaign</span>
                                         </div>
-                                    )}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[9px] font-black text-[#7C5E3F] uppercase tracking-wider bg-amber-100 dark:bg-amber-950/20 px-2 py-0.5 rounded">Important Notice</span>
+                                                <span className="text-[9px] font-bold text-slate-400">
+                                                    {new Date(unreadAdminBroadcasts[0].created_at).toLocaleDateString()}
+                                                </span>
+                                            </div>
+                                            <h4 className="font-extrabold text-slate-800 text-sm mt-1 truncate">{unreadAdminBroadcasts[0].subject}</h4>
+                                            <p className="text-xs text-slate-600 mt-1 line-clamp-2 leading-relaxed">
+                                                {unreadAdminBroadcasts[0].content}
+                                            </p>
+                                            <button 
+                                                onClick={() => setActiveTab('messages')}
+                                                className="text-xs font-black text-[#7C5E3F] hover:text-[#5c442c] transition-colors mt-2 flex items-center gap-0.5"
+                                            >
+                                                Read full announcement <ChevronRight className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => handleDismissAdminBroadcast(unreadAdminBroadcasts[0].id)}
+                                        className="text-[#9A958E] hover:text-[#7C5E3F] transition-colors p-1"
+                                        aria-label="Dismiss Alert"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            )}
+                            {/* Welcome Banner Card */}
+                            <div 
+                                className="bg-cover bg-center rounded-3xl relative p-6 sm:p-8 text-white min-h-[240px] md:min-h-[280px] flex items-center shadow-md overflow-hidden border border-[#E6E1DA] text-left"
+                                style={{ backgroundImage: "url('/flutes_custom.jpg')" }}
+                            >
+                                {/* Overlay to ensure text readability */}
+                                <div className="absolute inset-0 bg-gradient-to-r from-[#2B1B0E]/95 via-[#2B1B0E]/75 to-transparent pointer-events-none"></div>
+                                
+                                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 w-full">
+                                    <div className="space-y-4 max-w-xl">
+                                        <div>
+                                            <span className="bg-[#FAF5EE] text-[#7C5E3F] text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
+                                                ★ Flute Academy Student Portal
+                                            </span>
+                                        </div>
+                                        <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight text-white">
+                                            Namaste, {profile?.name?.split(' ')[0]}!
+                                        </h1>
+                                        <p className="text-sm font-medium text-slate-200 leading-relaxed italic">
+                                            "Daily Practice Tip: Blow gently with a relaxed embouchure. Focus on a clear sound, warm breath support, and precise finger placement."
+                                        </p>
+                                        
+                                        {classroom && (
+                                            <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 text-white w-fit text-left shrink-0">
+                                                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+                                                    <Users className="w-4 h-4 text-amber-350" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[8px] font-bold text-white/60 uppercase tracking-wider leading-none">Active Batch</p>
+                                                    <p className="text-xs font-black mt-0.5">{classroom.name} · {classroom.teacher_name}</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="shrink-0 flex flex-col sm:flex-row md:flex-col gap-3 w-full sm:w-auto md:w-auto">
+                                        <button 
+                                            onClick={() => {
+                                                setPracticeSuiteTab('metronome');
+                                                setShowPracticeSuite(true);
+                                            }}
+                                            className="px-6 py-3.5 bg-[#d49900] hover:bg-[#b58300] text-white font-extrabold text-xs rounded-full shadow-lg shadow-orange-950/20 hover:scale-102 active:scale-98 transition-all flex items-center justify-center gap-2 group w-full sm:w-auto"
+                                        >
+                                            <PlayCircle className="w-4 h-4" />
+                                            Start Practice Room
+                                        </button>
+                                        <button 
+                                            onClick={() => setActiveTab('curriculum')}
+                                            className="px-6 py-3.5 bg-white/10 hover:bg-white/15 text-white border border-white/15 font-extrabold text-xs rounded-full backdrop-blur-md transition-all flex items-center justify-center gap-2 active:scale-98 w-full sm:w-auto"
+                                        >
+                                            <BookOpen className="w-4 h-4 text-white/80" />
+                                            View Syllabus
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
                             {/* Summary Metrics Grid */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 {/* Level Card */}
-                                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0">
-                                        <Award className="w-6 h-6" />
+                                <div className="bg-[#FDFBF7] border border-[#E6E1DA] rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm hover:border-[#7C5E3F]/20 transition-all group relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-amber-500/10 transition-colors"></div>
+                                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#F5ECE3] text-[#D49E35] flex items-center justify-center shrink-0">
+                                        <Award className="w-5.5 h-5.5" />
                                     </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Proficiency</p>
-                                        <h3 className="font-extrabold text-base text-slate-800 truncate mt-0.5">{levelLabel}</h3>
-                                        <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Scale & Finger training</p>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">Proficiency</p>
+                                        <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] truncate mt-0.5">{levelLabel}</h3>
+                                        <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E] mt-0.5">Scale & Finger training</p>
                                     </div>
                                 </div>
 
                                 {/* Class/Batch Card */}
-                                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
-                                        <Users className="w-6 h-6" />
+                                <div className="bg-[#FDFBF7] border border-[#E6E1DA] rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm hover:border-[#7C5E3F]/20 transition-all group relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-orange-500/10 transition-colors"></div>
+                                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#E3ECF5] text-[#5383B4] flex items-center justify-center shrink-0">
+                                        <Clock className="w-5.5 h-5.5" />
                                     </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">My Batch</p>
-                                        <h3 className="font-extrabold text-base text-slate-800 truncate mt-0.5">{classroom?.name || 'Not Enrolled'}</h3>
-                                        <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Active Class Session</p>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">My Batch</p>
+                                        <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] truncate mt-0.5">{classroom?.name || 'Not Enrolled'}</h3>
+                                        <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E] mt-0.5">Active Class Session</p>
                                     </div>
                                 </div>
 
                                 {/* Attendance Percentage */}
-                                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center shrink-0">
-                                        <Calendar className="w-6 h-6" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Attendance</p>
-                                        <h3 className="font-extrabold text-lg text-slate-800 mt-0.5">{attendancePct !== null ? `${attendancePct}%` : '—'}</h3>
-                                        <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{attendanceStats.total} marked sessions</p>
+                                <div className="bg-[#FDFBF7] border border-[#E6E1DA] rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm hover:border-[#7C5E3F]/20 transition-all group relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-emerald-500/10 transition-colors"></div>
+                                    
+                                    {attendancePct !== null ? (
+                                        <div className="relative w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shrink-0">
+                                            {/* Circular Progress Ring */}
+                                            <svg className="w-full h-full transform -rotate-90">
+                                                {/* Background Circle */}
+                                                <circle 
+                                                    cx="50%" 
+                                                    cy="50%" 
+                                                    r="40%" 
+                                                    strokeWidth="8%" 
+                                                    stroke="#f1f5f9" 
+                                                    fill="transparent" 
+                                                />
+                                                {/* Progress Circle */}
+                                                <circle 
+                                                    cx="50%" 
+                                                    cy="50%" 
+                                                    r="40%" 
+                                                    strokeWidth="8%" 
+                                                    stroke="url(#emeraldGradient)" 
+                                                    strokeDasharray={`${2 * Math.PI * 40}`}
+                                                    strokeDashoffset={`${2 * Math.PI * 40 * (1 - attendancePct / 100)}`}
+                                                    strokeLinecap="round"
+                                                    fill="transparent" 
+                                                />
+                                                <defs>
+                                                    <linearGradient id="emeraldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                        <stop offset="0%" stopColor="#10b981" />
+                                                        <stop offset="100%" stopColor="#059669" />
+                                                    </linearGradient>
+                                                </defs>
+                                            </svg>
+                                            <span className="absolute text-[10px] font-black text-emerald-600">{attendancePct}%</span>
+                                        </div>
+                                    ) : (
+                                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-emerald-500/10 to-emerald-500/0 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-500/10">
+                                            <Calendar className="w-5.5 h-5.5" />
+                                        </div>
+                                    )}
+                                    
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">Attendance</p>
+                                        <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] mt-0.5">{attendancePct !== null ? `${attendancePct}%` : '—'}</h3>
+                                        <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E] mt-0.5">{attendanceStats.total} marked sessions</p>
                                     </div>
                                 </div>
 
                                 {/* Pending Tasks count */}
-                                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-500 flex items-center justify-center shrink-0">
-                                        <ClipboardList className="w-6 h-6" />
+                                <div className="bg-[#FDFBF7] border border-[#E6E1DA] rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm hover:border-[#7C5E3F]/20 transition-all group relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-[#F5E3E6] rounded-full blur-xl pointer-events-none group-hover:bg-[#F5E3E6]/10 transition-colors"></div>
+                                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#F5E3E6] text-[#B45366] flex items-center justify-center shrink-0">
+                                        <ClipboardList className="w-5.5 h-5.5" />
                                     </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Pending Tasks</p>
-                                        <h3 className="font-extrabold text-lg text-slate-800 mt-0.5">{assignments.filter(a => a.status === 'pending').length} Tasks</h3>
-                                        <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Needs practice video</p>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">Pending Tasks</p>
+                                        <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] mt-0.5">{assignments.filter(a => a.status === 'pending').length} Tasks</h3>
+                                        <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E] mt-0.5">Needs practice video</p>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Core Dashboard split sections */}
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                {/* Left/Center column: Recent assignments & Feedback */}
+                                {/* Left column: Weekly Curriculum & Recent Submissions */}
                                 <div className="lg:col-span-2 space-y-6">
-                                    {/* Recent Pending Assignment */}
-                                    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs">
-                                        <div className="flex items-center justify-between mb-5">
-                                            <h3 className="font-extrabold text-slate-800 text-sm md:text-base flex items-center gap-2">
-                                                <ClipboardList className="w-5 h-5 text-amber-500" />
-                                                Upcoming Assignments
-                                            </h3>
-                                            <button onClick={() => setActiveTab('tasks')} className="text-xs font-bold text-amber-500 hover:text-amber-600 transition-colors flex items-center gap-0.5">
-                                                View All <ChevronRight className="w-3.5 h-3.5" />
+                                    {/* This Week's Curriculum */}
+                                    <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-sm text-left">
+                                        <div className="px-6 py-5 border-b border-[#E6E1DA] flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center">
+                                                    <BookOpen className="w-4.5 h-4.5" />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-black text-[#3E3A35] text-sm md:text-base">This Week's Curriculum</h3>
+                                                    <p className="text-[10px] text-slate-500 mt-0.5">Focus: Mastering the bansuri key scales & alankars</p>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => setActiveTab('curriculum')} 
+                                                className="text-xs font-bold text-[#7C5E3F] hover:text-[#5c442c] transition-colors flex items-center gap-0.5"
+                                            >
+                                                View Full Syllabus <ChevronRight className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
 
-                                        {assignments.filter(a => a.status === 'pending').length === 0 ? (
-                                            <div className="py-8 border border-dashed border-slate-100 rounded-2xl text-center bg-slate-50/50">
-                                                <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                                                <p className="text-xs font-bold text-slate-700">All tasks completed!</p>
-                                                <p className="text-[10px] text-slate-400 mt-0.5">Enjoy your flute practice sessions.</p>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                {assignments.filter(a => a.status === 'pending').slice(0, 2).map((asg) => (
-                                                    <div key={asg.id} className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                                        <div className="min-w-0 flex-1">
-                                                            <h4 className="font-extrabold text-xs text-slate-800 truncate">{asg.title}</h4>
-                                                            <p className="text-[10px] text-slate-500 truncate mt-0.5">{asg.description || 'No instruction notes'}</p>
-                                                            {asg.due_date && (
-                                                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full mt-2">
-                                                                    <Clock className="w-3 h-3" /> Due: {new Date(asg.due_date).toLocaleDateString()}
+                                        <div className="p-6">
+                                            {featuredLesson ? (
+                                                <div className="space-y-4">
+                                                    <div className="p-5 rounded-2xl bg-[#FDFBF7] border border-[#E6E1DA] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 transition-all hover:border-[#7C5E3F]/20">
+                                                        <div className="min-w-0 flex-1 text-left space-y-3">
+                                                            <div>
+                                                                <span className="text-[9px] font-extrabold text-[#7C5E3F] bg-[#FAF5EE] px-2.5 py-1 rounded-full uppercase tracking-wider">Spotlight Lesson</span>
+                                                                <h4 className="font-black text-base text-[#3E3A35] mt-2 leading-snug">
+                                                                    Lesson {featuredLesson.lesson_number}: {featuredLesson.title}
+                                                                </h4>
+                                                            </div>
+                                                            <p className="text-xs text-[#5C5852] line-clamp-2 leading-relaxed">{featuredLesson.description || 'Practice your finger coordination and mouth alignment on your bansuri to perfect your sound projection.'}</p>
+                                                            
+                                                            <div className="flex items-center gap-2 pt-1 flex-wrap">
+                                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#7C5E3F] bg-[#FAF5EE] px-2.5 py-1 rounded-full">
+                                                                    <Clock className="w-3 h-3 text-[#7C5E3F]" /> {featuredLesson.duration || '20 Mins'}
                                                                 </span>
+                                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#5383B4] bg-[#E3ECF5] px-2.5 py-1 rounded-full">
+                                                                    <Award className="w-3 h-3" /> {featuredLesson.difficulty || 'Intermediate'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="shrink-0 w-full sm:w-auto relative group">
+                                                            <img 
+                                                                src="/flutes_custom.jpg" 
+                                                                alt="Active lesson spotlight" 
+                                                                className="object-cover rounded-2xl w-full sm:w-36 h-24 border border-[#E6E1DA]" 
+                                                            />
+                                                            <div className="absolute inset-0 bg-black/10 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <Play className="w-8 h-8 text-white fill-white" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Social Practice Indicator */}
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-[#E6E1DA]/60">
+                                                        <div className="flex -space-x-2 overflow-hidden shrink-0">
+                                                            {classmates.slice(0, 3).map((mate, i) => (
+                                                                <div key={mate.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-white overflow-hidden bg-slate-100">
+                                                                    {mate.profile_pic_url ? (
+                                                                        <img src={mate.profile_pic_url} alt={mate.name} className="h-full w-full object-cover" />
+                                                                    ) : (
+                                                                        <div className="h-full w-full flex items-center justify-center text-[8px] font-bold text-[#7C5E3F] bg-[#FAF5EE]">
+                                                                            {mate.name.charAt(0)}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                            {classmates.length > 3 && (
+                                                                <div className="flex items-center justify-center h-6 w-6 rounded-full bg-[#FAF5EE] ring-2 ring-white text-[9px] font-black text-[#7C5E3F]">
+                                                                    +{classmates.length - 3}
+                                                                </div>
                                                             )}
                                                         </div>
-                                                        <button 
-                                                            onClick={() => {
-                                                                setSelectedAssignment(asg);
-                                                                setSubmitVideoUrl(asg.video_url || '');
-                                                            }}
-                                                            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors shrink-0 flex items-center gap-1.5 justify-center"
-                                                        >
-                                                            <Video className="w-3.5 h-3.5" />
-                                                            Submit Recording
-                                                        </button>
+                                                        <p className="text-[10px] font-semibold text-[#9A958E] text-left">
+                                                            {classmates.length > 0 ? `${classmates.length + 5} student(s) from your batch are practicing this week` : 'Join the practice room to begin today!'}
+                                                        </p>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                                </div>
+                                            ) : (
+                                                <div className="py-8 border border-dashed border-[#E6E1DA] rounded-2xl text-center bg-slate-50/50">
+                                                    <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                                                    <p className="text-xs font-bold text-slate-700">Course completed!</p>
+                                                    <p className="text-[10px] text-slate-400 mt-0.5">Contact your teacher for your next advanced module.</p>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
-                                    {/* Latest Teacher Feedback */}
-                                    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs">
-                                        <h3 className="font-extrabold text-slate-800 text-sm md:text-base flex items-center gap-2 mb-5">
-                                            <Award className="w-5 h-5 text-amber-500" />
-                                            Latest Teacher Review
-                                        </h3>
-
-                                        {recentFeedback ? (
-                                            <div className="space-y-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-600 uppercase">
-                                                        {classroom?.teacher_name?.charAt(0) || 'T'}
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs font-bold text-slate-800">{classroom?.teacher_name}</p>
-                                                        <p className="text-[10px] text-slate-400">Classroom instructor</p>
-                                                    </div>
-                                                    {recentFeedback.score !== undefined && recentFeedback.score !== null && (
-                                                        <span className="ml-auto bg-emerald-50 border border-emerald-100 text-emerald-700 font-extrabold text-xs px-3 py-1 rounded-full">
-                                                            Score: {recentFeedback.score}/10
-                                                        </span>
-                                                    )}
+                                    {/* Recent Submissions & Feedback */}
+                                    <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-sm text-left">
+                                        <div className="px-6 py-5 border-b border-[#E6E1DA] flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center">
+                                                    <ClipboardList className="w-4.5 h-4.5" />
                                                 </div>
+                                                <h3 className="font-black text-[#3E3A35] text-sm md:text-base">Recent Submissions & Feedback</h3>
+                                            </div>
+                                            <button 
+                                                onClick={() => setActiveTab('tasks')} 
+                                                className="text-xs font-bold text-[#7C5E3F] hover:text-[#5c442c] transition-colors"
+                                            >
+                                                View Tasks
+                                            </button>
+                                        </div>
 
-                                                <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 relative">
-                                                    <span className="absolute -top-2.5 -left-1 text-amber-500/15 text-5xl font-serif">“</span>
-                                                    <p className="text-xs font-medium text-slate-600 leading-relaxed italic relative z-10 pl-2">
-                                                        "{recentFeedback.feedback_text}"
-                                                    </p>
-                                                    {recentFeedback.proficiency_level && (
-                                                        <p className="text-[9px] font-bold text-amber-700 uppercase tracking-widest mt-2">
-                                                            Topic Assessment: {recentFeedback.proficiency_level}
-                                                        </p>
-                                                    )}
+                                        <div className="p-6">
+                                            {assignments.filter(a => a.status !== 'pending').length === 0 ? (
+                                                <div className="py-10 border border-dashed border-[#E6E1DA] rounded-2xl text-center bg-slate-50/50">
+                                                    <HelpCircle className="w-8 h-8 text-[#9A958E] mx-auto mb-2" />
+                                                    <p className="text-xs font-bold text-[#3E3A35]">No submissions yet.</p>
+                                                    <p className="text-[10px] text-slate-400 mt-0.5">Submit your first task attempt to see feedback reports here.</p>
                                                 </div>
-                                                <p className="text-[10px] text-slate-400">Assigned task: <span className="font-bold text-slate-500">{recentFeedback.title}</span></p>
-                                            </div>
-                                        ) : (
-                                            <div className="py-8 border border-dashed border-slate-100 rounded-2xl text-center bg-slate-50/50">
-                                                <HelpCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                                                <p className="text-xs font-bold text-slate-700">No review feedback yet.</p>
-                                                <p className="text-[10px] text-slate-400 mt-0.5">Teacher feedback on your submitted recordings will show here.</p>
-                                            </div>
-                                        )}
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    {assignments.filter(a => a.status !== 'pending').slice(0, 2).map((asg) => {
+                                                        const isReviewed = asg.status === 'reviewed' || asg.status === 'approved';
+                                                        return (
+                                                            <div key={asg.id} className="p-4 rounded-2xl bg-[#FDFBF7] border border-[#E6E1DA] hover:border-[#7C5E3F]/15 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                                                <div className="flex items-center gap-3 min-w-0 flex-1 text-left">
+                                                                    <div className="w-10 h-10 rounded-xl bg-[#F7F2EA] text-[#7C5E3F] flex items-center justify-center shrink-0">
+                                                                        {isReviewed ? <Award className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <h4 className="font-extrabold text-sm text-[#3E3A35] truncate">{asg.title}</h4>
+                                                                        <p className="text-[10px] text-slate-400 mt-1">
+                                                                            Submitted {asg.submitted_at ? new Date(asg.submitted_at).toLocaleDateString() : 'recently'}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0">
+                                                                    {isReviewed ? (
+                                                                        <>
+                                                                            <span className="bg-[#E3F5EC] border border-[#a3e2c9] text-[#35A47E] font-extrabold text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                                                                Reviewed
+                                                                            </span>
+                                                                            <span className="text-xs font-black text-[#3E3A35]">
+                                                                                {asg.score !== null ? `Score: ${asg.score}/10` : 'Grade: Excellent'}
+                                                                            </span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            <span className="bg-[#FDF6E2] border border-[#f5e1b5] text-[#93702c] font-extrabold text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                                                                Under Review
+                                                                            </span>
+                                                                            <span className="text-[10px] font-semibold text-[#9A958E]">
+                                                                                Wait time: ~2 hours
+                                                                            </span>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Right column: Quick Tools & Recent Messages */}
+                                {/* Right column: Quick Tools & Term Progress */}
                                 <div className="space-y-6">
-                                    {/* Interactive Quick Tools */}
-                                    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs">
-                                        <h3 className="font-extrabold text-slate-800 text-sm md:text-base flex items-center gap-2 mb-4">
-                                            <Music className="w-5 h-5 text-amber-500" />
-                                            Practice Tools
-                                        </h3>
-                                        <div className="grid grid-cols-4 gap-2">
-                                            <button 
-                                                onClick={() => {
-                                                    setPracticeSuiteTab('metronome');
-                                                    setShowPracticeSuite(true);
-                                                }} 
-                                                className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
-                                            >
-                                                <Volume2 className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
-                                                <span className="text-[9px] font-extrabold text-slate-600">Metronome</span>
-                                            </button>
+                                    {/* Quick Tools */}
+                                    <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-sm text-left">
+                                        <div className="px-6 py-5 border-b border-[#E6E1DA] flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-lg bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center shrink-0">
+                                                <span className="material-symbols-outlined text-lg">construction</span>
+                                            </div>
+                                            <h3 className="font-black text-[#3E3A35] text-sm md:text-base">Quick Tools</h3>
+                                        </div>
+                                        
+                                        <div className="p-6">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <button 
+                                                    onClick={() => {
+                                                        setPracticeSuiteTab('metronome');
+                                                        setShowPracticeSuite(true);
+                                                    }} 
+                                                    className="p-5 rounded-3xl border border-[#E6E1DA] bg-[#FDFBF7] hover:bg-[#FAF5EE] flex flex-col items-center justify-center gap-2.5 transition-all duration-350 group hover:-translate-y-0.5 hover:shadow-xs w-full"
+                                                >
+                                                    <div className="w-12 h-12 rounded-full bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center text-lg font-black group-hover:scale-105 transition-transform">
+                                                        M
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-[#3E3A35] tracking-wide">Metronome</span>
+                                                </button>
+  
+                                                <button 
+                                                    onClick={() => {
+                                                        setPracticeSuiteTab('metronome');
+                                                        setShowPracticeSuite(true);
+                                                    }} 
+                                                    className="p-5 rounded-3xl border border-[#E6E1DA] bg-[#FDFBF7] hover:bg-[#FAF5EE] flex flex-col items-center justify-center gap-2.5 transition-all duration-350 group hover:-translate-y-0.5 hover:shadow-xs w-full"
+                                                >
+                                                    <div className="w-12 h-12 rounded-full bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center group-hover:scale-105 transition-transform">
+                                                        <span className="material-symbols-outlined text-2xl">album</span>
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-[#3E3A35] tracking-wide">Tanpura</span>
+                                                </button>
+  
+                                                <button 
+                                                    onClick={() => {
+                                                        setPracticeSuiteTab('drums');
+                                                        setShowPracticeSuite(true);
+                                                    }} 
+                                                    className="p-5 rounded-3xl border border-[#E6E1DA] bg-[#FDFBF7] hover:bg-[#FAF5EE] flex flex-col items-center justify-center gap-2.5 transition-all duration-350 group hover:-translate-y-0.5 hover:shadow-xs w-full"
+                                                >
+                                                    <div className="w-12 h-12 rounded-full bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center group-hover:scale-105 transition-transform">
+                                                        <span className="material-symbols-outlined text-2xl">hardware</span>
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-[#3E3A35] tracking-wide">Tuner</span>
+                                                </button>
  
-                                            <button 
-                                                onClick={() => {
-                                                    setPracticeSuiteTab('metronome');
-                                                    setShowPracticeSuite(true);
-                                                }} 
-                                                className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
-                                            >
-                                                <Music className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
-                                                <span className="text-[9px] font-extrabold text-slate-600">Tanpura</span>
-                                            </button>
- 
-                                            <button 
-                                                onClick={() => {
-                                                    setPracticeSuiteTab('drums');
-                                                    setShowPracticeSuite(true);
-                                                }} 
-                                                className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
-                                            >
-                                                <span className="material-symbols-outlined text-amber-500 text-2xl group-hover:scale-115 transition-transform w-6 h-6 flex items-center justify-center">album</span>
-                                                <span className="text-[9px] font-extrabold text-slate-600">Drum Beats</span>
-                                            </button>
-
-                                            <button 
-                                                onClick={() => setActiveTab('library')}
-                                                className="p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-amber-500/5 hover:border-amber-500/30 flex flex-col items-center justify-center gap-1.5 transition-all group shrink-0"
-                                            >
-                                                <FileText className="w-6 h-6 text-amber-500 group-hover:scale-115 transition-transform" />
-                                                <span className="text-[9px] font-extrabold text-slate-600">Library</span>
-                                            </button>
+                                                <button 
+                                                    onClick={() => setActiveTab('library')}
+                                                    className="p-5 rounded-3xl border border-[#E6E1DA] bg-[#FDFBF7] hover:bg-[#FAF5EE] flex flex-col items-center justify-center gap-2.5 transition-all duration-350 group hover:-translate-y-0.5 hover:shadow-xs w-full"
+                                                >
+                                                    <div className="w-12 h-12 rounded-full bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center group-hover:scale-105 transition-transform">
+                                                        <FileText className="w-5.5 h-5.5 text-[#7C5E3F]" />
+                                                    </div>
+                                                    <span className="text-[11px] font-black text-[#3E3A35] tracking-wide">Library</span>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Latest Alerts/Announcements timeline */}
-                                    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <h3 className="font-extrabold text-slate-800 text-sm md:text-base flex items-center gap-2">
-                                                <Mail className="w-5 h-5 text-amber-500" />
-                                                Recent Notices
-                                            </h3>
-                                            <button onClick={() => setActiveTab('messages')} className="text-xs font-bold text-amber-500 hover:text-amber-600 transition-colors">
-                                                All
-                                            </button>
+                                    {/* Term Progress */}
+                                    <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-sm text-left">
+                                        <div className="px-6 py-5 border-b border-[#E6E1DA] flex items-center justify-between">
+                                            <div>
+                                                <h3 className="font-black text-[#3E3A35] text-sm">Term Progress</h3>
+                                                <p className="text-[9px] font-extrabold text-[#7C5E3F] uppercase tracking-wider mt-0.5">
+                                                    Course: {levelLabel} Level
+                                                </p>
+                                            </div>
                                         </div>
 
-                                        {broadcasts.length === 0 ? (
-                                            <div className="py-8 text-center text-slate-400">
-                                                <p className="text-[11px] font-medium">No notices posted.</p>
+                                        <div className="p-6 flex flex-col items-center justify-center text-center space-y-6">
+                                            {/* Radial SVG Completion Gauge */}
+                                            <div className="relative w-36 h-36 flex items-center justify-center shrink-0">
+                                                <svg className="w-full h-full transform -rotate-90">
+                                                    {/* Background Circle */}
+                                                    <circle 
+                                                        cx="50%" 
+                                                        cy="50%" 
+                                                        r="40%" 
+                                                        strokeWidth="8%" 
+                                                        stroke="#f1f5f9" 
+                                                        fill="transparent" 
+                                                    />
+                                                    {/* Progress Circle */}
+                                                    <circle 
+                                                        cx="50%" 
+                                                        cy="50%" 
+                                                        r="40%" 
+                                                        strokeWidth="8%" 
+                                                        stroke="#7C5E3F" 
+                                                        strokeDasharray={`${2 * Math.PI * 40}`}
+                                                        strokeDashoffset={`${2 * Math.PI * 40 * (1 - completionPct / 100)}`}
+                                                        strokeLinecap="round"
+                                                        fill="transparent" 
+                                                    />
+                                                </svg>
+                                                <div className="absolute flex flex-col items-center justify-center leading-none">
+                                                    <span className="text-2xl font-black text-[#3E3A35]">{completionPct}%</span>
+                                                    <span className="text-[8px] font-black text-[#9A958E] uppercase tracking-wider mt-1">Completed</span>
+                                                </div>
                                             </div>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                {broadcasts.slice(0, 3).map((b) => (
-                                                    <div key={b.id} className="text-left border-l-2 border-amber-500 pl-3 py-0.5">
-                                                        <h4 className="text-[11px] font-extrabold text-slate-800 truncate">{b.subject}</h4>
-                                                        <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">{b.content}</p>
-                                                        <span className="text-[8px] font-bold text-slate-400 block mt-1">{new Date(b.created_at).toLocaleDateString()}</span>
-                                                    </div>
-                                                ))}
+
+                                            {/* Attendance Linear bar */}
+                                            <div className="w-full text-left space-y-2 pt-2 border-t border-[#E6E1DA]/60">
+                                                <div className="flex items-center justify-between text-[11px] font-black text-[#3E3A35]">
+                                                    <span>Lessons Attended</span>
+                                                    <span>{completedLessonsCount}/{totalAllocatedLessons || courseLessons.length || 10}</span>
+                                                </div>
+                                                <div className="w-full h-2 bg-[#F1EFEB] rounded-full overflow-hidden">
+                                                    <div 
+                                                        className="h-full bg-[#7C5E3F] rounded-full transition-all duration-500"
+                                                        style={{ width: `${completionPct}%` }}
+                                                    />
+                                                </div>
+                                                <p className="text-[10px] font-medium text-[#9A958E] leading-relaxed italic pt-1">
+                                                    "You're doing great! Keep up the daily practice to finish the term syllabus."
+                                                </p>
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1032,16 +1501,17 @@ export default function StudentDashboard() {
                             {/* Split layout: classmates on right, curriculum tree on left */}
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                                 {/* Left: Curriculum Syllabus Tree */}
-                                <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-6 shadow-xs text-left">
-                                    <div className="flex items-center justify-between mb-6">
+                                <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
+                                    <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100 flex items-center justify-between">
                                         <div>
-                                            <h3 className="font-extrabold text-slate-800 text-base">Academy Syllabus</h3>
-                                            <p className="text-xs text-slate-500 mt-0.5">Allocated lessons. Mark completed to record your learning.</p>
+                                            <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">Academy Syllabus</h3>
+                                            <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5">Allocated lessons. Mark completed to record your learning.</p>
                                         </div>
-                                        <div className="bg-amber-500/10 text-amber-700 text-xs font-extrabold px-3 py-1.5 rounded-full">
+                                        <div className="bg-amber-500/10 text-amber-700 text-[10px] sm:text-xs font-extrabold px-2.5 sm:px-3 py-1.5 rounded-full shrink-0 ml-2">
                                             Completed: {completedLessonsCount} / {totalAllocatedLessons || courseLessons.length}
                                         </div>
                                     </div>
+                                    <div className="p-6">
 
                                     {courseModules.length === 0 ? (
                                         <div className="py-12 text-center text-slate-400">
@@ -1168,40 +1638,44 @@ export default function StudentDashboard() {
                                             })}
                                         </div>
                                     )}
+                                    </div>
                                 </div>
 
                                 {/* Right: Classmates List */}
-                                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs text-left">
-                                    <h3 className="font-extrabold text-slate-800 text-sm md:text-base flex items-center gap-2 mb-4">
-                                        <Users className="w-5 h-5 text-amber-500" />
-                                        Batch Classmates ({classmates.length})
-                                    </h3>
-
-                                    {classmates.length === 0 ? (
-                                        <div className="py-6 text-center text-slate-400">
-                                            <p className="text-xs">No classmates enrolled yet.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            {classmates.map((mate) => (
-                                                <div key={mate.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors">
-                                                    <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
-                                                        {mate.profile_pic_url ? (
-                                                            <img src={mate.profile_pic_url} alt={mate.name} className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <span className="text-[#d46211] text-sm font-extrabold">{mate.name.charAt(0)}</span>
-                                                        )}
+                                <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
+                                    <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100">
+                                        <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                                            <Users className="w-4.5 h-4.5 text-amber-500" />
+                                            Batch Classmates ({classmates.length})
+                                        </h3>
+                                    </div>
+                                    <div className="p-6">
+                                        {classmates.length === 0 ? (
+                                            <div className="py-6 text-center text-slate-400">
+                                                <p className="text-xs">No classmates enrolled yet.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                {classmates.map((mate) => (
+                                                    <div key={mate.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                                                        <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                                                            {mate.profile_pic_url ? (
+                                                                <img src={mate.profile_pic_url} alt={mate.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <span className="text-[#d46211] text-sm font-extrabold">{mate.name.charAt(0)}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <h5 className="font-bold text-xs text-slate-800 truncate">{mate.name}</h5>
+                                                            <span className="inline-block bg-slate-100 text-slate-500 text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase mt-0.5">
+                                                                {mate.level}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <h5 className="font-bold text-xs text-slate-800 truncate">{mate.name}</h5>
-                                                        <span className="inline-block bg-slate-100 text-slate-500 text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase mt-0.5">
-                                                            {mate.level}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1308,54 +1782,68 @@ export default function StudentDashboard() {
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
-                                        {broadcasts.map((b) => (
-                                            <div 
-                                                key={b.id} 
-                                                className="bg-slate-50/40 border border-slate-150 rounded-2xl p-5 hover:bg-slate-50/80 transition-all flex flex-col justify-between gap-4 text-left"
-                                            >
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                                                    <div>
-                                                        <h4 className="font-extrabold text-xs md:text-sm text-slate-800">{b.subject}</h4>
-                                                        <span className="inline-block text-[8px] font-black text-amber-600 bg-amber-50 rounded px-1.5 py-0.5 mt-1 uppercase tracking-wider">
-                                                            Channel: {b.channel}
+                                        {broadcasts.map((b) => {
+                                            const isAdmin = b.sender?.role === 'admin';
+                                            return (
+                                                <div 
+                                                    key={b.id} 
+                                                    className={`transition-all flex flex-col justify-between gap-4 text-left p-5 rounded-2xl ${
+                                                        isAdmin 
+                                                            ? 'bg-[#FAF5EE]/70 border-2 border-[#7C5E3F]/35 hover:bg-[#FAF5EE]/90 shadow-xs' 
+                                                            : 'bg-slate-50/40 border border-slate-150 hover:bg-slate-50/80 shadow-2xs'
+                                                    }`}
+                                                >
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                                                        <div>
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <h4 className="font-extrabold text-xs md:text-sm text-slate-800">{b.subject}</h4>
+                                                                {isAdmin && (
+                                                                    <span className="inline-flex items-center gap-1 text-[8px] font-black text-[#7C5E3F] bg-amber-100 px-2 py-0.5 rounded uppercase tracking-wider shrink-0">
+                                                                        📢 Admin Notice
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <span className="inline-block text-[8px] font-black text-amber-600 bg-amber-50 rounded px-1.5 py-0.5 mt-1 uppercase tracking-wider">
+                                                                Channel: {b.channel}
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-[10px] font-semibold text-slate-400 shrink-0">
+                                                            {new Date(b.created_at).toLocaleDateString()} at {new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                         </span>
                                                     </div>
-                                                    <span className="text-[10px] font-semibold text-slate-400 shrink-0">
-                                                        {new Date(b.created_at).toLocaleDateString()} at {new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </span>
+
+                                                    <p className="text-xs text-slate-655 leading-relaxed whitespace-pre-wrap">
+                                                        {b.content}
+                                                    </p>
+
+                                                    {/* Audio Note attachment */}
+                                                    {b.audio_attachment && (
+                                                        <div className="pt-2">
+                                                            <button 
+                                                                onClick={() => playVoiceNote(b.id, b.audio_attachment!)}
+                                                                className={`inline-flex items-center gap-2 px-4 py-2 border rounded-full text-xs font-extrabold transition-all shadow-2xs ${
+                                                                    playingAudioId === b.id 
+                                                                        ? 'bg-amber-500 text-white border-amber-600'
+                                                                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                                                                }`}
+                                                            >
+                                                                {playingAudioId === b.id ? (
+                                                                    <>
+                                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                        Playing Audio...
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Volume2 className="w-3.5 h-3.5 text-amber-500" />
+                                                                        Listen to Voice Note / Flute Tone
+                                                                    </>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
-
-                                                <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
-                                                    {b.content}
-                                                </p>
-
-                                                {/* Audio Note attachment */}
-                                                {b.audio_attachment && (
-                                                    <div className="pt-2">
-                                                        <button 
-                                                            onClick={() => playVoiceNote(b.id, b.audio_attachment!)}
-                                                            className={`inline-flex items-center gap-2 px-4 py-2 border rounded-full text-xs font-extrabold transition-all shadow-2xs ${
-                                                                playingAudioId === b.id 
-                                                                    ? 'bg-amber-500 text-white border-amber-600'
-                                                                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-                                                            }`}
-                                                        >
-                                                            {playingAudioId === b.id ? (
-                                                                <>
-                                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                                    Playing Audio...
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Volume2 className="w-3.5 h-3.5 text-amber-500" />
-                                                                    Listen to Voice Note / Flute Tone
-                                                                </>
-                                                            )}
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -1367,8 +1855,20 @@ export default function StudentDashboard() {
                         <div className="space-y-6 animate-in fade-in duration-300">
                             {/* Attendance statistics */}
                             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs text-left">
-                                <h3 className="font-extrabold text-slate-800 text-base mb-1">Attendance Tracker</h3>
-                                <p className="text-xs text-slate-500 mb-6">Total attendance stats and class record history</p>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-2 border-b border-slate-100">
+                                    <div>
+                                        <h3 className="font-extrabold text-slate-800 text-base mb-1">Attendance Tracker</h3>
+                                        <p className="text-xs text-slate-500">Total attendance stats and class record history</p>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowExcuseModal(true)}
+                                        className="px-5 py-2.5 bg-[#7C5E3F] hover:bg-[#634a31] text-white text-xs font-bold rounded-full flex items-center justify-center gap-2 shadow-xs transition-all hover:scale-102 active:scale-98"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">event_busy</span>
+                                        Inform Absence / Request Excuse
+                                    </button>
+                                </div>
 
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                                     <div className="bg-emerald-50/50 border border-emerald-100/50 rounded-2xl p-4 text-center shrink-0">
@@ -1698,6 +2198,156 @@ export default function StudentDashboard() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Request Excuse Modal */}
+            {showExcuseModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-md w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left">
+                        {/* Header */}
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850/40">
+                            <div>
+                                <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest block">Class Leave Request</span>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-1.5">Inform Absence / Request Excuse</h3>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setShowExcuseModal(false);
+                                    setExcuseDate('');
+                                    setExcuseReason('');
+                                }} 
+                                className="p-1 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-full transition-colors"
+                            >
+                                <X className="w-5 h-5 text-slate-400" />
+                            </button>
+                        </div>
+                        
+                        {/* Form */}
+                        <form onSubmit={handleSubmitExcuse} className="p-6 space-y-4">
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                                Informing your teacher and academy admin in advance helps us reschedule classes. Submitting this request logs an <strong>Excused Absence</strong> and makes you eligible for a makeup/alternative slot.
+                            </p>
+
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-black text-[#7C5E3F] uppercase tracking-wider pl-1">Absence Date *</label>
+                                <input 
+                                    type="date"
+                                    required
+                                    value={excuseDate}
+                                    onChange={(e) => setExcuseDate(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#7C5E3F]/20 outline-none transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-black text-[#7C5E3F] uppercase tracking-wider pl-1">Reason / Notes</label>
+                                <textarea
+                                    value={excuseReason}
+                                    onChange={(e) => setExcuseReason(e.target.value)}
+                                    rows={3}
+                                    placeholder="Explain your plan or reason (e.g. exams, travel, unwell)..."
+                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#7C5E3F]/20 outline-none transition-all resize-none"
+                                />
+                            </div>
+
+                            {/* Footer / Actions */}
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+                                <button 
+                                    type="button"
+                                    onClick={() => {
+                                        setShowExcuseModal(false);
+                                        setExcuseDate('');
+                                        setExcuseReason('');
+                                    }}
+                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-650 dark:text-slate-350 text-xs font-bold rounded-xl transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={isSubmittingExcuse}
+                                    className="px-5 py-2 bg-[#7C5E3F] hover:bg-[#634a31] text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-md hover:shadow-lg disabled:bg-stone-300 disabled:text-slate-500 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0"
+                                >
+                                    {isSubmittingExcuse ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span className="material-symbols-outlined text-sm">send</span>}
+                                    Submit Request
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+            
+            {/* Floating Audio Player Bar */}
+            {playingAudioId && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-3xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-[#E6E1DA] rounded-full py-3 px-6 shadow-xl flex items-center justify-between gap-4 animate-in slide-in-from-bottom-10 duration-300">
+                    {/* Left: Play status & metadata */}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <button 
+                            type="button"
+                            onClick={togglePlayback}
+                            className="w-10 h-10 rounded-full bg-[#7C5E3F] text-white hover:bg-[#634a31] flex items-center justify-center shrink-0 shadow-md transition-colors"
+                        >
+                            {isAudioPaused ? (
+                                <Play className="w-4 h-4 fill-white translate-x-0.5" />
+                            ) : (
+                                <span className="material-symbols-outlined text-lg">pause</span>
+                            )}
+                        </button>
+                        <div className="min-w-0 text-left">
+                            <p className="text-[8px] font-extrabold text-[#7C5E3F] uppercase tracking-widest leading-none">Now Practicing</p>
+                            <h4 className="text-xs font-black text-[#3E3A35] truncate mt-1">
+                                {broadcasts.find(b => b.id === playingAudioId)?.subject || 'Bansuri Audio Rehearsal'}
+                            </h4>
+                        </div>
+                    </div>
+
+                    {/* Center: Seek Timeline */}
+                    <div className="hidden sm:flex items-center gap-3 flex-2 px-4 w-full">
+                        <span className="text-[9px] font-bold text-slate-400 shrink-0">
+                            {formatAudioTime(audioCurrentTime)}
+                        </span>
+                        <input 
+                            type="range"
+                            min={0}
+                            max={audioDuration || 100}
+                            value={audioCurrentTime}
+                            onChange={handleSeek}
+                            className="w-full h-1 bg-[#F1EFEB] hover:bg-[#E6E1DA] rounded-lg appearance-none cursor-pointer accent-[#7C5E3F] transition-all"
+                        />
+                        <span className="text-[9px] font-bold text-slate-400 shrink-0">
+                            {formatAudioTime(audioDuration)}
+                        </span>
+                    </div>
+
+                    {/* Right: volume controls */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        <span className="material-symbols-outlined text-[#7C5E3F] text-lg select-none">
+                            {audioVolume === 0 ? 'volume_off' : audioVolume < 0.5 ? 'volume_down' : 'volume_up'}
+                        </span>
+                        <input 
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            value={audioVolume}
+                            onChange={handleVolumeChange}
+                            className="w-16 h-1 bg-[#E6E1DA] rounded-lg appearance-none cursor-pointer accent-[#7C5E3F]"
+                        />
+                        <button 
+                            type="button"
+                            onClick={() => {
+                                if (audioRef.current) {
+                                    audioRef.current.pause();
+                                }
+                                setPlayingAudioId(null);
+                                setIsAudioPaused(false);
+                            }}
+                            className="p-1 text-[#9A958E] hover:text-[#7C5E3F] transition-colors ml-1"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
             )}

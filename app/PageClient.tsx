@@ -790,9 +790,9 @@ Hello Krishna Flute Academy, I have an inquiry!
                         <h2 className="text-5xl font-bold text-blue-900 mb-4 md:mb-6">Gallery</h2>
                         <div className="w-20 h-1 bg-gradient-to-r from-blue-500 to-yellow-500 mx-auto"></div>
                     </div>
-                    <div className="max-w-7xl mx-auto grid md:grid-cols-2 lg:grid-cols-4 gap-6 px-4">
+                    <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 px-2 sm:px-4">
                         {galleryItems.slice(0, 8).map((gItem, index) => (
-                            <div key={gItem.id} onClick={() => setSelectedGalleryItem(gItem)} className="relative h-48 bg-white rounded-xl overflow-hidden shadow-lg cursor-pointer transform hover:scale-105 transition-all">
+                            <div key={gItem.id} onClick={() => setSelectedGalleryItem(gItem)} className="relative h-32 sm:h-48 bg-white rounded-xl overflow-hidden shadow-lg cursor-pointer transform hover:scale-105 transition-all">
                                 {gItem.media_type === 'image' ? (
                                     <img src={gItem.url} alt="" className="w-full h-full object-cover" />
                                 ) : (
