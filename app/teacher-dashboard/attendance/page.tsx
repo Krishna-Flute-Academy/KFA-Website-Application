@@ -1327,7 +1327,7 @@ export default function AttendancePage() {
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
-                <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-[1600px] mx-auto w-full flex-1 overflow-y-auto">
+                <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 w-full flex-1 overflow-y-auto">
                     {/* Summary Cards */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                         <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">

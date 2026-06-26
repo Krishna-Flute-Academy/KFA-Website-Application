@@ -38,3 +38,6 @@ test_upsert.cjs
 
 # TypeScript build info
 *.tsbuildinfo
+
+# macOS metadata files
+**/._*

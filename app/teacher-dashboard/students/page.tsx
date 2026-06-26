@@ -1102,8 +1102,8 @@ export default function StudentDirectory() {
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 
-                    <div className="flex-1 overflow-y-auto p-8">
-                        <div className="max-w-[1600px] mx-auto grid grid-cols-12 gap-8">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
+                        <div className="w-full grid grid-cols-12 gap-8">
                             <div className="col-span-12 lg:col-span-8 space-y-6">
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                     <div>
@@ -1199,53 +1199,20 @@ export default function StudentDirectory() {
                                         </div>
                                     </div>
 
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left border-collapse">
-                                            <thead>
-                                                <tr className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
-                                                    {/* Select All Checkbox */}
-                                                    <th className="px-4 py-4 w-10">
-                                                        {filterMode !== 'unassigned' ? (
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={allPageSelected}
-                                                                ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
-                                                                onChange={toggleSelectAll}
-                                                                className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
-                                                                title="Select all on this page"
-                                                            />
-                                                        ) : (
-                                                            <span className="text-slate-400">—</span>
-                                                        )}
-                                                    </th>
-                                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student Name</th>
-                                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Batch</th>
-                                                    {teacherProfile?.role === 'admin' && (
-                                                        <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Teacher</th>
-                                                    )}
-                                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Attendance</th>
-                                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">{filterMode === 'unassigned' ? 'Action' : 'Contact'}</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {/* Mobile Cards View */}
+                                            <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
                                                 {paginatedStudents.map((student) => (
-                                                    <tr key={student.id} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
-                                                        {/* Row checkbox */}
-                                                        <td className="px-4 py-4">
-                                                            {filterMode !== 'unassigned' ? (
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={selectedIds.has(student.id)}
-                                                                    onChange={() => toggleSelectStudent(student.id)}
-                                                                    className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
-                                                                />
-                                                            ) : (
-                                                                <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-6 py-4">
+                                                    <div key={student.id} className={`p-4 space-y-3 ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
+                                                        <div className="flex items-center justify-between">
                                                             <div className="flex items-center gap-3">
+                                                                {filterMode !== 'unassigned' && (
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={selectedIds.has(student.id)}
+                                                                        onChange={() => toggleSelectStudent(student.id)}
+                                                                        className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
+                                                                    />
+                                                                )}
                                                                 <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
                                                                     {student.profile_pic_url ? (
                                                                         <img 
@@ -1261,109 +1228,187 @@ export default function StudentDirectory() {
                                                                 <div>
                                                                     <Link
                                                                         href={`/teacher-dashboard/students/${student.id}`}
-                                                                        className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors"
+                                                                        className="text-sm font-bold text-slate-900 dark:text-white hover:text-[#ecb613] transition-colors"
                                                                     >
                                                                         {student.name}
                                                                     </Link>
-                                                                    <p className="text-[11px] font-medium text-slate-500 uppercase tracking-tight">{student.student_id_formatted}</p>
+                                                                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-tight">{student.student_id_formatted}</p>
                                                                 </div>
                                                             </div>
-                                                        </td>
-                                                        <td className="px-6 py-4">
-                                                            <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.batch}</span>
-                                                        </td>
-                                                        {teacherProfile?.role === 'admin' && (
-                                                            <td className="px-6 py-4">
-                                                                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.teacher_name || 'Unassigned'}</span>
-                                                            </td>
-                                                        )}
-                                                        <td className="px-6 py-4">
-                                                            {filterMode === 'unassigned' ? (
-                                                                <span className="text-sm text-slate-400">—</span>
-                                                            ) : (
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="flex-1 w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                                        <div
-                                                                            className={`h-full ${student.attendance_pct >= 90 ? 'bg-green-500' : student.attendance_pct >= 75 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                                                                            style={{ width: `${student.attendance_pct}%` }}
-                                                                        ></div>
-                                                                    </div>
-                                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{student.attendance_pct}%</span>
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        <td className="px-6 py-4">
-                                                            <button 
-                                                                onClick={(e) => {
-                                                                    e.preventDefault();
-                                                                    toggleStudentStatus(student.id, student.status);
-                                                                }}
-                                                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-full transition-all hover:opacity-80 ${student.status === 'Active' ? 'text-green-600 bg-green-50 dark:bg-green-900/20' : 'text-slate-500 bg-slate-100 dark:text-slate-400 dark:bg-slate-800'}`}>
-                                                                <span className={`size-1.5 rounded-full ${student.status === 'Active' ? 'bg-green-600' : 'bg-slate-400'}`}></span>
+                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                                                student.status === 'Active'
+                                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                                                            }`}>
                                                                 {student.status}
-                                                            </button>
-                                                        </td>
-                                                        <td className="px-6 py-4">
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+                                                            <div>
+                                                                <span className="font-bold">Batch:</span> {student.batch}
+                                                            </div>
+                                                            <div>
+                                                                <span className="font-bold">Attendance:</span> {student.attendance_pct}%
+                                                            </div>
+                                                        </div>
+                                                        {teacherProfile?.role === 'admin' && student.teacher_name && (
+                                                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                                                <span className="font-bold">Teacher:</span> {student.teacher_name}
+                                                            </div>
+                                                        )}
+                                                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                                                             {filterMode === 'unassigned' ? (
-                                                                <div className="flex items-center justify-center">
-                                                                    <button 
-                                                                        disabled={claimingId === student.id}
-                                                                        onClick={(e) => {
-                                                                            e.preventDefault();
-                                                                            setShowClaimModal(student);
-                                                                        }}
-                                                                        className="bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50"
-                                                                    >
-                                                                        {claimingId === student.id ? (
-                                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                                        ) : (
-                                                                            <span className="material-symbols-outlined text-[16px]">person_add</span>
-                                                                        )}
-                                                                        {claimingId === student.id ? 'Assigning...' : (teacherProfile?.role === 'admin' ? 'Assign Student' : 'Assign to Me')}
-                                                                    </button>
-                                                                </div>
+                                                                <button
+                                                                    onClick={() => setShowClaimModal(student)}
+                                                                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-sm">person_add</span>
+                                                                    Claim Student
+                                                                </button>
                                                             ) : (
-                                                                <div className="flex items-center justify-center gap-2">
-                                                                    {student.batch === 'Unassigned' && (
-                                                                        <button 
-                                                                            onClick={(e) => {
-                                                                                e.preventDefault();
-                                                                                setShowClaimModal(student);
-                                                                            }}
-                                                                            disabled={claimingId === student.id}
-                                                                            className="flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50"
-                                                                            title="Assign to a Batch"
+                                                                <div className="flex gap-2">
+                                                                    <Link
+                                                                        href={`/teacher-dashboard/students/${student.id}`}
+                                                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                                        title="View Details"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-base">visibility</span>
+                                                                    </Link>
+                                                                    <Link
+                                                                        href={`/teacher-dashboard/students/${student.id}/edit`}
+                                                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[#a15912] dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                                        title="Edit Profile"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-base">edit</span>
+                                                                    </Link>
+                                                                    {teacherProfile?.role === 'admin' && (
+                                                                        <button
+                                                                            onClick={() => setStudentToDelete({ id: student.id, name: student.name })}
+                                                                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                                                            title="Delete Student"
                                                                         >
-                                                                            Assign Batch
+                                                                            <span className="material-symbols-outlined text-base">delete</span>
                                                                         </button>
                                                                     )}
-                                                                    <button className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Message Student">
-                                                                        <span className="material-symbols-outlined text-xl">chat</span>
-                                                                    </button>
-                                                                    <button 
-                                                                        onClick={(e) => {
-                                                                            e.preventDefault();
-                                                                            setStudentToDelete({ id: student.id, name: student.name });
-                                                                        }}
-                                                                        className="p-2 text-rose-500 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/20 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all"
-                                                                        title="Delete Student">
-                                                                        <span className="material-symbols-outlined text-xl">delete</span>
-                                                                    </button>
                                                                 </div>
                                                             )}
-                                                        </td>
-                                                    </tr>
+                                                        </div>
+                                                    </div>
                                                 ))}
                                                 {paginatedStudents.length === 0 && (
-                                                    <tr>
-                                                        <td colSpan={teacherProfile?.role === 'admin' ? 7 : 6} className="px-6 py-10 text-center text-slate-500">
-                                                            {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
-                                                        </td>
-                                                    </tr>
+                                                    <div className="p-6 text-center text-slate-500 text-xs">
+                                                        {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
+                                                    </div>
                                                 )}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                            </div>
+
+                                            {/* Desktop Table View */}
+                                            <div className="hidden md:block overflow-x-auto">
+                                                <table className="w-full text-left border-collapse">
+                                                    <thead>
+                                                        <tr className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
+                                                            <th className="px-4 py-4 w-10">
+                                                                {filterMode !== 'unassigned' ? (
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={allPageSelected}
+                                                                        ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
+                                                                        onChange={toggleSelectAll}
+                                                                        className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
+                                                                    />
+                                                                ) : (
+                                                                    <span className="text-slate-400">—</span>
+                                                                )}
+                                                            </th>
+                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student Name</th>
+                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Batch</th>
+                                                            {teacherProfile?.role === 'admin' && (
+                                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Teacher</th>
+                                                            )}
+                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Attendance</th>
+                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">{filterMode === 'unassigned' ? 'Action' : 'Contact'}</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                        {paginatedStudents.map((student) => (
+                                                            <tr key={student.id} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
+                                                                <td className="px-4 py-4">
+                                                                    {filterMode !== 'unassigned' ? (
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={selectedIds.has(student.id)}
+                                                                            onChange={() => toggleSelectStudent(student.id)}
+                                                                            className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
+                                                                            {student.profile_pic_url ? (
+                                                                                <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover rounded-full" loading="lazy" />
+                                                                            ) : (
+                                                                                <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div>
+                                                                            <Link href={`/teacher-dashboard/students/${student.id}`} className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
+                                                                                {student.name}
+                                                                            </Link>
+                                                                            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-tight">{student.student_id_formatted}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4"><span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.batch}</span></td>
+                                                                {teacherProfile?.role === 'admin' && (
+                                                                    <td className="px-6 py-4"><span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.teacher_name || 'Unassigned'}</span></td>
+                                                                )}
+                                                                <td className="px-6 py-4">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-sm font-bold">{student.attendance_pct}%</span>
+                                                                        <div className="w-16 bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                                                            <div className={`h-1.5 rounded-full ${student.attendance_pct >= 85 ? 'bg-emerald-500' : student.attendance_pct >= 70 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${student.attendance_pct}%` }} />
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${student.status === 'Active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'}`}>
+                                                                        <span className={`size-1.5 rounded-full ${student.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                                                                        {student.status}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    {filterMode === 'unassigned' ? (
+                                                                        <div className="flex justify-center">
+                                                                            <button onClick={() => setShowClaimModal(student)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1 hover:scale-[1.02] active:scale-95">
+                                                                                <span className="material-symbols-outlined text-sm">person_add</span>
+                                                                                Claim
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                            <Link href={`/teacher-dashboard/students/${student.id}`} className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="View details"><span className="material-symbols-outlined text-xl">visibility</span></Link>
+                                                                            <Link href={`/teacher-dashboard/students/${student.id}/edit`} className="p-2 text-slate-400 hover:text-[#ecb613] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Edit profile"><span className="material-symbols-outlined text-xl">edit</span></Link>
+                                                                            <button className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Message"><span className="material-symbols-outlined text-xl">chat</span></button>
+                                                                            <button onClick={() => setStudentToDelete({ id: student.id, name: student.name })} className="p-2 text-rose-500 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/20 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all" title="Delete"><span className="material-symbols-outlined text-xl">delete</span></button>
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                        {paginatedStudents.length === 0 && (
+                                                            <tr>
+                                                                <td colSpan={teacherProfile?.role === 'admin' ? 7 : 6} className="px-6 py-10 text-center text-slate-500">
+                                                                    {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                     <div className="px-6 py-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                                         <span className="text-xs font-semibold text-slate-500">
                                             Showing {displayedStudents.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, displayedStudents.length)} of {displayedStudents.length} results

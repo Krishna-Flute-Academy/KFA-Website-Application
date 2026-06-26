@@ -866,7 +866,7 @@ export default function TeacherDashboard() {
                 <main className="flex-1 flex flex-col">
                     <TeacherHeader title={isAdmin ? "Admin-dashboard" : "Dashboard Overview"} />
 
-                    <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 max-w-[1400px] mx-auto w-full">
+                    <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 w-full flex-1">
                         {/* Stats Section */}
                         <section className={`grid grid-cols-2 gap-3 sm:gap-6 ${isAdmin ? 'lg:grid-cols-4' : 'md:grid-cols-3'}`}>
                             {[
@@ -900,13 +900,55 @@ export default function TeacherDashboard() {
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             {/* Main Content: Submissions & Announcements */}
-                            <section className="lg:col-span-2 space-y-8">
+                            <section className="lg:col-span-2 space-y-8 order-2 lg:order-1">
                                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                                     <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-950/10 dark:to-orange-950/5">
                                         <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Recent Student Submissions</h3>
                                         <Link className="text-xs sm:text-sm font-semibold text-[#ecb613] hover:underline" href="/teacher-dashboard/submissions">View All</Link>
                                     </div>
-                                    <div className="overflow-x-auto">
+                                    {/* Mobile Card List View */}
+                                    <div className="block sm:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                                        {recentSubmissions.map((sub) => (
+                                            <div key={sub.id} className="p-4 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="size-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
+                                                            {sub.student_profile_pic_url ? (
+                                                                <img 
+                                                                    src={sub.student_profile_pic_url} 
+                                                                    alt={sub.student_name} 
+                                                                    className="w-full h-full object-cover rounded-full"
+                                                                    loading="lazy"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold">{sub.student_name.charAt(0)}</span>
+                                                            )}
+                                                        </div>
+                                                        <span className="text-xs font-bold text-slate-900 dark:text-white">{sub.student_name}</span>
+                                                    </div>
+                                                    <span className="text-[10px] text-slate-400 font-semibold">{sub.submitted_at}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-slate-600 dark:text-slate-400 truncate max-w-[200px]">{sub.task_title}</span>
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                        sub.status === 'approved'
+                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                        }`}>
+                                                        {sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {recentSubmissions.length === 0 && (
+                                            <div className="p-6 text-center text-slate-505 text-xs">
+                                                No recent submissions found.
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Desktop Table View */}
+                                    <div className="hidden sm:block overflow-x-auto">
                                         <table className="w-full text-left">
                                             <thead>
                                                 <tr className="text-[10px] sm:text-xs font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800 uppercase tracking-wider">
@@ -946,7 +988,7 @@ export default function TeacherDashboard() {
                                                                 {sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-slate-500 text-right">{sub.submitted_at}</td>
+                                                        <td className="px-4 py-3 sm:px-6 sm:py-4 text-xs sm:text-sm text-slate-505 text-right">{sub.submitted_at}</td>
                                                     </tr>
                                                 ))}
                                                 {recentSubmissions.length === 0 && (
@@ -1221,7 +1263,7 @@ export default function TeacherDashboard() {
                             </section>
 
                             {/* Sidebar: Upcoming Classes & Tasks */}
-                            <section className="space-y-8">
+                            <section className="space-y-8 order-1 lg:order-2">
                                 <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                                     <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-950/10 dark:to-orange-950/5">
                                         <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Today's Classes</h3>

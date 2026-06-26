@@ -26,7 +26,7 @@ export default function TeacherHeader({
 }: TeacherHeaderProps) {
     return (
         <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
-            <div className="max-w-[1600px] mx-auto w-full h-full flex items-center justify-between px-4 md:px-8">
+            <div className="w-full h-full flex items-center justify-between px-4 md:px-8">
                 <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
                     <button
                         onClick={() => window.dispatchEvent(new CustomEvent('kfa-toggle-sidebar'))}

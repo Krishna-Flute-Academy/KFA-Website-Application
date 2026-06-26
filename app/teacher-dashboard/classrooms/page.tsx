@@ -470,7 +470,7 @@ export default function ClassroomsPage() {
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
-                <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full flex-1 overflow-y-auto">
+                <div className="p-4 sm:p-6 md:p-8 w-full flex-1 overflow-y-auto">
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                         <div>
                             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">Classroom Management</h1>

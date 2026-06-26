@@ -303,8 +303,8 @@ export default function RoleAllocationDashboard() {
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 
-                    <div className="flex-1 overflow-y-auto p-8 lg:p-12">
-                        <div className="max-w-7xl mx-auto space-y-8">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-12">
+                        <div className="w-full space-y-8">
                             
                             {/* Header Section */}
                             <div>

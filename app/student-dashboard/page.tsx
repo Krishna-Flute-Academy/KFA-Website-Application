@@ -104,6 +104,8 @@ export default function StudentDashboard() {
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
     const [studentProgress, setStudentProgress] = useState<any[]>([]);
     const [classroomInventoryAllocations, setClassroomInventoryAllocations] = useState<any[]>([]);
+    const [selectedTopic, setSelectedTopic] = useState<any | null>(null);
+    const [showMaterialPopup, setShowMaterialPopup] = useState(false);
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
@@ -395,7 +397,10 @@ export default function StudentDashboard() {
                     .from('classroom_inventory_allocation')
                     .select('*')
                     .eq('classroom_id', classroomId);
-                setClassroomInventoryAllocations(allocations || []);
+                const filteredAllocations = (allocations || []).filter((a: any) => 
+                    a.allocated_to_student_id === null || a.allocated_to_student_id === userId
+                );
+                setClassroomInventoryAllocations(filteredAllocations);
             }
 
         } catch (err) {
@@ -738,17 +743,20 @@ export default function StudentDashboard() {
         : 'Beginner';
 
     // Curriculum Helper: check lesson status
-    const getLessonStatus = (lessonId: string, chapterId: string, moduleId: string): 'locked' | 'unlocked' | 'completed' => {
+    const getLessonStatus = (lessonId: string, chapterId: string, moduleId?: string): 'locked' | 'unlocked' | 'completed' => {
         const progress = studentProgress.find(p => p.lesson_id === lessonId);
         if (progress) {
             return progress.status as 'locked' | 'unlocked' | 'completed';
         }
 
+        // If moduleId is not provided or undefined, look it up from chapters
+        const resolvedModuleId = moduleId || courseChapters.find(c => c.id === chapterId)?.module_id;
+
         // Check if explicitly unlocked via inventory allocations
         const isAllocated = classroomInventoryAllocations.some(a => 
             (a.lesson_id === lessonId) || 
             (a.chapter_id === chapterId) || 
-            (a.module_id === moduleId)
+            (a.module_id === resolvedModuleId)
         );
 
         return isAllocated ? 'unlocked' : 'locked';
@@ -756,11 +764,7 @@ export default function StudentDashboard() {
 
     // Calculate completed lessons vs total allocated lessons
     const totalAllocatedLessons = courseLessons.filter(l => 
-        classroomInventoryAllocations.some(a => 
-            (a.lesson_id === l.id) || 
-            (a.chapter_id === l.chapter_id) || 
-            (a.module_id === l.module_id)
-        )
+        getLessonStatus(l.id, l.chapter_id) !== 'locked'
     ).length;
 
     const completedLessonsCount = studentProgress.filter(p => p.status === 'completed').length;
@@ -769,7 +773,7 @@ export default function StudentDashboard() {
     const featuredLesson = useMemo(() => {
         if (courseLessons.length === 0) return null;
         for (const lesson of courseLessons) {
-            const status = getLessonStatus(lesson.id, lesson.chapter_id, lesson.module_id);
+            const status = getLessonStatus(lesson.id, lesson.chapter_id);
             if (status === 'unlocked') {
                 return lesson;
             }
@@ -778,12 +782,41 @@ export default function StudentDashboard() {
         return courseLessons[0] || null;
     }, [courseLessons, studentProgress, classroomInventoryAllocations]);
 
+    // Automatically set default selected topic to featuredLesson on load
+    useEffect(() => {
+        if (featuredLesson && !selectedTopic) {
+            setSelectedTopic(featuredLesson);
+        }
+    }, [featuredLesson, selectedTopic]);
+
     const completionPct = useMemo(() => {
         const total = totalAllocatedLessons || courseLessons.length || 1;
         return Math.min(100, Math.round((completedLessonsCount / total) * 100));
     }, [completedLessonsCount, totalAllocatedLessons, courseLessons]);
 
     const recentFeedback = assignments.find(a => a.feedback_text);
+
+    const getTopicBreadcrumbs = (topic: any) => {
+        const chap = courseChapters.find(c => c.id === topic.chapter_id);
+        const mod = courseModules.find(m => m.id === chap?.module_id);
+        if (mod && chap) {
+            return `Module ${mod.module_number} · Chapter ${chap.chapter_number}`;
+        }
+        if (chap) {
+            return `Chapter ${chap.chapter_number}`;
+        }
+        return '';
+    };
+
+    const getYouTubeEmbedUrl = (url: string) => {
+        if (!url) return '';
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        const match = url.match(regExp);
+        if (match && match[2].length === 11) {
+            return `https://www.youtube.com/embed/${match[2]}`;
+        }
+        return url;
+    };
 
     // Track dismissed admin broadcasts in local storage to toggle highlights
     const [dismissedAdminBroadcasts, setDismissedAdminBroadcasts] = useState<string[]>([]);
@@ -793,6 +826,18 @@ export default function StudentDashboard() {
             const dismissed = JSON.parse(localStorage.getItem('kfa_dismissed_admin_messages') || '[]');
             setDismissedAdminBroadcasts(dismissed);
         }
+    }, []);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setShowMaterialPopup(false);
+                setShowExcuseModal(false);
+                setSelectedAssignment(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
     const handleDismissAdminBroadcast = (id: string) => {
@@ -1212,7 +1257,18 @@ export default function StudentDashboard() {
                                         <div className="p-6">
                                             {featuredLesson ? (
                                                 <div className="space-y-4">
-                                                    <div className="p-5 rounded-2xl bg-[#FDFBF7] border border-[#E6E1DA] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 transition-all hover:border-[#7C5E3F]/20">
+                                                    <div 
+                                                        onClick={() => {
+                                                            const url = featuredLesson.material_url || featuredLesson.link_url;
+                                                            if (url) {
+                                                                setSelectedTopic(featuredLesson);
+                                                                setShowMaterialPopup(true);
+                                                            } else {
+                                                                alert('No materials uploaded for this topic yet.');
+                                                            }
+                                                        }}
+                                                        className="p-5 rounded-2xl bg-[#FDFBF7] border border-[#E6E1DA] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 transition-all hover:border-[#7C5E3F]/30 cursor-pointer hover:bg-white active:scale-[0.99]"
+                                                    >
                                                         <div className="min-w-0 flex-1 text-left space-y-3">
                                                             <div>
                                                                 <span className="text-[9px] font-extrabold text-[#7C5E3F] bg-[#FAF5EE] px-2.5 py-1 rounded-full uppercase tracking-wider">Spotlight Lesson</span>
@@ -1520,161 +1576,322 @@ export default function StudentDashboard() {
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
-                                            {courseModules.map((module) => {
-                                                const isModExpanded = !!expandedModules[module.id];
-                                                const chapters = courseChapters.filter(c => c.module_id === module.id);
-                                                
-                                                return (
-                                                    <div key={module.id} className="border border-slate-150 rounded-2xl overflow-hidden transition-all shadow-xs">
-                                                        {/* Module Row */}
-                                                        <button 
-                                                            onClick={() => setExpandedModules(prev => ({ ...prev, [module.id]: !prev[module.id] }))}
-                                                            className="w-full flex items-center justify-between px-5 py-4 bg-slate-50/50 hover:bg-slate-50 text-left border-b border-slate-100"
-                                                        >
-                                                            <div className="min-w-0 flex-1 pr-4">
-                                                                <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Module {module.module_number}</span>
-                                                                <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 truncate">{module.title}</h4>
-                                                                <p className="text-[10px] text-slate-400 mt-0.5 truncate">{module.description}</p>
-                                                            </div>
-                                                            <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
-                                                        </button>
+                                            {courseModules
+                                                .filter(module => {
+                                                    // Only show modules containing at least one unlocked/completed topic
+                                                    const moduleChapters = courseChapters.filter(c => c.module_id === module.id);
+                                                    return courseLessons.some(l => 
+                                                        moduleChapters.some(c => c.id === l.chapter_id) &&
+                                                        getLessonStatus(l.id, l.chapter_id, module.id) !== 'locked'
+                                                    );
+                                                })
+                                                .map((module) => {
+                                                    const isModExpanded = !!expandedModules[module.id];
+                                                    const chapters = courseChapters
+                                                        .filter(c => c.module_id === module.id)
+                                                        .filter(chapter => {
+                                                            // Only show chapters containing at least one unlocked/completed topic
+                                                            return courseLessons.some(l => 
+                                                                l.chapter_id === chapter.id && 
+                                                                getLessonStatus(l.id, l.chapter_id, module.id) !== 'locked'
+                                                            );
+                                                        });
+                                                    
+                                                    return (
+                                                        <div key={module.id} className="border border-slate-150 rounded-2xl overflow-hidden transition-all shadow-xs">
+                                                            {/* Module Row */}
+                                                            <button 
+                                                                onClick={() => setExpandedModules(prev => ({ ...prev, [module.id]: !prev[module.id] }))}
+                                                                className="w-full flex items-center justify-between px-5 py-4 bg-slate-50/50 hover:bg-slate-50 text-left border-b border-slate-100"
+                                                            >
+                                                                <div className="min-w-0 flex-1 pr-4">
+                                                                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Module {module.module_number}</span>
+                                                                    <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 truncate">{module.title}</h4>
+                                                                    <p className="text-[10px] text-slate-400 mt-0.5 truncate">{module.description}</p>
+                                                                </div>
+                                                                <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
+                                                            </button>
 
-                                                        {/* Module Chapters (Collapsed/Expanded) */}
-                                                        {isModExpanded && (
-                                                            <div className="p-4 bg-white space-y-3">
-                                                                {chapters.length === 0 ? (
-                                                                    <p className="text-[10px] text-slate-400 py-2">No chapters published in this module.</p>
-                                                                ) : (
-                                                                    chapters.map((chapter) => {
-                                                                        const isChapExpanded = !!expandedChapters[chapter.id];
-                                                                        const lessons = courseLessons.filter(l => l.chapter_id === chapter.id);
+                                                            {/* Module Chapters (Collapsed/Expanded) */}
+                                                            {isModExpanded && (
+                                                                <div className="p-4 bg-white space-y-3">
+                                                                    {chapters.length === 0 ? (
+                                                                        <p className="text-[10px] text-slate-400 py-2">No chapters published in this module.</p>
+                                                                    ) : (
+                                                                        chapters.map((chapter) => {
+                                                                            const isChapExpanded = !!expandedChapters[chapter.id];
+                                                                            const lessons = courseLessons
+                                                                                .filter(l => l.chapter_id === chapter.id)
+                                                                                .filter(l => getLessonStatus(l.id, l.chapter_id, module.id) !== 'locked');
 
-                                                                        return (
-                                                                            <div key={chapter.id} className="border border-slate-100 rounded-xl overflow-hidden">
-                                                                                {/* Chapter Row */}
-                                                                                <button
-                                                                                    onClick={() => setExpandedChapters(prev => ({ ...prev, [chapter.id]: !prev[chapter.id] }))}
-                                                                                    className="w-full flex items-center justify-between px-4 py-3 bg-slate-50/20 hover:bg-slate-50/60 text-left border-b border-slate-100"
-                                                                                >
-                                                                                    <div className="min-w-0 flex-1 pr-4">
-                                                                                        <h5 className="font-bold text-xs text-slate-800 truncate">Chapter {chapter.chapter_number}: {chapter.title}</h5>
-                                                                                    </div>
-                                                                                    <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isChapExpanded ? 'rotate-90' : ''}`} />
-                                                                                </button>
+                                                                            return (
+                                                                                <div key={chapter.id} className="border border-slate-100 rounded-xl overflow-hidden">
+                                                                                    {/* Chapter Row */}
+                                                                                    <button
+                                                                                        onClick={() => setExpandedChapters(prev => ({ ...prev, [chapter.id]: !prev[chapter.id] }))}
+                                                                                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50/20 hover:bg-slate-50/60 text-left border-b border-slate-100"
+                                                                                    >
+                                                                                        <div className="min-w-0 flex-1 pr-4">
+                                                                                            <h5 className="font-bold text-xs text-slate-800 truncate">Chapter {chapter.chapter_number}: {chapter.title}</h5>
+                                                                                        </div>
+                                                                                        <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isChapExpanded ? 'rotate-90' : ''}`} />
+                                                                                    </button>
 
-                                                                                {/* Chapter Lessons */}
-                                                                                {isChapExpanded && (
-                                                                                    <div className="p-2 bg-white space-y-1">
-                                                                                        {lessons.length === 0 ? (
-                                                                                            <p className="text-[10px] text-slate-400 p-2">No lessons published in this chapter.</p>
-                                                                                        ) : (
-                                                                                            lessons.map((lesson) => {
-                                                                                                const status = getLessonStatus(lesson.id, chapter.id, module.id);
-                                                                                                const isCompleted = status === 'completed';
-                                                                                                const isLocked = status === 'locked';
+                                                                                    {/* Chapter Lessons */}
+                                                                                    {isChapExpanded && (
+                                                                                        <div className="p-2 bg-white space-y-1">
+                                                                                            {lessons.length === 0 ? (
+                                                                <p className="text-[10px] text-slate-400 p-2">No lessons published in this chapter.</p>
+                                                                                            ) : (
+                                                                                                lessons.map((lesson) => {
+                                                                                                    const status = getLessonStatus(lesson.id, chapter.id, module.id);
+                                                                                                    const isCompleted = status === 'completed';
+                                                                                                    const isLocked = status === 'locked';
+                                                                                                    const isSelected = selectedTopic?.id === lesson.id;
 
-                                                                                                return (
-                                                                                                    <div 
-                                                                                                        key={lesson.id}
-                                                                                                        className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
-                                                                                                            isCompleted
-                                                                                                                ? 'bg-emerald-50/40 border-emerald-100/50'
-                                                                                                                : isLocked
-                                                                                                                    ? 'bg-slate-50/30 border-slate-100 opacity-60'
-                                                                                                                    : 'bg-white border-slate-100 shadow-2xs'
-                                                                                                        }`}
-                                                                                                    >
-                                                                                                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                                                                                                    return (
+                                                                                                        <div 
+                                                                                                            key={lesson.id}
+                                                                                                            onClick={() => {
+                                                                                                                if (isLocked) return;
+                                                                                                                setSelectedTopic(lesson);
+                                                                                                            }}
+                                                                                                            className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
                                                                                                                 isCompleted
-                                                                                                                    ? 'bg-emerald-50 border-emerald-100 text-emerald-500'
+                                                                                                                    ? 'bg-emerald-50/40 border-emerald-100/50 hover:border-emerald-200/85'
                                                                                                                     : isLocked
-                                                                                                                        ? 'bg-slate-100 border-slate-200 text-slate-400'
-                                                                                                                        : 'bg-amber-50 border-amber-100 text-amber-500'
-                                                                                                            }`}>
-                                                                                                                {isCompleted ? <Check className="w-4 h-4" /> : <Music className="w-4 h-4" />}
-                                                                                                            </div>
-                                                                                                            <div className="min-w-0 flex-1">
-                                                                                                                <h6 className="font-extrabold text-[11px] text-slate-800 truncate">
-                                                                                                                    {lesson.lesson_number}. {lesson.title}
-                                                                                                                </h6>
-                                                                                                                <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                                                                                                    {lesson.duration || '5 mins'} · {lesson.difficulty || 'Easy'}
-                                                                                                                </p>
-                                                                                                            </div>
-                                                                                                        </div>
-
-                                                                                                        {/* Mark Completed/Locked state trigger */}
-                                                                                                        {isLocked ? (
-                                                                                                            <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">
-                                                                                                                Locked
-                                                                                                            </span>
-                                                                                                        ) : (
-                                                                                                            <button
-                                                                                                                onClick={() => handleToggleLessonComplete(lesson.id, status)}
-                                                                                                                className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all shrink-0 ${
+                                                                                                                        ? 'bg-slate-50/30 border-slate-100 opacity-60'
+                                                                                                                        : 'bg-white border-slate-100 shadow-2xs hover:border-amber-300'
+                                                                                                            } ${isSelected ? 'border-amber-500 bg-amber-500/5 ring-1 ring-amber-500' : ''} ${!isLocked ? 'cursor-pointer hover:bg-slate-50/40 active:scale-[0.995]' : ''}`}
+                                                                                                        >
+                                                                                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                                                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
                                                                                                                     isCompleted
-                                                                                                                        ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
-                                                                                                                        : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-600 text-slate-600 border border-slate-200/50'
-                                                                                                                }`}
-                                                                                                            >
-                                                                                                                {isCompleted ? 'Completed ✓' : 'Mark Complete'}
-                                                                                                            </button>
-                                                                                                        )}
-                                                                                                    </div>
-                                                                                                );
-                                                                                            })
-                                                                                        )}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        );
-                                                                    })
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
+                                                                                                                        ? 'bg-emerald-50 border-emerald-100 text-emerald-500'
+                                                                                                                        : isLocked
+                                                                                                                            ? 'bg-slate-100 border-slate-200 text-slate-400'
+                                                                                                                            : 'bg-amber-50 border-amber-100 text-amber-500'
+                                                                                                                }`}>
+                                                                                                                    {isCompleted ? <Check className="w-4 h-4" /> : <Music className="w-4 h-4" />}
+                                                                                                                </div>
+                                                                                                                <div className="min-w-0 flex-1">
+                                                                                                                    <h6 className="font-extrabold text-[11px] text-slate-800 truncate">
+                                                                                                                        {lesson.lesson_number}. {lesson.title}
+                                                                                                                    </h6>
+                                                                                                                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                                                                                                                        {lesson.duration || '5 mins'} · {lesson.difficulty || 'Easy'}
+                                                                                                                    </p>
+                                                                                                                </div>
+                                                                                                            </div>
+
+                                                                                                            {/* Mark Completed/Locked state trigger */}
+                                                                                                            {isLocked ? (
+                                                                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">
+                                                                                                                    Locked
+                                                                                                                </span>
+                                                                                                            ) : (
+                                                                                                                <button
+                                                                                                                    onClick={(e) => {
+                                                                                                                        e.stopPropagation();
+                                                                                                                        handleToggleLessonComplete(lesson.id, status);
+                                                                                                                    }}
+                                                                                                                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all shrink-0 ${
+                                                                                                                        isCompleted
+                                                                                                                            ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
+                                                                                                                            : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-600 text-slate-600 border border-slate-200/50'
+                                                                                                                    }`}
+                                                                                                                >
+                                                                                                                    {isCompleted ? 'Completed ✓' : 'Mark Complete'}
+                                                                                                                </button>
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    );
+                                                                                                })
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
                                         </div>
                                     )}
                                     </div>
                                 </div>
 
-                                {/* Right: Classmates List */}
-                                <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
-                                    <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100">
-                                        <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
-                                            <Users className="w-4.5 h-4.5 text-amber-500" />
-                                            Batch Classmates ({classmates.length})
-                                        </h3>
-                                    </div>
-                                    <div className="p-6">
-                                        {classmates.length === 0 ? (
-                                            <div className="py-6 text-center text-slate-400">
-                                                <p className="text-xs">No classmates enrolled yet.</p>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                {classmates.map((mate) => (
-                                                    <div key={mate.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors">
-                                                        <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
-                                                            {mate.profile_pic_url ? (
-                                                                <img src={mate.profile_pic_url} alt={mate.name} className="w-full h-full object-cover" />
-                                                            ) : (
-                                                                <span className="text-[#d46211] text-sm font-extrabold">{mate.name.charAt(0)}</span>
+                                {/* Right Space: Selected Topic Details + Classmates */}
+                                <div className="space-y-6 lg:col-span-1">
+                                    {/* Selected Topic Details Card */}
+                                    <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
+                                        <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                                            <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                                                <BookOpen className="w-4.5 h-4.5 text-amber-500" />
+                                                Topic Details
+                                            </h3>
+                                            {selectedTopic && (() => {
+                                                const status = getLessonStatus(selectedTopic.id, selectedTopic.chapter_id);
+                                                return (
+                                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
+                                                        status === 'completed'
+                                                            ? 'bg-emerald-500/10 text-emerald-700'
+                                                            : 'bg-amber-500/10 text-amber-700'
+                                                    }`}>
+                                                        {status}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </div>
+                                        
+                                        <div className="p-6 space-y-5">
+                                            {selectedTopic ? (() => {
+                                                const breadcrumb = getTopicBreadcrumbs(selectedTopic);
+                                                const url = selectedTopic.material_url || selectedTopic.link_url;
+                                                const hasAttachment = !!url;
+                                                const status = getLessonStatus(selectedTopic.id, selectedTopic.chapter_id);
+                                                const isCompleted = status === 'completed';
+ 
+                                                return (
+                                                    <div className="space-y-4">
+                                                        <div>
+                                                            {breadcrumb && (
+                                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                                                    {breadcrumb}
+                                                                </span>
+                                                            )}
+                                                            <h4 className="font-black text-slate-800 text-sm md:text-base leading-snug">
+                                                                Topic {selectedTopic.lesson_number}: {selectedTopic.title}
+                                                            </h4>
+                                                        </div>
+ 
+                                                        {selectedTopic.description && (
+                                                            <p className="text-xs text-slate-500 leading-relaxed">
+                                                                {selectedTopic.description}
+                                                            </p>
+                                                        )}
+ 
+                                                        {/* Metadata Badges */}
+                                                        <div className="flex flex-wrap gap-2 pt-1">
+                                                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full">
+                                                                <Clock className="w-3 h-3 text-slate-400" />
+                                                                {selectedTopic.duration || '5 mins'}
+                                                            </span>
+                                                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full">
+                                                                <Award className="w-3 h-3 text-slate-400" />
+                                                                {selectedTopic.difficulty || 'Easy'}
+                                                            </span>
+                                                            {selectedTopic.material_type && (
+                                                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#7C5E3F] bg-[#FAF5EE] border border-[#7C5E3F]/10 px-2.5 py-1 rounded-full capitalize">
+                                                                    {selectedTopic.material_type === 'pdf' ? <FileText className="w-3 h-3" /> : 
+                                                                     selectedTopic.material_type === 'audio' ? <Music className="w-3 h-3" /> : 
+                                                                     (selectedTopic.material_type === 'video' || selectedTopic.material_type === 'youtube_url') ? <Video className="w-3 h-3" /> : 
+                                                                     <Info className="w-3 h-3" />}
+                                                                    {selectedTopic.material_type === 'youtube_url' ? 'YouTube' : selectedTopic.material_type}
+                                                                </span>
                                                             )}
                                                         </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <h5 className="font-bold text-xs text-slate-800 truncate">{mate.name}</h5>
-                                                            <span className="inline-block bg-slate-100 text-slate-500 text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase mt-0.5">
-                                                                {mate.level}
-                                                            </span>
+ 
+                                                        {/* Bullet Points / Study Guide */}
+                                                        {selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 && (
+                                                            <div className="pt-2">
+                                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2">Key Practice Focus</span>
+                                                                <ul className="space-y-1.5">
+                                                                    {selectedTopic.bullet_points.map((pt: string, idx: number) => (
+                                                                        <li key={idx} className="text-xs text-slate-600 flex items-start gap-2 leading-relaxed text-left">
+                                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                                                                            <span>{pt}</span>
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+ 
+                                                        {/* Actions Panel */}
+                                                        <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-slate-100">
+                                                            {hasAttachment ? (
+                                                                <button
+                                                                    onClick={() => setShowMaterialPopup(true)}
+                                                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl shadow-xs transition-colors"
+                                                                >
+                                                                    <BookOpen className="w-4 h-4" /> Open Material
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    disabled
+                                                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl cursor-not-allowed"
+                                                                >
+                                                                    <Info className="w-4 h-4" /> No file uploaded
+                                                                </button>
+                                                            )}
+ 
+                                                            <button
+                                                                onClick={() => handleToggleLessonComplete(selectedTopic.id, status)}
+                                                                className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all border ${
+                                                                    isCompleted
+                                                                        ? 'bg-emerald-50 border-emerald-250 text-emerald-700 hover:bg-emerald-100'
+                                                                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                                                                }`}
+                                                            >
+                                                                {isCompleted ? 'Completed ✓' : 'Mark Complete'}
+                                                            </button>
                                                         </div>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                                );
+                                            })() : (
+                                                <div className="py-10 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
+                                                    <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center border border-amber-100 shadow-3xs">
+                                                        <BookOpen className="w-6 h-6 text-amber-500" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-extrabold text-slate-700">No Topic Selected</p>
+                                                        <p className="text-[10px] text-slate-400 max-w-[200px] mx-auto mt-1 leading-relaxed">
+                                                            Click on any allocated lesson on the left to view its descriptions, material files, and practice guide.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+ 
+                                    {/* Batch Classmates List */}
+                                    <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
+                                        <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100">
+                                            <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                                                <Users className="w-4.5 h-4.5 text-amber-500" />
+                                                Batch Classmates ({classmates.length})
+                                            </h3>
+                                        </div>
+                                        <div className="p-6">
+                                            {classmates.length === 0 ? (
+                                                <div className="py-6 text-center text-slate-400">
+                                                    <p className="text-xs">No classmates enrolled yet.</p>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    {classmates.map((mate) => (
+                                                        <div key={mate.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                                                            <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                                                                {mate.profile_pic_url ? (
+                                                                    <img src={mate.profile_pic_url} alt={mate.name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <span className="text-[#d46211] text-sm font-extrabold">{mate.name.charAt(0)}</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <h5 className="font-bold text-xs text-slate-800 truncate">{mate.name}</h5>
+                                                                <span className="inline-block bg-slate-100 text-slate-500 text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase mt-0.5">
+                                                                    {mate.level}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -2278,7 +2495,145 @@ export default function StudentDashboard() {
                     </div>
                 </div>
             )}
-            
+
+            {/* Topic Material Popup Modal */}
+            {showMaterialPopup && selectedTopic && (
+                <div 
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 md:p-6 animate-in fade-in duration-200"
+                    onClick={() => setShowMaterialPopup(false)}
+                >
+                    <div 
+                        className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-5xl w-full h-[80vh] md:h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850/40">
+                            <div>
+                                <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest block">Topic Material</span>
+                                <h3 className="text-sm md:text-lg font-black text-slate-900 dark:text-white mt-1">
+                                    Topic {selectedTopic.lesson_number}: {selectedTopic.title}
+                                </h3>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {(selectedTopic.material_url || selectedTopic.link_url) && (
+                                    <a
+                                        href={selectedTopic.material_url || selectedTopic.link_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-350 text-[10px] md:text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                        <Download className="w-3.5 h-3.5" />
+                                        Open in New Tab
+                                    </a>
+                                )}
+                                <button 
+                                    onClick={() => setShowMaterialPopup(false)} 
+                                    className="p-1.5 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-full transition-colors"
+                                >
+                                    <X className="w-5 h-5 text-slate-400" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Content Viewer */}
+                        <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center overflow-hidden relative">
+                            {(() => {
+                                const url = selectedTopic.material_url || selectedTopic.link_url;
+                                if (!url) {
+                                    return (
+                                        <div className="text-center p-6 text-slate-400">
+                                            <Info className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                                            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No URL or material file available for this topic.</p>
+                                        </div>
+                                    );
+                                }
+
+                                // Check material type or guess from URL extension/content
+                                const lowerUrl = url.toLowerCase();
+                                const isYouTube = lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be');
+                                const isPdf = selectedTopic.material_type === 'pdf' || lowerUrl.endsWith('.pdf');
+                                const isAudio = selectedTopic.material_type === 'audio' || lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.wav') || lowerUrl.endsWith('.m4a') || lowerUrl.endsWith('.ogg');
+                                const isVideo = selectedTopic.material_type === 'video' || lowerUrl.endsWith('.mp4') || lowerUrl.endsWith('.webm') || lowerUrl.endsWith('.ogv');
+                                const isImage = lowerUrl.endsWith('.png') || lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.gif') || lowerUrl.endsWith('.svg') || lowerUrl.endsWith('.webp');
+
+                                if (isYouTube) {
+                                    return (
+                                        <iframe 
+                                            src={getYouTubeEmbedUrl(url)} 
+                                            className="w-full h-full border-0" 
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                            allowFullScreen 
+                                            title={selectedTopic.title}
+                                        />
+                                    );
+                                }
+
+                                if (isPdf) {
+                                    return (
+                                        <iframe 
+                                            src={`${url}#toolbar=1`} 
+                                            className="w-full h-full border-0 bg-white" 
+                                            title={selectedTopic.title}
+                                        />
+                                    );
+                                }
+
+                                if (isAudio) {
+                                    return (
+                                        <div className="w-full max-w-xl p-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col items-center gap-6 mx-4">
+                                            <div className="w-16 h-16 bg-amber-50 dark:bg-amber-955 rounded-full flex items-center justify-center border border-amber-100 dark:border-amber-900 shadow-sm animate-pulse">
+                                                <Music className="w-8 h-8 text-amber-550" />
+                                            </div>
+                                            <div className="text-center">
+                                                <h4 className="font-bold text-slate-800 dark:text-white text-base">{selectedTopic.title}</h4>
+                                                <p className="text-xs text-slate-500 mt-1">Audio Material Player</p>
+                                            </div>
+                                            <audio src={url} controls className="w-full" controlsList="nodownload" />
+                                        </div>
+                                    );
+                                }
+
+                                if (isVideo) {
+                                    return (
+                                        <video src={url} controls className="w-full h-full object-contain bg-black" controlsList="nodownload" />
+                                    );
+                                }
+
+                                if (isImage) {
+                                    return (
+                                        <div className="w-full h-full p-4 flex items-center justify-center overflow-auto bg-slate-900/5 dark:bg-slate-950">
+                                            <img src={url} alt={selectedTopic.title} className="max-w-full max-h-full object-contain rounded-lg shadow-md" />
+                                        </div>
+                                    );
+                                }
+
+                                // Fallback: try embedding in an iframe, but provide download option
+                                return (
+                                    <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-slate-900">
+                                        <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center border border-slate-100 dark:border-slate-700 shadow-sm mb-4">
+                                            <FileText className="w-8 h-8 text-slate-400" />
+                                        </div>
+                                        <h4 className="font-bold text-slate-800 dark:text-white text-base mb-2">Generic File Link</h4>
+                                        <p className="text-xs text-slate-500 max-w-md mb-6 leading-relaxed">
+                                            This file material cannot be securely previewed inside the dashboard popup. Click below to open/download it in a new window.
+                                        </p>
+                                        <a
+                                            href={url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 px-6 py-3 bg-[#7C5E3F] hover:bg-[#634a31] text-white text-xs font-black rounded-xl transition-all shadow-md hover:shadow-lg"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Open Material File
+                                        </a>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Floating Audio Player Bar */}
             {playingAudioId && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-3xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-[#E6E1DA] rounded-full py-3 px-6 shadow-xl flex items-center justify-between gap-4 animate-in slide-in-from-bottom-10 duration-300">

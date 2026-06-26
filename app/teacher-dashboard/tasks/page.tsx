@@ -1510,7 +1510,7 @@ export default function TaskReviewPage() {
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
-                <div className="p-8 grid grid-cols-12 gap-8 max-w-[1600px] mx-auto w-full flex-1">
+                <div className="p-4 sm:p-6 md:p-8 grid grid-cols-12 gap-8 w-full flex-1">
                     {/* Left Column: Submission List */}
                     <div className="col-span-12 lg:col-span-7 space-y-6 flex flex-col h-full">
                         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
