@@ -103,7 +103,6 @@ export default function StudentDashboard() {
     const [courseChapters, setCourseChapters] = useState<any[]>([]);
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
     const [studentProgress, setStudentProgress] = useState<any[]>([]);
-    const [classroomInventoryAllocations, setClassroomInventoryAllocations] = useState<any[]>([]);
     const [selectedTopic, setSelectedTopic] = useState<any | null>(null);
     const [showMaterialPopup, setShowMaterialPopup] = useState(false);
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
@@ -391,17 +390,6 @@ export default function StudentDashboard() {
                 .select('*')
                 .eq('student_id', userId);
             setStudentProgress(progress || []);
-
-            if (classroomId) {
-                const { data: allocations } = await supabaseAuth
-                    .from('classroom_inventory_allocation')
-                    .select('*')
-                    .eq('classroom_id', classroomId);
-                const filteredAllocations = (allocations || []).filter((a: any) => 
-                    a.allocated_to_student_id === null || a.allocated_to_student_id === userId
-                );
-                setClassroomInventoryAllocations(filteredAllocations);
-            }
 
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
@@ -748,18 +736,7 @@ export default function StudentDashboard() {
         if (progress) {
             return progress.status as 'locked' | 'unlocked' | 'completed';
         }
-
-        // If moduleId is not provided or undefined, look it up from chapters
-        const resolvedModuleId = moduleId || courseChapters.find(c => c.id === chapterId)?.module_id;
-
-        // Check if explicitly unlocked via inventory allocations
-        const isAllocated = classroomInventoryAllocations.some(a => 
-            (a.lesson_id === lessonId) || 
-            (a.chapter_id === chapterId) || 
-            (a.module_id === resolvedModuleId)
-        );
-
-        return isAllocated ? 'unlocked' : 'locked';
+        return 'locked';
     };
 
     // Calculate completed lessons vs total allocated lessons
@@ -780,7 +757,7 @@ export default function StudentDashboard() {
         }
         // Fallback to first lesson
         return courseLessons[0] || null;
-    }, [courseLessons, studentProgress, classroomInventoryAllocations]);
+    }, [courseLessons, studentProgress]);
 
     // Automatically set default selected topic to featuredLesson on load
     useEffect(() => {
