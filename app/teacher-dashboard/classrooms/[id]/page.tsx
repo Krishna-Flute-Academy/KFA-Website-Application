@@ -7,6 +7,7 @@ import { Loader2, ArrowLeft, Search, Bell, HelpCircle, Users, Mail, Video, Trend
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { CourseCategory, INITIAL_CATEGORIES, INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
+import { sendClassroomNotification } from '../../../../src/lib/notifications';
 
 interface ClassroomDetails {
     id: string;
@@ -216,6 +217,12 @@ export default function ClassroomDashboardPage({
             
             if (data && data.length > 0) {
                 setClassBroadcasts(prev => [data[0], ...prev]);
+                sendClassroomNotification({
+                    teacherId: teacherProfile.id,
+                    recipients: [{ id: classroomId, name: classroom.name, type: 'class' }],
+                    title: messageSubject.trim() || `New Broadcast - ${classroom.name}`,
+                    message: messageContent.trim()
+                }).catch(err => console.error('Failed to send classroom notifications for broadcast:', err));
             }
             setMessageContent('');
             setMessageSubject('');

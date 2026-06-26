@@ -97,6 +97,85 @@ export default function StudentDashboard() {
     const [sessionLogs, setSessionLogs] = useState<any[]>([]);
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
     const [classNotes, setClassNotes] = useState<ClassNote[]>([]);
+
+    const [notifications, setNotifications] = useState<any[]>([]);
+    const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+    const [pushPermission, setPushPermission] = useState<boolean | null>(null);
+    const notifDropdownRef = useRef<HTMLDivElement>(null);
+
+    // OneSignal initialization
+    useEffect(() => {
+        if (profile?.id) {
+            const OneSignal = (window as any).OneSignal || [];
+            if (typeof OneSignal.push === 'function') {
+                OneSignal.push(() => {
+                    OneSignal.init({
+                        appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || "",
+                        allowLocalhostAsSecureOrigin: true,
+                        notifyButton: {
+                            enable: false,
+                        },
+                    }).then(() => {
+                        console.log('OneSignal initialized. Logging in user:', profile.id);
+                        OneSignal.login(profile.id);
+                        
+                        if (OneSignal.Notifications) {
+                            setPushPermission(OneSignal.Notifications.permission);
+                            
+                            // Listen to changes
+                            OneSignal.Notifications.addEventListener("permissionChange", (permission: boolean) => {
+                                setPushPermission(permission);
+                            });
+
+                            // Auto prompt if permission not granted
+                            if (!OneSignal.Notifications.permission) {
+                                OneSignal.Notifications.requestPermission().catch((e: any) => console.error(e));
+                            }
+                        }
+                    }).catch((err: any) => {
+                        console.error('Error during OneSignal initialization:', err);
+                    });
+                });
+            }
+        }
+    }, [profile]);
+
+    // Click outside listener for notifications dropdown
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (notifDropdownRef.current && !notifDropdownRef.current.contains(event.target as Node)) {
+                setShowNotificationsDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+    const requestPushPermission = () => {
+        const OneSignal = (window as any).OneSignal;
+        if (OneSignal && OneSignal.Notifications) {
+            OneSignal.Notifications.requestPermission().then(() => {
+                setPushPermission(OneSignal.Notifications.permission);
+            }).catch((e: any) => console.error(e));
+        }
+    };
+
+    const markAllNotificationsAsRead = async () => {
+        if (!profile?.id) return;
+        try {
+            const { error } = await supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', profile.id)
+                .eq('is_read', false);
+            if (error) throw error;
+            setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+        } catch (err) {
+            console.error('Error marking notifications as read:', err);
+        }
+    };
     
     // Curriculum states
     const [courseModules, setCourseModules] = useState<any[]>([]);
@@ -376,6 +455,16 @@ export default function StudentDashboard() {
                 );
             });
             setBroadcasts(studentBroadcasts);
+
+            // Fetch notifications for the user
+            const { data: notifData, error: notifError } = await supabaseAuth
+                .from('notifications')
+                .select('*')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false });
+            if (!notifError) {
+                setNotifications(notifData || []);
+            }
 
             // 6. Fetch Curriculum and Progress data
             const { data: modules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
@@ -988,12 +1077,74 @@ export default function StudentDashboard() {
                     </div>
 
                     <div className="flex items-center gap-4 text-[#5C5852]">
-                        <button className="p-1.5 hover:bg-[#FAF5EE] rounded-full transition-colors relative">
-                            <span className="material-symbols-outlined text-xl">notifications</span>
-                            {assignments.filter(a => a.status === 'pending').length > 0 && (
-                                <span className="absolute top-1 right-1 w-2 h-2 bg-[#d49900] rounded-full"></span>
+                        <div className="relative flex" ref={notifDropdownRef}>
+                            <button 
+                                onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+                                className="p-1.5 hover:bg-[#FAF5EE] rounded-full transition-colors relative focus:outline-hidden"
+                            >
+                                <span className="material-symbols-outlined text-xl text-[#5C5852]">notifications</span>
+                                {notifications.filter(n => !n.is_read).length > 0 && (
+                                    <span className="absolute top-1 right-1 w-2 h-2 bg-[#d49900] rounded-full"></span>
+                                )}
+                            </button>
+                            
+                            {showNotificationsDropdown && (
+                                <div className="absolute right-0 mt-8 w-80 bg-[#FAF6F0] rounded-xl border border-[#E6E1DA] shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="px-4 py-2 border-b border-[#E6E1DA] flex items-center justify-between">
+                                        <span className="font-bold text-sm text-[#3E3A35]">Notifications</span>
+                                        {notifications.filter(n => !n.is_read).length > 0 && (
+                                            <button 
+                                                onClick={markAllNotificationsAsRead}
+                                                className="text-xs text-[#7C5E3F] hover:underline font-semibold"
+                                            >
+                                                Mark all as read
+                                            </button>
+                                        )}
+                                    </div>
+                                    
+                                    {pushPermission === false && (
+                                        <div className="mx-4 my-2 p-3 bg-[#FAF5EE] rounded-lg border border-[#d49900]/20 flex flex-col gap-1.5">
+                                            <div className="flex gap-2">
+                                                <span className="material-symbols-outlined text-base text-[#d49900] shrink-0">notifications_active</span>
+                                                <div className="flex flex-col text-left">
+                                                    <span className="text-[11px] font-bold text-[#3E3A35]">Enable Web Alerts</span>
+                                                    <span className="text-[9px] text-slate-500 leading-normal">Get pop-up and sound alerts on this device when classes start.</span>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={requestPushPermission}
+                                                className="w-full py-1 text-center bg-[#7C5E3F] hover:bg-[#6A4E31] text-white font-semibold text-[10px] rounded-md transition-colors"
+                                            >
+                                                Allow Alerts
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    <div className="max-h-64 overflow-y-auto">
+                                        {notifications.length === 0 ? (
+                                            <div className="px-4 py-6 text-center text-slate-400 text-xs">
+                                                No notifications yet.
+                                            </div>
+                                        ) : (
+                                            notifications.map((notif) => (
+                                                <div 
+                                                    key={notif.id} 
+                                                    className={`px-4 py-2.5 hover:bg-[#FAF1E6]/50 transition-colors border-b border-[#F5EFE6] last:border-b-0 flex flex-col gap-0.5 text-left ${!notif.is_read ? 'bg-[#FAF5EE]/70 font-medium' : ''}`}
+                                                >
+                                                    <div className="flex justify-between items-start gap-1">
+                                                        <span className={`text-xs text-[#3E3A35] ${!notif.is_read ? 'font-bold' : ''}`}>{notif.title}</span>
+                                                        <span className="text-[10px] text-slate-400 shrink-0">
+                                                            {new Date(notif.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{notif.message}</span>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
                             )}
-                        </button>
+                        </div>
                         <button onClick={() => {
                             setPracticeSuiteTab('metronome');
                             setShowPracticeSuite(true);

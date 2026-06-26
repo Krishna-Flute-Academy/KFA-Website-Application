@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { supabaseAuth } from '../lib/supabase-auth';
 
 interface TeacherHeaderProps {
     title: string;
@@ -58,11 +59,24 @@ export default function TeacherHeader({
                     </div>
                 </div>
                 <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-2 sm:ml-4">
-                    {!showAvatar && (
-                        <Link href="/" className="hidden sm:inline px-2 sm:px-4 text-xs sm:text-sm font-semibold text-[#a15912] hover:underline mr-1 sm:mr-2">
-                            Back to Main Site
-                        </Link>
-                    )}
+
+                    
+                    <button 
+                        onClick={async () => {
+                            if (confirm('Are you sure you want to logout?')) {
+                                if (typeof window !== 'undefined') {
+                                    localStorage.removeItem('kfa-user-role');
+                                }
+                                await supabaseAuth.auth.signOut();
+                                window.location.href = '/';
+                            }
+                        }}
+                        className="md:hidden flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition-colors rounded-lg shrink-0"
+                        title="Sign Out"
+                    >
+                        <span className="material-symbols-outlined text-base select-none">logout</span>
+                        <span className="hidden sm:inline">Logout</span>
+                    </button>
                     
                     {/* Notifications Button */}
                     <button className="size-9 sm:size-10 flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-400 hover:bg-[#ecb613]/10 hover:text-[#ecb613] transition-colors relative" aria-label="Notifications">

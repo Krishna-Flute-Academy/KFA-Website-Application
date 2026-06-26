@@ -88,6 +88,13 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     const isMeetingPage = pathname?.endsWith('/meeting');
     const basePath = userRole === 'admin' ? '/admin-dashboard' : '/teacher-dashboard';
 
+    const normalizePath = (p: string | null) => {
+        if (!p) return '';
+        let normalized = p.replace(/\/$/, '') || '/';
+        normalized = normalized.replace('/admin-dashboard', '/teacher-dashboard');
+        return normalized;
+    };
+
     const menuItems = [
         { name: userRole === 'admin' ? 'Admin-dashboard' : 'Dashboard', icon: 'dashboard', href: basePath },
         { name: 'Students', icon: 'group', href: `${basePath}/students` },
@@ -132,9 +139,13 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
             <nav className="flex-1 px-3 space-y-1.5 mt-6 overflow-y-auto">
                 {menuItems.map((item) => {
-                    const isActive = item.href === basePath 
-                        ? pathname === item.href 
-                        : pathname?.startsWith(item.href);
+                    const normalizedPathname = normalizePath(pathname);
+                    const normalizedItemHref = normalizePath(item.href);
+                    const normalizedBasePath = normalizePath(basePath);
+
+                    const isActive = normalizedItemHref === normalizedBasePath 
+                        ? normalizedPathname === normalizedItemHref 
+                        : normalizedPathname.startsWith(normalizedItemHref);
                     return (
                         <Link
                             key={item.name}

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
+import { sendClassroomNotification } from '../../../src/lib/notifications';
 import { 
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
@@ -739,6 +740,13 @@ function MessagesDashboardContent() {
                 } else {
                     setBroadcasts(prev => [data[0], ...prev]);
                     showToast('Notification sent & saved successfully!', 'success');
+                    
+                    sendClassroomNotification({
+                        teacherId: teacherProfile.id,
+                        recipients: selectedRecipients,
+                        title: subject.trim(),
+                        message: content.trim()
+                    }).catch(err => console.error('Failed to send notifications for message broadcast:', err));
                 }
 
                 // Clear Composer Form

@@ -48,7 +48,7 @@ export default function AuthCallbackPage() {
 
             if (role === 'admin') {
                 localStorage.setItem('kfa-user-role', 'admin');
-                router.push('/admin-dashboard');
+                router.push('/teacher-dashboard');
             } else if (role === 'teacher') {
                 localStorage.setItem('kfa-user-role', 'teacher');
                 router.push('/teacher-dashboard');

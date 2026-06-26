@@ -186,7 +186,7 @@ export function PageClient() {
     const getDashboardLink = () => {
         if (!userSession) return '/login';
         const role = userRole?.toLowerCase();
-        if (role === 'admin') return '/admin-dashboard';
+        if (role === 'admin') return '/teacher-dashboard';
         if (role === 'teacher') return '/teacher-dashboard';
         return '/student-dashboard';
     };

@@ -27,6 +27,9 @@ function LoginContent() {
             provider: 'google',
             options: {
                 redirectTo: `${window.location.origin}/auth/callback`,
+                queryParams: {
+                    prompt: 'select_account',
+                },
             },
         });
         if (oauthError) {
@@ -85,7 +88,7 @@ function LoginContent() {
 
         if (normalizedRole === 'admin') {
             localStorage.setItem('kfa-user-role', normalizedRole);
-            router.push('/admin-dashboard');
+            router.push('/teacher-dashboard');
         } else if (normalizedRole === 'teacher') {
             localStorage.setItem('kfa-user-role', normalizedRole);
             router.push('/teacher-dashboard');

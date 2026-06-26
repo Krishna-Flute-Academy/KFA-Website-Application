@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import TeacherSidebar from '../../../../../src/components/TeacherSidebar';
 import ClassroomDashboardPage from '../page';
+import { sendClassroomNotification } from '../../../../../src/lib/notifications';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionType = 'online' | 'offline';
@@ -228,6 +229,18 @@ export default function MeetingPage() {
                 .upsert(rows, { onConflict: 'student_id, classroom_id, date' });
 
             if (error) throw error;
+
+            // Trigger push & in-app notifications for students in this classroom
+            const targetStudentIds = students.map(s => s.id);
+            if (targetStudentIds.length > 0) {
+                sendClassroomNotification({
+                    teacherId: teacherProfile.id,
+                    recipients: [{ id: classroomId, name: classroomName, type: 'class' }],
+                    title: 'Class Started',
+                    message: `The class session for "${classroomName}" has started.`,
+                    studentIds: targetStudentIds
+                }).catch(err => console.error('Failed to send classroom notifications:', err));
+            }
 
             // Save active session info to localStorage for floating PIP widget support
             localStorage.setItem('active_class_session', JSON.stringify({
