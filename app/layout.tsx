@@ -52,7 +52,6 @@ export default function RootLayout({
         <html lang="en" data-scroll-behavior="smooth" className={`${inter.variable} ${playfair.variable}`}>
             <head>
                 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
-                <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
             </head>
             <body className={`${inter.className} antialiased font-sans`}>
                 <ToastProvider>

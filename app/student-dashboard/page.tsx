@@ -103,43 +103,81 @@ export default function StudentDashboard() {
     const [pushPermission, setPushPermission] = useState<boolean | null>(null);
     const notifDropdownRef = useRef<HTMLDivElement>(null);
 
-    // OneSignal initialization
+    const urlBase64ToUint8Array = (base64String: string) => {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding)
+            .replace(/\-/g, '+')
+            .replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    };
+
+    const subscribeToWebPush = async (registration: ServiceWorkerRegistration, studentId: string) => {
+        try {
+            const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+            if (!publicVapidKey) {
+                console.warn('Missing Public VAPID Key. Web push subscription skipped.');
+                return;
+            }
+
+            const convertedVapidKey = urlBase64ToUint8Array(publicVapidKey);
+            const subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: convertedVapidKey
+            });
+
+            console.log('Web Push subscription active:', subscription);
+
+            const { error } = await supabaseAuth
+                .from('push_subscriptions')
+                .upsert({
+                    user_id: studentId,
+                    endpoint: subscription.endpoint,
+                    subscription_json: JSON.parse(JSON.stringify(subscription))
+                }, { onConflict: 'endpoint' });
+
+            if (error) {
+                console.error('Failed to save push subscription to DB:', error);
+            } else {
+                console.log('Push subscription saved to DB successfully.');
+            }
+        } catch (e) {
+            console.error('Error subscribing to web push:', e);
+        }
+    };
+
+    // Custom Web Push initialization
     useEffect(() => {
-        if (profile?.id) {
-            const OneSignalDeferred = (window as any).OneSignalDeferred || [];
-            (window as any).OneSignalDeferred = OneSignalDeferred;
-            
-            OneSignalDeferred.push(async (OneSignal: any) => {
+        if (profile?.id && typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+            const initPush = async () => {
                 try {
-                    await OneSignal.init({
-                        appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || "",
-                        safari_web_id: process.env.NEXT_PUBLIC_ONESIGNAL_SAFARI_WEB_ID || undefined,
-                        allowLocalhostAsSecureOrigin: true,
-                        notifyButton: {
-                            enable: false,
-                        },
-                    });
+                    // Register service worker
+                    const registration = await navigator.serviceWorker.register('/sw.js');
+                    console.log('Service Worker registered successfully');
 
-                    console.log('OneSignal initialized. Logging in user:', profile.id);
-                    await OneSignal.login(profile.id);
-                    
-                    if (OneSignal.Notifications) {
-                        setPushPermission(OneSignal.Notifications.permission);
-                        
-                        // Listen to changes
-                        OneSignal.Notifications.addEventListener("permissionChange", (permission: boolean) => {
-                            setPushPermission(permission);
-                        });
+                    // Check initial permission
+                    const permission = Notification.permission;
+                    setPushPermission(permission === 'granted');
 
-                        // Auto prompt if permission not granted
-                        if (!OneSignal.Notifications.permission) {
-                            OneSignal.Notifications.requestPermission().catch((e: any) => console.error(e));
+                    if (permission === 'granted') {
+                        await subscribeToWebPush(registration, profile.id);
+                    } else if (permission === 'default') {
+                        // Prompt user
+                        const newPermission = await Notification.requestPermission();
+                        setPushPermission(newPermission === 'granted');
+                        if (newPermission === 'granted') {
+                            await subscribeToWebPush(registration, profile.id);
                         }
                     }
                 } catch (err) {
-                    console.error('Error during OneSignal initialization:', err);
+                    console.error('Error during Web Push initialization:', err);
                 }
-            });
+            };
+            initPush();
         }
     }, [profile]);
 
@@ -156,19 +194,18 @@ export default function StudentDashboard() {
         };
     }, []);
 
-    const requestPushPermission = () => {
-        const OneSignal = (window as any).OneSignal;
-        if (OneSignal && OneSignal.Notifications) {
-            OneSignal.Notifications.requestPermission().then(() => {
-                setPushPermission(OneSignal.Notifications.permission);
-            }).catch((e: any) => console.error(e));
-        } else {
-            const OneSignalDeferred = (window as any).OneSignalDeferred || [];
-            OneSignalDeferred.push((SDK: any) => {
-                SDK.Notifications.requestPermission().then(() => {
-                    setPushPermission(SDK.Notifications.permission);
-                }).catch((e: any) => console.error(e));
-            });
+    const requestPushPermission = async () => {
+        if (typeof window !== 'undefined' && 'serviceWorker' in navigator && profile?.id) {
+            try {
+                const permission = await Notification.requestPermission();
+                setPushPermission(permission === 'granted');
+                if (permission === 'granted') {
+                    const registration = await navigator.serviceWorker.ready;
+                    await subscribeToWebPush(registration, profile.id);
+                }
+            } catch (e) {
+                console.error('Error requesting notification permission:', e);
+            }
         }
     };
 
