@@ -1805,24 +1805,62 @@ export default function ClassroomDashboardPage({
     }, [assignments, assignmentFilter]);
 
     const allocatedInventoryItems = useMemo(() => {
-        return courseModules.map(mod => {
-            const parsed = parseModuleCategory(mod);
+        const inventoryItems = classroomInventoryAllocations.map(item => {
+            let type: 'module' | 'chapter' | 'lesson' = 'module';
+            let refId = '';
+            let title = '';
+            let description = '';
+
+            if (item.module_id) {
+                type = 'module';
+                refId = item.module_id;
+                const mod = courseModules.find(m => m.id === refId);
+                title = mod?.title || 'Unknown Module';
+                description = mod?.description || '';
+            } else if (item.chapter_id) {
+                type = 'chapter';
+                refId = item.chapter_id;
+                const chap = courseChapters.find(c => c.id === refId);
+                title = chap?.title || 'Unknown Chapter';
+                description = chap?.description || '';
+            } else if (item.lesson_id) {
+                type = 'lesson';
+                refId = item.lesson_id;
+                const les = courseLessons.find(l => l.id === refId);
+                title = les?.title || 'Unknown Lesson';
+                description = les?.description || '';
+            }
+
             return {
-                id: mod.id,
-                classroom_id: classroomId,
-                teacher_id: null,
-                title: mod.title,
-                description: parsed.description,
+                id: item.id,
+                classroom_id: item.classroom_id,
+                teacher_id: item.allocated_by,
+                title: title,
+                description: description,
                 due_date: null,
-                target_type: 'all',
-                created_at: mod.created_at || new Date().toISOString(),
-                inventory_ref_type: 'module',
-                inventory_ref_id: mod.id,
-                inventory_ref_title: mod.title,
-                assignment_students: []
+                target_type: item.allocated_to_student_id ? 'individual' : 'all',
+                created_at: item.created_at,
+                inventory_ref_type: type,
+                inventory_ref_id: refId,
+                inventory_ref_title: title,
+                assignment_students: item.allocated_to_student_id ? [{ student_id: item.allocated_to_student_id }] : []
             };
         });
-    }, [courseModules, classroomId]);
+
+        if (curriculumTab === 'classwide') {
+            // Class-wide: Only show allocations targeted to all students
+            return inventoryItems.filter(a => a.target_type === 'all');
+        } else {
+            // Individual pacing: Filter to only show allocations active for the selected student
+            if (!selectedStudentForCurriculum) return [];
+            return inventoryItems.filter(a => {
+                if (a.target_type === 'all') return true;
+                return a.assignment_students?.some(
+                    s => s.student_id === selectedStudentForCurriculum.student_id
+                );
+            });
+        }
+    }, [classroomInventoryAllocations, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons]);
 
     const groupedAllocations = useMemo(() => {
         const categoriesMap: Record<string, {
@@ -1836,16 +1874,45 @@ export default function ClassroomDashboardPage({
         }> = {};
 
         allocatedInventoryItems.forEach(asg => {
-            const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
-            if (!mod) return;
-            const parsed = parseModuleCategory(mod);
-            const categoryName = parsed.category;
-            const moduleName = mod.title;
-            const moduleId = mod.id;
-            const moduleOrder = mod.module_number;
+            let categoryName = 'Specialized Modules';
+            let categoryOrder = 2;
+            let moduleName = 'Other';
+            let moduleOrder = 999;
+            let moduleId = 'unknown';
+
+            if (asg.inventory_ref_type === 'module') {
+                const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
+                if (mod) {
+                    const parsed = parseModuleCategory(mod);
+                    categoryName = parsed.category;
+                    moduleName = mod.title;
+                    moduleId = mod.id;
+                    moduleOrder = mod.module_number;
+                }
+            } else if (asg.inventory_ref_type === 'chapter') {
+                const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
+                const mod = chap ? courseModules.find(m => m.id === chap.module_id) : null;
+                if (mod) {
+                    const parsed = parseModuleCategory(mod);
+                    categoryName = parsed.category;
+                    moduleName = mod.title;
+                    moduleId = mod.id;
+                    moduleOrder = mod.module_number;
+                }
+            } else if (asg.inventory_ref_type === 'lesson') {
+                const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
+                const chap = lesson ? courseChapters.find(c => c.id === lesson.chapter_id) : null;
+                const mod = chap ? courseModules.find(m => m.id === chap.module_id) : null;
+                if (mod) {
+                    const parsed = parseModuleCategory(mod);
+                    categoryName = parsed.category;
+                    moduleName = mod.title;
+                    moduleId = mod.id;
+                    moduleOrder = mod.module_number;
+                }
+            }
 
             // Lookup category order
-            let categoryOrder = 2;
             const cat = categories.find(c => c.name === categoryName);
             if (cat) {
                 categoryOrder = cat.category_order;
@@ -1894,7 +1961,7 @@ export default function ClassroomDashboardPage({
             });
 
         return sortedCategories;
-    }, [allocatedInventoryItems, courseModules, categories]);
+    }, [allocatedInventoryItems, courseModules, courseChapters, courseLessons, categories]);
 
     const selectedStudentPermissions = useMemo(() => {
         const completed = new Set<string>();
@@ -1921,8 +1988,63 @@ export default function ClassroomDashboardPage({
     }, [selectedStudentForCurriculum, studentProgress]);
 
     const syllabusLessons = useMemo(() => {
-        return [...courseLessons].sort((a, b) => a.lesson_number - b.lesson_number);
-    }, [courseLessons]);
+        const lessonsSet = new Set<string>();
+        const uniqueLessons: any[] = [];
+
+        allocatedInventoryItems.forEach(item => {
+            const isIndividualMode = curriculumTab === 'individual';
+            
+            const filterLesson = (lessonId: string) => {
+                if (isIndividualMode && selectedStudentForCurriculum) {
+                    const isCompleted = selectedStudentPermissions.completedLessons.has(lessonId);
+                    const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lessonId);
+                    return isCompleted || isUnlocked;
+                }
+                return true;
+            };
+
+            if (item.inventory_ref_type === 'module') {
+                const chapters = courseChapters.filter(c => c.module_id === item.inventory_ref_id);
+                const chapterIds = new Set(chapters.map(c => c.id));
+                const lessons = courseLessons.filter(l => chapterIds.has(l.chapter_id));
+                lessons.forEach(l => {
+                    if (!lessonsSet.has(l.id) && filterLesson(l.id)) {
+                        lessonsSet.add(l.id);
+                        uniqueLessons.push(l);
+                    }
+                });
+            } else if (item.inventory_ref_type === 'chapter') {
+                const lessons = courseLessons.filter(l => l.chapter_id === item.inventory_ref_id);
+                lessons.forEach(l => {
+                    if (!lessonsSet.has(l.id) && filterLesson(l.id)) {
+                        lessonsSet.add(l.id);
+                        uniqueLessons.push(l);
+                    }
+                });
+            } else if (item.inventory_ref_type === 'lesson') {
+                const lesson = courseLessons.find(l => l.id === item.inventory_ref_id);
+                if (lesson && !lessonsSet.has(lesson.id) && filterLesson(lesson.id)) {
+                    lessonsSet.add(lesson.id);
+                    uniqueLessons.push(lesson);
+                }
+            }
+        });
+
+        // Also add any lessons the selected student has progress on (completed or unlocked)
+        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+            studentProgress.forEach(p => {
+                if (p.student_id === selectedStudentForCurriculum.student_id && (p.status === 'completed' || p.status === 'unlocked')) {
+                    const lesson = courseLessons.find(l => l.id === p.lesson_id);
+                    if (lesson && !lessonsSet.has(lesson.id)) {
+                        lessonsSet.add(lesson.id);
+                        uniqueLessons.push(lesson);
+                    }
+                }
+            });
+        }
+
+        return uniqueLessons.sort((a, b) => a.lesson_number - b.lesson_number);
+    }, [allocatedInventoryItems, courseChapters, courseLessons, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress]);
 
     const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
         if (syllabusLessons.length === 0) return defaultMockVal;
@@ -3474,6 +3596,14 @@ export default function ClassroomDashboardPage({
                                                 An interactive learning roadmap. Students access these modules, audio files, sheet music PDFs, and step-by-step video guides directly in their student portals.
                                             </p>
                                         </div>
+                                        <button 
+                                            onClick={() => setIsInventoryDrawerOpen(true)}
+                                            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-955 font-black text-xs tracking-wider uppercase transition-all shadow-md shadow-[#ecb613]/10 hover:-translate-y-0.5 active:translate-y-0 active:scale-98 self-start md:self-center shrink-0 border border-[#ecb613]/10 cursor-pointer"
+                                            type="button"
+                                        >
+                                            <Plus className="size-4 stroke-[3]" />
+                                            <span>Add from Inventory</span>
+                                        </button>
                                     </div>
 
                                     {/* Class-wide vs Individual Sub-tabs */}
@@ -3661,6 +3791,25 @@ export default function ClassroomDashboardPage({
                                                                                     </div>
 
                                                                                     <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/80 pt-3 sm:pt-0" onClick={e => e.stopPropagation()}>
+                                                                                        {moduleAsg && (
+                                                                                            <button 
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    handleDeallocateItem(moduleAsg.id);
+                                                                                                }}
+                                                                                                disabled={deletingAssignmentId === moduleAsg.id}
+                                                                                                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
+                                                                                                title="Deallocate level from class"
+                                                                                                type="button"
+                                                                                            >
+                                                                                                {deletingAssignmentId === moduleAsg.id ? (
+                                                                                                    <Loader2 className="size-3.5 animate-spin" />
+                                                                                                ) : (
+                                                                                                    <Trash2 className="size-3.5" />
+                                                                                                )}
+                                                                                                <span>Remove</span>
+                                                                                            </button>
+                                                                                        )}
                                                                                         <div 
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation();
@@ -3775,7 +3924,23 @@ export default function ClassroomDashboardPage({
                                                                                             </div>
                                                                                         </div>
                                                                                         <div className="flex items-center gap-3">
-                                                                                            
+                                                                                            <button 
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    handleDeallocateItem(asg.id);
+                                                                                                }}
+                                                                                                disabled={deletingAssignmentId === asg.id}
+                                                                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
+                                                                                                title="Deallocate from class"
+                                                                                                type="button"
+                                                                                            >
+                                                                                                {deletingAssignmentId === asg.id ? (
+                                                                                                    <Loader2 className="size-3.5 animate-spin" />
+                                                                                                ) : (
+                                                                                                    <Trash2 className="size-3.5" />
+                                                                                                )}
+                                                                                                <span>Remove</span>
+                                                                                            </button>
                                                                                             {isAsgModule && (
                                                                                                 <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-550 transition-all">
                                                                                                     {isModuleExpanded ? (
@@ -3811,7 +3976,17 @@ export default function ClassroomDashboardPage({
                                                                                         if (!mod) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Level data could not be loaded.</p>;
                                                                                         
                                                                                         const rawChapters = courseChapters.filter(c => c.module_id === mod.id);
-                                                                                        const chaptersInMod = rawChapters;
+                                                                                        const chaptersInMod = rawChapters.filter(chap => {
+                                                                                             if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
+                                                                                                 const lessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                                                                                                 return lessons.some(lesson => {
+                                                                                                     const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                                                     const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                                                     return isCompleted || isUnlocked;
+                                                                                                 });
+                                                                                             }
+                                                                                             return true;
+                                                                                         });
                                                                                         return (
                                                                                             <div className="space-y-5">
                                                                                                 <div className="border-b border-slate-100 dark:border-slate-800/80 pb-3 flex items-center justify-between pl-2">
@@ -3829,7 +4004,14 @@ export default function ClassroomDashboardPage({
                                                                                                         {chaptersInMod.map(chap => {
                                                                                                             const isExpanded = !!expandedChapters[chap.id];
                                                                                                             const rawLessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                                                                                                            const chapLessons = rawLessons;
+                                                                                                            const chapLessons = rawLessons.filter(lesson => {
+                                                                                                                if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
+                                                                                                                    const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
+                                                                                                                    const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
+                                                                                                                    return isCompleted || isUnlocked;
+                                                                                                                }
+                                                                                                                return true;
+                                                                                                            });
                                                                                                             
                                                                                                             return (
                                                                                                                 <div 
@@ -6245,6 +6427,255 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         </div>
                     );
                 })()}
+                {/* Allocate from Inventory Sliding Drawer */}
+                {isInventoryDrawerOpen && (
+                    <div className="fixed inset-0 z-[600] flex justify-end animate-in fade-in duration-300">
+                        {/* Backdrop */}
+                        <div 
+                            onClick={() => setIsInventoryDrawerOpen(false)}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs cursor-pointer"
+                        ></div>
+
+                        {/* Drawer Content */}
+                        <div className="relative w-full max-w-xl h-full bg-white dark:bg-slate-955 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
+                            {/* Drawer Header */}
+                            <div className="px-6 py-5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40">
+                                <div className="flex items-center gap-2.5 text-left">
+                                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+                                        <BookOpen className="size-4.5 text-amber-500" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-extrabold text-slate-900 dark:text-white text-base tracking-tight leading-none">Allocate from Inventory</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase font-mono tracking-wider mt-1">Classroom Learning Materials</p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setIsInventoryDrawerOpen(false)}
+                                    className="p-1.5 rounded-lg text-slate-450 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                                    type="button"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Search and Tab selectors */}
+                            <div className="p-5 border-b border-slate-150 dark:border-slate-855 space-y-4">
+                                <div className="relative">
+                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 size-4" />
+                                    <input
+                                        type="text"
+                                        value={inventorySearchQuery}
+                                        onChange={(e) => setInventorySearchQuery(e.target.value)}
+                                        placeholder="Search levels, chapters, or lessons..."
+                                        className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-900 border border-transparent dark:border-slate-800 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-slate-100 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* List Area */}
+                            <div className="flex-1 overflow-y-auto p-5 space-y-6 text-left custom-scrollbar">
+                                {(() => {
+                                    const sortedCategories = getImporterCategories();
+                                    let totalRenderedModules = 0;
+
+                                    const renderedCategories = sortedCategories.map(category => {
+                                        const filteredModules = courseModules
+                                            .filter(m => parseModuleCategory(m).category === category)
+                                            .filter(m => {
+                                                const query = inventorySearchQuery.toLowerCase();
+                                                if (!query) return true;
+                                                if (m.title.toLowerCase().includes(query)) return true;
+                                                const modChaps = courseChapters.filter(c => c.module_id === m.id);
+                                                const hasMatchingChap = modChaps.some(c => c.title.toLowerCase().includes(query));
+                                                if (hasMatchingChap) return true;
+                                                const chapIds = new Set(modChaps.map(c => c.id));
+                                                return courseLessons.filter(l => chapIds.has(l.chapter_id)).some(l => l.title.toLowerCase().includes(query));
+                                            });
+
+                                        if (filteredModules.length === 0) return null;
+                                        totalRenderedModules += filteredModules.length;
+
+                                        return (
+                                            <div key={category} className="space-y-3">
+                                                {/* Category Headline */}
+                                                <div className="flex items-center gap-2 select-none border-b border-slate-150 dark:border-slate-855 pb-1.5 pt-1">
+                                                    <span className="w-1.5 h-3.5 bg-[#ecb613] rounded-full" />
+                                                    <h6 className="font-extrabold text-[11px] tracking-wider uppercase text-slate-500 dark:text-slate-400">
+                                                        {category}
+                                                    </h6>
+                                                    <span className="text-[9px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/60 px-1.5 py-0.2 rounded-md">
+                                                        {filteredModules.length} Modules
+                                                    </span>
+                                                </div>
+
+                                                {/* Modules Accordion List */}
+                                                <div className="space-y-3">
+                                                    {filteredModules.map(mod => {
+                                                        const isExpanded = !!expandedInventoryModules[mod.id];
+                                                        const modChapters = courseChapters.filter(c => c.module_id === mod.id);
+                                                        const isImporting = importingItemId === mod.id;
+                                                        const isAllocated = classroomInventoryAllocations.some(a => a.module_id === mod.id && !a.allocated_to_student_id);
+
+                                                        return (
+                                                            <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
+                                                                {/* Header Panel */}
+                                                                <div 
+                                                                    onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
+                                                                    className="px-5 py-4 bg-slate-50/50 dark:bg-slate-900/60 hover:bg-slate-100/60 dark:hover:bg-slate-900/80 transition-all flex items-center justify-between cursor-pointer select-none gap-4"
+                                                                >
+                                                                    <div className="flex items-center gap-3 text-left min-w-0 flex-1">
+                                                                        <div className="w-8.5 h-8.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 text-[10px] font-black uppercase font-mono shrink-0">
+                                                                            {getCategoryAbbreviation(category)}
+                                                                        </div>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <h5 className="text-xs font-black text-slate-855 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
+                                                                            <p className="text-[9px] text-slate-455 dark:text-slate-555 font-bold uppercase mt-1 tracking-wider font-mono">
+                                                                                {modChapters.length} CHAPTERS • {category}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                                                        <button
+                                                                            disabled={isImporting || isAllocated}
+                                                                            onClick={() => handleAllocateItem('module', mod.id, mod.title, mod.description)}
+                                                                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${
+                                                                                isAllocated
+                                                                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
+                                                                                    : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-955 hover:-translate-y-0.5'
+                                                                            }`}
+                                                                            type="button"
+                                                                        >
+                                                                            {isImporting ? (
+                                                                                <Loader2 className="size-3 animate-spin" />
+                                                                            ) : isAllocated ? (
+                                                                                <CheckCircle className="size-3" />
+                                                                            ) : (
+                                                                                <Plus className="size-3 stroke-[3]" />
+                                                                            )}
+                                                                            <span>{isAllocated ? 'Allocated' : 'Allocate Module'}</span>
+                                                                        </button>
+                                                                        <div 
+                                                                            onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
+                                                                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                                                                        >
+                                                                            {isExpanded ? (
+                                                                                <ChevronUp className="size-4" />
+                                                                            ) : (
+                                                                                <ChevronDown className="size-4" />
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Chapters & Lessons */}
+                                                                {isExpanded && (
+                                                                    <div className="p-4 bg-white dark:bg-slate-955/20 border-t border-slate-150 dark:border-slate-855 space-y-4">
+                                                                        {modChapters.length === 0 ? (
+                                                                            <p className="text-xs text-slate-400 italic text-center py-2">No chapters defined.</p>
+                                                                        ) : (
+                                                                            modChapters.map(chap => {
+                                                                                const isChapImporting = importingItemId === chap.id;
+                                                                                const isChapAllocated = classroomInventoryAllocations.some(a => a.chapter_id === chap.id && !a.allocated_to_student_id);
+                                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+
+                                                                                return (
+                                                                                    <div key={chap.id} className="p-3.5 rounded-xl border border-slate-150 dark:border-slate-855 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
+                                                                                        {/* Chapter header row */}
+                                                                                        <div className="flex items-start justify-between gap-3">
+                                                                                            <div className="text-left">
+                                                                                                <span className="text-[8px] font-black text-amber-550 font-mono uppercase tracking-widest leading-none">CHAPTER LEVEL</span>
+                                                                                                <h6 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">{chap.title}</h6>
+                                                                                            </div>
+                                                                                            <button
+                                                                                                disabled={isChapImporting || isChapAllocated}
+                                                                                                onClick={() => handleAllocateItem('chapter', chap.id, chap.title, chap.description)}
+                                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                                                                                    isChapAllocated
+                                                                                                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
+                                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                                }`}
+                                                                                                type="button"
+                                                                                            >
+                                                                                                {isChapImporting ? (
+                                                                                                    <Loader2 className="size-3 animate-spin" />
+                                                                                                ) : isChapAllocated ? (
+                                                                                                    <CheckCircle className="size-3" />
+                                                                                                ) : (
+                                                                                                    <Plus className="size-3 stroke-[3]" />
+                                                                                                )}
+                                                                                                <span>{isChapAllocated ? 'Allocated' : 'Allocate'}</span>
+                                                                                            </button>
+                                                                                        </div>
+
+                                                                                        {/* Chapter Lessons */}
+                                                                                        {chapLessons.length > 0 && (
+                                                                                            <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
+                                                                                                {chapLessons.map(lesson => {
+                                                                                                    const isLessonImporting = importingItemId === lesson.id;
+                                                                                                    const isLessonAllocated = classroomInventoryAllocations.some(a => a.lesson_id === lesson.id && !a.allocated_to_student_id);
+
+                                                                                                    return (
+                                                                                                        <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
+                                                                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                                                                <div className="w-5.5 h-5.5 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                                                                                                    {lesson.material_type === 'video' ? (
+                                                                                                                        <Film className="size-3 text-amber-555" />
+                                                                                                                    ) : lesson.material_type === 'audio' ? (
+                                                                                                                        <Music className="size-3 text-amber-555" />
+                                                                                                                    ) : (
+                                                                                                                        <FileText className="size-3 text-slate-400" />
+                                                                                                                    )}
+                                                                                                                </div>
+                                                                                                                <span className="text-[11px] font-bold text-slate-655 dark:text-slate-355 truncate leading-none mt-0.5">{lesson.title}</span>
+                                                                                                            </div>
+                                                                                                            <button
+                                                                                                                disabled={isLessonImporting || isLessonAllocated}
+                                                                                                                onClick={() => handleAllocateItem('lesson', lesson.id, lesson.title, lesson.description)}
+                                                                                                                className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
+                                                                                                                    isLessonAllocated
+                                                                                                                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
+                                                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                                                }`}
+                                                                                                                type="button"
+                                                                                                            >
+                                                                                                                {isLessonImporting ? (
+                                                                                                                    <Loader2 className="size-2.5 animate-spin" />
+                                                                                                                ) : isLessonAllocated ? (
+                                                                                                                    <CheckCircle className="size-2.5" />
+                                                                                                                ) : (
+                                                                                                                    <Plus className="size-2.5 stroke-[3]" />
+                                                                                                                )}
+                                                                                                                <span>{isLessonAllocated ? 'Allocated' : 'Allocate'}</span>
+                                                                                                            </button>
+                                                                                                        </div>
+                                                                                                    );
+                                                                                                })}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            })
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    });
+
+                                    if (totalRenderedModules === 0) {
+                                        return <p className="text-xs text-slate-400 italic text-center py-8">No learning materials found.</p>;
+                                    }
+
+                                    return renderedCategories;
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {/* Allocation Manager Sliding Drawer */}
                 {isAllocationDrawerOpen && (
                     <div className="fixed inset-0 z-[600] flex justify-end animate-in fade-in duration-300">
