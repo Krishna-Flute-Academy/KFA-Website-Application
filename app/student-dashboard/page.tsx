@@ -106,38 +106,40 @@ export default function StudentDashboard() {
     // OneSignal initialization
     useEffect(() => {
         if (profile?.id) {
-            const OneSignal = (window as any).OneSignal || [];
-            if (typeof OneSignal.push === 'function') {
-                OneSignal.push(() => {
-                    OneSignal.init({
+            const OneSignalDeferred = (window as any).OneSignalDeferred || [];
+            (window as any).OneSignalDeferred = OneSignalDeferred;
+            
+            OneSignalDeferred.push(async (OneSignal: any) => {
+                try {
+                    await OneSignal.init({
                         appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || "",
                         safari_web_id: process.env.NEXT_PUBLIC_ONESIGNAL_SAFARI_WEB_ID || undefined,
                         allowLocalhostAsSecureOrigin: true,
                         notifyButton: {
                             enable: false,
                         },
-                    }).then(() => {
-                        console.log('OneSignal initialized. Logging in user:', profile.id);
-                        OneSignal.login(profile.id);
-                        
-                        if (OneSignal.Notifications) {
-                            setPushPermission(OneSignal.Notifications.permission);
-                            
-                            // Listen to changes
-                            OneSignal.Notifications.addEventListener("permissionChange", (permission: boolean) => {
-                                setPushPermission(permission);
-                            });
-
-                            // Auto prompt if permission not granted
-                            if (!OneSignal.Notifications.permission) {
-                                OneSignal.Notifications.requestPermission().catch((e: any) => console.error(e));
-                            }
-                        }
-                    }).catch((err: any) => {
-                        console.error('Error during OneSignal initialization:', err);
                     });
-                });
-            }
+
+                    console.log('OneSignal initialized. Logging in user:', profile.id);
+                    await OneSignal.login(profile.id);
+                    
+                    if (OneSignal.Notifications) {
+                        setPushPermission(OneSignal.Notifications.permission);
+                        
+                        // Listen to changes
+                        OneSignal.Notifications.addEventListener("permissionChange", (permission: boolean) => {
+                            setPushPermission(permission);
+                        });
+
+                        // Auto prompt if permission not granted
+                        if (!OneSignal.Notifications.permission) {
+                            OneSignal.Notifications.requestPermission().catch((e: any) => console.error(e));
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error during OneSignal initialization:', err);
+                }
+            });
         }
     }, [profile]);
 
@@ -160,6 +162,13 @@ export default function StudentDashboard() {
             OneSignal.Notifications.requestPermission().then(() => {
                 setPushPermission(OneSignal.Notifications.permission);
             }).catch((e: any) => console.error(e));
+        } else {
+            const OneSignalDeferred = (window as any).OneSignalDeferred || [];
+            OneSignalDeferred.push((SDK: any) => {
+                SDK.Notifications.requestPermission().then(() => {
+                    setPushPermission(SDK.Notifications.permission);
+                }).catch((e: any) => console.error(e));
+            });
         }
     };
 
