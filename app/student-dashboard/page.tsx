@@ -111,6 +111,7 @@ export default function StudentDashboard() {
                 OneSignal.push(() => {
                     OneSignal.init({
                         appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || "",
+                        safari_web_id: process.env.NEXT_PUBLIC_ONESIGNAL_SAFARI_WEB_ID || undefined,
                         allowLocalhostAsSecureOrigin: true,
                         notifyButton: {
                             enable: false,
