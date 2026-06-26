@@ -20,6 +20,21 @@ CREATE POLICY "Users can manage their own subscriptions"
     USING (auth.uid() = user_id) 
     WITH CHECK (auth.uid() = user_id);
 
+-- Drop policy if exists
+DROP POLICY IF EXISTS "Teachers and admins can read push subscriptions" ON public.push_subscriptions;
+
+-- Create policy to allow teachers/admins to select subscriptions
+CREATE POLICY "Teachers and admins can read push subscriptions"
+    ON public.push_subscriptions
+    FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.users
+            WHERE users.id = auth.uid()
+            AND (users.role = 'teacher' OR users.role = 'admin')
+        )
+    );
+
 -- Grant privileges
 GRANT ALL ON TABLE public.push_subscriptions TO anon;
 GRANT ALL ON TABLE public.push_subscriptions TO authenticated;

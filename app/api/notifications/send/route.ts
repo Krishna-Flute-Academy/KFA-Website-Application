@@ -5,9 +5,6 @@ import webpush from 'web-push';
 const supabaseAuthUrl = process.env.NEXT_PUBLIC_AUTH_SUPABASE_URL || '';
 const supabaseAuthAnonKey = process.env.NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY || '';
 
-// Initialize server-side Supabase client for verifying user role and fetching subscriptions
-const supabase = createClient(supabaseAuthUrl, supabaseAuthAnonKey);
-
 // Set VAPID keys for direct web push delivery
 const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
@@ -39,6 +36,20 @@ export async function POST(req: Request) {
         }
 
         const token = authHeader.split(' ')[1];
+
+        // Initialize Supabase client dynamically with the user's token so queries run with RLS context of the teacher/admin,
+        // or bypass RLS if the system service role key is available.
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_AUTH_SUPABASE_SERVICE_ROLE_KEY;
+        const supabase = serviceRoleKey 
+            ? createClient(supabaseAuthUrl, serviceRoleKey, { auth: { persistSession: false } })
+            : createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
+                global: {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                }
+            });
+
         const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
         if (authError || !user) {
