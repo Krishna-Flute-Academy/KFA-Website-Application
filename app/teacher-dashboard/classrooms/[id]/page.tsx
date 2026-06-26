@@ -362,9 +362,13 @@ export default function ClassroomDashboardPage({
                     const progressObj = studentProgress.find(p => p.student_id === id && p.lesson_id === lessonId);
                     return !progressObj || progressObj.status === 'locked';
                 });
+        } else if (status === 'unlocked') {
+            return studentProgress
+                .filter(p => p.lesson_id === lessonId && (p.status === 'unlocked' || p.status === 'completed') && p.student_id !== 'classwide_default')
+                .map(p => p.student_id);
         } else {
             return studentProgress
-                .filter(p => p.lesson_id === lessonId && p.status === status && p.student_id !== 'classwide_default')
+                .filter(p => p.lesson_id === lessonId && p.status === 'completed' && p.student_id !== 'classwide_default')
                 .map(p => p.student_id);
         }
     };
@@ -2175,7 +2179,7 @@ export default function ClassroomDashboardPage({
                                     // Preserve completed status to avoid accidental downgrades to 'unlocked'
                                     status = (existingStatus === 'completed') ? 'completed' : 'unlocked';
                                 } else {
-                                    status = (existingStatus === 'completed') ? 'completed' : 'locked';
+                                    status = 'locked';
                                 }
                             } else if (allocationStatus === 'completed') {
                                 if (isSelected) {
