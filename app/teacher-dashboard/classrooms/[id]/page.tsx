@@ -342,6 +342,7 @@ export default function ClassroomDashboardPage({
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [expandedHeadlines, setExpandedHeadlines] = useState<Record<string, boolean>>({});
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+    const [curriculumSearchQuery, setCurriculumSearchQuery] = useState('');
     const [mediaPreview, setMediaPreview] = useState<{ type: string; url: string; title: string } | null>(null);
     const [selectedTopic, setSelectedTopic] = useState<any | null>(null);
 
@@ -1862,107 +1863,6 @@ export default function ClassroomDashboardPage({
         }
     }, [classroomInventoryAllocations, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons]);
 
-    const groupedAllocations = useMemo(() => {
-        const categoriesMap: Record<string, {
-            categoryName: string;
-            categoryOrder: number;
-            modulesMap: Record<string, {
-                moduleName: string;
-                moduleOrder: number;
-                allocations: typeof allocatedInventoryItems;
-            }>;
-        }> = {};
-
-        allocatedInventoryItems.forEach(asg => {
-            let categoryName = 'Specialized Modules';
-            let categoryOrder = 2;
-            let moduleName = 'Other';
-            let moduleOrder = 999;
-            let moduleId = 'unknown';
-
-            if (asg.inventory_ref_type === 'module') {
-                const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
-                if (mod) {
-                    const parsed = parseModuleCategory(mod);
-                    categoryName = parsed.category;
-                    moduleName = mod.title;
-                    moduleId = mod.id;
-                    moduleOrder = mod.module_number;
-                }
-            } else if (asg.inventory_ref_type === 'chapter') {
-                const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
-                const mod = chap ? courseModules.find(m => m.id === chap.module_id) : null;
-                if (mod) {
-                    const parsed = parseModuleCategory(mod);
-                    categoryName = parsed.category;
-                    moduleName = mod.title;
-                    moduleId = mod.id;
-                    moduleOrder = mod.module_number;
-                }
-            } else if (asg.inventory_ref_type === 'lesson') {
-                const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
-                const chap = lesson ? courseChapters.find(c => c.id === lesson.chapter_id) : null;
-                const mod = chap ? courseModules.find(m => m.id === chap.module_id) : null;
-                if (mod) {
-                    const parsed = parseModuleCategory(mod);
-                    categoryName = parsed.category;
-                    moduleName = mod.title;
-                    moduleId = mod.id;
-                    moduleOrder = mod.module_number;
-                }
-            }
-
-            // Lookup category order
-            const cat = categories.find(c => c.name === categoryName);
-            if (cat) {
-                categoryOrder = cat.category_order;
-            } else {
-                // Check in INITIAL_CATEGORIES
-                const initCat = INITIAL_CATEGORIES.find(c => c.name === categoryName);
-                if (initCat) categoryOrder = initCat.category_order;
-            }
-
-            // Initialize category map if needed
-            if (!categoriesMap[categoryName]) {
-                categoriesMap[categoryName] = {
-                    categoryName,
-                    categoryOrder,
-                    modulesMap: {}
-                };
-            }
-
-            // Initialize module map if needed
-            if (!categoriesMap[categoryName].modulesMap[moduleId]) {
-                categoriesMap[categoryName].modulesMap[moduleId] = {
-                    moduleName,
-                    moduleOrder,
-                    allocations: []
-                };
-            }
-
-            categoriesMap[categoryName].modulesMap[moduleId].allocations.push(asg);
-        });
-
-        // Convert to sorted array representation
-        const sortedCategories = Object.values(categoriesMap)
-            .sort((a, b) => a.categoryOrder - b.categoryOrder)
-            .map(cat => {
-                const sortedModules = Object.entries(cat.modulesMap).map(([id, modInfo]) => ({
-                    id,
-                    moduleName: modInfo.moduleName,
-                    moduleOrder: modInfo.moduleOrder,
-                    allocations: modInfo.allocations
-                })).sort((a, b) => a.moduleOrder - b.moduleOrder);
-
-                return {
-                    categoryName: cat.categoryName,
-                    modules: sortedModules
-                };
-            });
-
-        return sortedCategories;
-    }, [allocatedInventoryItems, courseModules, courseChapters, courseLessons, categories]);
-
     const selectedStudentPermissions = useMemo(() => {
         const completed = new Set<string>();
         const unlocked = new Set<string>();
@@ -1986,6 +1886,208 @@ export default function ClassroomDashboardPage({
             unlockedLessons: unlocked
         };
     }, [selectedStudentForCurriculum, studentProgress]);
+
+    const getLessonPacingStatus = useCallback((lessonId: string) => {
+        let isCompleted = false;
+        let isUnlocked = false;
+        let statusLabel = "Locked";
+        let cardBorder = "border-slate-200/60 dark:border-slate-800/60 bg-slate-50/10 dark:bg-slate-900/[0.02] opacity-60 hover:opacity-100 transition-all duration-300";
+
+        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+            isCompleted = selectedStudentPermissions.completedLessons.has(lessonId);
+            isUnlocked = selectedStudentPermissions.unlockedLessons.has(lessonId);
+            if (isCompleted) {
+                statusLabel = "Completed";
+                cardBorder = "border-emerald-500/30 dark:border-emerald-500/20 bg-emerald-50/[0.1] dark:bg-emerald-950/[0.03] shadow-[0_2px_8px_rgba(16,185,129,0.01)] hover:border-emerald-500/50 transition-all duration-300";
+            } else if (isUnlocked) {
+                statusLabel = "Unlocked";
+                cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
+            }
+        } else {
+            const progressForLesson = studentProgress.filter(p => p.lesson_id === lessonId);
+            if (students.length === 0) {
+                const classwideRow = progressForLesson.find(p => p.student_id === 'classwide_default');
+                if (classwideRow) {
+                    if (classwideRow.status === 'completed') {
+                        statusLabel = "Completed";
+                        cardBorder = "border-emerald-500/30 dark:border-emerald-500/20 bg-emerald-50/[0.1] dark:bg-emerald-950/[0.03] shadow-[0_2px_8px_rgba(16,185,129,0.01)] hover:border-emerald-500/50 transition-all duration-300";
+                    } else if (classwideRow.status === 'unlocked') {
+                        statusLabel = "Unlocked";
+                        cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
+                    } else {
+                        statusLabel = "Locked";
+                    }
+                } else {
+                    statusLabel = "Locked";
+                }
+            } else {
+                const completedCount = progressForLesson.filter(p => p.status === 'completed' && p.student_id !== 'classwide_default').length;
+                const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked' && p.student_id !== 'classwide_default').length;
+
+                if (completedCount === students.length) {
+                    statusLabel = "Completed";
+                    cardBorder = "border-emerald-500/30 dark:border-emerald-500/20 bg-emerald-50/[0.1] dark:bg-emerald-950/[0.03] shadow-[0_2px_8px_rgba(16,185,129,0.01)] hover:border-emerald-500/50 transition-all duration-300";
+                } else if (completedCount > 0 || unlockedCount > 0) {
+                    statusLabel = completedCount > 0 ? `Unlocked (${completedCount}/${students.length} Done)` : "Unlocked";
+                    cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
+                } else {
+                    statusLabel = "Locked";
+                    cardBorder = "border-slate-200/60 dark:border-slate-800/60 bg-slate-50/10 dark:bg-slate-900/[0.02] opacity-60 hover:opacity-100 transition-all duration-300";
+                }
+            }
+        }
+
+        const isCompletedLabel = statusLabel === "Completed";
+        const isUnlockedLabel = statusLabel === "Unlocked" || statusLabel.startsWith("Unlocked");
+
+        const badgeStyle = isCompletedLabel
+            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 dark:border-emerald-500/30"
+            : isUnlockedLabel
+            ? "bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/20 dark:border-[#ecb613]/30"
+            : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200/60 dark:border-slate-700/60";
+
+        const textStyle = isCompletedLabel
+            ? "text-emerald-600 dark:text-emerald-400"
+            : isUnlockedLabel
+            ? "text-amber-600 dark:text-[#ecb613]"
+            : "text-slate-400 dark:text-slate-500";
+
+        return {
+            statusLabel,
+            cardBorder,
+            badgeStyle,
+            textStyle,
+            isLocked: statusLabel === "Locked",
+            isUnlocked: isUnlockedLabel,
+            isCompleted: isCompletedLabel
+        };
+    }, [curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress, students]);
+
+    const visibleCurriculum = useMemo(() => {
+        const categoriesMap: Record<string, {
+            categoryName: string;
+            categoryOrder: number;
+            modules: any[];
+        }> = {};
+
+        const query = curriculumSearchQuery.toLowerCase().trim();
+
+        const getCategoryInfo = (moduleObj: any) => {
+            const parsed = parseModuleCategory(moduleObj);
+            let categoryName = parsed.category || 'Specialized Modules';
+            let categoryOrder = 2;
+
+            const cat = categories.find(c => c.name === categoryName);
+            if (cat) {
+                categoryOrder = cat.category_order;
+            } else {
+                const initCat = INITIAL_CATEGORIES.find(c => c.name === categoryName);
+                if (initCat) categoryOrder = initCat.category_order;
+            }
+            return { categoryName, categoryOrder };
+        };
+
+        const filterLesson = (lessonId: string) => {
+            if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                const isCompleted = selectedStudentPermissions.completedLessons.has(lessonId);
+                const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lessonId);
+                return isCompleted || isUnlocked;
+            }
+            return true;
+        };
+
+        courseModules.forEach(mod => {
+            const modAlloc = allocatedInventoryItems.find(
+                a => a.inventory_ref_type === 'module' && a.inventory_ref_id === mod.id
+            );
+
+            const { categoryName, categoryOrder } = getCategoryInfo(mod);
+            const isCategoryMatch = query ? categoryName.toLowerCase().includes(query) : false;
+            const isModuleMatch = query ? mod.title.toLowerCase().includes(query) : false;
+
+            const modChapters = courseChapters.filter(c => c.module_id === mod.id);
+            const chapterNodes: any[] = [];
+
+            modChapters.forEach(chap => {
+                const chapAlloc = allocatedInventoryItems.find(
+                    a => a.inventory_ref_type === 'chapter' && a.inventory_ref_id === chap.id
+                );
+
+                const isChapterMatch = query ? (
+                    chap.title.toLowerCase().includes(query) ||
+                    `ch${chap.chapter_number}`.includes(query) ||
+                    `chapter ${chap.chapter_number}`.includes(query)
+                ) : false;
+
+                const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
+                const lessonNodes: any[] = [];
+
+                chapLessons.forEach(lesson => {
+                    const lessonAlloc = allocatedInventoryItems.find(
+                        a => a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lesson.id
+                    );
+
+                    const isLessonAllocated = !!modAlloc || !!chapAlloc || !!lessonAlloc;
+
+                    if (isLessonAllocated && filterLesson(lesson.id)) {
+                        const isLessonMatch = query ? (
+                            lesson.title.toLowerCase().includes(query) ||
+                            (lesson.description || '').toLowerCase().includes(query) ||
+                            `topic ${lesson.lesson_number}`.includes(query)
+                        ) : false;
+
+                        const matchesSearch = !query || isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch;
+
+                        if (matchesSearch) {
+                            lessonNodes.push({
+                                ...lesson,
+                                allocationId: lessonAlloc ? lessonAlloc.id : null,
+                                isExplicit: !!lessonAlloc
+                            });
+                        }
+                    }
+                });
+
+                const isChapterVisible = !!modAlloc || !!chapAlloc || lessonNodes.length > 0;
+
+                if (isChapterVisible && (!query || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
+                    chapterNodes.push({
+                        ...chap,
+                        allocationId: chapAlloc ? chapAlloc.id : null,
+                        isExplicit: !!chapAlloc,
+                        lessons: lessonNodes.sort((a, b) => a.lesson_number - b.lesson_number)
+                    });
+                }
+            });
+
+            const isModuleVisible = !!modAlloc || chapterNodes.length > 0;
+
+            if (isModuleVisible && (!query || isCategoryMatch || isModuleMatch || chapterNodes.length > 0)) {
+                if (!categoriesMap[categoryName]) {
+                    categoriesMap[categoryName] = {
+                        categoryName,
+                        categoryOrder,
+                        modules: []
+                    };
+                }
+
+                categoriesMap[categoryName].modules.push({
+                    ...mod,
+                    allocationId: modAlloc ? modAlloc.id : null,
+                    isExplicit: !!modAlloc,
+                    chapters: chapterNodes.sort((a, b) => a.chapter_number - b.chapter_number)
+                });
+            }
+        });
+
+        return Object.values(categoriesMap)
+            .sort((a, b) => a.categoryOrder - b.categoryOrder)
+            .map(cat => ({
+                ...cat,
+                modules: cat.modules.sort((a, b) => a.module_number - b.module_number)
+            }));
+    }, [allocatedInventoryItems, courseModules, courseChapters, courseLessons, categories, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, curriculumSearchQuery]);
+
 
     const syllabusLessons = useMemo(() => {
         const lessonsSet = new Set<string>();
@@ -2079,35 +2181,34 @@ export default function ClassroomDashboardPage({
     const hasAnyVisibleModule = useMemo(() => {
         if (curriculumTab === 'classwide') return true;
         if (!selectedStudentForCurriculum) return false;
-        
-        return groupedAllocations.some(group => 
-            group.modules.some(modGroup => 
-                modGroup.allocations.some(asg => {
-                    if (asg.target_type === 'individual') return true;
-                    if (asg.inventory_ref_type === 'module') {
-                        const modChapters = courseChapters.filter(c => c.module_id === asg.inventory_ref_id);
-                        return modChapters.some(chap => {
-                            const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                            return chapLessons.some(lesson => 
-                                selectedStudentPermissions.completedLessons.has(lesson.id) ||
-                                selectedStudentPermissions.unlockedLessons.has(lesson.id)
-                            );
-                        });
-                    } else if (asg.inventory_ref_type === 'chapter') {
-                        const chapLessons = courseLessons.filter(l => l.chapter_id === asg.inventory_ref_id);
-                        return chapLessons.some(lesson => 
-                            selectedStudentPermissions.completedLessons.has(lesson.id) ||
-                            selectedStudentPermissions.unlockedLessons.has(lesson.id)
-                        );
-                    } else if (asg.inventory_ref_type === 'lesson') {
-                        return selectedStudentPermissions.completedLessons.has(asg.inventory_ref_id) ||
-                               selectedStudentPermissions.unlockedLessons.has(asg.inventory_ref_id);
-                    }
-                    return false;
-                })
-            )
-        );
-    }, [curriculumTab, selectedStudentForCurriculum, groupedAllocations, courseChapters, courseLessons, selectedStudentPermissions]);
+        return visibleCurriculum.length > 0;
+    }, [curriculumTab, selectedStudentForCurriculum, visibleCurriculum]);
+
+    const handleExpandAllCurriculum = () => {
+        setExpandedHeadlines({});
+        setExpandedModules({});
+        setExpandedChapters({});
+    };
+
+    const handleCollapseAllCurriculum = () => {
+        const headlines: Record<string, boolean> = {};
+        const modules: Record<string, boolean> = {};
+        const chapters: Record<string, boolean> = {};
+
+        visibleCurriculum.forEach(group => {
+            headlines[group.categoryName] = false;
+            group.modules.forEach((mod: any) => {
+                modules[mod.id] = false;
+                mod.chapters.forEach((chap: any) => {
+                    chapters[chap.id] = false;
+                });
+            });
+        });
+
+        setExpandedHeadlines(headlines);
+        setExpandedModules(modules);
+        setExpandedChapters(chapters);
+    };
 
     const handleToggleTopicLock = async (studentId: string, lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
         if (!classroomId) return;
@@ -2836,7 +2937,7 @@ export default function ClassroomDashboardPage({
                         <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
                             <button
                                 onClick={() => setShowOverrideModal(false)}
-                                className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                                className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
                             >
                                 Cancel
                             </button>
@@ -3598,7 +3699,7 @@ export default function ClassroomDashboardPage({
                                         </div>
                                         <button 
                                             onClick={() => setIsInventoryDrawerOpen(true)}
-                                            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-955 font-black text-xs tracking-wider uppercase transition-all shadow-md shadow-[#ecb613]/10 hover:-translate-y-0.5 active:translate-y-0 active:scale-98 self-start md:self-center shrink-0 border border-[#ecb613]/10 cursor-pointer"
+                                            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-md shadow-[#ecb613]/10 hover:-translate-y-0.5 active:translate-y-0 active:scale-98 self-start md:self-center shrink-0 border border-[#ecb613]/10 cursor-pointer"
                                             type="button"
                                         >
                                             <Plus className="size-4 stroke-[3]" />
@@ -3689,7 +3790,7 @@ export default function ClassroomDashboardPage({
                                             <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner animate-pulse">
                                                 <Sliders className="size-10 text-amber-500" />
                                             </div>
-                                            <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-105">No Allocated Topics</h3>
+                                            <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">No Allocated Topics</h3>
                                             <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center font-medium">
                                                 This student has no active or unlocked study materials in their personalized learning path yet.
                                             </p>
@@ -3698,853 +3799,402 @@ export default function ClassroomDashboardPage({
                                             </p>
                                         </div>
                                     ) : (
-                                        <div className="space-y-12">
-                                            {groupedAllocations.map((group) => {
-                                                const visibleModules = group.modules.filter(modGroup => {
-                                                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                        return modGroup.allocations.some(asg => {
-                                                            if (asg.target_type === 'individual') return true;
-                                                            if (asg.inventory_ref_type === 'module') {
-                                                                const modChapters = courseChapters.filter(c => c.module_id === asg.inventory_ref_id);
-                                                                return modChapters.some(chap => {
-                                                                    const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                                                                    return chapLessons.some(lesson => 
-                                                                        selectedStudentPermissions.completedLessons.has(lesson.id) ||
-                                                                        selectedStudentPermissions.unlockedLessons.has(lesson.id)
-                                                                    );
-                                                                });
-                                                            } else if (asg.inventory_ref_type === 'chapter') {
-                                                                const chapLessons = courseLessons.filter(l => l.chapter_id === asg.inventory_ref_id);
-                                                                return chapLessons.some(lesson => 
-                                                                    selectedStudentPermissions.completedLessons.has(lesson.id) ||
-                                                                    selectedStudentPermissions.unlockedLessons.has(lesson.id)
-                                                                );
-                                                            } else if (asg.inventory_ref_type === 'lesson') {
-                                                                return selectedStudentPermissions.completedLessons.has(asg.inventory_ref_id) ||
-                                                                       selectedStudentPermissions.unlockedLessons.has(asg.inventory_ref_id);
-                                                            }
-                                                            return false;
-                                                        });
-                                                    }
-                                                    return true;
-                                                });
-
-                                                if (visibleModules.length === 0) return null;
-
-                                                const isHeadlineExpanded = expandedHeadlines[group.categoryName] !== false;
-                                                return (
-                                                    <div key={group.categoryName} className="space-y-6">
-                                                        {/* Category / Headline Header */}
-                                                        <div 
-                                                            onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
-                                                            className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 pl-1 cursor-pointer select-none group/headline hover:border-[#ecb613]/40 transition-colors"
+                                        <div className="space-y-6">
+                                            {/* Action bar (Search & Collapse) */}
+                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-slate-50/50 dark:bg-slate-900/30 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-3xl shadow-sm mb-2 animate-in fade-in duration-300">
+                                                {/* Left: Search input */}
+                                                <div className="relative flex-1 max-w-md">
+                                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-400 dark:text-slate-500" />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search levels, chapters, topics..."
+                                                        value={curriculumSearchQuery}
+                                                        onChange={(e) => setCurriculumSearchQuery(e.target.value)}
+                                                        className="w-full pl-11 pr-10 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#ecb613] focus:ring-1 focus:ring-[#ecb613]/30 transition-all font-semibold"
+                                                    />
+                                                    {curriculumSearchQuery && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setCurriculumSearchQuery('')}
+                                                            className="absolute right-3.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                                                         >
-                                                            <div className="flex items-center gap-3 text-left">
-                                                                <div className="w-2.5 h-6 rounded-full bg-[#ecb613]" />
-                                                                <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest font-mono group-hover/headline:text-[#ecb613] transition-colors">
-                                                                    {group.categoryName}
-                                                                </h3>
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-[10px] font-black uppercase tracking-wider font-mono bg-[#ecb613]/10 text-[#ecb613] px-3 py-1 rounded-full border border-[#ecb613]/25">
-                                                                    Section
-                                                                </span>
-                                                                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover/headline:bg-[#ecb613]/10 group-hover/headline:text-[#ecb613] transition-all">
-                                                                    {isHeadlineExpanded ? (
-                                                                        <ChevronUp className="size-4" />
-                                                                    ) : (
-                                                                        <ChevronDown className="size-4" />
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
- 
-                                                        {/* Modules Under This Category */}
-                                                        {isHeadlineExpanded && (
-                                                            <div className="space-y-8 pl-3 md:pl-6 border-l-2 border-slate-150 dark:border-slate-800 text-left">
-                                                                {visibleModules.map((modGroup) => {
-                                                                    const moduleAsg = modGroup.allocations.find(a => a.inventory_ref_type === 'module');
-                                                                    const hasModuleAssignment = !!moduleAsg;
-                                                                    const isModuleExpanded = expandedModules[modGroup.id] !== false;
-                                                                    return (
-                                                                        <div key={modGroup.id} className="space-y-4">
-                                                                            {/* Collapsible Module/Level Header */}
-                                                                            {hasModuleAssignment ? (
-                                                                                <div 
-                                                                                    onClick={() => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded }))}
-                                                                                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md shadow-amber-500/[0.01] hover:border-[#ecb613]/55 cursor-pointer select-none transition-all text-left group/level-capsule animate-in fade-in duration-300"
-                                                                                >
-                                                                                    <div className="flex items-center gap-4">
-                                                                                        <div className="w-11 h-11 rounded-2xl bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613] shadow-sm shrink-0 transition-transform group-hover/level-capsule:scale-105">
-                                                                                            <BookOpen className="size-5" />
-                                                                                        </div>
-                                                                                        <div className="space-y-1 text-left">
-                                                                                            <div className="flex items-center gap-2.5 flex-wrap">
-                                                                                                <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
-                                                                                                    {modGroup.moduleName}
-                                                                                                </h3>
-                                                                                                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/10 text-[#ecb613] border border-[#ecb613]/20">
-                                                                                                    Level Allocated
-                                                                                                </span>
-                                                                                            </div>
-                                                                                        </div>
-                                                                                    </div>
+                                                            <X className="size-3" />
+                                                        </button>
+                                                    )}
+                                                </div>
 
-                                                                                    <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/80 pt-3 sm:pt-0" onClick={e => e.stopPropagation()}>
-                                                                                        {moduleAsg && (
-                                                                                            <button 
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    handleDeallocateItem(moduleAsg.id);
-                                                                                                }}
-                                                                                                disabled={deletingAssignmentId === moduleAsg.id}
-                                                                                                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
-                                                                                                title="Deallocate level from class"
-                                                                                                type="button"
-                                                                                            >
-                                                                                                {deletingAssignmentId === moduleAsg.id ? (
-                                                                                                    <Loader2 className="size-3.5 animate-spin" />
-                                                                                                ) : (
-                                                                                                    <Trash2 className="size-3.5" />
-                                                                                                )}
-                                                                                                <span>Remove</span>
-                                                                                            </button>
-                                                                                        )}
-                                                                                        <div 
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded }));
-                                                                                            }}
-                                                                                            className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:bg-[#ecb613]/15 hover:text-[#ecb613] transition-all cursor-pointer"
-                                                                                        >
-                                                                                            {isModuleExpanded ? (
-                                                                                                <ChevronUp className="size-4" />
-                                                                                            ) : (
-                                                                                                <ChevronDown className="size-4" />
-                                                                                            )}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
+                                                {/* Right: Expand/Collapse controls */}
+                                                <div className="flex items-center gap-3 self-end md:self-auto">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleExpandAllCurriculum}
+                                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 rounded-2xl shadow-xs transition-all hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer"
+                                                    >
+                                                        <ChevronDown className="size-4 text-[#ecb613]" />
+                                                        <span>Expand All</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleCollapseAllCurriculum}
+                                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 rounded-2xl shadow-xs transition-all hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer"
+                                                    >
+                                                        <ChevronUp className="size-4 text-[#ecb613]" />
+                                                        <span>Collapse All</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {visibleCurriculum.length === 0 ? (
+                                                /* Search empty state */
+                                                <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[300px] border-dashed">
+                                                    <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 animate-pulse">
+                                                        <Search className="size-8 text-amber-500" />
+                                                    </div>
+                                                    <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100">No Matching Results</h3>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 max-w-sm leading-relaxed text-center font-medium">
+                                                        We couldn't find any levels, chapters, or topics matching "{curriculumSearchQuery}".
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setCurriculumSearchQuery('')}
+                                                        className="mt-6 px-5 py-2.5 bg-slate-100 dark:bg-slate-850 hover:bg-amber-500 hover:text-white border border-slate-200 dark:border-slate-800 rounded-2xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
+                                                    >
+                                                        Clear Search Query
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-12">
+                                                    {visibleCurriculum.map((group) => {
+                                                        const isHeadlineExpanded = expandedHeadlines[group.categoryName] !== false;
+                                                        return (
+                                                            <div key={group.categoryName} className="space-y-6">
+                                                                {/* Category / Headline Header */}
+                                                                <div 
+                                                                    onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
+                                                                    className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 pb-3 pl-1 cursor-pointer select-none group/headline transition-all duration-300"
+                                                                >
+                                                                    <div className="flex items-center gap-3 text-left">
+                                                                        <div className="w-2.5 h-6 rounded-full bg-gradient-to-b from-[#ecb613] to-amber-600 shadow-sm shadow-amber-500/25" />
+                                                                        <div>
+                                                                            <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest font-mono group-hover/headline:text-[#ecb613] transition-colors duration-200">
+                                                                                {group.categoryName}
+                                                                            </h3>
+                                                                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider font-mono mt-0.5">
+                                                                                {group.modules.length} {group.modules.length === 1 ? 'Module' : 'Modules'}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 group-hover/headline:bg-[#ecb613]/10 group-hover/headline:text-[#ecb613] group-hover/headline:scale-105 transition-all duration-300">
+                                                                            {isHeadlineExpanded ? (
+                                                                                <ChevronUp className="size-4 transition-transform duration-300" />
                                                                             ) : (
-                                                                                <div 
-                                                                                    onClick={() => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded }))}
-                                                                                    className="flex items-center justify-between cursor-pointer select-none group/module bg-slate-100/50 hover:bg-slate-200/50 dark:bg-slate-800/20 dark:hover:bg-slate-800/40 p-3 rounded-2xl transition-all"
-                                                                                >
-                                                                                    <div className="flex items-center gap-2">
-                                                                                        <BookOpen className="size-4 text-[#ecb613]" />
-                                                                                        <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">
-                                                                                            {modGroup.moduleName}
-                                                                                        </h4>
-                                                                                        <span className="px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider bg-slate-200 text-slate-500 dark:bg-slate-850 dark:text-slate-400 border border-slate-300/30">
-                                                                                            Custom Pacing
-                                                                                        </span>
-                                                                                    </div>
-                                                                                    <div className="w-6 h-6 rounded-md bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover/module:text-[#ecb613] transition-all">
-                                                                                        {isModuleExpanded ? (
-                                                                                            <ChevronUp className="size-3.5" />
-                                                                                        ) : (
-                                                                                            <ChevronDown className="size-3.5" />
-                                                                                        )}
-                                                                                    </div>
-                                                                                </div>
+                                                                                <ChevronDown className="size-4 transition-transform duration-300" />
                                                                             )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
 
-                                                                            {/* Assignments Under This Module */}
-                                                                            {(isModuleExpanded || hasModuleAssignment) && (
-                                                                                <div className="space-y-6">
-                                                                    {modGroup.allocations.map((asg) => {
-                                                                        const isDeleting = deletingAssignmentId === asg.id;
-                                                                        const isAsgModule = asg.inventory_ref_type === 'module';
-                                                                        
-                                                                        // Define beautiful styles based on reference type
-                                                                        const typeColors = {
-                                                                            module: {
-                                                                                bg: 'bg-amber-500/[0.01] dark:bg-amber-500/[0.005]',
-                                                                                border: 'hover:border-amber-500/30 border-l-[#ecb613]',
-                                                                                badge: 'bg-amber-550 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-200 dark:border-amber-500/10',
-                                                                                iconBg: 'bg-[#ecb613]/10 text-[#ecb613]'
-                                                                            },
-                                                                            chapter: {
-                                                                                bg: 'bg-amber-400/[0.01] dark:bg-amber-400/[0.005]',
-                                                                                border: 'hover:border-amber-400/30 border-l-amber-400',
-                                                                                badge: 'bg-amber-50/80 text-amber-600 dark:bg-amber-400/10 dark:text-amber-300 border border-amber-150 dark:border-amber-400/15',
-                                                                                iconBg: 'bg-amber-400/10 text-amber-500'
-                                                                            },
-                                                                            lesson: {
-                                                                                bg: 'bg-amber-300/[0.01] dark:bg-amber-300/[0.005]',
-                                                                                border: 'hover:border-amber-300/30 border-l-amber-300',
-                                                                                badge: 'bg-amber-550/50 text-amber-500 dark:bg-amber-300/10 dark:text-amber-300 border border-amber-100 dark:border-amber-300/10',
-                                                                                iconBg: 'bg-amber-300/10 text-amber-500'
-                                                                            }
-                                                                        }[asg.inventory_ref_type as 'module' | 'chapter' | 'lesson'] || {
-                                                                            bg: 'bg-slate-500/[0.03]',
-                                                                            border: 'hover:border-slate-500/30 border-l-slate-500',
-                                                                            badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-                                                                            iconBg: 'bg-slate-100 text-slate-600'
-                                                                        };
-
-                                                                        return (
-                                                                            <div 
-                                                                                key={asg.id} 
-                                                                                className={isAsgModule ? "space-y-6 text-left" : `group relative bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/70 dark:border-slate-800 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-lg ${typeColors.border} border-l-4 text-left`}
-                                                                            >
-                                                                                {/* Tutorial Header */}
-                                                                                {!isAsgModule && (
-                                                                                    <div 
-                                                                                        onClick={isAsgModule ? () => setExpandedModules(prev => ({ ...prev, [modGroup.id]: !isModuleExpanded })) : undefined}
-                                                                                        className={`px-6 py-5 bg-slate-50/50 dark:bg-slate-955/[0.15] border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-4 ${isAsgModule ? 'cursor-pointer select-none hover:bg-slate-100/60 dark:hover:bg-slate-850 transition-colors' : ''}`}
-                                                                                    >
-                                                                                        <div className="flex items-center gap-4 pl-2">
-                                                                                            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-sm ${typeColors.iconBg}`}>
-                                                                                                {asg.inventory_ref_type === 'module' ? (
+                                                                {/* Modules Under This Category */}
+                                                                {isHeadlineExpanded && (
+                                                                    <div className="space-y-8 pl-3 md:pl-6 border-l-2 border-slate-200 dark:border-slate-800 text-left">
+                                                                        {group.modules.map((mod) => {
+                                                                            const isModuleExpanded = expandedModules[mod.id] !== false;
+                                                                            const hasModuleAssignment = !!mod.allocationId;
+                                                                            return (
+                                                                                <div key={mod.id} className="space-y-4">
+                                                                                    {/* Collapsible Module/Level Header */}
+                                                                                    {hasModuleAssignment ? (
+                                                                                        <div 
+                                                                                            onClick={() => setExpandedModules(prev => ({ ...prev, [mod.id]: !isModuleExpanded }))}
+                                                                                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-gradient-to-r from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:shadow-amber-500/[0.02] hover:border-[#ecb613]/40 cursor-pointer select-none transition-all duration-300 text-left group/level-capsule animate-in fade-in duration-300"
+                                                                                        >
+                                                                                            <div className="flex items-center gap-4">
+                                                                                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#ecb613]/20 to-[#ecb613]/5 dark:from-[#ecb613]/10 dark:to-[#ecb613]/0 border border-[#ecb613]/20 flex items-center justify-center text-[#ecb613] shadow-xs shrink-0 transition-transform duration-300 group-hover/level-capsule:scale-105">
                                                                                                     <BookOpen className="size-5" />
-                                                                                                ) : asg.inventory_ref_type === 'chapter' ? (
-                                                                                                    <ClipboardList className="size-5" />
-                                                                                                ) : (
-                                                                                                    <Music className="size-5" />
-                                                                                                )}
-                                                                                            </div>
-                                                                                            <div className="space-y-1">
-                                                                                                <div className="flex items-center gap-2.5 flex-wrap">
-                                                                                                    <h3 className="font-extrabold text-base md:text-lg text-slate-900 dark:text-white leading-tight">
-                                                                                                        {asg.inventory_ref_title || asg.title}
-                                                                                                    </h3>
-                                                                                                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${typeColors.badge}`}>
-                                                                                                        {asg.inventory_ref_type === 'module' ? (() => {
-                                                                                                            const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
-                                                                                                            if (mod) {
-                                                                                                                return parseModuleCategory(mod).category;
-                                                                                                            }
-                                                                                                            return 'Module';
-                                                                                                        })() : asg.inventory_ref_type}
-                                                                                                    </span>
                                                                                                 </div>
-                                                                                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider">
-                                                                                                </p>
+                                                                                                <div className="space-y-1 text-left">
+                                                                                                    <div className="flex items-center gap-2.5 flex-wrap">
+                                                                                                        <h3 className="font-black text-base md:text-lg text-slate-800 dark:text-white leading-tight tracking-tight">
+                                                                                                            {mod.title}
+                                                                                                        </h3>
+                                                                                                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/10 text-[#ecb613] border border-[#ecb613]/20">
+                                                                                                            Level Allocated
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider font-mono">
+                                                                                                        {mod.chapters.length} {mod.chapters.length === 1 ? 'Chapter' : 'Chapters'}
+                                                                                                    </p>
+                                                                                                </div>
                                                                                             </div>
-                                                                                        </div>
-                                                                                        <div className="flex items-center gap-3">
-                                                                                            <button 
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    handleDeallocateItem(asg.id);
-                                                                                                }}
-                                                                                                disabled={deletingAssignmentId === asg.id}
-                                                                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all border border-transparent hover:border-rose-600/10 shadow-sm cursor-pointer"
-                                                                                                title="Deallocate from class"
-                                                                                                type="button"
-                                                                                            >
-                                                                                                {deletingAssignmentId === asg.id ? (
-                                                                                                    <Loader2 className="size-3.5 animate-spin" />
-                                                                                                ) : (
-                                                                                                    <Trash2 className="size-3.5" />
-                                                                                                )}
-                                                                                                <span>Remove</span>
-                                                                                            </button>
-                                                                                            {isAsgModule && (
-                                                                                                <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-550 transition-all">
+
+                                                                                            <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 border-slate-100 dark:border-slate-800/80 pt-3 sm:pt-0" onClick={e => e.stopPropagation()}>
+                                                                                                <button 
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        handleDeallocateItem(mod.allocationId!);
+                                                                                                    }}
+                                                                                                    disabled={deletingAssignmentId === mod.allocationId}
+                                                                                                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all duration-200 border border-transparent hover:border-rose-600/10 shadow-xs cursor-pointer"
+                                                                                                    title="Deallocate level from class"
+                                                                                                    type="button"
+                                                                                                >
+                                                                                                    {deletingAssignmentId === mod.allocationId ? (
+                                                                                                        <Loader2 className="size-3.5 animate-spin" />
+                                                                                                    ) : (
+                                                                                                        <Trash2 className="size-3.5" />
+                                                                                                    )}
+                                                                                                    <span>Remove</span>
+                                                                                                </button>
+                                                                                                <div 
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        setExpandedModules(prev => ({ ...prev, [mod.id]: !isModuleExpanded }));
+                                                                                                    }}
+                                                                                                    className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:scale-105 transition-all duration-300 cursor-pointer border border-transparent hover:border-[#ecb613]/25"
+                                                                                                >
                                                                                                     {isModuleExpanded ? (
                                                                                                         <ChevronUp className="size-4" />
                                                                                                     ) : (
                                                                                                         <ChevronDown className="size-4" />
                                                                                                     )}
                                                                                                 </div>
-                                                                                            )}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                )}
-
-                                                                                {/* Tutorial Body */}
-                                                                                {(!isAsgModule || isModuleExpanded) && (
-                                                                                    <div className={isAsgModule ? "space-y-6" : "p-6 md:p-8 space-y-8"}>
-                                                                                    {/* Description/Instructions */}
-                                                                                    {asg.description && (
-                                                                                        <div className="p-5 rounded-2xl bg-amber-500/[0.04] dark:bg-amber-500/[0.01] border border-amber-500/15 text-slate-700 dark:text-slate-300 flex items-start gap-4">
-                                                                                            <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
-                                                                                                <Lightbulb className="size-4.5 text-amber-500" />
                                                                                             </div>
-                                                                                            <div className="space-y-1.5 text-left">
-                                                                                                <span className="text-[10px] font-black uppercase text-amber-500 tracking-widest font-mono">Teacher's Learning Instructions</span>
-                                                                                                <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap">{asg.description}</p>
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <div 
+                                                                                            onClick={() => setExpandedModules(prev => ({ ...prev, [mod.id]: !isModuleExpanded }))}
+                                                                                            className="flex items-center justify-between cursor-pointer select-none group/module bg-slate-100/50 hover:bg-slate-200/50 dark:bg-slate-850/20 dark:hover:bg-slate-800/40 p-3.5 rounded-2xl transition-all duration-300 border border-transparent hover:border-slate-200 dark:hover:border-slate-800"
+                                                                                        >
+                                                                                            <div className="flex items-center gap-3">
+                                                                                                <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800/50 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover/module:bg-[#ecb613]/10 group-hover/module:text-[#ecb613] transition-all duration-300">
+                                                                                                    <BookOpen className="size-4" />
+                                                                                                </div>
+                                                                                                <div className="text-left">
+                                                                                                    <div className="flex items-center gap-2">
+                                                                                                        <h4 className="text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                                                                                                            {mod.title}
+                                                                                                        </h4>
+                                                                                                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200/50 dark:border-slate-700/50">
+                                                                                                            Custom Pacing
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider font-mono mt-0.5">
+                                                                                                        {mod.chapters.length} {mod.chapters.length === 1 ? 'Chapter' : 'Chapters'}
+                                                                                                    </p>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                            <div className="w-8 h-8 rounded-lg bg-slate-200/50 dark:bg-slate-800/50 flex items-center justify-center text-slate-400 group-hover/module:text-[#ecb613] transition-all duration-300">
+                                                                                                {isModuleExpanded ? (
+                                                                                                    <ChevronUp className="size-4" />
+                                                                                                ) : (
+                                                                                                    <ChevronDown className="size-4" />
+                                                                                                )}
                                                                                             </div>
                                                                                         </div>
                                                                                     )}
 
-                                                                                    {/* Render Module details */}
-                                                                                    {asg.inventory_ref_type === 'module' && (() => {
-                                                                                        const mod = courseModules.find(m => m.id === asg.inventory_ref_id);
-                                                                                        if (!mod) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Level data could not be loaded.</p>;
-                                                                                        
-                                                                                        const rawChapters = courseChapters.filter(c => c.module_id === mod.id);
-                                                                                        const chaptersInMod = rawChapters.filter(chap => {
-                                                                                             if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
-                                                                                                 const lessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                                                                                                 return lessons.some(lesson => {
-                                                                                                     const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
-                                                                                                     const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
-                                                                                                     return isCompleted || isUnlocked;
-                                                                                                 });
-                                                                                             }
-                                                                                             return true;
-                                                                                         });
-                                                                                        return (
-                                                                                            <div className="space-y-5">
-                                                                                                <div className="border-b border-slate-100 dark:border-slate-800/80 pb-3 flex items-center justify-between pl-2">
-                                                                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
-                                                                                                        {`${parseModuleCategory(mod).category} Syllabus Outline`}
-                                                                                                    </h4>
-                                                                                                    <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded">
-                                                                                                        {chaptersInMod.length} Chapters
-                                                                                                    </span>
-                                                                                                </div>
-                                                                                                {chaptersInMod.length === 0 ? (
-                                                                                                    <p className="text-xs text-slate-400 italic text-left pl-2">No chapters defined in this level.</p>
-                                                                                                ) : (
-                                                                                                    <div className="space-y-4">
-                                                                                                        {chaptersInMod.map(chap => {
-                                                                                                            const isExpanded = !!expandedChapters[chap.id];
-                                                                                                            const rawLessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                                                                                                            const chapLessons = rawLessons.filter(lesson => {
-                                                                                                                if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
-                                                                                                                    const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
-                                                                                                                    const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
-                                                                                                                    return isCompleted || isUnlocked;
-                                                                                                                }
-                                                                                                                return true;
-                                                                                                            });
-                                                                                                            
-                                                                                                            return (
-                                                                                                                <div 
-                                                                                                                    key={chap.id} 
-                                                                                                                    className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-955/[0.05] transition-all duration-300 hover:border-slate-300 dark:hover:border-slate-700"
-                                                                                                                >
-                                                                                                                    {/* Chapter Header */}
-                                                                                                                    <div 
-                                                                                                                        onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isExpanded }))}
-                                                                                                                        className="px-5 py-4 bg-slate-50/50 dark:bg-slate-955/[0.2] hover:bg-slate-100/60 dark:hover:bg-slate-955/[0.3] transition-all flex items-center justify-between cursor-pointer select-none"
-                                                                                                                    >
-                                                                                                                        <div className="flex items-center gap-4">
-                                                                                                                            <div className="w-10 h-10 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/25 flex items-center justify-center text-[#ecb613] text-xs font-black font-mono">
-                                                                                                                                Ch{chap.chapter_number}
-                                                                                                                            </div>
-                                                                                                                            <div className="text-left">
-                                                                                                                                <h5 className="text-sm font-extrabold text-slate-800 dark:text-slate-100 leading-tight">
-                                                                                                                                    {chap.title}
-                                                                                                                                </h5>
-                                                                                                                                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1 uppercase tracking-wider font-mono">
-                                                                                                                                    {chapLessons.length} STUDY UNITS
-                                                                                                                                </p>
-                                                                                                                            </div>
-                                                                                                                        </div>
-                                                                                                                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-900/60 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
-                                                                                                                            {isExpanded ? (
-                                                                                                                                <ChevronUp className="size-4" />
-                                                                                                                            ) : (
-                                                                                                                                <ChevronDown className="size-4" />
-                                                                                                                            )}
-                                                                                                                        </div>
+                                                                                    {/* Chapters Under This Module */}
+                                                                                    {(isModuleExpanded || hasModuleAssignment) && (
+                                                                                        <div className="space-y-6 pl-3 md:pl-6 border-l border-slate-200 dark:border-slate-800/60">
+                                                                                            {mod.chapters.map((chap) => {
+                                                                                                const isChapterExpanded = expandedChapters[chap.id] !== false;
+                                                                                                const hasChapterAssignment = !!chap.allocationId;
+                                                                                                return (
+                                                                                                    <div 
+                                                                                                        key={chap.id} 
+                                                                                                        className="rounded-2xl border border-slate-200 dark:border-slate-800/80 overflow-hidden bg-slate-50/[0.1] dark:bg-slate-900/10 transition-all duration-300 hover:border-slate-250 dark:hover:border-slate-700/80 shadow-xs"
+                                                                                                    >
+                                                                                                        {/* Chapter Header */}
+                                                                                                        <div 
+                                                                                                            onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapterExpanded }))}
+                                                                                                            className="px-5 py-4 bg-slate-50/50 dark:bg-slate-900/20 hover:bg-slate-100/50 dark:hover:bg-slate-850/20 transition-all flex items-center justify-between cursor-pointer select-none border-b border-transparent data-[expanded=true]:border-slate-100 dark:data-[expanded=true]:border-slate-800"
+                                                                                                            data-expanded={isChapterExpanded}
+                                                                                                        >
+                                                                                                            <div className="flex items-center gap-4">
+                                                                                                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ecb613]/10 to-[#ecb613]/5 border border-[#ecb613]/20 flex items-center justify-center text-[#ecb613] text-xs font-black font-mono shadow-xs">
+                                                                                                                    Ch{chap.chapter_number}
+                                                                                                                </div>
+                                                                                                                <div className="text-left">
+                                                                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                                                                        <h5 className="text-sm font-black text-slate-800 dark:text-slate-100 leading-tight">
+                                                                                                                            {chap.title}
+                                                                                                                        </h5>
+                                                                                                                        {hasChapterAssignment && (
+                                                                                                                            <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-gradient-to-r from-[#ecb613]/15 to-[#ecb613]/5 text-[#ecb613] border border-[#ecb613]/20">
+                                                                                                                                Chapter Allocated
+                                                                                                                            </span>
+                                                                                                                        )}
                                                                                                                     </div>
-                                                                                                                    
-                                                                                                                    {/* Chapter Lessons */}
-                                                                                                                    {isExpanded && (
-                                                                                                                        <div className="p-5 bg-white dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-800/80 space-y-4">
-                                                                                                                            {chapLessons.length === 0 ? (
-                                                                                                                                <p className="text-xs text-slate-400 italic text-center py-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl">No lesson materials uploaded for this chapter.</p>
-                                                                                                                            ) : (
-                                                                                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative pl-3 border-l border-slate-200/60 dark:border-slate-800">
-                                                                                                                                    {chapLessons.map(lesson => {
-                                                                                                                                         const isUpdating = isUpdatingProgress === lesson.id;
-                                                                                                                                         
-                                                                                                                                         let isCompleted = false;
-                                                                                                                                         let isUnlocked = false;
-                                                                                                                                         let statusLabel = "Locked";
-                                                                                                                                         let cardBorder = "border-slate-200 dark:border-slate-800 bg-slate-50/30 opacity-70";
-                                                                                                                                         
-                                                                                                                                         if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                                                                             isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
-                                                                                                                                             isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
-                                                                                                                                             if (isCompleted) {
-                                                                                                                                                 statusLabel = "Completed";
-                                                                                                                                                 cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
-                                                                                                                                             } else if (isUnlocked) {
-                                                                                                                                                 statusLabel = "Unlocked";
-                                                                                                                                                 cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
-                                                                                                                                             }
-                                                                                                                                         } else {
-                                                                                                                                             const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
-                                                                                                                                             if (students.length === 0) {
-                                                                                                                                                 const classwideRow = progressForLesson.find(p => p.student_id === 'classwide_default');
-                                                                                                                                                 if (classwideRow) {
-                                                                                                                                                     if (classwideRow.status === 'completed') {
-                                                                                                                                                         statusLabel = "Completed";
-                                                                                                                                                         cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
-                                                                                                                                                     } else if (classwideRow.status === 'unlocked') {
-                                                                                                                                                         statusLabel = "Unlocked";
-                                                                                                                                                         cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
-                                                                                                                                                     } else {
-                                                                                                                                                         statusLabel = "Locked";
-                                                                                                                                                     }
-                                                                                                                                                 } else {
-                                                                                                                                                     statusLabel = "Locked";
-                                                                                                                                                 }
-                                                                                                                                             } else {
-                                                                                                                                                 const completedCount = progressForLesson.filter(p => p.status === 'completed' && p.student_id !== 'classwide_default').length;
-                                                                                                                                                 const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked' && p.student_id !== 'classwide_default').length;
-                                                                                                                                                 
-                                                                                                                                                 if (completedCount === students.length) {
-                                                                                                                                                     statusLabel = "Completed";
-                                                                                                                                                     cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
-                                                                                                                                                 } else if (completedCount > 0 || unlockedCount > 0) {
-                                                                                                                                                     statusLabel = completedCount > 0 ? `Unlocked (${completedCount}/${students.length} Done)` : "Unlocked";
-                                                                                                                                                     cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
-                                                                                                                                                 } else {
-                                                                                                                                                     statusLabel = "Locked";
-                                                                                                                                                     cardBorder = "border-slate-200 dark:border-slate-800 bg-slate-50/30 opacity-70";
-                                                                                                                                                 }
-                                                                                                                                             }
-                                                                                                                                         }
-                                                                                                                                         
-                                                                                                                                         return (
-                                                                                                                                             <div 
-                                                                                                                                                 key={lesson.id} 
-                                                                                                                                                 onClick={() => {
-                                                                                                                          setSelectedTopic(lesson);
-                                                                                                                      }}
-                                                                                                                                                 className={`group rounded-2xl p-4 border flex items-center justify-between gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md ${cardBorder}`}
-                                                                                                                                             >
-                                                                                                                                                 {/* Left side: Material Type Icon */}
-                                                                                                                                                 <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                                                                                                                                                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
-                                                                                                                                                         lesson.material_type === 'video' 
-                                                                                                                                                             ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' 
-                                                                                                                                                             : lesson.material_type === 'audio' 
-                                                                                                                                                             ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' 
-                                                                                                                                                             : 'text-blue-500 bg-blue-500/10 border-blue-500/20'
-                                                                                                                                                     }`}>
-                                                                                                                                                         {lesson.material_type === 'video' ? (
-                                                                                                                                                             <Film className="size-4.5" />
-                                                                                                                                                         ) : lesson.material_type === 'audio' ? (
-                                                                                                                                                             <Music className="size-4.5" />
-                                                                                                                                                         ) : (
-                                                                                                                                                             <FileText className="size-4.5" />
-                                                                                                                                                         )}
-                                                                                                                                                     </div>
+                                                                                                                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold mt-1 uppercase tracking-wider font-mono">
+                                                                                                                        {chap.lessons.length} {chap.lessons.length === 1 ? 'Study Unit' : 'Study Units'}
+                                                                                                                    </p>
+                                                                                                                </div>
+                                                                                                            </div>
+                                                                                                            <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                                                                                                                {hasChapterAssignment && (
+                                                                                                                    <button 
+                                                                                                                        onClick={(e) => {
+                                                                                                                            e.stopPropagation();
+                                                                                                                            handleDeallocateItem(chap.allocationId!);
+                                                                                                                        }}
+                                                                                                                        disabled={deletingAssignmentId === chap.allocationId}
+                                                                                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all duration-200 border border-transparent hover:border-rose-600/10 shadow-xs cursor-pointer"
+                                                                                                                        title="Deallocate chapter from class"
+                                                                                                                        type="button"
+                                                                                                                    >
+                                                                                                                        {deletingAssignmentId === chap.allocationId ? (
+                                                                                                                            <Loader2 className="size-3 animate-spin" />
+                                                                                                                        ) : (
+                                                                                                                            <Trash2 className="size-3" />
+                                                                                                                        )}
+                                                                                                                        <span>Remove</span>
+                                                                                                                    </button>
+                                                                                                                )}
+                                                                                                                <div 
+                                                                                                                    onClick={(e) => {
+                                                                                                                        e.stopPropagation();
+                                                                                                                        setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapterExpanded }));
+                                                                                                                    }}
+                                                                                                                    className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-850 flex items-center justify-center text-slate-450 hover:text-[#ecb613] hover:bg-[#ecb613]/10 transition-all duration-300 cursor-pointer"
+                                                                                                                >
+                                                                                                                    {isChapterExpanded ? (
+                                                                                                                        <ChevronUp className="size-4" />
+                                                                                                                    ) : (
+                                                                                                                        <ChevronDown className="size-4" />
+                                                                                                                    )}
+                                                                                                                </div>
+                                                                                                            </div>
+                                                                                                        </div>
 
-                                                                                                                                                     {/* Middle: Details */}
-                                                                                                                                                     <div className="text-left min-w-0 flex-1">
-                                                                                                                                                         <div className="flex items-center gap-2">
-                                                                                                                                                             <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                                                                                 statusLabel === 'Completed'
-                                                                                                                                                                     ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                                                                                                                     : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked') ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
-                                                                                                                                                             }`}>
-                                                                                                                                                                 Topic {lesson.lesson_number}
-                                                                                                                                                             </span>
-                                                                                                                                                             {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-amber-500" />}
-                                                                                                                                                         </div>
-                                                                                                                                                         <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug truncate mt-0.5">{lesson.title}</h5>
-                                                                                                                                                         {lesson.description && (
-                                                                                                                                                             <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 leading-relaxed font-semibold mt-0.5">{lesson.description}</p>
-                                                                                                                                                         )}
-                                                                                                                                                     </div>
-                                                                                                                                                 </div>
+                                                                                                        {/* Chapter Lessons */}
+                                                                                                        {isChapterExpanded && (
+                                                                                                            <div className="p-5 bg-white dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-800/80 space-y-4">
+                                                                                                                {chap.lessons.length === 0 ? (
+                                                                                                                    <p className="text-xs text-slate-400 italic text-center py-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl">
+                                                                                                                        No lesson materials uploaded for this chapter.
+                                                                                                                    </p>
+                                                                                                                ) : (
+                                                                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative pl-3 border-l border-slate-200/60 dark:border-slate-800">
+                                                                                                                        {chap.lessons.map((lesson) => {
+                                                                                                                            const isUpdating = isUpdatingProgress === lesson.id;
+                                                                                                                            const pacing = getLessonPacingStatus(lesson.id);
 
-                                                                                                                                                 {/* Right side: Status indicator & slider action */}
-                                                                                                                                                 <div className="flex items-center gap-2 shrink-0">
-                                                                                                                                                     <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${
-                                                                                                                                                         statusLabel === 'Completed'
-                                                                                                                                                             ? 'bg-emerald-500/10 text-emerald-605 dark:text-emerald-400 border-emerald-500/25'
-                                                                                                                                                             : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked'))
-                                                                                                                                                             ? 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/25'
-                                                                                                                                                             : 'bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-100 border-transparent'
-                                                                                                                                                     }`}>
-                                                                                                                                                         {statusLabel === 'Locked' ? (
-                                                                                                                                                             <Lock className="size-3" />
-                                                                                                                                                         ) : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) ? (
-                                                                                                                                                             <Unlock className="size-3" />
-                                                                                                                                                         ) : (
-                                                                                                                                                             <CheckCircle className="size-3" />
-                                                                                                                                                         )}
-                                                                                                                                                         <span>{statusLabel}</span>
-                                                                                                                                                     </div>
-                                                                                                                                                     <button
-                                                                                              type="button"
-                                                                                              title="Manage pacing overrides"
-                                                                                              onClick={(e) => {
-                                                                                                  e.stopPropagation();
-                                                                                                  if (isUpdating) return;
-                                                                                                  openAllocationDrawer(lesson);
-                                                                                              }}
-                                                                                              className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
-                                                                                          >
-                                                                                              <Sliders className="size-3.5" />
-                                                                                          </button>
-                                                                                                                                                 </div>
-                                                                                                                                             </div>
-                                                                                                                                         );
-                                                                                                                                    })}
+                                                                                                                            const isAudio = lesson.material_type === 'audio';
+                                                                                                                            const isVideo = lesson.material_type === 'video';
+                                                                                                                            const isPdf = lesson.material_type === 'pdf';
+
+                                                                                                                            return (
+                                                                                                                                <div 
+                                                                                                                                    key={lesson.id} 
+                                                                                                                                    onClick={() => setSelectedTopic(lesson)}
+                                                                                                                                    className={`group rounded-2xl p-4 border flex items-center justify-between gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md ${pacing.cardBorder}`}
+                                                                                                                                >
+                                                                                                                                    {/* Left side: Material Type Icon */}
+                                                                                                                                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                                                                                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
+                                                                                                                                            isPdf 
+                                                                                                                                                ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/[0.05] border-blue-500/20'
+                                                                                                                                                : isVideo 
+                                                                                                                                                ? 'text-rose-500 bg-rose-500/10 dark:bg-rose-500/[0.05] border-rose-500/20' 
+                                                                                                                                                : isAudio 
+                                                                                                                                                ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' 
+                                                                                                                                                : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                                                                                                                                        }`}>
+                                                                                                                                            {isVideo ? (
+                                                                                                                                                <Film className="size-4.5" />
+                                                                                                                                            ) : isAudio ? (
+                                                                                                                                                <Music className="size-4.5" />
+                                                                                                                                            ) : isPdf ? (
+                                                                                                                                                <FileText className="size-4.5" />
+                                                                                                                                            ) : (
+                                                                                                                                                <FileText className="size-4.5" />
+                                                                                                                                            )}
+                                                                                                                                        </div>
+
+                                                                                                                                        {/* Middle: Details */}
+                                                                                                                                        <div className="text-left min-w-0 flex-1">
+                                                                                                                                            <div className="flex items-center gap-2">
+                                                                                                                                                <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${pacing.textStyle}`}>
+                                                                                                                                                    Topic {lesson.lesson_number}
+                                                                                                                                                </span>
+                                                                                                                                                {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-[#ecb613]" />}
+                                                                                                                                                {lesson.isExplicit && (
+                                                                                                                                                    <span className="px-1.5 py-0.25 rounded text-[8px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                                                                                                                        Topic Allocated
+                                                                                                                                                    </span>
+                                                                                                                                                )}
+                                                                                                                                            </div>
+                                                                                                                                            <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug truncate mt-0.5">{lesson.title}</h5>
+                                                                                                                                            {lesson.description && (
+                                                                                                                                                <p className="text-[10px] text-slate-500 dark:text-slate-450 line-clamp-1 leading-relaxed font-semibold mt-0.5">{lesson.description}</p>
+                                                                                                                                            )}
+                                                                                                                                        </div>
+                                                                                                                                    </div>
+
+                                                                                                                                    {/* Right side: Status indicator & actions */}
+                                                                                                                                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                                                                                                                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${pacing.badgeStyle}`}>
+                                                                                                                                            {pacing.isLocked ? (
+                                                                                                                                                <Lock className="size-3" />
+                                                                                                                                            ) : pacing.isUnlocked ? (
+                                                                                                                                                <Unlock className="size-3" />
+                                                                                                                                            ) : (
+                                                                                                                                                <CheckCircle className="size-3" />
+                                                                                                                                            )}
+                                                                                                                                            <span>{pacing.statusLabel}</span>
+                                                                                                                                        </div>
+                                                                                                                                        <button
+                                                                                                                                            type="button"
+                                                                                                                                            title="Manage pacing overrides"
+                                                                                                                                            onClick={() => {
+                                                                                                                                                if (isUpdating) return;
+                                                                                                                                                openAllocationDrawer(lesson);
+                                                                                                                                            }}
+                                                                                                                                            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
+                                                                                                                                        >
+                                                                                                                                            <Sliders className="size-3.5" />
+                                                                                                                                        </button>
+                                                                                                                                        {lesson.isExplicit && (
+                                                                                                                                            <button
+                                                                                                                                                type="button"
+                                                                                                                                                onClick={() => handleDeallocateItem(lesson.allocationId)}
+                                                                                                                                                disabled={deletingAssignmentId === lesson.allocationId}
+                                                                                                                                                className="w-8 h-8 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white flex items-center justify-center border border-transparent transition-all cursor-pointer"
+                                                                                                                                                title="Deallocate topic from class"
+                                                                                                                                            >
+                                                                                                                                                {deletingAssignmentId === lesson.allocationId ? (
+                                                                                                                                                    <Loader2 className="size-3.5 animate-spin" />
+                                                                                                                                                ) : (
+                                                                                                                                                    <Trash2 className="size-3.5" />
+                                                                                                                                                )}
+                                                                                                                                            </button>
+                                                                                                                                        )}
+                                                                                                                                    </div>
                                                                                                                                 </div>
-                                                                                                                            )}
-                                                                                                                        </div>
-                                                                                                                    )}
-                                                                                                                </div>
-                                                                                                            );
-                                                                                                        })}
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
-                                                                                        );
-                                                                                    })()}
-
-                                                                                    {/* Render Chapter details */}
-                                                                                    {asg.inventory_ref_type === 'chapter' && (() => {
-                                                                                        const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
-                                                                                        if (!chap) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Chapter data could not be loaded.</p>;
-                                                                                        
-                                                                                        const rawLessons = courseLessons.filter(l => l.chapter_id === chap.id);
-                                                                                        const chapLessons = rawLessons.filter(lesson => {
-                                                                                            if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
-                                                                                                const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
-                                                                                                const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
-                                                                                                return isCompleted || isUnlocked;
-                                                                                            }
-                                                                                            return true;
-                                                                                        });
-                                                                                        return (
-                                                                                            <div className="space-y-4">
-                                                                                                <div className="border-b border-slate-150 dark:border-slate-800 pb-3 flex items-center justify-between pl-2">
-                                                                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Chapter Lesson Materials</h4>
-                                                                                                    <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded">
-                                                                                                        {chapLessons.length} Study Units
-                                                                                                    </span>
-                                                                                                </div>
-                                                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-3 border-l border-slate-200/60 dark:border-slate-800">
-                                                                                                    {chapLessons.length === 0 ? (
-                                                                                                        <p className="text-xs text-slate-400 italic text-center py-6 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl w-full">No lesson materials defined in this chapter.</p>
-                                                                                                    ) : (
-                                                                                                        chapLessons.map(lesson => {
-                                                                                                             const isUpdating = isUpdatingProgress === lesson.id;
-                                                                                                             
-                                                                                                             let isCompleted = false;
-                                                                                                             let isUnlocked = false;
-                                                                                                             let statusLabel = "Locked";
-                                                                                                             let cardBorder = "border-slate-200 dark:border-slate-800 bg-slate-50/30 opacity-70";
-                                                                                                             
-                                                                                                             if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                                                 isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
-                                                                                                                 isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
-                                                                                                                 if (isCompleted) {
-                                                                                                                     statusLabel = "Completed";
-                                                                                                                     cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
-                                                                                                                 } else if (isUnlocked) {
-                                                                                                                     statusLabel = "Unlocked";
-                                                                                                                     cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
-                                                                                                                 }
-                                                                                                             } else {
-                                                                                                                 const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
-                                                                                                                 if (students.length === 0) {
-                                                                                                                     const classwideRow = progressForLesson.find(p => p.student_id === 'classwide_default');
-                                                                                                                     if (classwideRow) {
-                                                                                                                         if (classwideRow.status === 'completed') {
-                                                                                                                             statusLabel = "Completed";
-                                                                                                                             cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
-                                                                                                                         } else if (classwideRow.status === 'unlocked') {
-                                                                                                                             statusLabel = "Unlocked";
-                                                                                                                             cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
-                                                                                                                         } else {
-                                                                                                                             statusLabel = "Locked";
-                                                                                                                         }
-                                                                                                                     } else {
-                                                                                                                         statusLabel = "Locked";
-                                                                                                                     }
-                                                                                                                 } else {
-                                                                                                                     const completedCount = progressForLesson.filter(p => p.status === 'completed' && p.student_id !== 'classwide_default').length;
-                                                                                                                     const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked' && p.student_id !== 'classwide_default').length;
-                                                                                                                     
-                                                                                                                     if (completedCount === students.length) {
-                                                                                                                         statusLabel = "Completed";
-                                                                                                                         cardBorder = "border-emerald-500 bg-emerald-50/[0.03] dark:bg-emerald-500/[0.02] shadow-xs";
-                                                                                                                     } else if (unlockedCount === students.length) {
-                                                                                                                         statusLabel = "Unlocked";
-                                                                                                                         cardBorder = "border-[#ecb613] bg-amber-500/[0.02] dark:bg-[#ecb613]/[0.01] shadow-xs";
-                                                                                                                     } else if (completedCount === 0 && unlockedCount === 0) {
-                                                                                                                         statusLabel = "Locked";
-                                                                                                                     } else {
-                                                                                                                         statusLabel = `${completedCount}/${students.length} Done`;
-                                                                                                                         cardBorder = "border-sky-500/50 bg-sky-500/[0.01] dark:bg-sky-500/[0.005]";
-                                                                                                                     }
-                                                                                                                 }
-                                                                                                             }
-                                                                                                             
-                                                                                                             return (
-                                                                                                                 <div 
-                                                                                                                     key={lesson.id} 
-                                                                                                                     onClick={() => {
-                                                                                                                          setSelectedTopic(lesson);
-                                                                                                                      }}
-                                                                                                                     className={`group rounded-2xl p-4 border flex items-center justify-between gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md ${cardBorder}`}
-                                                                                                                 >
-                                                                                                                     {/* Left side: Material Type Icon */}
-                                                                                                                     <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                                                                                                                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
-                                                                                                                             lesson.material_type === 'video' 
-                                                                                                                                 ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' 
-                                                                                                                                 : lesson.material_type === 'audio' 
-                                                                                                                                 ? 'text-amber-500 bg-amber-500/10 border-amber-500/20' 
-                                                                                                                                 : 'text-blue-500 bg-blue-500/10 border-blue-500/20'
-                                                                                                                         }`}>
-                                                                                                                             {lesson.material_type === 'video' ? (
-                                                                                                                                 <Film className="size-4.5" />
-                                                                                                                             ) : lesson.material_type === 'audio' ? (
-                                                                                                                                 <Music className="size-4.5" />
-                                                                                                                             ) : (
-                                                                                                                                 <FileText className="size-4.5" />
-                                                                                                                             )}
-                                                                                                                         </div>
-
-                                                                                                                         {/* Middle: Details */}
-                                                                                                                         <div className="text-left min-w-0 flex-1">
-                                                                                                                             <div className="flex items-center gap-2">
-                                                                                                                                 <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                                                     statusLabel === 'Completed'
-                                                                                                                                         ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                                                                                         : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked') ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
-                                                                                                                                 }`}>
-                                                                                                                                     Topic {lesson.lesson_number}
-                                                                                                                                 </span>
-                                                                                                                                 {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-amber-500" />}
-                                                                                                                             </div>
-                                                                                                                             <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug truncate mt-0.5">{lesson.title}</h5>
-                                                                                                                             {lesson.description && (
-                                                                                                                                 <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 leading-relaxed font-semibold mt-0.5">{lesson.description}</p>
-                                                                                                                             )}
-                                                                                                                         </div>
-                                                                                                                     </div>
-
-                                                                                                                     {/* Right side: Status indicator & slider action */}
-                                                                                                                     <div className="flex items-center gap-2 shrink-0">
-                                                                                                                         <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${
-                                                                                                                             statusLabel === 'Completed'
-                                                                                                                                 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
-                                                                                                                                 : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked'))
-                                                                                                                                 ? 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/25'
-                                                                                                                                 : 'bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-100 border-transparent'
-                                                                                                                         }`}>
-                                                                                                                             {statusLabel === 'Locked' ? (
-                                                                                                                                 <Lock className="size-3" />
-                                                                                                                             ) : statusLabel === 'Unlocked' ? (
-                                                                                                                                 <Unlock className="size-3" />
-                                                                                                                             ) : (
-                                                                                                                                 <CheckCircle className="size-3" />
-                                                                                                                             )}
-                                                                                                                             <span>{statusLabel}</span>
-                                                                                                                         </div>
-                                                                                                                         <button
-                                                                                              type="button"
-                                                                                              title="Manage pacing overrides"
-                                                                                              onClick={(e) => {
-                                                                                                  e.stopPropagation();
-                                                                                                  if (isUpdating) return;
-                                                                                                  openAllocationDrawer(lesson);
-                                                                                              }}
-                                                                                              className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
-                                                                                          >
-                                                                                              <Sliders className="size-3.5" />
-                                                                                          </button>
-                                                                                                                     </div>
-                                                                                                                 </div>
-                                                                                                             );
-                                                                                                         })
-                                                                                                    )}
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })()}
-
-                                                                                    {/* Render Lesson details */}
-                                                                                    {asg.inventory_ref_type === 'lesson' && (() => {
-                                                                                        const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
-                                                                                        if (!lesson) return <p className="text-xs text-slate-400 italic text-left pl-2">Curriculum Lesson data could not be loaded.</p>;
-                                                                                        
-                                                                                        // Filter out locked class-wide lessons in individual mode
-                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum && asg.target_type === 'all') {
-                                                                                            const isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
-                                                                                            const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
-                                                                                            if (!isCompleted && !isUnlocked) return null;
-                                                                                        }
-                                                                                        
-                                                                                        const isAudio = lesson.material_type === 'audio';
-                                                                                        const isVideo = lesson.material_type === 'video';
-                                                                                        const isPdf = lesson.material_type === 'pdf';
-                                                                                        
-                                                                                        const highlightBorder = isVideo 
-                                                                                            ? 'border-l-rose-500' 
-                                                                                            : isAudio 
-                                                                                            ? 'border-l-amber-500' 
-                                                                                            : isPdf 
-                                                                                            ? 'border-l-blue-500' 
-                                                                                            : 'border-l-emerald-500';
-
-                                                                                        const iconColor = isVideo 
-                                                                                            ? 'text-rose-500 bg-rose-500/10' 
-                                                                                            : isAudio 
-                                                                                            ? 'text-amber-500 bg-amber-500/10' 
-                                                                                            : isPdf 
-                                                                                            ? 'text-blue-500 bg-blue-500/10' 
-                                                                                            : 'text-emerald-500 bg-emerald-50/10';
-
-                                                                                        const isUpdating = isUpdatingProgress === lesson.id;
-                                                                                        
-                                                                                        let isCompleted = false;
-                                                                                        let isUnlocked = false;
-                                                                                        let statusLabel = "Locked";
-                                                                                        
-                                                                                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                                                                                            isCompleted = selectedStudentPermissions.completedLessons.has(lesson.id);
-                                                                                            isUnlocked = selectedStudentPermissions.unlockedLessons.has(lesson.id);
-                                                                                            if (isCompleted) {
-                                                                                                statusLabel = "Completed";
-                                                                                            } else if (isUnlocked) {
-                                                                                                statusLabel = "Unlocked";
-                                                                                            }
-                                                                                        } else {
-                                                                                            const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
-                                                                                            if (students.length === 0) {
-                                                                                                const classwideRow = progressForLesson.find(p => p.student_id === 'classwide_default');
-                                                                                                if (classwideRow) {
-                                                                                                    if (classwideRow.status === 'completed') {
-                                                                                                        statusLabel = "Completed";
-                                                                                                    } else if (classwideRow.status === 'unlocked') {
-                                                                                                        statusLabel = "Unlocked";
-                                                                                                    } else {
-                                                                                                        statusLabel = "Locked";
-                                                                                                    }
-                                                                                                } else {
-                                                                                                    statusLabel = "Locked";
-                                                                                                }
-                                                                                            } else {
-                                                                                                const completedCount = progressForLesson.filter(p => p.status === 'completed' && p.student_id !== 'classwide_default').length;
-                                                                                                const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked' && p.student_id !== 'classwide_default').length;
-                                                                                                
-                                                                                                if (completedCount === students.length) {
-                                                                                                    statusLabel = "Completed";
-                                                                                                } else if (completedCount > 0 || unlockedCount > 0) {
-                                                                                                    statusLabel = completedCount > 0 ? `Unlocked (${completedCount}/${students.length} Done)` : "Unlocked";
-                                                                                                } else {
-                                                                                                    statusLabel = "Locked";
-                                                                                                }
-                                                                                            }
-                                                                                        }
-
-                                                                                        return (
-                                                                                            <div className="space-y-4">
-                                                                                                <div className="border-b border-slate-100 dark:border-slate-800 pb-3 pl-2 flex items-center justify-between">
-                                                                                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">Allocated Topic Study Guide</h4>
-                                                                                                    <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                        statusLabel === 'Completed'
-                                                                                                            ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                                                            : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked') ? 'text-amber-600 dark:text-[#ecb613]' : 'text-slate-400 dark:text-slate-500')
-                                                                                                    }`}>
-                                                                                                        {statusLabel}
-                                                                                                    </span>
-                                                                                                </div>
-                                                                                                <div 
-                                                                                                    className={`p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 border-l-4 ${highlightBorder} bg-slate-50/20 dark:bg-slate-900/40 flex flex-col gap-6 transition-all hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700`}
-                                                                                                >
-                                                                                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                                                                                        <div className="space-y-4 text-left max-w-xl">
-                                                                                                            <div className="flex items-center gap-3">
-                                                                                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${iconColor}`}>
-                                                                                                                    {isVideo ? (
-                                                                                                                        <Film className="size-5" />
-                                                                                                                    ) : isAudio ? (
-                                                                                                                        <Music className="size-5 animate-pulse" />
-                                                                                                                    ) : isPdf ? (
-                                                                                                                        <FileText className="size-5" />
-                                                                                                                    ) : (
-                                                                                                                        <BookOpen className="size-5" />
-                                                                                                                    )}
-                                                                                                                </div>
-                                                                                                                <div>
-                                                                                                                    <h5 className="font-extrabold text-base text-slate-900 dark:text-white leading-snug">{lesson.title}</h5>
-                                                                                                                    <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 mt-1 inline-block">
-                                                                                                                        {lesson.material_type || 'Guide'} Content
-                                                                                                                    </span>
-                                                                                                             </div>
+                                                                                                                            );
+                                                                                                                        })}
+                                                                                                                    </div>
+                                                                                                                )}
                                                                                                             </div>
-                                                                                                         {lesson.description && (
-                                                                                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium pl-1">{lesson.description}</p>
-                                                                                                            )}
-                                                                                                            {lesson.bullet_points && lesson.bullet_points.length > 0 && (
-                                                                                                                <div className="space-y-2 bg-white dark:bg-slate-955/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 pl-4">
-                                                                                                                    {lesson.bullet_points.map((pt, i) => (
-                                                                                                                        <div key={i} className="flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300">
-                                                                                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 mt-1.5" />
-                                                                                                                            <span className="font-medium">{pt}</span>
-                                                                                                                        </div>
-                                                                                                                    ))}
-                                                                                                                </div>
-                                                                                                            )}
-                                                                                                        </div>
-                                                                                                        <div className="flex items-center gap-3 shrink-0 self-end md:self-center">
-                                                                                                            <div className="flex items-center gap-2">
-                                                                                                                <button
-                                                                                                                    type="button"
-                                                                                                                    disabled={isUpdating}
-                                                                                                                    onClick={() => {
-                                                                                        openAllocationDrawer(lesson);
-                                                                                    }}
-                                                                                                                    className={`flex items-center gap-1.5 px-4.5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider border transition-all cursor-pointer ${
-                                                                                                                        statusLabel === 'Completed'
-                                                                                                                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                                                                                                                            : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked'))
-                                                                                                                            ? 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/20 hover:bg-[#ecb613]/20 text-[#ecb613]'
-                                                                                                                            : 'bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-750 border-transparent'
-                                                                                                                    }`}
-                                                                                                                >
-                                                                                                                    {statusLabel === 'Locked' ? (
-                                                                                                                        <Lock className="size-3" />
-                                                                                                                    ) : (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) ? (
-                                                                                                                        <Unlock className="size-3" />
-                                                                                                                    ) : (
-                                                                                                                        <CheckCircle className="size-3" />
-                                                                                                                    )}
-                                                                                                                    <span>{statusLabel}</span>
-                                                                                                                </button>
-                                                                                                                <button
-                                                                                                                    type="button"
-                                                                                                                    disabled={isUpdating}
-                                                                                                                    onClick={() => {
-                                                                                        openAllocationDrawer(lesson);
-                                                                                    }}
-                                                                                                                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-500 dark:text-slate-455 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
-                                                                                                                >
-                                                                                                                    <MoreVertical className="size-3.5" />
-                                                                                                                </button>
-                                                                                                            </div>
-                                                                                                        </div>
+                                                                                                        )}
                                                                                                     </div>
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })()}
+                                                                                                );
+                                                                                            })}
+                                                                                        </div>
+                                                                                    )}
                                                                                 </div>
-                                                                            )}
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Right Column Sticky Live Portal Simulation Card */}
@@ -5274,7 +4924,7 @@ export default function ClassroomDashboardPage({
                                         <div className="flex-1">
                                             <h4 className="font-bold text-rose-800 dark:text-rose-300 text-sm">Database setup required</h4>
                                             <p className="text-xs text-rose-700 dark:text-rose-400 mt-1 leading-relaxed">
-                                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">classroom_inventory_allocation</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-150 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
+                                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">classroom_inventory_allocation</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-200 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
                                             </p>
                                             <p className="text-xs text-rose-700 dark:text-rose-400 mt-2">
                                                 Go to <strong>Supabase Dashboard → sevtycwrmhzyfxvxkkgc → SQL Editor → New Query</strong> and paste the SQL below, then click Run.
@@ -6312,7 +5962,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
                             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl text-slate-800 dark:text-slate-100 overflow-hidden animate-in zoom-in-95 duration-300">
                                 {/* Header */}
-                                <div className="flex items-center justify-between px-6 py-5 border-b border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex-shrink-0">
+                                <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex-shrink-0">
                                     <div className="flex items-center gap-3 text-left">
                                         <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
                                             {styleConfig.icon}
@@ -6392,7 +6042,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                             href={selectedTopic.material_url} 
                                                             target="_blank" 
                                                             rel="noopener noreferrer" 
-                                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-955 font-black rounded-full text-xs transition-all uppercase tracking-wider"
+                                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-full text-xs transition-all uppercase tracking-wider"
                                                         >
                                                             <span>Open File Attachment</span>
                                                             <ExternalLink className="size-3.5" />
@@ -6415,7 +6065,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                 </div>
 
                                 {/* Footer */}
-                                <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-150 dark:border-slate-800 flex justify-end gap-3 flex-shrink-0">
+                                <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3 flex-shrink-0">
                                     <button 
                                         onClick={() => setSelectedTopic(null)} 
                                         className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors tracking-wider uppercase"
@@ -6437,9 +6087,9 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         ></div>
 
                         {/* Drawer Content */}
-                        <div className="relative w-full max-w-xl h-full bg-white dark:bg-slate-955 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
+                        <div className="relative w-full max-w-xl h-full bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
                             {/* Drawer Header */}
-                            <div className="px-6 py-5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40">
+                            <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40">
                                 <div className="flex items-center gap-2.5 text-left">
                                     <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
                                         <BookOpen className="size-4.5 text-amber-500" />
@@ -6459,7 +6109,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                             </div>
 
                             {/* Search and Tab selectors */}
-                            <div className="p-5 border-b border-slate-150 dark:border-slate-855 space-y-4">
+                            <div className="p-5 border-b border-slate-200 dark:border-slate-800 space-y-4">
                                 <div className="relative">
                                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 size-4" />
                                     <input
@@ -6498,7 +6148,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         return (
                                             <div key={category} className="space-y-3">
                                                 {/* Category Headline */}
-                                                <div className="flex items-center gap-2 select-none border-b border-slate-150 dark:border-slate-855 pb-1.5 pt-1">
+                                                <div className="flex items-center gap-2 select-none border-b border-slate-200 dark:border-slate-800 pb-1.5 pt-1">
                                                     <span className="w-1.5 h-3.5 bg-[#ecb613] rounded-full" />
                                                     <h6 className="font-extrabold text-[11px] tracking-wider uppercase text-slate-500 dark:text-slate-400">
                                                         {category}
@@ -6517,7 +6167,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                         const isAllocated = classroomInventoryAllocations.some(a => a.module_id === mod.id && !a.allocated_to_student_id);
 
                                                         return (
-                                                            <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-855 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
+                                                            <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
                                                                 {/* Header Panel */}
                                                                 <div 
                                                                     onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
@@ -6528,7 +6178,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                             {getCategoryAbbreviation(category)}
                                                                         </div>
                                                                         <div className="min-w-0 flex-1">
-                                                                            <h5 className="text-xs font-black text-slate-855 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
+                                                                            <h5 className="text-xs font-black text-slate-800 dark:text-slate-100 leading-tight truncate">{mod.title}</h5>
                                                                             <p className="text-[9px] text-slate-455 dark:text-slate-555 font-bold uppercase mt-1 tracking-wider font-mono">
                                                                                 {modChapters.length} CHAPTERS • {category}
                                                                             </p>
@@ -6541,7 +6191,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                             className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${
                                                                                 isAllocated
                                                                                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
-                                                                                    : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-955 hover:-translate-y-0.5'
+                                                                                    : 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 hover:-translate-y-0.5'
                                                                             }`}
                                                                             type="button"
                                                                         >
@@ -6569,7 +6219,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
 
                                                                 {/* Chapters & Lessons */}
                                                                 {isExpanded && (
-                                                                    <div className="p-4 bg-white dark:bg-slate-955/20 border-t border-slate-150 dark:border-slate-855 space-y-4">
+                                                                    <div className="p-4 bg-white dark:bg-slate-950/20 border-t border-slate-200 dark:border-slate-800 space-y-4">
                                                                         {modChapters.length === 0 ? (
                                                                             <p className="text-xs text-slate-400 italic text-center py-2">No chapters defined.</p>
                                                                         ) : (
@@ -6579,7 +6229,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                 const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
 
                                                                                 return (
-                                                                                    <div key={chap.id} className="p-3.5 rounded-xl border border-slate-150 dark:border-slate-855 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
+                                                                                    <div key={chap.id} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/[0.1] dark:bg-slate-900/5 space-y-3">
                                                                                         {/* Chapter header row */}
                                                                                         <div className="flex items-start justify-between gap-3">
                                                                                             <div className="text-left">
@@ -6592,7 +6242,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer ${
                                                                                                     isChapAllocated
                                                                                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
-                                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-200 dark:border-slate-700 hover:border-transparent'
                                                                                                 }`}
                                                                                                 type="button"
                                                                                             >
@@ -6634,7 +6284,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                                                                                 className={`px-2.5 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
                                                                                                                     isLessonAllocated
                                                                                                                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-455 cursor-not-allowed shadow-none'
-                                                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-955 border border-slate-200 dark:border-slate-700 hover:border-transparent'
+                                                                                                                        : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-200 dark:border-slate-700 hover:border-transparent'
                                                                                                                 }`}
                                                                                                                 type="button"
                                                                                                             >
@@ -6689,7 +6339,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         <div className="relative w-full max-w-md h-full bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
                             
                             {/* Drawer Header */}
-                            <div className="px-6 py-5 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40">
+                            <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40">
                                 <div className="flex items-center gap-2.5 text-left">
                                     <div className="w-9 h-9 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/20 flex items-center justify-center text-[#ecb613]">
                                         <Sliders className="size-4.5 text-[#ecb613]" />
@@ -6717,7 +6367,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-tight">
                                             {allocationTargetLesson?.title || 'No target selected'}
                                         </h4>
-                                        <p className="text-[11px] text-slate-505 dark:text-slate-400 font-semibold leading-none">
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold leading-none">
                                             Topic {allocationTargetLesson?.lesson_number || ''} • Level 1
                                         </p>
                                     </div>
@@ -6900,12 +6550,12 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                             </div>
 
                             {/* Drawer Footer */}
-                            <div className="p-6 border-t border-slate-150 dark:border-slate-800 flex items-center gap-3 bg-slate-50/50 dark:bg-slate-900/40">
+                            <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex items-center gap-3 bg-slate-50/50 dark:bg-slate-900/40">
                                 <button
                                     type="button"
                                     disabled={isSavingAllocation}
                                     onClick={handleSaveAllocation}
-                                    className="flex-1 py-3 bg-[#ecb613] hover:bg-amber-500 disabled:bg-slate-150 dark:disabled:bg-slate-800 text-slate-950 disabled:text-slate-400 font-black rounded-xl text-xs transition-all hover:scale-[1.02] active:scale-[0.98] tracking-widest uppercase flex items-center justify-center gap-2 shadow-md shadow-amber-500/10 cursor-pointer"
+                                    className="flex-1 py-3 bg-[#ecb613] hover:bg-amber-500 disabled:bg-slate-100 dark:disabled:bg-slate-800 text-slate-950 disabled:text-slate-400 font-black rounded-xl text-xs transition-all hover:scale-[1.02] active:scale-[0.98] tracking-widest uppercase flex items-center justify-center gap-2 shadow-md shadow-amber-500/10 cursor-pointer"
                                 >
                                     {isSavingAllocation ? (
                                         <>
@@ -7010,7 +6660,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                     <div>
                                         <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Score (Out of 10)</label>
                                         <input 
-                                            className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100" 
+                                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100" 
                                             type="number" 
                                             min="0" max="10" step="0.5" 
                                             placeholder="e.g. 8.5"
@@ -7021,7 +6671,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                     <div>
                                         <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Proficiency</label>
                                         <select 
-                                            className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
+                                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
                                             value={reviewProficiency}
                                             onChange={(e) => setReviewProficiency(e.target.value)}
                                         >
@@ -7037,7 +6687,7 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">Feedback / Comments</label>
                                     <textarea 
-                                        className="w-full rounded-xl border border-slate-205 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all resize-none text-slate-800 dark:text-slate-100" 
+                                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all resize-none text-slate-800 dark:text-slate-100" 
                                         rows={3} 
                                         placeholder="Add encouragement, areas of improvement..."
                                         value={reviewFeedback}
