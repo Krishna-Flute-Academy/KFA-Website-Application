@@ -353,6 +353,54 @@ export default function ClassroomDashboardPage({
     const [allocationSelectedStudents, setAllocationSelectedStudents] = useState<string[]>([]);
     const [allocationSearchQuery, setAllocationSearchQuery] = useState('');
     const [isSavingAllocation, setIsSavingAllocation] = useState(false);
+
+    const getStudentsWithStatus = (status: 'locked' | 'unlocked' | 'completed', lessonId: string) => {
+        if (status === 'locked') {
+            return students
+                .map(s => s.student_id)
+                .filter(id => {
+                    const progressObj = studentProgress.find(p => p.student_id === id && p.lesson_id === lessonId);
+                    return !progressObj || progressObj.status === 'locked';
+                });
+        } else {
+            return studentProgress
+                .filter(p => p.lesson_id === lessonId && p.status === status && p.student_id !== 'classwide_default')
+                .map(p => p.student_id);
+        }
+    };
+
+    const openAllocationDrawer = (lesson: any) => {
+        setAllocationTargetLesson(lesson);
+        const targetType = curriculumTab === 'individual' ? 'individual' : 'classwide';
+        setAllocationTargetType(targetType);
+
+        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
+        const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
+        if (students.length === 0) {
+            const classwideRow = progressForLesson.find(p => p.student_id === 'classwide_default');
+            if (classwideRow) {
+                if (classwideRow.status === 'completed') initialStatus = 'completed';
+                else if (classwideRow.status === 'unlocked') initialStatus = 'unlocked';
+            }
+        } else {
+            const completedCount = progressForLesson.filter(p => p.status === 'completed' && p.student_id !== 'classwide_default').length;
+            const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked' && p.student_id !== 'classwide_default').length;
+            if (completedCount === students.length) {
+                initialStatus = 'completed';
+            } else if (completedCount > 0 || unlockedCount > 0) {
+                initialStatus = 'unlocked';
+            }
+        }
+
+        setAllocationStatus(initialStatus);
+
+        const currentSelected = (curriculumTab === 'individual' && selectedStudentForCurriculum)
+            ? [selectedStudentForCurriculum.student_id]
+            : getStudentsWithStatus(initialStatus, lesson.id);
+
+        setAllocationSelectedStudents(currentSelected);
+        setIsAllocationDrawerOpen(true);
+    };
     const [showAssignmentModal, setShowAssignmentModal] = useState(false);
     const [isSavingAssignment, setIsSavingAssignment] = useState(false);
     const [assignmentForm, setAssignmentForm] = useState({
@@ -2127,7 +2175,7 @@ export default function ClassroomDashboardPage({
                                     // Preserve completed status to avoid accidental downgrades to 'unlocked'
                                     status = (existingStatus === 'completed') ? 'completed' : 'unlocked';
                                 } else {
-                                    status = 'locked';
+                                    status = (existingStatus === 'completed') ? 'completed' : 'locked';
                                 }
                             } else if (allocationStatus === 'completed') {
                                 if (isSelected) {
@@ -3939,22 +3987,7 @@ export default function ClassroomDashboardPage({
                                                                                               onClick={(e) => {
                                                                                                   e.stopPropagation();
                                                                                                   if (isUpdating) return;
-                                                                                                  setAllocationTargetLesson(lesson);
-                                                                                                  setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                  let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                  if (statusLabel === 'Completed') {
-                                                                                                      initialStatus = 'completed';
-                                                                                                  } else if (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) {
-                                                                                                      initialStatus = 'unlocked';
-                                                                                                  } else if (statusLabel === 'Locked') {
-                                                                                                      initialStatus = 'locked';
-                                                                                                  }
-                                                                                                  setAllocationStatus(initialStatus);
-                                                                                                  const currentSelected = studentProgress
-                                                                                                      .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                      .map(p => p.student_id);
-                                                                                                  setAllocationSelectedStudents((curriculumTab === 'individual' && selectedStudentForCurriculum) ? [selectedStudentForCurriculum.student_id] : (currentSelected.length > 0 ? currentSelected : []));
-                                                                                                  setIsAllocationDrawerOpen(true);
+                                                                                                  openAllocationDrawer(lesson);
                                                                                               }}
                                                                                               className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
                                                                                           >
@@ -4126,22 +4159,7 @@ export default function ClassroomDashboardPage({
                                                                                               onClick={(e) => {
                                                                                                   e.stopPropagation();
                                                                                                   if (isUpdating) return;
-                                                                                                  setAllocationTargetLesson(lesson);
-                                                                                                  setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                  let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                  if (statusLabel === 'Completed') {
-                                                                                                      initialStatus = 'completed';
-                                                                                                  } else if (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) {
-                                                                                                      initialStatus = 'unlocked';
-                                                                                                  } else if (statusLabel === 'Locked') {
-                                                                                                      initialStatus = 'locked';
-                                                                                                  }
-                                                                                                  setAllocationStatus(initialStatus);
-                                                                                                  const currentSelected = studentProgress
-                                                                                                      .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                      .map(p => p.student_id);
-                                                                                                  setAllocationSelectedStudents((curriculumTab === 'individual' && selectedStudentForCurriculum) ? [selectedStudentForCurriculum.student_id] : (currentSelected.length > 0 ? currentSelected : []));
-                                                                                                  setIsAllocationDrawerOpen(true);
+                                                                                                  openAllocationDrawer(lesson);
                                                                                               }}
                                                                                               className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
                                                                                           >
@@ -4266,9 +4284,9 @@ export default function ClassroomDashboardPage({
                                                                                                                     <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 mt-1 inline-block">
                                                                                                                         {lesson.material_type || 'Guide'} Content
                                                                                                                     </span>
-                                                                                                                </div>
+                                                                                                             </div>
                                                                                                             </div>
-                                                                                                            {lesson.description && (
+                                                                                                         {lesson.description && (
                                                                                                                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium pl-1">{lesson.description}</p>
                                                                                                             )}
                                                                                                             {lesson.bullet_points && lesson.bullet_points.length > 0 && (
@@ -4288,23 +4306,8 @@ export default function ClassroomDashboardPage({
                                                                                                                     type="button"
                                                                                                                     disabled={isUpdating}
                                                                                                                     onClick={() => {
-                                                                                                                        setAllocationTargetLesson(lesson);
-                                                                                                                        setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                                        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                                        if (statusLabel === 'Completed') {
-                                                                                                                            initialStatus = 'completed';
-                                                                                                                        } else if (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) {
-                                                                                                                            initialStatus = 'unlocked';
-                                                                                                                        } else if (statusLabel === 'Locked') {
-                                                                                                                            initialStatus = 'locked';
-                                                                                                                        }
-                                                                                                                        setAllocationStatus(initialStatus);
-                                                                                                                        const currentSelected = studentProgress
-                                                                                                                            .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                                            .map(p => p.student_id);
-                                                                                                                        setAllocationSelectedStudents((curriculumTab === 'individual' && selectedStudentForCurriculum) ? [selectedStudentForCurriculum.student_id] : (currentSelected.length > 0 ? currentSelected : []));
-                                                                                                                        setIsAllocationDrawerOpen(true);
-                                                                                                                    }}
+                                                                                        openAllocationDrawer(lesson);
+                                                                                    }}
                                                                                                                     className={`flex items-center gap-1.5 px-4.5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider border transition-all cursor-pointer ${
                                                                                                                         statusLabel === 'Completed'
                                                                                                                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
@@ -4326,23 +4329,8 @@ export default function ClassroomDashboardPage({
                                                                                                                     type="button"
                                                                                                                     disabled={isUpdating}
                                                                                                                     onClick={() => {
-                                                                                                                        setAllocationTargetLesson(lesson);
-                                                                                                                        setAllocationTargetType(curriculumTab === 'individual' ? 'individual' : 'classwide');
-                                                                                                                        let initialStatus: 'locked' | 'unlocked' | 'completed' = 'unlocked';
-                                                                                                                        if (statusLabel === 'Completed') {
-                                                                                                                            initialStatus = 'completed';
-                                                                                                                        } else if (statusLabel === 'Unlocked' || statusLabel.startsWith('Unlocked')) {
-                                                                                                                            initialStatus = 'unlocked';
-                                                                                                                        } else if (statusLabel === 'Locked') {
-                                                                                                                            initialStatus = 'locked';
-                                                                                                                        }
-                                                                                                                        setAllocationStatus(initialStatus);
-                                                                                                                        const currentSelected = studentProgress
-                                                                                                                            .filter(p => p.lesson_id === lesson.id && p.status !== 'locked' && p.student_id !== 'classwide_default')
-                                                                                                                            .map(p => p.student_id);
-                                                                                                                        setAllocationSelectedStudents((curriculumTab === 'individual' && selectedStudentForCurriculum) ? [selectedStudentForCurriculum.student_id] : (currentSelected.length > 0 ? currentSelected : []));
-                                                                                                                        setIsAllocationDrawerOpen(true);
-                                                                                                                    }}
+                                                                                        openAllocationDrawer(lesson);
+                                                                                    }}
                                                                                                                     className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-500 dark:text-slate-455 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
                                                                                                                 >
                                                                                                                     <MoreVertical className="size-3.5" />
@@ -6341,7 +6329,16 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                 <button
                                                     key={item.status}
                                                     type="button"
-                                                    onClick={() => setAllocationStatus(item.status as any)}
+                                                    onClick={() => {
+                                                        const newStatus = item.status as 'locked' | 'unlocked' | 'completed';
+                                                        setAllocationStatus(newStatus);
+                                                        if (allocationTargetLesson) {
+                                                            const newSelected = (curriculumTab === 'individual' && selectedStudentForCurriculum)
+                                                                ? [selectedStudentForCurriculum.student_id]
+                                                                : getStudentsWithStatus(newStatus, allocationTargetLesson.id);
+                                                            setAllocationSelectedStudents(newSelected);
+                                                        }
+                                                    }}
                                                     className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all gap-2 cursor-pointer ${
                                                         isSelected
                                                             ? `${
