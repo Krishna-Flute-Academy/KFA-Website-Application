@@ -20,6 +20,7 @@ import TasksTab from './TasksTab';
 import MessagesTab from './MessagesTab';
 import AttendanceTab from './AttendanceTab';
 import LibraryTab from './LibraryTab';
+import ClassroomTab from './ClassroomTab';
 
 // --- Interfaces ---
 interface StudentProfile {
@@ -110,6 +111,11 @@ export default function StudentDashboardContainer() {
     const [sessionLogs, setSessionLogs] = useState<any[]>([]);
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
     const [classNotes, setClassNotes] = useState<ClassNote[]>([]);
+    
+    // Classroom schedules & direct messaging states
+    const [batchSchedules, setBatchSchedules] = useState<any[]>([]);
+    const [makeupSchedules, setMakeupSchedules] = useState<any[]>([]);
+    const [directMessages, setDirectMessages] = useState<any[]>([]);
 
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
@@ -127,7 +133,7 @@ export default function StudentDashboardContainer() {
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
     // UI Navigation state
-    const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library'>('overview');
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'drums'>('metronome');
@@ -480,6 +486,46 @@ export default function StudentDashboardContainer() {
                 .eq('student_id', userId);
             setStudentProgress(progress || []);
 
+            // 7. Fetch Batch Schedules, Overrides, and Direct Messages
+            let schedulesData: any[] = [];
+            if (classroomId && classroomId !== 'synthetic-classroom') {
+                const { data: sData } = await supabaseAuth
+                    .from('batch_schedules')
+                    .select('*')
+                    .eq('classroom_id', classroomId);
+                schedulesData = sData || [];
+            }
+            setBatchSchedules(schedulesData);
+
+            let overridesData: any[] = [];
+            if (classroomId && classroomId !== 'synthetic-classroom') {
+                const { data: oData } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .select(`
+                        id,
+                        student_id,
+                        override_date,
+                        reason,
+                        target_classroom_id
+                    `)
+                    .eq('target_classroom_id', classroomId);
+                overridesData = oData || [];
+            }
+            setMakeupSchedules(overridesData);
+
+            let messagesData: any[] = [];
+            try {
+                const { data: mData } = await supabaseAuth
+                    .from('messages')
+                    .select('*')
+                    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+                    .order('created_at', { ascending: true });
+                messagesData = mData || [];
+            } catch (me) {
+                console.warn('Failed to load messages from DB:', me);
+            }
+            setDirectMessages(messagesData);
+
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
         }
@@ -567,6 +613,30 @@ export default function StudentDashboardContainer() {
         }
         await supabaseAuth.auth.signOut();
         router.push('/');
+    };
+
+    const handleSendDirectMessage = async (receiverId: string, text: string) => {
+        if (!profile?.id || !text.trim()) return;
+        try {
+            const payload = {
+                sender_id: profile.id,
+                receiver_id: receiverId,
+                message_text: text.trim(),
+                created_at: new Date().toISOString()
+            };
+            const { data, error } = await supabaseAuth
+                .from('messages')
+                .insert([payload])
+                .select();
+            
+            if (error) throw error;
+            if (data) {
+                setDirectMessages(prev => [...prev, data[0]]);
+            }
+        } catch (e) {
+            console.error('Failed to send direct message:', e);
+            alert('Failed to send message.');
+        }
     };
 
     // Voice player methods
@@ -1005,6 +1075,7 @@ export default function StudentDashboardContainer() {
                     <nav className="p-4 flex-1 space-y-1.5 overflow-y-auto">
                         {[
                             { id: 'overview', label: 'Overview', icon: BarChart2 },
+                            { id: 'classroom', label: 'My Classroom', icon: Users },
                             { id: 'curriculum', label: 'Curriculum Progress', icon: BookOpen },
                             { id: 'tasks', label: 'Tasks & Submissions', icon: ClipboardList },
                             { id: 'messages', label: 'Message Center', icon: Mail },
@@ -1191,6 +1262,20 @@ export default function StudentDashboardContainer() {
                                 setPracticeSuiteTab={setPracticeSuiteTab}
                                 setShowPracticeSuite={setShowPracticeSuite}
                                 classmates={classmates}
+                            />
+                        )}
+
+                        {activeTab === 'classroom' && (
+                            <ClassroomTab 
+                                classroom={classroom}
+                                classmates={classmates}
+                                mergedLogs={mergedLogs}
+                                profile={profile}
+                                batchSchedules={batchSchedules}
+                                makeupSchedules={makeupSchedules}
+                                directMessages={directMessages}
+                                onSendDirectMessage={handleSendDirectMessage}
+                                refreshData={refreshData}
                             />
                         )}
 

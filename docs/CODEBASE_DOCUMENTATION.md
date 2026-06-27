@@ -70,7 +70,7 @@ The application contains two distinct portals: the **Student Portal** and the **
 
 ### 3. Student Portal Workflow
 - **Overview**: Students land on their home dashboard (`/student-dashboard`).
-- **Activity**: Students can view progress metrics, look at unlocked syllabus topics, download practice sheets (PDFs) or listen to audio guides, upload practice videos, and submit homework assignments.
+- **Activity**: Students can view progress metrics, look at unlocked syllabus topics, download practice sheets (PDFs) or listen to audio guides, upload practice videos, and submit homework assignments. In the **My Classroom** section, students view monthly calendar schedules (both recurring class timings and scheduled makeup classes), access class presence logs, and can directly message/chat with their classmates and instructors.
 
 ---
 
