@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
-    Loader2, BookOpen, Clock, Award, Users, ChevronRight, Check, Music, Video, Info, FileText
+    Loader2, BookOpen, Clock, Award, Users, ChevronRight, Check, Music, Video, Info, FileText, Search
 } from 'lucide-react';
 
 interface ClassroomInfo {
@@ -63,6 +63,38 @@ export default function CurriculumTab({
     setShowMaterialPopup,
     classmates
 }: CurriculumTabProps) {
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Filter and search logic
+    const filteredLessons = useMemo(() => {
+        let base = courseLessons;
+        if (searchQuery.trim()) {
+            base = base.filter(l => 
+                l.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                (l.description || '').toLowerCase().includes(searchQuery.toLowerCase())
+            );
+        }
+        return base;
+    }, [courseLessons, searchQuery]);
+
+    const filteredChapters = useMemo(() => {
+        return courseChapters
+            .filter(chapter => {
+                const chapterLessons = filteredLessons.filter(l => l.chapter_id === chapter.id);
+                if (searchQuery.trim()) {
+                    return chapterLessons.length > 0;
+                }
+                return chapterLessons.some(l => getLessonStatus(l.id, chapter.id) !== 'locked');
+            });
+    }, [courseChapters, filteredLessons, searchQuery]);
+
+    const filteredModules = useMemo(() => {
+        return courseModules.filter(module => {
+            const moduleChapters = filteredChapters.filter(c => c.module_id === module.id);
+            return moduleChapters.length > 0;
+        });
+    }, [courseModules, filteredChapters]);
+
     return (
         <div className="space-y-8 animate-in fade-in duration-300">
             {/* Classroom Header Summary */}
@@ -83,43 +115,52 @@ export default function CurriculumTab({
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                 {/* Left: Curriculum Syllabus Tree */}
                 <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
-                    <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
                             <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">Academy Syllabus</h3>
                             <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5">Allocated lessons. Mark completed to record your learning.</p>
                         </div>
-                        <div className="bg-amber-500/10 text-amber-700 text-[10px] sm:text-xs font-extrabold px-2.5 sm:px-3 py-1.5 rounded-full shrink-0 ml-2">
-                            Completed: {completedLessonsCount} / {totalAllocatedLessons || courseLessons.length}
+                        
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                            {/* Search bar */}
+                            <div className="relative w-full sm:w-52 shrink-0">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                                <input 
+                                    type="text"
+                                    placeholder="Search syllabus..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none text-slate-850 placeholder:text-slate-400 transition-all"
+                                />
+                            </div>
+                            <div className="bg-amber-500/10 text-amber-700 text-[10px] sm:text-xs font-extrabold px-2.5 sm:px-3 py-1.5 rounded-full shrink-0 text-center">
+                                Completed: {completedLessonsCount} / {totalAllocatedLessons || courseLessons.length}
+                            </div>
                         </div>
                     </div>
                     <div className="p-6">
-                        {courseModules.length === 0 ? (
+                        {filteredModules.length === 0 ? (
                             <div className="py-12 text-center text-slate-400">
-                                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-slate-300" />
-                                <p className="text-xs">Loading course modules...</p>
+                                {searchQuery.trim() !== '' ? (
+                                    <>
+                                        <Search className="w-8 h-8 mx-auto mb-2 text-slate-300 animate-pulse" />
+                                        <p className="text-xs font-bold text-slate-705">No matching topics found.</p>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Try searching with a different keyword.</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-slate-300" />
+                                        <p className="text-xs">Loading course modules...</p>
+                                    </>
+                                )}
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {courseModules
-                                    .filter(module => {
-                                        // Only show modules containing at least one unlocked/completed topic
-                                        const moduleChapters = courseChapters.filter(c => c.module_id === module.id);
-                                        return courseLessons.some(l => 
-                                            moduleChapters.some(c => c.id === l.chapter_id) &&
-                                            getLessonStatus(l.id, l.chapter_id, module.id) !== 'locked'
-                                        );
-                                    })
+                                {filteredModules
                                     .map((module) => {
-                                        const isModExpanded = !!expandedModules[module.id];
-                                        const chapters = courseChapters
-                                            .filter(c => c.module_id === module.id)
-                                            .filter(chapter => {
-                                                // Only show chapters containing at least one unlocked/completed topic
-                                                return courseLessons.some(l => 
-                                                    l.chapter_id === chapter.id && 
-                                                    getLessonStatus(l.id, l.chapter_id, module.id) !== 'locked'
-                                                );
-                                            });
+                                        const isModExpanded = searchQuery.trim() !== '' ? true : !!expandedModules[module.id];
+                                        const chapters = filteredChapters
+                                            .filter(c => c.module_id === module.id);
                                         
                                         return (
                                             <div key={module.id} className="border border-slate-150 rounded-2xl overflow-hidden transition-all shadow-xs">
@@ -135,7 +176,7 @@ export default function CurriculumTab({
                                                     </div>
                                                     <ChevronRight className={`w-4.5 h-4.5 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
                                                 </button>
-
+ 
                                                 {/* Module Chapters (Collapsed/Expanded) */}
                                                 {isModExpanded && (
                                                     <div className="p-4 bg-white space-y-3">
@@ -143,10 +184,10 @@ export default function CurriculumTab({
                                                             <p className="text-[10px] text-slate-400 py-2">No chapters published in this module.</p>
                                                         ) : (
                                                             chapters.map((chapter) => {
-                                                                const isChapExpanded = !!expandedChapters[chapter.id];
-                                                                const lessons = courseLessons
+                                                                const isChapExpanded = searchQuery.trim() !== '' ? true : !!expandedChapters[chapter.id];
+                                                                const lessons = filteredLessons
                                                                     .filter(l => l.chapter_id === chapter.id)
-                                                                    .filter(l => getLessonStatus(l.id, l.chapter_id, module.id) !== 'locked');
+                                                                    .filter(l => searchQuery.trim() !== '' || getLessonStatus(l.id, l.chapter_id, module.id) !== 'locked');
 
                                                                 return (
                                                                     <div key={chapter.id} className="border border-slate-100 rounded-xl overflow-hidden">

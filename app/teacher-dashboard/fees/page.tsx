@@ -6,6 +6,7 @@ import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
+import { getStudentFeeStatus } from '../../../src/lib/fee-utils';
 
 interface StudentFeesData {
     id: string;
@@ -16,7 +17,7 @@ interface StudentFeesData {
     join_date: string;
     fees_basis: 'monthly' | 'class';
     fees_amount: number;
-    fees_collection_date: string | null;
+    fees_collection_date: number | null;
     fees_classes_paid: number;
     batch_name: string;
 }
@@ -156,8 +157,10 @@ export default function FeesManagementDashboard() {
                 setStudents(formatted);
             }
 
-            // 4. Fetch Payments for current month stats
-            const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+            // 4. Fetch Payments from last 60 days
+            const sixtyDaysAgo = new Date();
+            sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+            const startSearchDate = sixtyDaysAgo.toISOString().split('T')[0];
             const { data: paymentsData } = await supabaseAuth
                 .from('fees_payments')
                 .select(`
@@ -172,7 +175,7 @@ export default function FeesManagementDashboard() {
                     users!inner(teacher_id)
                 `)
                 .eq('users.teacher_id', userId)
-                .gte('payment_date', startOfMonth);
+                .gte('payment_date', startSearchDate);
 
             if (paymentsData) {
                 setPayments(paymentsData as any);
@@ -196,19 +199,34 @@ export default function FeesManagementDashboard() {
 
     // Calculate student payment status
     const getStudentStatus = (student: StudentFeesData) => {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const dateIsDue = student.fees_collection_date && student.fees_collection_date <= todayStr;
         const classesCompleted = student.fees_classes_paid <= 0;
 
-        if (dateIsDue && classesCompleted) {
-            return 'overdue';
-        } else if (classesCompleted) {
-            return 'due_classes';
-        } else if (dateIsDue) {
-            return 'due_date';
-        } else {
-            return 'good';
+        if (student.fees_basis === 'monthly' && student.fees_collection_date) {
+            const studentPayments = payments.filter(p => p.student_id === student.id);
+            const feeStatus = getStudentFeeStatus(
+                student.fees_basis,
+                Number(student.fees_collection_date),
+                studentPayments
+            );
+
+            if (feeStatus) {
+                const dateIsDue = feeStatus.status === 'overdue' || feeStatus.status === 'due';
+                if (dateIsDue && classesCompleted) {
+                    return 'overdue';
+                } else if (classesCompleted) {
+                    return 'due_classes';
+                } else if (feeStatus.status === 'overdue') {
+                    return 'overdue';
+                } else if (feeStatus.status === 'due') {
+                    return 'due_date';
+                } else {
+                    return 'good';
+                }
+            }
         }
+
+        // Fallback or class-basis
+        return classesCompleted ? 'due_classes' : 'good';
     };
 
     // Filtering logic
@@ -333,7 +351,6 @@ export default function FeesManagementDashboard() {
                 .from('users')
                 .update({
                     fees_amount: amt,
-                    fees_collection_date: nextDueDate || null,
                     fees_classes_paid: newClassesPaid
                 })
                 .eq('id', selectedStudent.id);
@@ -616,10 +633,18 @@ export default function FeesManagementDashboard() {
 
                                                             {/* Next Collection Date */}
                                                             <td className="px-6 py-4.5 text-xs font-bold text-slate-700 dark:text-slate-350">
-                                                                {student.fees_collection_date 
-                                                                    ? new Date(student.fees_collection_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
-                                                                    : 'N/A'
-                                                                }
+                                                                {(() => {
+                                                                    if (student.fees_basis === 'monthly' && student.fees_collection_date) {
+                                                                        const studentPayments = payments.filter(p => p.student_id === student.id);
+                                                                        const feeStatus = getStudentFeeStatus(
+                                                                            student.fees_basis,
+                                                                            Number(student.fees_collection_date),
+                                                                            studentPayments
+                                                                        );
+                                                                        return feeStatus ? feeStatus.formattedDueDate : 'N/A';
+                                                                    }
+                                                                    return 'N/A';
+                                                                })()}
                                                             </td>
 
                                                             {/* Fees Amount */}
@@ -790,16 +815,7 @@ export default function FeesManagementDashboard() {
                                 </div>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Next Due Date (Collection Date)</label>
-                                <input
-                                    required={selectedStudent.fees_basis === 'monthly'}
-                                    type="date"
-                                    value={nextDueDate}
-                                    onChange={e => setNextDueDate(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/25 outline-none"
-                                />
-                            </div>
+
 
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Notes / Memo</label>

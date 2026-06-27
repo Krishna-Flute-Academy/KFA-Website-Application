@@ -44,7 +44,7 @@ export default function AddStudentPage() {
         notes: '',
         feesBasis: 'monthly',
         feesAmount: '0',
-        feesCollectionDate: new Date().toISOString().split('T')[0],
+        feesCollectionDate: String(new Date().getDate()),
         feesClassesPaid: '4',
         teacherId: ''
     });
@@ -114,13 +114,8 @@ export default function AddStudentPage() {
 
         setSubmitting(true);
         try {
-            // Calculate Next Fees Collection Date as base fees collection date + 30 days
-            let finalCollectionDate = null;
-            if (formData.feesCollectionDate) {
-                const dateObj = new Date(formData.feesCollectionDate);
-                dateObj.setDate(dateObj.getDate() + 30);
-                finalCollectionDate = dateObj.toISOString().split('T')[0];
-            }
+            // Save the Fees Collection Date as day of the month (1-31)
+            const finalCollectionDate = formData.feesCollectionDate ? Number(formData.feesCollectionDate) : null;
 
             const selectedClassroom = classrooms.find(r => r.id === formData.batchId);
             const assignedTeacherId = teacherProfile.role === 'admin'
@@ -265,10 +260,11 @@ export default function AddStudentPage() {
                                                 value={formData.startDate}
                                                 onChange={(e) => {
                                                     const newDate = e.target.value;
+                                                    const day = newDate ? String(Number(newDate.split('-')[2])) : '';
                                                     setFormData({
                                                         ...formData,
                                                         startDate: newDate,
-                                                        feesCollectionDate: newDate
+                                                        feesCollectionDate: day
                                                     });
                                                 }}
                                             />
@@ -360,14 +356,21 @@ export default function AddStudentPage() {
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Fees Collection Date</label>
-                                                    <input
-                                                        required
-                                                        type="date"
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
-                                                        value={formData.feesCollectionDate}
-                                                        onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
-                                                    />
+                                                    <label className="text-sm font-bold text-slate-700 block">Fees Collection Date (Day of Month)</label>
+                                                    <div className="relative">
+                                                        <select
+                                                            required
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                            value={formData.feesCollectionDate}
+                                                            onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
+                                                        >
+                                                            <option value="" disabled>Select day of month (1-31)...</option>
+                                                            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                                                <option key={day} value={String(day)}>{day}</option>
+                                                            ))}
+                                                        </select>
+                                                        <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                    </div>
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="text-sm font-bold text-slate-700 block">Initial Prepaid Classes</label>

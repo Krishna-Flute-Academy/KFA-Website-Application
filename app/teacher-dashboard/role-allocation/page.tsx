@@ -21,7 +21,7 @@ interface UserProfile {
     fees_basis: string | null;
     fees_amount: number | null;
     fees_classes_paid: number | null;
-    fees_collection_date: string | null;
+    fees_collection_date: number | null;
     classroom_students?: {
         classroom_id: string;
         classrooms?: { name: string };
@@ -59,7 +59,7 @@ export default function RoleAllocationDashboard() {
     const [feesBasis, setFeesBasis] = useState('monthly');
     const [feesAmount, setFeesAmount] = useState('1500');
     const [feesClassesPaid, setFeesClassesPaid] = useState('0');
-    const [feesCollectionDate, setFeesCollectionDate] = useState(new Date().toISOString().split('T')[0]);
+    const [feesCollectionDate, setFeesCollectionDate] = useState(String(new Date().getDate()));
     const [teacherClassroomIds, setTeacherClassroomIds] = useState<string[]>([]);
 
     const fetchData = async () => {
@@ -176,7 +176,7 @@ export default function RoleAllocationDashboard() {
         setFeesBasis(user.fees_basis || 'monthly');
         setFeesAmount(String(user.fees_amount || '1500'));
         setFeesClassesPaid(String(user.fees_classes_paid || '0'));
-        setFeesCollectionDate(user.fees_collection_date || new Date().toISOString().split('T')[0]);
+        setFeesCollectionDate(user.fees_collection_date ? String(user.fees_collection_date) : String(new Date().getDate()));
         
         const assignedClasses = classrooms.filter(c => c.teacher_id === user.id).map(c => c.id);
         setTeacherClassroomIds(assignedClasses);
@@ -200,7 +200,7 @@ export default function RoleAllocationDashboard() {
                 fees_basis: isStudent ? feesBasis : null,
                 fees_amount: isStudent ? (Number(feesAmount) || 0) : null,
                 fees_classes_paid: isStudent ? (Number(feesClassesPaid) || 0) : null,
-                fees_collection_date: isStudent ? (feesCollectionDate || null) : null,
+                fees_collection_date: isStudent ? (feesCollectionDate ? Number(feesCollectionDate) : null) : null,
                 join_date: new Date().toISOString().split('T')[0]
             };
 
@@ -638,13 +638,17 @@ export default function RoleAllocationDashboard() {
 
                                         {/* Collection Date */}
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Next Due Date</label>
-                                            <input
-                                                type="date"
+                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Due Day of Month</label>
+                                            <select
                                                 value={feesCollectionDate}
                                                 onChange={e => setFeesCollectionDate(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold"
-                                            />
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold cursor-pointer"
+                                            >
+                                                <option value="" disabled>Select day...</option>
+                                                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                                    <option key={day} value={String(day)}>{day}</option>
+                                                ))}
+                                            </select>
                                         </div>
                                     </div>
                                 </div>

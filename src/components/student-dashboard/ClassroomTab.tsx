@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Calendar, Users, MessageSquare, Clock, ChevronLeft, ChevronRight, 
-    Send, User, Loader2, CheckCircle, Info, AlertTriangle, Play 
+    Send, User, Loader2, CheckCircle, Info, AlertTriangle, Play, FileText, Download 
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
 
@@ -22,6 +22,9 @@ interface ClassroomInfo {
     teacher_name?: string;
     teacher_email?: string;
     description?: string;
+    is_live?: boolean;
+    live_meeting_link?: string | null;
+    live_session_started_at?: string | null;
 }
 
 interface Classmate {
@@ -31,6 +34,17 @@ interface Classmate {
     profile_pic_url: string | null;
 }
 
+interface ClassNote {
+    id: string;
+    title: string;
+    content?: string;
+    file_url?: string;
+    file_name?: string;
+    file_size?: number;
+    color?: string;
+    created_at: string;
+}
+
 interface ClassroomTabProps {
     classroom: ClassroomInfo | null;
     classmates: Classmate[];
@@ -38,9 +52,9 @@ interface ClassroomTabProps {
     profile: StudentProfile | null;
     batchSchedules: any[];
     makeupSchedules: any[];
-    directMessages: any[];
-    onSendDirectMessage: (receiverId: string, text: string) => Promise<void>;
     refreshData: () => Promise<void>;
+    classNotes: ClassNote[];
+    assignments?: any[];
 }
 
 export default function ClassroomTab({
@@ -50,30 +64,14 @@ export default function ClassroomTab({
     profile,
     batchSchedules,
     makeupSchedules,
-    directMessages,
-    onSendDirectMessage,
-    refreshData
+    refreshData,
+    classNotes,
+    assignments = []
 }: ClassroomTabProps) {
-    const [subTab, setSubTab] = useState<'calendar' | 'logs' | 'chat'>('calendar');
+    const [subTab, setSubTab] = useState<'calendar' | 'logs' | 'notes'>('calendar');
     
     // Calendar Month state
     const [currentDate, setCurrentDate] = useState(new Date());
-    
-    // Chat state
-    const [selectedChatPartner, setSelectedChatPartner] = useState<{ id: string; name: string; isTeacher: boolean } | null>(null);
-    const [chatInput, setChatInput] = useState('');
-    const [sendingMsg, setSendingMsg] = useState(false);
-
-    // Set default chat partner to teacher on mount if available
-    useEffect(() => {
-        if (classroom?.teacher_id && !selectedChatPartner) {
-            setSelectedChatPartner({
-                id: classroom.teacher_id,
-                name: classroom.teacher_name || 'Academy Instructor',
-                isTeacher: true
-            });
-        }
-    }, [classroom, selectedChatPartner]);
 
     // Format local date strings
     const formatLocalDate = (dateStr: string): Date => {
@@ -105,6 +103,7 @@ export default function ClassroomTab({
             isToday: boolean;
             schedules: any[];
             makeups: any[];
+            assignments: any[];
         }> = [];
 
         // Previous month fill-in
@@ -112,13 +111,19 @@ export default function ClassroomTab({
             const d = prevMonthLast - i;
             const pmDate = new Date(year, month - 1, d);
             const dateStr = pmDate.toISOString().split('T')[0];
+            const matchedAssignments = assignments.filter(asg => {
+                if (!asg.due_date) return false;
+                const asgDatePart = asg.due_date.includes('T') ? asg.due_date.split('T')[0] : asg.due_date;
+                return asgDatePart === dateStr;
+            });
             days.push({
                 dayNum: d,
                 dateStr,
                 isCurrentMonth: false,
                 isToday: false,
                 schedules: [],
-                makeups: []
+                makeups: [],
+                assignments: matchedAssignments
             });
         }
 
@@ -136,13 +141,20 @@ export default function ClassroomTab({
             // Check makeup session overrides matching dateStr
             const matchedMakeups = makeupSchedules.filter(o => o.override_date === dateStr);
 
+            const matchedAssignments = assignments.filter(asg => {
+                if (!asg.due_date) return false;
+                const asgDatePart = asg.due_date.includes('T') ? asg.due_date.split('T')[0] : asg.due_date;
+                return asgDatePart === dateStr;
+            });
+
             days.push({
                 dayNum: d,
                 dateStr,
                 isCurrentMonth: true,
                 isToday: dateStr === todayStr,
                 schedules: matchedSchedules,
-                makeups: matchedMakeups
+                makeups: matchedMakeups,
+                assignments: matchedAssignments
             });
         }
 
@@ -152,18 +164,24 @@ export default function ClassroomTab({
         for (let d = 1; d <= nextMonthDays; d++) {
             const nmDate = new Date(year, month + 1, d);
             const dateStr = nmDate.toISOString().split('T')[0];
+            const matchedAssignments = assignments.filter(asg => {
+                if (!asg.due_date) return false;
+                const asgDatePart = asg.due_date.includes('T') ? asg.due_date.split('T')[0] : asg.due_date;
+                return asgDatePart === dateStr;
+            });
             days.push({
                 dayNum: d,
                 dateStr,
                 isCurrentMonth: false,
                 isToday: false,
                 schedules: [],
-                makeups: []
+                makeups: [],
+                assignments: matchedAssignments
             });
         }
 
         return days;
-    }, [currentDate, batchSchedules, makeupSchedules]);
+    }, [currentDate, batchSchedules, makeupSchedules, assignments]);
 
     const handlePrevMonth = () => {
         setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -175,30 +193,7 @@ export default function ClassroomTab({
 
     const monthLabel = currentDate.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
-    // Active direct messages for the selected chat partner
-    const activeChatThread = useMemo(() => {
-        if (!selectedChatPartner || !profile?.id) return [];
-        return directMessages.filter(m => 
-            (m.sender_id === profile.id && m.receiver_id === selectedChatPartner.id) ||
-            (m.sender_id === selectedChatPartner.id && m.receiver_id === profile.id)
-        );
-    }, [directMessages, selectedChatPartner, profile]);
 
-    // Send direct message handler
-    const handleSendMsg = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!chatInput.trim() || !selectedChatPartner) return;
-        
-        setSendingMsg(true);
-        try {
-            await onSendDirectMessage(selectedChatPartner.id, chatInput.trim());
-            setChatInput('');
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setSendingMsg(false);
-        }
-    };
 
     const formatTime12hr = (timeStr: string) => {
         if (!timeStr) return '';
@@ -214,6 +209,44 @@ export default function ClassroomTab({
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Live Session Alert Callout */}
+            {classroom?.is_live && (
+                <div className="bg-gradient-to-r from-red-500/10 to-rose-600/10 border border-red-200 dark:border-red-950/30 rounded-3xl p-5 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-2xl bg-red-500 text-white flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-xl animate-pulse">live_tv</span>
+                        </div>
+                        <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[8px] font-black uppercase tracking-wider bg-red-500 text-white px-2 py-0.5 rounded font-mono animate-pulse">Live</span>
+                                {classroom.live_session_started_at && (
+                                    <span className="text-[10px] text-red-600 dark:text-red-400 font-bold font-mono">
+                                        Active since {new Date(classroom.live_session_started_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
+                                    </span>
+                                )}
+                            </div>
+                            <h4 className="text-sm font-black text-slate-800 dark:text-white">Active Classroom Session In Progress</h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Join the live call to participate in instructions and class questions.</p>
+                        </div>
+                    </div>
+                    {classroom.live_meeting_link ? (
+                        <a 
+                            href={classroom.live_meeting_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-full text-xs transition-all flex items-center justify-center gap-1.5 hover:scale-102 active:scale-98 shadow-xs cursor-pointer uppercase tracking-wider font-mono"
+                        >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            Join Session
+                        </a>
+                    ) : (
+                        <span className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-400 font-bold rounded-full text-xs">
+                            Waiting for link...
+                        </span>
+                    )}
+                </div>
+            )}
+
             {/* Classroom Header Card */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl -mr-8 -mt-8"></div>
@@ -242,12 +275,11 @@ export default function ClassroomTab({
                     </div>
                 </div>
 
-                {/* Sub Tab Navigation */}
                 <div className="flex gap-2 border-t border-slate-100 dark:border-slate-800 mt-6 pt-5">
                     {[
                         { id: 'calendar', label: 'Class Calendar', icon: Calendar },
                         { id: 'logs', label: 'Class logs & Presence', icon: Clock },
-                        { id: 'chat', label: 'Class Roster & Chat', icon: MessageSquare }
+                        { id: 'notes', label: 'Class Notes', icon: FileText }
                     ].map(tab => {
                         const Icon = tab.icon;
                         const active = subTab === tab.id;
@@ -273,7 +305,7 @@ export default function ClassroomTab({
             {subTab === 'calendar' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
                     {/* Calendar grid */}
-                    <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col">
+                    <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs flex flex-col">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Monthly Schedule</h3>
                             <div className="flex items-center gap-2">
@@ -299,20 +331,28 @@ export default function ClassroomTab({
                         {/* Calendar Grid Cells */}
                         <div className="grid grid-cols-7 gap-1 flex-1">
                             {calendarDays.map((cell, idx) => {
-                                const hasEvents = cell.schedules.length > 0 || cell.makeups.length > 0;
+                                const hasEvents = cell.schedules.length > 0 || cell.makeups.length > 0 || (cell.assignments && cell.assignments.length > 0);
                                 const regularClass = cell.schedules[0];
                                 const makeupClass = cell.makeups[0];
                                 
+                                const hasPendingAssignment = cell.assignments && cell.assignments.some(asg => asg.status === 'pending');
+                                const hasCompletedAssignment = cell.assignments && cell.assignments.length > 0 && !hasPendingAssignment;
+
+                                let cellBgAndBorder = 'border-slate-100 dark:border-slate-805 bg-white dark:bg-slate-900';
+                                if (!cell.isCurrentMonth) {
+                                    cellBgAndBorder = 'bg-slate-50/50 dark:bg-slate-950/20 text-slate-400 opacity-40 border-slate-100 dark:border-slate-805';
+                                } else if (hasPendingAssignment) {
+                                    cellBgAndBorder = 'border-rose-200 dark:border-rose-900/40 bg-rose-50/10 dark:bg-rose-950/5 shadow-3xs';
+                                } else if (hasCompletedAssignment) {
+                                    cellBgAndBorder = 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/5 dark:bg-emerald-950/5 shadow-3xs';
+                                }
+
                                 return (
                                     <div 
                                         key={idx}
-                                        className={`min-h-[75px] p-2 border border-slate-100 dark:border-slate-805 rounded-xl flex flex-col justify-between text-left transition-all ${
-                                            cell.isCurrentMonth 
-                                                ? 'bg-white dark:bg-slate-900' 
-                                                : 'bg-slate-50/50 dark:bg-slate-950/20 text-slate-400 opacity-40'
-                                        } ${cell.isToday ? 'ring-2 ring-amber-500 dark:ring-amber-400' : ''}`}
+                                        className={`min-h-[50px] p-1.5 border rounded-xl flex flex-col justify-between text-left transition-all ${cellBgAndBorder} ${cell.isToday ? 'ring-2 ring-amber-500 dark:ring-amber-400' : ''}`}
                                     >
-                                        <span className={`text-[10px] font-bold ${cell.isToday ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-400 dark:text-slate-500'}`}>
+                                        <span className={`text-[10px] font-bold ${cell.isToday ? 'text-amber-600 dark:text-amber-400 font-extrabold' : 'text-slate-400 dark:text-slate-550'}`}>
                                             {cell.dayNum}
                                         </span>
 
@@ -328,6 +368,19 @@ export default function ClassroomTab({
                                                         Makeup Class
                                                     </div>
                                                 )}
+                                                {cell.assignments && cell.assignments.map((asg) => (
+                                                    <div 
+                                                        key={asg.id} 
+                                                        className={`px-1.5 py-0.5 rounded text-[8px] font-black border truncate ${
+                                                            asg.status === 'pending' 
+                                                                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-450 border-rose-500/20' 
+                                                                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-450 border-emerald-500/20'
+                                                        }`}
+                                                        title={`Task Due: ${asg.title} (${asg.status})`}
+                                                    >
+                                                        📝 {asg.title}
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
@@ -374,10 +427,35 @@ export default function ClassroomTab({
                                                         <p className="font-black text-slate-808 dark:text-slate-200">
                                                             {formatLocalDate(o.override_date).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
                                                         </p>
-                                                        <p className="text-[10px] text-slate-500 mt-0.5 italic">Reason: {o.reason || 'Temporary makeup allocation'}</p>
+                                                        <p className="text-[10px] text-slate-505 mt-0.5 italic">Reason: {o.reason || 'Temporary makeup allocation'}</p>
                                                     </div>
                                                 </div>
                                             ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="border-t border-slate-100 dark:border-slate-800 pt-3.5">
+                                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">Upcoming Task Deadlines</span>
+                                    {assignments.filter(asg => asg.due_date && asg.status === 'pending').length === 0 ? (
+                                        <p className="text-xs text-slate-405 italic mt-1.5">No pending task deadlines.</p>
+                                    ) : (
+                                        <div className="space-y-2 mt-2">
+                                            {assignments
+                                                .filter(asg => asg.due_date && asg.status === 'pending')
+                                                .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+                                                .slice(0, 3)
+                                                .map((asg, idx) => (
+                                                    <div key={idx} className="flex items-center gap-3 p-3 bg-rose-500/[0.02] border border-rose-500/10 rounded-xl">
+                                                        <FileText className="w-4 h-4 text-rose-550 shrink-0" />
+                                                        <div className="text-xs text-left">
+                                                            <p className="font-black text-slate-808 dark:text-slate-200">
+                                                                {new Date(asg.due_date).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                            </p>
+                                                            <p className="text-[10px] text-slate-500 mt-0.5 truncate">{asg.title}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                         </div>
                                     )}
                                 </div>
@@ -465,172 +543,62 @@ export default function ClassroomTab({
                 </div>
             )}
 
-            {subTab === 'chat' && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
-                    {/* Class Contacts Roster */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col max-h-[600px]">
-                        <h3 className="font-extrabold text-slate-808 dark:text-white text-base mb-1">Class Members</h3>
-                        <p className="text-xs text-slate-455 mb-4">Select a classmate or teacher to start a message thread</p>
+            {subTab === 'notes' && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left">
+                    <h3 className="font-extrabold text-slate-808 dark:text-white text-base mb-1">Class Notes & Materials</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Resources and reference material uploaded by your instructor</p>
 
-                        <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar text-left">
-                            {/* Teacher Entry */}
-                            {classroom?.teacher_id && (
-                                <button
-                                    onClick={() => setSelectedChatPartner({
-                                        id: classroom.teacher_id!,
-                                        name: classroom.teacher_name || 'Academy Instructor',
-                                        isTeacher: true
-                                    })}
-                                    className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all text-left cursor-pointer ${
-                                        selectedChatPartner?.id === classroom.teacher_id
-                                            ? 'border-[#7C5E3F] bg-[#FAF5EE] dark:border-amber-400 dark:bg-slate-800'
-                                            : 'border-slate-100 hover:border-slate-202 dark:border-slate-805 hover:bg-slate-50/50 dark:hover:bg-slate-850/50'
-                                    }`}
-                                >
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-[#ecb613] shrink-0 font-bold">
-                                            {classroom.teacher_name?.charAt(0) || 'T'}
-                                        </div>
-                                        <div className="min-w-0 text-left">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                <h4 className="font-black text-xs text-slate-808 dark:text-white leading-none">{classroom.teacher_name}</h4>
-                                                <span className="text-[8px] font-black bg-[#7C5E3F] dark:bg-amber-400 text-white dark:text-slate-950 px-1.5 py-0.2 rounded uppercase tracking-wider shrink-0">Teacher</span>
-                                            </div>
-                                            <p className="text-[10px] text-slate-455 mt-1 truncate">{classroom.teacher_email}</p>
-                                        </div>
-                                    </div>
-                                    <MessageSquare className="w-4 h-4 text-[#7C5E3F] dark:text-amber-400 shrink-0" />
-                                </button>
-                            )}
-
-                            {/* Classmates */}
-                            {classmates.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic text-center py-6">You have no classmates in this batch yet.</p>
-                            ) : (
-                                classmates.map((mate) => (
-                                    <button
-                                        key={mate.id}
-                                        onClick={() => setSelectedChatPartner({
-                                            id: mate.id,
-                                            name: mate.name,
-                                            isTeacher: false
-                                        })}
-                                        className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all text-left cursor-pointer ${
-                                            selectedChatPartner?.id === mate.id
-                                                ? 'border-[#7C5E3F] bg-[#FAF5EE] dark:border-amber-400 dark:bg-slate-800'
-                                                : 'border-slate-100 hover:border-slate-202 dark:border-slate-850 hover:bg-slate-50/50 dark:hover:bg-slate-850/50'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className="w-10 h-10 rounded-xl bg-slate-105 dark:bg-slate-800 overflow-hidden flex items-center justify-center shrink-0 border border-slate-150 shadow-2xs font-extrabold text-slate-600">
-                                                {mate.profile_pic_url ? (
-                                                    <img src={mate.profile_pic_url} alt={mate.name} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span>{mate.name.charAt(0)}</span>
-                                                )}
-                                            </div>
-                                            <div className="min-w-0 text-left">
-                                                <h4 className="font-extrabold text-xs text-slate-800 dark:text-white leading-none">{mate.name}</h4>
-                                                <span className="inline-block text-[9px] font-semibold text-slate-455 mt-1">{mate.level}</span>
-                                            </div>
-                                        </div>
-                                        <MessageSquare className="w-4 h-4 text-[#7C5E3F] dark:text-amber-400 shrink-0" />
-                                    </button>
-                                ))
-                            )}
+                    {classNotes.length === 0 ? (
+                        <div className="py-16 border border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center bg-slate-50/50 dark:bg-slate-950/10">
+                            <FileText className="w-10 h-10 text-slate-350 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No notes found.</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Your teacher has not posted class notes yet.</p>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                            {classNotes.map((note) => {
+                                // Dynamic note color styling
+                                const bgClass =
+                                    note.color === 'blue' ? 'bg-blue-50/50 border-blue-100/50 dark:bg-blue-950/10 dark:border-blue-900/30' :
+                                    note.color === 'green' ? 'bg-emerald-50/50 border-emerald-100/50 dark:bg-emerald-950/10 dark:border-emerald-900/30' :
+                                    note.color === 'rose' ? 'bg-rose-50/50 border-rose-100/50 dark:bg-rose-955/10 dark:border-rose-900/30' :
+                                    'bg-amber-50/40 border-amber-100/40 dark:bg-amber-955/10 dark:border-amber-900/30';
 
-                    {/* Chat Messages Workspace */}
-                    <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col h-[600px]">
-                        {selectedChatPartner ? (
-                            <>
-                                {/* Workspace Header */}
-                                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-4 flex-shrink-0 text-left">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-xl bg-slate-105 dark:bg-slate-800 overflow-hidden flex items-center justify-center border border-slate-200 dark:border-slate-700 text-slate-655 font-black shrink-0">
-                                            {selectedChatPartner.isTeacher ? (
-                                                <span className="text-[#ecb613]">T</span>
-                                            ) : (
-                                                <span>{selectedChatPartner.name.charAt(0)}</span>
+                                return (
+                                    <div 
+                                        key={note.id} 
+                                        className={`border rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between gap-4 text-left ${bgClass}`}
+                                    >
+                                        <div>
+                                            <h4 className="font-extrabold text-xs md:text-sm text-slate-808 dark:text-white">{note.title}</h4>
+                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-4 leading-relaxed whitespace-pre-wrap">
+                                                {note.content}
+                                            </p>
+                                        </div>
+
+                                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                            <span className="text-[8px] font-bold text-slate-400">
+                                                {new Date(note.created_at).toLocaleDateString()}
+                                            </span>
+
+                                            {note.file_url && (
+                                                <a 
+                                                    href={note.file_url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-600 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-md hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors"
+                                                >
+                                                    <Download className="w-3 h-3" /> Download
+                                                </a>
                                             )}
                                         </div>
-                                        <div className="min-w-0 text-left">
-                                            <h4 className="font-extrabold text-sm text-slate-908 dark:text-white leading-tight truncate">{selectedChatPartner.name}</h4>
-                                            <p className="text-[10px] text-slate-455 font-mono uppercase tracking-wider mt-0.5">
-                                                {selectedChatPartner.isTeacher ? 'Academy Instructor' : 'Class Partner'}
-                                            </p>
-                                        </div>
                                     </div>
-                                </div>
-
-                                {/* Messages History View */}
-                                <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 py-1 custom-scrollbar text-left flex flex-col">
-                                    {activeChatThread.length === 0 ? (
-                                        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-2">
-                                            <MessageSquare className="w-8 h-8 text-slate-300 animate-pulse" />
-                                            <p className="text-xs font-bold text-slate-500">No message history yet.</p>
-                                            <p className="text-[10px] text-slate-400 max-w-[200px] leading-relaxed">
-                                                Send a message below to start your conversation.
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        activeChatThread.map((msg) => {
-                                            const isMe = msg.sender_id === profile?.id;
-                                            return (
-                                                <div 
-                                                    key={msg.id} 
-                                                    className={`max-w-[80%] p-3.5 rounded-2xl text-xs leading-relaxed ${
-                                                        isMe 
-                                                            ? 'bg-[#7C5E3F] text-white self-end rounded-br-none shadow-sm' 
-                                                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-205 self-start rounded-bl-none border border-slate-100 dark:border-slate-750'
-                                                    }`}
-                                                >
-                                                    <p className="whitespace-pre-wrap text-left select-text">{msg.message_text}</p>
-                                                    <span className={`block text-[8px] mt-1.5 text-right font-medium ${isMe ? 'text-amber-50/60' : 'text-slate-400'}`}>
-                                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </span>
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
-
-                                {/* Send Input Form */}
-                                <form onSubmit={handleSendMsg} className="flex gap-2 border-t border-slate-100 dark:border-slate-800 pt-4 flex-shrink-0">
-                                    <input
-                                        type="text"
-                                        value={chatInput}
-                                        onChange={(e) => setChatInput(e.target.value)}
-                                        placeholder={`Message ${selectedChatPartner.name}...`}
-                                        required
-                                        className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#7C5E3F] outline-none text-slate-850 dark:text-slate-100 transition-all"
-                                    />
-                                    <button
-                                        type="submit"
-                                        disabled={sendingMsg || !chatInput.trim()}
-                                        className="p-2.5 rounded-xl bg-[#7C5E3F] hover:bg-[#634a31] text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md cursor-pointer flex items-center justify-center shrink-0"
-                                    >
-                                        {sendingMsg ? (
-                                            <Loader2 className="w-4.5 h-4.5 animate-spin" />
-                                        ) : (
-                                            <Send className="w-4.5 h-4.5" />
-                                        )}
-                                    </button>
-                                </form>
-                            </>
-                        ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-3">
-                                <Users className="w-10 h-10 text-slate-300" />
-                                <h4 className="font-extrabold text-sm text-slate-700 dark:text-slate-300">Select a Contact</h4>
-                                <p className="text-xs text-slate-500 max-w-sm leading-normal">
-                                    Select any classmate or instructor on the left panel to display message histories or send messages.
-                                </p>
-                            </div>
-                        )}
-                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
-            )}
+              )}
         </div>
     );
 }

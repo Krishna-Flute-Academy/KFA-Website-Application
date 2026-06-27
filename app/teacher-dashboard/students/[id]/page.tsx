@@ -1,5 +1,5 @@
 'use client';
-
+ 
 import React, { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
@@ -7,6 +7,7 @@ import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calend
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
+import { getStudentFeeStatus } from '../../../../src/lib/fee-utils';
 
 interface StudentInfo {
     id: string;
@@ -21,7 +22,7 @@ interface StudentInfo {
     batch_name: string;
     fees_basis?: 'monthly' | 'class';
     fees_amount?: number;
-    fees_collection_date?: string | null;
+    fees_collection_date?: number | null;
     fees_classes_paid?: number;
 }
 
@@ -50,6 +51,7 @@ export default function StudentProfilePage() {
     const [loading, setLoading] = useState(true);
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
     const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
+    const [payments, setPayments] = useState<any[]>([]);
     const [submissions, setSubmissions] = useState<Submission[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     const [viewDate, setViewDate] = useState(new Date()); // Calendar view month
@@ -206,6 +208,14 @@ export default function StudentProfilePage() {
                     fees_collection_date: userData.fees_collection_date,
                     fees_classes_paid: userData.fees_classes_paid
                 });
+
+                // Fetch student payments
+                const { data: payData } = await supabaseAuth
+                    .from('fees_payments')
+                    .select('*')
+                    .eq('student_id', studentId)
+                    .order('payment_date', { ascending: false });
+                setPayments(payData || []);
 
                 if (studentClassroomId) {
                     // Fetch static course curriculum data
@@ -1203,20 +1213,25 @@ export default function StudentProfilePage() {
                                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Fees Collection Date</p>
                                                 <p className="font-bold text-slate-700">
-                                                    {(() => {
-                                                        if (!studentInfo.fees_collection_date) return 'N/A';
-                                                        const dateObj = new Date(studentInfo.fees_collection_date);
-                                                        dateObj.setDate(dateObj.getDate() - 30);
-                                                        return dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                                                    })()}
+                                                    {studentInfo.fees_collection_date 
+                                                        ? `${studentInfo.fees_collection_date}th of every month`
+                                                        : 'N/A'}
                                                 </p>
                                             </div>
                                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Next Fees Collection Date</p>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Next Fees Due Date</p>
                                                 <p className="font-bold text-slate-700">
-                                                    {studentInfo.fees_collection_date 
-                                                        ? new Date(studentInfo.fees_collection_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) 
-                                                        : 'N/A'}
+                                                    {(() => {
+                                                        if (studentInfo.fees_basis === 'monthly' && studentInfo.fees_collection_date) {
+                                                            const feeStatus = getStudentFeeStatus(
+                                                                studentInfo.fees_basis,
+                                                                Number(studentInfo.fees_collection_date),
+                                                                payments
+                                                            );
+                                                            return feeStatus ? feeStatus.formattedDueDate : 'N/A';
+                                                        }
+                                                        return 'N/A';
+                                                    })()}
                                                 </p>
                                             </div>
                                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
@@ -1229,35 +1244,59 @@ export default function StudentProfilePage() {
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Fees Status</p>
                                                 <div>
                                                     {(() => {
-                                                        const todayStr = new Date().toISOString().split('T')[0];
-                                                        const dateIsDue = studentInfo.fees_collection_date && studentInfo.fees_collection_date <= todayStr;
                                                         const classesCompleted = (studentInfo.fees_classes_paid ?? 0) <= 0;
 
-                                                        if (dateIsDue && classesCompleted) {
-                                                            return (
-                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 border border-rose-100 dark:border-rose-900/30 uppercase tracking-wider">
-                                                                    Overdue
-                                                                </span>
+                                                        if (studentInfo.fees_basis === 'monthly' && studentInfo.fees_collection_date) {
+                                                            const feeStatus = getStudentFeeStatus(
+                                                                studentInfo.fees_basis,
+                                                                Number(studentInfo.fees_collection_date),
+                                                                payments
                                                             );
-                                                        } else if (classesCompleted) {
-                                                            return (
-                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 uppercase tracking-wider">
-                                                                    Completed / Due
-                                                                </span>
-                                                            );
-                                                        } else if (dateIsDue) {
-                                                            return (
-                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 uppercase tracking-wider">
-                                                                    Date Due
-                                                                </span>
-                                                            );
-                                                        } else {
-                                                            return (
-                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30 uppercase tracking-wider">
-                                                                    Paid & Active
-                                                                </span>
-                                                            );
+                                                            const isOverdue = feeStatus?.status === 'overdue';
+                                                            const isDue = feeStatus?.status === 'due';
+
+                                                            if (isOverdue && classesCompleted) {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-450 border border-rose-100 dark:border-rose-900/30 uppercase tracking-wider">
+                                                                        Overdue
+                                                                    </span>
+                                                                );
+                                                            } else if (classesCompleted) {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 uppercase tracking-wider">
+                                                                        Completed / Due
+                                                                    </span>
+                                                                );
+                                                            } else if (isOverdue) {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-450 border border-rose-100 dark:border-rose-900/30 uppercase tracking-wider">
+                                                                        Overdue
+                                                                    </span>
+                                                                );
+                                                            } else if (isDue) {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 uppercase tracking-wider">
+                                                                        Due Today
+                                                                    </span>
+                                                                );
+                                                            } else {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-450 border border-emerald-100 dark:border-emerald-900/30 uppercase tracking-wider">
+                                                                        Paid & Active
+                                                                    </span>
+                                                                );
+                                                            }
                                                         }
+
+                                                        return classesCompleted ? (
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30 uppercase tracking-wider">
+                                                                Completed / Due
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-450 border border-emerald-100 dark:border-emerald-900/30 uppercase tracking-wider">
+                                                                Paid & Active
+                                                            </span>
+                                                        );
                                                     })()}
                                                 </div>
                                             </div>

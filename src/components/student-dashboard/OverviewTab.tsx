@@ -6,6 +6,8 @@ import {
     ClipboardList, HelpCircle, CheckCircle, ChevronRight, X, Play, Music, Info, FileText, Video
 } from 'lucide-react';
 
+import { getStudentFeeStatus } from '../../lib/fee-utils';
+
 interface StudentProfile {
     id: string;
     name: string;
@@ -14,6 +16,10 @@ interface StudentProfile {
     profile_pic_url?: string;
     role?: string;
     teacher_id?: string | null;
+    fees_basis?: 'monthly' | 'class' | null;
+    fees_amount?: number | null;
+    fees_classes_paid?: number | null;
+    fees_collection_date?: number | null;
 }
 
 interface ClassroomInfo {
@@ -23,6 +29,9 @@ interface ClassroomInfo {
     teacher_name?: string;
     teacher_email?: string;
     description?: string;
+    is_live?: boolean;
+    live_meeting_link?: string | null;
+    live_session_started_at?: string | null;
 }
 
 interface EnrichedAssignment {
@@ -63,6 +72,7 @@ interface Classmate {
 
 interface OverviewTabProps {
     profile: StudentProfile | null;
+    payments: any[];
     classroom: ClassroomInfo | null;
     assignments: EnrichedAssignment[];
     broadcasts: Broadcast[];
@@ -85,6 +95,7 @@ interface OverviewTabProps {
  */
 export default function OverviewTab({
     profile,
+    payments,
     classroom,
     assignments,
     broadcasts,
@@ -101,8 +112,70 @@ export default function OverviewTab({
     setShowPracticeSuite,
     classmates
 }: OverviewTabProps) {
+    const dashboardBroadcasts = React.useMemo(() => {
+        return broadcasts.filter(b => 
+            b.channel === 'announcements' || 
+            b.channel === 'fee_management' || 
+            (!b.channel && b.sender?.role === 'admin')
+        );
+    }, [broadcasts]);
+
+    const feeAlert = React.useMemo(() => {
+        if (!profile || !profile.fees_collection_date || profile.fees_basis !== 'monthly') {
+            return null;
+        }
+
+        const feeStatus = getStudentFeeStatus(
+            profile.fees_basis,
+            Number(profile.fees_collection_date),
+            payments
+        );
+
+        if (!feeStatus || feeStatus.status === 'good') {
+            return null; // Hide the reminder for that month
+        }
+
+        if (feeStatus.status === 'upcoming') {
+            return {
+                type: 'upcoming',
+                statusColor: 'amber',
+                emoji: '🟡',
+                message: `Your monthly fee is due on ${feeStatus.formattedDueDate}.`
+            };
+        } else if (feeStatus.status === 'due') {
+            return {
+                type: 'due',
+                statusColor: 'red',
+                emoji: '🔴',
+                message: `Your monthly fee is due today.`
+            };
+        } else { // overdue
+            return {
+                type: 'overdue',
+                statusColor: 'red',
+                emoji: '🔴',
+                message: `Your monthly fee is overdue. Please submit your fees.`
+            };
+        }
+    }, [profile, payments]);
+
     return (
         <div className="space-y-8 animate-in fade-in duration-300">
+            {/* Fee Reminder Banner */}
+            {feeAlert && (
+                <div className={`border-l-4 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300 ${
+                    feeAlert.statusColor === 'red'
+                        ? 'bg-rose-50/50 border-rose-500 text-rose-800 dark:bg-rose-955/10 dark:text-rose-450'
+                        : 'bg-amber-50/50 border-amber-500 text-amber-800 dark:bg-amber-955/10 dark:text-amber-500'
+                }`}>
+                    <div className="flex items-center gap-3 text-left">
+                        <span className="text-lg shrink-0">{feeAlert.emoji}</span>
+                        <p className="text-xs font-black leading-normal">
+                            {feeAlert.message}
+                        </p>
+                    </div>
+                </div>
+            )}
             {/* Admin Broadcast Alert Banner */}
             {unreadAdminBroadcasts.length > 0 && (
                 <div className="bg-[#FAF5EE] border-l-4 border-[#7C5E3F] rounded-2xl p-4 sm:p-5 shadow-xs flex items-start justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
@@ -136,6 +209,71 @@ export default function OverviewTab({
                     >
                         <X className="w-4 h-4" />
                     </button>
+                </div>
+            )}
+
+            {/* Pending Tasks Alert Banner */}
+            {assignments.filter(a => a.status === 'pending').length > 0 && (
+                <div className="bg-gradient-to-r from-amber-500/10 to-amber-600/10 border border-amber-200 dark:border-amber-900/30 rounded-3xl p-5 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <span className="material-symbols-outlined text-xl">assignment_late</span>
+                        </div>
+                        <div className="space-y-0.5">
+                            <h4 className="text-sm font-black text-slate-800 dark:text-white">
+                                You have {assignments.filter(a => a.status === 'pending').length} pending tasks
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                Submit before the due date.
+                            </p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => setActiveTab('tasks')}
+                        className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-full text-xs transition-all flex items-center justify-center gap-1.5 hover:scale-102 active:scale-98 shadow-xs cursor-pointer uppercase tracking-wider font-mono shrink-0"
+                    >
+                        Go to Tasks
+                    </button>
+                </div>
+            )}
+            
+            {/* Live Class Notification & Join Banner */}
+            {classroom?.is_live && (
+                <div className="bg-gradient-to-r from-red-600 via-[#d49900] to-amber-500 rounded-3xl p-6 sm:p-7 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-6 animate-in zoom-in-95 duration-300 border border-red-500/20 text-left">
+                    <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-full bg-white/20 text-white flex items-center justify-center shrink-0 mt-0.5 animate-pulse">
+                            <span className="material-symbols-outlined text-2xl animate-bounce">video_call</span>
+                        </div>
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[9px] font-black uppercase tracking-wider bg-red-500 text-white px-2.5 py-0.5 rounded-full animate-pulse font-mono">● Live Now</span>
+                                {classroom.live_session_started_at && (
+                                    <span className="text-[10px] text-white/80 font-bold font-mono">
+                                        Started at {new Date(classroom.live_session_started_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
+                                    </span>
+                                )}
+                            </div>
+                            <h3 className="font-extrabold text-white text-lg leading-tight">Class Session is Live!</h3>
+                            <p className="text-xs text-white/90 leading-relaxed font-medium">
+                                Your instructor, <strong className="font-black text-white">{classroom.teacher_name}</strong>, has started an active classroom session. Join now to participate.
+                            </p>
+                        </div>
+                    </div>
+                    {classroom.live_meeting_link ? (
+                        <a 
+                            href={classroom.live_meeting_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-6 py-3.5 bg-white text-red-600 hover:text-red-700 hover:bg-slate-50 transition-all font-black rounded-full text-xs shadow-md flex items-center justify-center gap-2 hover:scale-[1.03] active:scale-[0.97] shrink-0 font-sans cursor-pointer uppercase tracking-wider"
+                        >
+                            <PlayCircle className="w-4.5 h-4.5 text-red-600" />
+                            Join Class
+                        </a>
+                    ) : (
+                        <span className="px-6 py-3.5 bg-white/25 text-white/80 font-bold rounded-full text-xs shrink-0 select-none uppercase tracking-wider">
+                            Waiting for link...
+                        </span>
+                    )}
                 </div>
             )}
             
@@ -468,12 +606,12 @@ export default function OverviewTab({
                         </div>
 
                         <div className="p-6 divide-y divide-[#E6E1DA]/40 max-h-[400px] overflow-y-auto pr-1">
-                            {broadcasts.length === 0 ? (
+                            {dashboardBroadcasts.length === 0 ? (
                                 <div className="py-12 text-center text-slate-400">
-                                    <p className="text-xs">No announcements posted yet.</p>
+                                    <p className="text-xs">No announcements or fee messages posted yet.</p>
                                 </div>
                             ) : (
-                                broadcasts.map((b) => (
+                                dashboardBroadcasts.map((b) => (
                                     <div key={b.id} className="py-4 first:pt-0 last:pb-0 text-left space-y-3">
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
@@ -483,7 +621,7 @@ export default function OverviewTab({
                                                 </p>
                                             </div>
                                             <span className="bg-[#FAF5EE] text-[#7C5E3F] text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-[#7C5E3F]/10 shrink-0">
-                                                {b.channel || 'Announce'}
+                                                {b.channel === 'fee_management' ? 'Fees' : (b.channel ? b.channel.replace('_', ' ') : 'Announcement')}
                                             </span>
                                         </div>
 

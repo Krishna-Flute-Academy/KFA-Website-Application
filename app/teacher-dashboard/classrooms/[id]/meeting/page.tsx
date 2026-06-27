@@ -40,6 +40,7 @@ export default function MeetingPage() {
     const [step, setStep] = useState<Step>(1);
     const [sessionType, setSessionType] = useState<SessionType | null>(null);
     const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    const [meetingLink, setMeetingLink] = useState('https://meet.google.com/abc-defg-hij');
     const isFirstRender = useRef(true);
 
     // Unified Hub states
@@ -230,6 +231,20 @@ export default function MeetingPage() {
 
             if (error) throw error;
 
+            // Mark classroom as live in DB
+            const { error: liveError } = await supabaseAuth
+                .from('classrooms')
+                .update({
+                    is_live: true,
+                    live_meeting_link: sessionType === 'online' ? meetingLink : null,
+                    live_session_started_at: new Date().toISOString()
+                })
+                .eq('id', classroomId);
+
+            if (liveError) {
+                console.error('Failed to mark classroom as live:', liveError);
+            }
+
             // Trigger push & in-app notifications for students in this classroom
             const targetStudentIds = students.map(s => s.id);
             if (targetStudentIds.length > 0) {
@@ -305,6 +320,20 @@ export default function MeetingPage() {
             if (error) {
                 console.error('Error saving session logs:', error);
                 alert(`Failed to save classroom session log: ${error.message || 'Unknown error'}`);
+            }
+
+            // Mark classroom as no longer live in DB
+            const { error: liveError } = await supabaseAuth
+                .from('classrooms')
+                .update({
+                    is_live: false,
+                    live_meeting_link: null,
+                    live_session_started_at: null
+                })
+                .eq('id', classroomId);
+
+            if (liveError) {
+                console.error('Failed to mark classroom as no longer live:', liveError);
             }
         } catch (err: any) {
             console.error('Unexpected error ending active session:', err);
@@ -417,6 +446,22 @@ export default function MeetingPage() {
                                     />
                                 </div>
                             </div>
+
+                            {sessionType === 'online' && (
+                                <div className="space-y-2 text-left animate-in fade-in duration-300">
+                                    <label className="block text-xs font-black text-slate-500 uppercase tracking-wide text-left">Google Meet / Class Link</label>
+                                    <div className="relative">
+                                        <Video className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                                        <input
+                                            type="url"
+                                            value={meetingLink}
+                                            onChange={(e) => setMeetingLink(e.target.value)}
+                                            placeholder="e.g. https://meet.google.com/abc-defg-hij"
+                                            className="w-full pl-11 pr-4 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-slate-100"
+                                        />
+                                    </div>
+                                </div>
+                            )}
 
                             <button
                                 onClick={() => setStep(2)}
