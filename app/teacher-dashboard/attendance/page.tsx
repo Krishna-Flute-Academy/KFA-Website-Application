@@ -82,7 +82,10 @@ export default function AttendancePage() {
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     
     // UI State
-    const [mode, setMode] = useState<'class' | 'individual' | 'missed'>('class');
+    const [mode, setMode] = useState<'class' | 'individual' | 'missed' | 'leaves'>('class');
+    const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+    const [leavesLoading, setLeavesLoading] = useState(false);
+    const [leavesFilter, setLeavesFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
     const [selectedDate, setSelectedDate] = useState<string>(() => {
         if (typeof window !== 'undefined') {
             const params = new URLSearchParams(window.location.search);
@@ -262,6 +265,7 @@ export default function AttendancePage() {
                 
                 const loadedClassrooms = classesData || [];
                 setClassrooms(loadedClassrooms);
+                fetchLeaveRequests(loadedClassrooms);
 
                 // 2. Fetch all batch schedules in parallel
                 if (loadedClassrooms.length > 0) {
@@ -513,6 +517,80 @@ export default function AttendancePage() {
             console.error('Error expanding batch:', err);
         } finally {
             setBatchLoadingMap(prev => ({ ...prev, [batchId]: false }));
+        }
+    };
+
+    const fetchLeaveRequests = useCallback(async (loadedRooms = classrooms) => {
+        if (loadedRooms.length === 0) return;
+        setLeavesLoading(true);
+        try {
+            const roomIds = loadedRooms.map(c => c.id);
+            const { data: leaves, error } = await supabaseAuth
+                .from('leave_requests')
+                .select(`
+                    id,
+                    student_id,
+                    classroom_id,
+                    class_date,
+                    reason,
+                    status,
+                    created_at,
+                    users!student_id(name, email, profile_pic_url),
+                    classrooms!classroom_id(name)
+                `)
+                .in('classroom_id', roomIds)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            setLeaveRequests(leaves || []);
+        } catch (err) {
+            console.error('Error fetching leave requests:', err);
+        } finally {
+            setLeavesLoading(false);
+        }
+    }, [classrooms]);
+
+    const handleApproveLeave = async (request: any) => {
+        if (!teacherProfile) return;
+        try {
+            const { error: updateError } = await supabaseAuth
+                .from('leave_requests')
+                .update({ status: 'approved', updated_at: new Date().toISOString() })
+                .eq('id', request.id);
+
+            if (updateError) throw updateError;
+
+            const { error: attendanceError } = await supabaseAuth
+                .from('attendance')
+                .upsert({
+                    student_id: request.student_id,
+                    classroom_id: request.classroom_id,
+                    date: request.class_date,
+                    status: 'excused',
+                    marked_by: teacherProfile.id
+                }, { onConflict: 'student_id, classroom_id, date' });
+
+            if (attendanceError) throw attendanceError;
+
+            fetchLeaveRequests();
+        } catch (err) {
+            console.error('Error approving leave:', err);
+            alert('Failed to approve leave request.');
+        }
+    };
+
+    const handleRejectLeave = async (request: any) => {
+        try {
+            const { error: updateError } = await supabaseAuth
+                .from('leave_requests')
+                .update({ status: 'rejected', updated_at: new Date().toISOString() })
+                .eq('id', request.id);
+
+            if (updateError) throw updateError;
+
+            fetchLeaveRequests();
+        } catch (err) {
+            console.error('Error rejecting leave:', err);
+            alert('Failed to reject leave request.');
         }
     };
 
@@ -1392,6 +1470,17 @@ export default function AttendancePage() {
                                 <span className="hidden sm:inline">Missed Classes Report</span>
                                 <span className="sm:hidden">Missed</span>
                             </button>
+                            <button 
+                                onClick={() => setMode('leaves')}
+                                className={`px-2 py-2 sm:px-6 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-initial text-center flex items-center justify-center gap-1.5 ${mode === 'leaves' ? 'bg-[#ecb613] text-slate-900 shadow-lg shadow-[#ecb613]/10' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                            >
+                                <span>Leave Requests</span>
+                                {leaveRequests.filter(r => r.status === 'pending').length > 0 && (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-black bg-rose-500 text-white rounded-full animate-pulse">
+                                        {leaveRequests.filter(r => r.status === 'pending').length}
+                                    </span>
+                                )}
+                            </button>
                         </div>
                     </div>
 
@@ -1399,7 +1488,7 @@ export default function AttendancePage() {
                     <div className="grid grid-cols-12 gap-5">
                         
                         {/* LEFT COLUMN: Calendar Picker (Width = 4) */}
-                        {mode !== 'missed' && (
+                        {mode !== 'missed' && mode !== 'leaves' && (
                             <div className="col-span-12 lg:col-span-4 space-y-4">
                                 <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
                                     <div className="flex items-center justify-between mb-4">
@@ -1463,7 +1552,7 @@ export default function AttendancePage() {
                         )}
 
                         {/* RIGHT COLUMN: Interactive lists (Width = 8 or 12) */}
-                        <div className={`col-span-12 ${mode === 'missed' ? 'lg:col-span-12' : 'lg:col-span-8'} space-y-4`}>
+                        <div className={`col-span-12 ${(mode === 'missed' || mode === 'leaves') ? 'lg:col-span-12' : 'lg:col-span-8'} space-y-4`}>
                             
                             {/* ── MODE 1: CLASS MARKING (ACCORDION PATTERN) ────────────────── */}
                             {mode === 'class' && (
@@ -2221,6 +2310,136 @@ export default function AttendancePage() {
                                                 <CheckCircle2 className="w-10 h-10 text-slate-350 mx-auto mb-3" />
                                                 <h6 className="font-extrabold text-slate-450">No completed makeups yet</h6>
                                                 <p className="text-xs text-slate-400 mt-1">Completed records will appear here automatically once makeup attendance is marked present.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── MODE 4: LEAVE REQUESTS ──────────────────────────────────── */}
+                            {mode === 'leaves' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300 text-left">
+                                    {/* Leaves Filters */}
+                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                        <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                                            <button 
+                                                onClick={() => setLeavesFilter('all')}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${leavesFilter === 'all' ? 'bg-[#ecb613] text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                                            >
+                                                All Requests
+                                            </button>
+                                            <button 
+                                                onClick={() => setLeavesFilter('pending')}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${leavesFilter === 'pending' ? 'bg-[#ecb613] text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                                            >
+                                                Pending
+                                            </button>
+                                            <button 
+                                                onClick={() => setLeavesFilter('approved')}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${leavesFilter === 'approved' ? 'bg-[#ecb613] text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                                            >
+                                                Approved
+                                            </button>
+                                            <button 
+                                                onClick={() => setLeavesFilter('rejected')}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${leavesFilter === 'rejected' ? 'bg-[#ecb613] text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
+                                            >
+                                                Rejected
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Leaves List */}
+                                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden p-5">
+                                        {leavesLoading ? (
+                                            <div className="flex items-center justify-center py-12">
+                                                <Loader2 className="size-8 animate-spin text-[#ecb613]" />
+                                            </div>
+                                        ) : leaveRequests.filter(r => leavesFilter === 'all' || r.status === leavesFilter).length > 0 ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left border-collapse min-w-[700px]">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Student</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Classroom / Batch</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Requested Date</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Reason</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                                                            <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {leaveRequests
+                                                            .filter(r => leavesFilter === 'all' || r.status === leavesFilter)
+                                                            .map((request) => (
+                                                                <tr key={request.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
+                                                                    <td className="px-5 py-4">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div className="size-8 rounded-full bg-[#ecb613]/10 text-[#ecb613] font-bold text-xs flex items-center justify-center overflow-hidden">
+                                                                                {request.users?.profile_pic_url ? (
+                                                                                    <img src={request.users.profile_pic_url} alt="" className="size-full object-cover" />
+                                                                                ) : (
+                                                                                    request.users?.name?.charAt(0) || 'S'
+                                                                                )}
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="text-xs font-black text-slate-800 dark:text-white leading-tight">{request.users?.name || 'Unknown'}</p>
+                                                                                <p className="text-[10px] text-slate-450 font-semibold">{request.users?.email}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-5 py-4 text-xs font-bold text-slate-700 dark:text-slate-350">
+                                                                        {request.classrooms?.name || 'Unknown Classroom'}
+                                                                    </td>
+                                                                    <td className="px-5 py-4 text-xs font-bold text-slate-700 dark:text-slate-350">
+                                                                        {formatLocalDateStr(request.class_date, true)}
+                                                                    </td>
+                                                                    <td className="px-5 py-4 text-xs text-slate-550 italic max-w-xs truncate">
+                                                                        {request.reason || 'No reason provided'}
+                                                                    </td>
+                                                                    <td className="px-5 py-4">
+                                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                                                                            request.status === 'approved'
+                                                                                ? 'bg-emerald-50 text-emerald-750 dark:bg-emerald-950/20 dark:text-emerald-455'
+                                                                                : request.status === 'rejected'
+                                                                                    ? 'bg-rose-50 text-rose-750 dark:bg-rose-955/20 dark:text-rose-455'
+                                                                                    : 'bg-amber-50 text-amber-750 dark:bg-amber-955/20 dark:text-amber-455'
+                                                                        }`}>
+                                                                            {request.status}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-5 py-4 text-right">
+                                                                        {request.status === 'pending' ? (
+                                                                            <div className="flex items-center justify-end gap-2">
+                                                                                <button 
+                                                                                    onClick={() => handleApproveLeave(request)}
+                                                                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30 dark:text-emerald-400 rounded-lg transition-colors"
+                                                                                    title="Approve Leave"
+                                                                                >
+                                                                                    <Check className="size-4" />
+                                                                                </button>
+                                                                                <button 
+                                                                                    onClick={() => handleRejectLeave(request)}
+                                                                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 dark:text-rose-400 rounded-lg transition-colors"
+                                                                                    title="Reject Leave"
+                                                                                >
+                                                                                    <X className="size-4" />
+                                                                                </button>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <span className="text-[10px] font-bold text-slate-400">Processed</span>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="py-16 text-center">
+                                                <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                                                <h6 className="font-extrabold text-slate-450">No leave requests found</h6>
+                                                <p className="text-xs text-slate-450 mt-1">There are no leave requests matching the selected filter.</p>
                                             </div>
                                         )}
                                     </div>

@@ -985,19 +985,36 @@ export default function StudentDashboardContainer() {
             return;
         }
 
+        // Rule check: at least 1 day before the class date
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const selectedClassDate = new Date(dateStr);
+        selectedClassDate.setHours(0, 0, 0, 0);
+
+        const diffTime = selectedClassDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 1) {
+            alert('Leaves must be requested at least 1 day in advance. For same-day or past absences, please contact your teacher directly.');
+            return;
+        }
+
         setIsSubmittingExcuse(true);
 
         try {
-            const { error: attError } = await supabaseAuth
-                .from('attendance')
+            // Insert leave request
+            const { error: leaveError } = await supabaseAuth
+                .from('leave_requests')
                 .insert({
-                    classroom_id: classroom.id,
                     student_id: profile.id,
-                    date: dateStr,
-                    status: 'excused'
+                    classroom_id: classroom.id,
+                    class_date: dateStr,
+                    reason: excuseReason.trim() || null,
+                    status: 'pending'
                 });
 
-            if (attError) throw attError;
+            if (leaveError) throw leaveError;
 
             const { data: admins, error: adminsError } = await supabaseAuth
                 .from('users')
@@ -1008,8 +1025,8 @@ export default function StudentDashboardContainer() {
                 console.error('Error fetching admin users:', adminsError);
             }
 
-            const notificationTitle = `Excuse Request: ${profile.name}`;
-            const notificationMsg = `${profile.name} requested an excuse for class on ${dateStr}.${excuseReason.trim() ? ` Reason: ${excuseReason.trim()}` : ''}`;
+            const notificationTitle = `Leave Request: ${profile.name}`;
+            const notificationMsg = `${profile.name} requested leave for class on ${dateStr}.${excuseReason.trim() ? ` Reason: ${excuseReason.trim()}` : ''}`;
             
             const notificationInserts: any[] = [];
             
@@ -1042,7 +1059,7 @@ export default function StudentDashboardContainer() {
                 }
             }
 
-            alert('Excuse submitted successfully! Your teacher and admins have been notified.');
+            alert('Leave request submitted successfully! Your teacher will review and approve/reject it.');
 
             await refreshData();
 
@@ -1050,8 +1067,8 @@ export default function StudentDashboardContainer() {
             setExcuseReason('');
             setShowExcuseModal(false);
         } catch (err: any) {
-            console.error('Error submitting class excuse:', err);
-            alert(`Failed to submit class excuse: ${err.message}`);
+            console.error('Error submitting leave request:', err);
+            alert(`Failed to submit leave request: ${err.message}`);
         } finally {
             setIsSubmittingExcuse(false);
         }
