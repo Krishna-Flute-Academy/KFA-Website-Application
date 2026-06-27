@@ -3,7 +3,8 @@
 import React from 'react';
 import { 
     Users, PlayCircle, BookOpen, Clock, Award, Calendar, 
-    ClipboardList, HelpCircle, CheckCircle, ChevronRight, X, Play, Music, Info, FileText, Video
+    ClipboardList, HelpCircle, CheckCircle, ChevronRight, X, Play, Music, Info, FileText, Video,
+    AlertTriangle, AlertCircle
 } from 'lucide-react';
 
 import { getStudentFeeStatus } from '../../lib/fee-utils';
@@ -138,22 +139,19 @@ export default function OverviewTab({
         if (feeStatus.status === 'upcoming') {
             return {
                 type: 'upcoming',
-                statusColor: 'amber',
-                emoji: '🟡',
+                title: 'Upcoming Fee Payment',
                 message: `Your monthly fee is due on ${feeStatus.formattedDueDate}.`
             };
         } else if (feeStatus.status === 'due') {
             return {
                 type: 'due',
-                statusColor: 'red',
-                emoji: '🔴',
+                title: 'Fee Payment Due Today',
                 message: `Your monthly fee is due today.`
             };
         } else { // overdue
             return {
                 type: 'overdue',
-                statusColor: 'red',
-                emoji: '🔴',
+                title: 'Payment Overdue',
                 message: `Your monthly fee is overdue. Please submit your fees.`
             };
         }
@@ -163,16 +161,41 @@ export default function OverviewTab({
         <div className="space-y-8 animate-in fade-in duration-300">
             {/* Fee Reminder Banner */}
             {feeAlert && (
-                <div className={`border-l-4 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300 ${
-                    feeAlert.statusColor === 'red'
-                        ? 'bg-rose-50/50 border-rose-500 text-rose-800 dark:bg-rose-955/10 dark:text-rose-450'
-                        : 'bg-amber-50/50 border-amber-500 text-amber-800 dark:bg-amber-955/10 dark:text-amber-500'
+                <div className={`relative overflow-hidden rounded-2xl border p-5 shadow-lg flex items-center justify-between gap-6 animate-in slide-in-from-top-4 duration-300 ${
+                    feeAlert.type === 'overdue'
+                        ? 'bg-gradient-to-r from-rose-50 to-red-50/75 dark:from-red-950/20 dark:to-rose-950/10 border-red-200 dark:border-red-900/30 text-red-900 dark:text-red-300'
+                        : feeAlert.type === 'due'
+                            ? 'bg-gradient-to-r from-amber-50 to-rose-50/80 dark:from-amber-955/20 dark:to-rose-955/20 border-amber-200 dark:border-amber-900/30 text-amber-900 dark:text-amber-300'
+                            : 'bg-gradient-to-r from-amber-50/50 to-orange-50/30 dark:from-amber-950/10 dark:to-orange-950/5 border-amber-100 dark:border-amber-900/20 text-amber-800 dark:text-amber-400'
                 }`}>
-                    <div className="flex items-center gap-3 text-left">
-                        <span className="text-lg shrink-0">{feeAlert.emoji}</span>
-                        <p className="text-xs font-black leading-normal">
-                            {feeAlert.message}
-                        </p>
+                    {/* Background glass/glow detail */}
+                    <div className="absolute -right-12 -top-12 w-32 h-32 rounded-full bg-white/20 dark:bg-white/5 blur-2xl pointer-events-none" />
+                    
+                    <div className="flex items-center gap-4 text-left relative z-10">
+                        <div className={`flex items-center justify-center size-12 rounded-2xl border shrink-0 ${
+                            feeAlert.type === 'overdue'
+                                ? 'bg-red-100 dark:bg-red-900/30 border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 animate-pulse'
+                                : feeAlert.type === 'due'
+                                    ? 'bg-amber-100 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800/40 text-amber-600 dark:text-amber-450 animate-bounce'
+                                    : 'bg-amber-50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-800/20 text-amber-600 dark:text-amber-550'
+                        }`}>
+                            {feeAlert.type === 'overdue' ? (
+                                <AlertTriangle className="size-6 shrink-0" />
+                            ) : feeAlert.type === 'due' ? (
+                                <AlertCircle className="size-6 shrink-0" />
+                            ) : (
+                                <Clock className="size-6 shrink-0" />
+                            )}
+                        </div>
+                        
+                        <div>
+                            <h4 className="text-sm font-black tracking-tight leading-none mb-1.5 uppercase">
+                                {feeAlert.title}
+                            </h4>
+                            <p className="text-xs font-semibold opacity-90 leading-relaxed">
+                                {feeAlert.message}
+                            </p>
+                        </div>
                     </div>
                 </div>
             )}
