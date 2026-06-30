@@ -131,12 +131,10 @@ export default function EditStudentPage() {
                 }
 
                 let baseCollectionDateStr = '';
-                if (student.fees_collection_date) {
-                    const dateObj = new Date(student.fees_collection_date);
-                    dateObj.setDate(dateObj.getDate() - 30);
-                    baseCollectionDateStr = dateObj.toISOString().split('T')[0];
+                if (student.fees_collection_date !== null && student.fees_collection_date !== undefined) {
+                    baseCollectionDateStr = String(student.fees_collection_date);
                 } else if (student.join_date) {
-                    baseCollectionDateStr = student.join_date.split('T')[0];
+                    baseCollectionDateStr = String(Number(student.join_date.split('T')[0].split('-')[2]));
                 }
 
                 setFormData({
@@ -173,13 +171,7 @@ export default function EditStudentPage() {
         const isAdmin = teacherProfile.role === 'admin';
         setSubmitting(true);
         try {
-            // Calculate Next Fees Collection Date as base fees collection date + 30 days
-            let finalCollectionDate = null;
-            if (formData.feesCollectionDate) {
-                const dateObj = new Date(formData.feesCollectionDate);
-                dateObj.setDate(dateObj.getDate() + 30);
-                finalCollectionDate = dateObj.toISOString().split('T')[0];
-            }
+            const finalCollectionDate = formData.feesCollectionDate ? Number(formData.feesCollectionDate) : null;
 
             // Step 1: Update user in public.users
             const updatePayload: any = {
@@ -409,10 +401,11 @@ export default function EditStudentPage() {
                                                 value={formData.startDate}
                                                 onChange={(e) => {
                                                     const newDate = e.target.value;
+                                                    const day = newDate ? String(Number(newDate.split('-')[2])) : '';
                                                     setFormData({
                                                         ...formData,
                                                         startDate: newDate,
-                                                        feesCollectionDate: newDate
+                                                        feesCollectionDate: day
                                                     });
                                                 }}
                                             />
@@ -448,15 +441,22 @@ export default function EditStudentPage() {
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Fees Collection Date</label>
-                                                    <input
-                                                        required
-                                                        disabled={!isAdmin}
-                                                        type="date"
-                                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-                                                        value={formData.feesCollectionDate}
-                                                        onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
-                                                    />
+                                                    <label className="text-sm font-bold text-slate-700 block">Fees Collection Date (Day of Month)</label>
+                                                    <div className="relative">
+                                                        <select
+                                                            disabled={!isAdmin}
+                                                            required
+                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none disabled:opacity-60 disabled:cursor-not-allowed font-bold"
+                                                            value={formData.feesCollectionDate}
+                                                            onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
+                                                        >
+                                                            <option value="" disabled>Select day of month (1-31)...</option>
+                                                            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                                                <option key={day} value={String(day)}>{day}</option>
+                                                            ))}
+                                                        </select>
+                                                        <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                    </div>
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="text-sm font-bold text-slate-700 block">Prepaid Classes Balance</label>
