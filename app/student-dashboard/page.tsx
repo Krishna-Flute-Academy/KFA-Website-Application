@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../src/lib/supabase-auth';
+import { useToast } from '../../src/lib/ToastContext';
 import { 
     Loader2, BookOpen, Calendar, Mail, FileText, CheckCircle, 
     Clock, Video, Play, Music, Award, Users, Search, PlayCircle, 
@@ -88,6 +89,7 @@ interface ClassNote {
 
 export default function StudentDashboard() {
     const router = useRouter();
+    const { showToast } = useToast();
     const [loading, setLoading] = useState(true);
     const [profile, setProfile] = useState<StudentProfile | null>(null);
     const [classroom, setClassroom] = useState<ClassroomInfo | null>(null);
@@ -157,7 +159,8 @@ export default function StudentDashboard() {
                 try {
                     // Register service worker
                     const registration = await navigator.serviceWorker.register('/sw.js');
-                    console.log('Service Worker registered successfully');
+                    await registration.update();
+                    console.log('Service Worker registered and updated successfully');
 
                     // Check initial permission
                     const permission = Notification.permission;
@@ -193,6 +196,39 @@ export default function StudentDashboard() {
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, []);
+
+    // Realtime notifications listener
+    useEffect(() => {
+        if (!profile?.id) return;
+
+        console.log('[Realtime] Subscribing to notifications for user:', profile.id);
+
+        const channel = supabaseAuth
+            .channel(`realtime-notifications-${profile.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${profile.id}`
+                },
+                (payload) => {
+                    const newNotif = payload.new;
+                    console.log('[Realtime] New notification received:', newNotif);
+
+                    // Add to notifications state at the top to update UI listing immediately
+                    setNotifications(prev => [newNotif, ...prev]);
+                }
+            )
+            .subscribe((status) => {
+                console.log('[Realtime] Subscription status:', status);
+            });
+
+        return () => {
+            supabaseAuth.removeChannel(channel);
+        };
+    }, [profile]);
 
     const requestPushPermission = async () => {
         if (typeof window !== 'undefined' && 'serviceWorker' in navigator && profile?.id) {

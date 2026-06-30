@@ -2,12 +2,28 @@ self.addEventListener('push', function(event) {
   if (event.data) {
     try {
       const data = event.data.json();
+      
+      // Broadcast the push notification to all open tabs/windows
+      if (self.clients) {
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+          clientList.forEach(function(client) {
+            client.postMessage({
+              type: 'PUSH_NOTIFICATION_RECEIVED',
+              title: data.title || 'Academy Alert',
+              body: data.body,
+              url: data.url || '/student-dashboard'
+            });
+          });
+        });
+      }
+
       const options = {
         body: data.body,
         icon: '/favicon.png',
         badge: '/favicon.png',
         tag: data.tag || 'class-session',
         vibrate: [100, 50, 100],
+        sound: 'default',
         data: {
           url: data.url || '/student-dashboard'
         }
@@ -17,9 +33,25 @@ self.addEventListener('push', function(event) {
       );
     } catch (e) {
       console.error('Error parsing push data:', e);
+      const text = event.data.text();
+      
+      // Broadcast message event as fallback
+      if (self.clients) {
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+          clientList.forEach(function(client) {
+            client.postMessage({
+              type: 'PUSH_NOTIFICATION_RECEIVED',
+              title: 'Class Started',
+              body: text,
+              url: '/student-dashboard'
+            });
+          });
+        });
+      }
+
       event.waitUntil(
         self.registration.showNotification('Class Started', {
-          body: event.data.text(),
+          body: text,
           icon: '/favicon.png',
           badge: '/favicon.png'
         })
