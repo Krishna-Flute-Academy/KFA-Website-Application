@@ -603,6 +603,27 @@ export default function StudentDashboardContainer() {
         }
     }, []);
 
+    // Register and update Web Push Service Worker on mount
+    useEffect(() => {
+        if (profile?.id && typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
+            const initSW = async () => {
+                try {
+                    const registration = await navigator.serviceWorker.register('/sw.js');
+                    await registration.update();
+                    console.log('[Web Push] Service Worker registered and updated successfully');
+                    
+                    // If permission is already granted, verify/sync subscription in DB
+                    if (Notification.permission === 'granted') {
+                        await subscribeToWebPush(registration, profile.id);
+                    }
+                } catch (err) {
+                    console.error('[Web Push] Service Worker registration failed:', err);
+                }
+            };
+            initSW();
+        }
+    }, [profile?.id]);
+
     // Realtime subscriptions for live classrooms & notifications
     useEffect(() => {
         if (!profile?.id) return;
