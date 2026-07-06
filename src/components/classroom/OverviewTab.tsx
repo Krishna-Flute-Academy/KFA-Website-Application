@@ -1,12 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { 
     MessageSquare, Video, Loader2, Send, Share2, Users, 
     TrendingUp, Clock, Star, Trash2, UserPlus, Search, 
-    Calendar, User, Zap 
+    Calendar, User, Zap, FileText
 } from 'lucide-react';
+import { supabaseAuth } from '../../lib/supabase-auth';
 
 interface EnrolledStudent {
     id: string;
@@ -94,70 +95,282 @@ export default function OverviewTab({
         return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400';
     };
 
+    const [composerTab, setComposerTab] = useState<'message' | 'note'>('message');
+    const [recipientType, setRecipientType] = useState<'all' | string>('all');
+    
+    // Note Form States
+    const [noteTitle, setNoteTitle] = useState('');
+    const [noteContent, setNoteContent] = useState('');
+    const [noteColor, setNoteColor] = useState('yellow');
+    const [isSavingNote, setIsSavingNote] = useState(false);
+    const [noteSuccess, setNoteSuccess] = useState(false);
+    
+    // Message Status States
+    const [isSendingDirectMessage, setIsSendingDirectMessage] = useState(false);
+    const [directMessageSuccess, setDirectMessageSuccess] = useState(false);
+
+    const handleSendClassNote = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!noteTitle.trim()) return;
+        setIsSavingNote(true);
+        setNoteSuccess(false);
+        try {
+            const { data: { session } } = await supabaseAuth.auth.getSession();
+            const teacherId = session?.user?.id;
+            if (!teacherId) throw new Error('No instructor session found.');
+
+            const { error } = await supabaseAuth
+                .from('class_notes')
+                .insert([{
+                    classroom_id: classroomId,
+                    teacher_id: teacherId,
+                    title: noteTitle.trim(),
+                    content: noteContent.trim() || null,
+                    color: noteColor
+                }]);
+
+            if (error) throw error;
+
+            setNoteTitle('');
+            setNoteContent('');
+            setNoteSuccess(true);
+            setTimeout(() => setNoteSuccess(false), 3000);
+        } catch (err) {
+            console.error('Error creating class note during session:', err);
+            alert('Failed to save class note. Please try again.');
+        } finally {
+            setIsSavingNote(false);
+        }
+    };
+
+    const handleSendMessageFormSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (recipientType === 'all') {
+            handleSendClassMessage(e);
+            return;
+        }
+
+        if (!messageContent.trim()) return;
+        setIsSendingDirectMessage(true);
+        setDirectMessageSuccess(false);
+        try {
+            const { data: { session } } = await supabaseAuth.auth.getSession();
+            const teacherId = session?.user?.id;
+            if (!teacherId) throw new Error('No instructor session found.');
+
+            const { error } = await supabaseAuth
+                .from('messages')
+                .insert([{
+                    sender_id: teacherId,
+                    receiver_id: recipientType,
+                    message_text: messageContent.trim()
+                }]);
+
+            if (error) throw error;
+
+            setMessageContent('');
+            setDirectMessageSuccess(true);
+            setTimeout(() => setDirectMessageSuccess(false), 3000);
+        } catch (err) {
+            console.error('Error sending direct message during session:', err);
+            alert('Failed to send direct message. Please try again.');
+        } finally {
+            setIsSendingDirectMessage(false);
+        }
+    };
+
     return (
         <div className="flex flex-col gap-6 text-left">
             {isMeetingView && (
                 <div className="grid grid-cols-12 gap-6">
-                    {/* Broadcast Composer */}
+                    {/* Broadcast/Note Composer */}
                     <div className="col-span-12 lg:col-span-8">
-                        <form onSubmit={handleSendClassMessage} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 space-y-6 hover:shadow-md transition-shadow text-left">
-                            <div className="flex items-center justify-between">
-                                <h3 className="font-extrabold text-slate-900 dark:text-white text-lg flex items-center gap-2">
-                                    <MessageSquare className="text-[#ecb613] size-5" />
-                                    Broadcast to Class
-                                </h3>
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 hover:shadow-md transition-shadow text-left">
+                            {/* Tab Bar */}
+                            <div className="flex border-b border-slate-100 dark:border-slate-800 pb-2 mb-4 gap-4">
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        const meetLink = "Join Google Meet: https://meet.google.com/abc-defg-hij";
-                                        setMessageContent(prev => prev ? `${prev}\n\n${meetLink}` : meetLink);
-                                    }}
-                                    className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 hover:scale-[1.02] border border-blue-200/50 dark:border-blue-900/30 cursor-pointer"
+                                    onClick={() => setComposerTab('message')}
+                                    className={`pb-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                                        composerTab === 'message'
+                                            ? 'text-[#ecb613] border-[#ecb613]'
+                                            : 'text-slate-400 border-transparent hover:text-slate-600'
+                                    }`}
                                 >
-                                    <Video size={14} /> 🔗 Share Meet Link
+                                    <MessageSquare size={14} /> Send Message
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setComposerTab('note')}
+                                    className={`pb-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                                        composerTab === 'note'
+                                            ? 'text-[#ecb613] border-[#ecb613]'
+                                            : 'text-slate-400 border-transparent hover:text-slate-600'
+                                    }`}
+                                >
+                                    <FileText size={14} /> Add Class Note
                                 </button>
                             </div>
 
-                            <div className="space-y-4 text-left">
-                                <div>
-                                    <label className="block text-xs font-black text-slate-505 uppercase tracking-wide mb-2 text-left">Subject</label>
-                                    <input
-                                        type="text"
-                                        value={messageSubject}
-                                        onChange={(e) => setMessageSubject(e.target.value)}
-                                        placeholder="e.g. Google Meet URL - Classroom Session"
-                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#ecb613] focus:border-[#ecb613] outline-none transition-all placeholder:text-slate-405 text-slate-800 dark:text-slate-100"
-                                    />
-                                </div>
+                            {composerTab === 'message' ? (
+                                <form onSubmit={handleSendMessageFormSubmit} className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="font-extrabold text-slate-900 dark:text-white text-md flex items-center gap-2">
+                                            <MessageSquare className="text-[#ecb613] size-4" />
+                                            Send Message to Class
+                                        </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const meetLink = "Join Google Meet: https://meet.google.com/abc-defg-hij";
+                                                setMessageContent(prev => prev ? `${prev}\n\n${meetLink}` : meetLink);
+                                            }}
+                                            className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 rounded-xl text-[10px] font-bold transition-all flex items-center gap-1 hover:scale-[1.02] border border-blue-200/50 dark:border-blue-900/30 cursor-pointer"
+                                        >
+                                            <Video size={12} /> 🔗 Share Meet Link
+                                        </button>
+                                    </div>
 
-                                <div>
-                                    <label className="block text-xs font-black text-slate-505 uppercase tracking-wide mb-2 text-left">Message Content</label>
-                                    <textarea
-                                        rows={4}
-                                        value={messageContent}
-                                        onChange={(e) => setMessageContent(e.target.value)}
-                                        placeholder="Hi Class, please join today's session via this link or prepare the A1 scale exercise..."
-                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#ecb613] focus:border-[#ecb613] outline-none transition-all placeholder:text-slate-405 font-medium text-slate-800 dark:text-slate-100"
-                                    />
-                                </div>
-                            </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Recipient Dropdown */}
+                                        <div className="space-y-1">
+                                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wide">Recipient</label>
+                                            <select
+                                                value={recipientType}
+                                                onChange={(e) => setRecipientType(e.target.value)}
+                                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-slate-100 cursor-pointer"
+                                            >
+                                                <option value="all">All Enrolled Students (Broadcast)</option>
+                                                {students.map(s => (
+                                                    <option key={s.id} value={s.id}>{s.name} (Direct Message)</option>
+                                                ))}
+                                            </select>
+                                        </div>
 
-                            <button
-                                type="submit"
-                                disabled={isSendingMessage || !messageContent.trim()}
-                                className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer ${
-                                    messageContent.trim()
-                                        ? 'bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 shadow-[#ecb613]/25 hover:scale-[1.01]'
-                                        : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
-                                }`}
-                            >
-                                {isSendingMessage ? (
-                                    <><Loader2 className="w-5 h-5 animate-spin" /> Broadcasting...</>
-                                ) : (
-                                    <><Send className="w-5 h-5" /> Send Announcement to Class</>
-                                )}
-                            </button>
-                        </form>
+                                        {/* Subject (only for broadcast/all) */}
+                                        {recipientType === 'all' && (
+                                            <div className="space-y-1">
+                                                <label className="block text-[10px] font-black text-slate-505 uppercase tracking-wide">Subject</label>
+                                                <input
+                                                    type="text"
+                                                    value={messageSubject}
+                                                    onChange={(e) => setMessageSubject(e.target.value)}
+                                                    placeholder="e.g. Google Meet URL - Session started"
+                                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#ecb613] outline-none placeholder:text-slate-400 text-slate-800 dark:text-slate-100"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-black text-slate-505 uppercase tracking-wide">Message text</label>
+                                        <textarea
+                                            rows={3}
+                                            value={messageContent}
+                                            onChange={(e) => setMessageContent(e.target.value)}
+                                            placeholder={recipientType === 'all' ? "Type announcement message..." : "Type direct message to student..."}
+                                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-808 dark:text-slate-100 font-semibold"
+                                        />
+                                    </div>
+
+                                    {directMessageSuccess && (
+                                        <p className="text-xs text-emerald-500 font-bold">✓ Direct message sent successfully!</p>
+                                    )}
+
+                                    <button
+                                        type="submit"
+                                        disabled={isSendingMessage || isSendingDirectMessage || !messageContent.trim()}
+                                        className="w-full py-3 bg-[#ecb613] hover:bg-amber-600 text-slate-900 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md disabled:opacity-50 cursor-pointer"
+                                    >
+                                        {(isSendingMessage || isSendingDirectMessage) ? (
+                                            <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</>
+                                        ) : (
+                                            <>
+                                                <Send className="w-4 h-4" /> 
+                                                {recipientType === 'all' ? 'Broadcast Message to Class' : 'Send Message to Student'}
+                                            </>
+                                        )}
+                                    </button>
+                                </form>
+                            ) : (
+                                <form onSubmit={handleSendClassNote} className="space-y-4">
+                                    <h3 className="font-extrabold text-slate-900 dark:text-white text-md flex items-center gap-2">
+                                        <FileText className="text-[#ecb613] size-4" />
+                                        Create Live Class Note
+                                    </h3>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Title */}
+                                        <div className="space-y-1">
+                                            <label className="block text-[10px] font-black text-slate-555 uppercase tracking-wide">Note Title</label>
+                                            <input
+                                                type="text"
+                                                value={noteTitle}
+                                                onChange={(e) => setNoteTitle(e.target.value)}
+                                                placeholder="e.g. Today's Raga Practice Notes"
+                                                required
+                                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-slate-100"
+                                            />
+                                        </div>
+
+                                        {/* Color Picker */}
+                                        <div className="space-y-1">
+                                            <label className="block text-[10px] font-black text-slate-555 uppercase tracking-wide">Note Sticky Color</label>
+                                            <div className="flex gap-2.5 py-1">
+                                                {['yellow', 'green', 'blue', 'pink'].map(c => {
+                                                    const colorMap: Record<string, string> = {
+                                                        yellow: 'bg-yellow-100 border-yellow-300 dark:bg-yellow-950/40 dark:border-yellow-900',
+                                                        green: 'bg-emerald-100 border-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-900',
+                                                        blue: 'bg-blue-100 border-blue-300 dark:bg-blue-950/40 dark:border-blue-900',
+                                                        pink: 'bg-rose-100 border-rose-300 dark:bg-rose-950/40 dark:border-rose-900'
+                                                    };
+                                                    const active = noteColor === c;
+                                                    return (
+                                                        <button
+                                                            key={c}
+                                                            type="button"
+                                                            onClick={() => setNoteColor(c)}
+                                                            className={`w-6 h-6 rounded-full border-2 transition-all cursor-pointer ${colorMap[c]} ${
+                                                                active ? 'scale-110 ring-2 ring-[#ecb613]' : 'opacity-60'
+                                                            }`}
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="block text-[10px] font-black text-slate-555 uppercase tracking-wide">Note Details / Content</label>
+                                        <textarea
+                                            rows={3}
+                                            value={noteContent}
+                                            onChange={(e) => setNoteContent(e.target.value)}
+                                            placeholder="Write note contents or practice guides..."
+                                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-808 dark:text-slate-100 font-semibold"
+                                        />
+                                    </div>
+
+                                    {noteSuccess && (
+                                        <p className="text-xs text-emerald-500 font-bold">✓ Class note added successfully! Students will see this live.</p>
+                                    )}
+
+                                    <button
+                                        type="submit"
+                                        disabled={isSavingNote || !noteTitle.trim()}
+                                        className="w-full py-3 bg-[#ecb613] hover:bg-amber-600 text-slate-900 font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md disabled:opacity-50 cursor-pointer"
+                                    >
+                                        {isSavingNote ? (
+                                            <><Loader2 className="w-4 h-4 animate-spin" /> Saving Note...</>
+                                        ) : (
+                                            <>
+                                                <Send className="w-4 h-4" /> Save and Add Class Note
+                                            </>
+                                        )}
+                                    </button>
+                                </form>
+                            )}
+                        </div>
                     </div>
 
                     {/* Broadcast History */}

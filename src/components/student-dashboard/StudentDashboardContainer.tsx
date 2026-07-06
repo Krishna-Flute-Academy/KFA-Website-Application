@@ -814,6 +814,18 @@ export default function StudentDashboardContainer() {
                 { event: '*', schema: 'public', table: 'classrooms' },
                 (payload) => {
                     console.log('Realtime classroom payload received:', payload);
+                    const updatedRoom = payload.new as any;
+                    if (updatedRoom) {
+                        setClassroom(prev => {
+                            if (!prev || prev.id !== updatedRoom.id) return prev;
+                            return {
+                                ...prev,
+                                is_live: updatedRoom.is_live,
+                                live_meeting_link: updatedRoom.live_meeting_link,
+                                live_session_started_at: updatedRoom.live_session_started_at
+                            };
+                        });
+                    }
                     if (refreshDataRef.current) refreshDataRef.current();
                 }
             )
