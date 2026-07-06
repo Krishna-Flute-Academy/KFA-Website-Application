@@ -181,28 +181,42 @@ export default function ClassroomDashboardPage({
         }
     }, [classroom, messageSubject]);
 
-    // Fetch broadcasts for this class
+    // Fetch broadcasts for this class & listen to real-time updates
     useEffect(() => {
         if (!teacherProfile || !classroomId) return;
+        
         const fetchClassroomBroadcasts = async () => {
             try {
                 const { data: broadcastsData } = await supabaseAuth
                     .from('broadcasts')
-                    .select('*')
-                    .eq('teacher_id', teacherProfile.id)
+                    .select('*, sender:users!teacher_id(name, role)')
+                    .contains('recipients', [{ id: classroomId }])
                     .order('created_at', { ascending: false });
                 
                 if (broadcastsData) {
-                    const classroomBroads = broadcastsData.filter((b: any) => 
-                        Array.isArray(b.recipients) && b.recipients.some((r: any) => r.id === classroomId)
-                    );
-                    setClassBroadcasts(classroomBroads);
+                    setClassBroadcasts(broadcastsData);
                 }
             } catch (e) {
                 console.error('Failed to load classroom broadcasts:', e);
             }
         };
+
         fetchClassroomBroadcasts();
+
+        const channel = supabaseAuth
+            .channel(`classroom-broadcasts-${classroomId}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'broadcasts' },
+                () => {
+                    fetchClassroomBroadcasts();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(channel);
+        };
     }, [teacherProfile, classroomId]);
 
     // Action handler to broadcast class messages

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { 
     MessageSquare, Video, Loader2, Send, Share2, Users, 
@@ -8,6 +8,7 @@ import {
     Calendar, User, Zap, FileText
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
+import { sendClassroomNotification } from '../../lib/notifications';
 
 interface EnrolledStudent {
     id: string;
@@ -97,6 +98,68 @@ export default function OverviewTab({
 
     const [composerTab, setComposerTab] = useState<'message' | 'note'>('message');
     const [recipientType, setRecipientType] = useState<'all' | string>('all');
+    
+    // Classroom Chatbox states
+    const [quickChatInput, setQuickChatInput] = useState('');
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string } | null>(null);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const fetchProfile = async () => {
+            const { data: { session } } = await supabaseAuth.auth.getSession();
+            if (session?.user) {
+                const { data } = await supabaseAuth
+                    .from('users')
+                    .select('id, name')
+                    .eq('id', session.user.id)
+                    .single();
+                if (data) setTeacherProfile(data);
+            }
+        };
+        fetchProfile();
+    }, []);
+
+    useEffect(() => {
+        if (chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [classBroadcasts]);
+
+    const handleQuickSend = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!quickChatInput.trim() || !teacherProfile || !classroom) return;
+        const msgText = quickChatInput.trim();
+        setQuickChatInput('');
+        try {
+            const payload = {
+                teacher_id: teacherProfile.id,
+                channel: 'classroom',
+                recipients: [{ id: classroomId, name: classroom.name, type: 'class' }],
+                subject: `Class Message from ${teacherProfile.name}`,
+                content: msgText,
+                created_at: new Date().toISOString()
+            };
+            const { error } = await supabaseAuth
+                .from('broadcasts')
+                .insert([payload]);
+            if (error) throw error;
+            
+            // Trigger push & in-app notifications to students in this classroom
+            const targetStudentIds = students.map(s => s.student_id);
+            if (targetStudentIds.length > 0) {
+                sendClassroomNotification({
+                    teacherId: teacherProfile.id,
+                    recipients: [{ id: classroomId, name: classroom.name, type: 'class' }],
+                    title: `New Message - ${classroom.name}`,
+                    message: msgText,
+                    studentIds: targetStudentIds
+                }).catch(err => console.error('Failed to send classroom notifications for chat:', err));
+            }
+        } catch (err: any) {
+            console.error('Error sending quick chat message:', err);
+            alert(`Failed to send message: ${err.message || 'Please try again.'}`);
+        }
+    };
     
     // Note Form States
     const [noteTitle, setNoteTitle] = useState('');
@@ -373,35 +436,67 @@ export default function OverviewTab({
                         </div>
                     </div>
 
-                    {/* Broadcast History */}
+                    {/* Classroom Chatbox */}
                     <div className="col-span-12 lg:col-span-4">
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 hover:shadow-md transition-shadow h-full flex flex-col min-h-[385px] max-h-[385px] overflow-hidden text-left">
-                            <h4 className="font-extrabold text-slate-900 dark:text-white text-md mb-4 flex items-center gap-2 flex-shrink-0">
-                                <Share2 size={16} className="text-amber-500" />
-                                Recently Sent
-                            </h4>
-                            <div className="space-y-3.5 overflow-y-auto pr-1 flex-1">
-                                {classBroadcasts.map((b, i) => (
-                                    <div 
-                                        key={b.id || i} 
-                                        onClick={() => setSelectedAnnouncement(b)}
-                                        className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800 text-xs hover:border-[#ecb613] transition-colors relative cursor-pointer text-left group"
-                                    >
-                                        <div className="flex justify-between items-center gap-2 mb-1.5 text-left">
-                                            <span className="font-bold text-slate-900 dark:text-white truncate group-hover:text-[#ecb613] transition-colors">{b.subject}</span>
-                                            <span className="text-[10px] text-slate-400 font-semibold shrink-0">
-                                                {new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
-                                        </div>
-                                        <p className="text-slate-600 dark:text-slate-400 leading-relaxed font-medium line-clamp-3 whitespace-pre-wrap text-left">{b.content}</p>
-                                    </div>
-                                ))}
-                                {classBroadcasts.length === 0 && (
-                                    <p className="text-xs text-slate-455 dark:text-slate-500 text-center py-8 italic font-semibold">
-                                        No broadcasts sent to this class yet.
-                                    </p>
-                                )}
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 hover:shadow-md transition-shadow h-[435px] flex flex-col overflow-hidden text-left">
+                            <div className="mb-2">
+                                <h4 className="font-extrabold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+                                    <MessageSquare size={16} className="text-[#ecb613]" />
+                                    Classroom Chatbox
+                                </h4>
+                                <p className="text-[10px] text-slate-500">Real-time messaging and replies with class</p>
                             </div>
+                            
+                            {/* Scrollable Chat Area */}
+                            <div className="space-y-3.5 overflow-y-auto pr-1 flex-1 flex flex-col gap-2 custom-scrollbar my-2">
+                                {[...classBroadcasts].reverse().map((msg: any) => {
+                                    const isMe = msg.teacher_id === teacherProfile?.id;
+                                    const senderName = isMe ? 'You' : (msg.sender?.name || 'Student');
+                                    
+                                    return (
+                                        <div key={msg.id} className={`flex flex-col text-left max-w-[85%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
+                                            <div className="flex items-baseline gap-1 px-1 mb-0.5">
+                                                <span className="text-[9px] font-black text-slate-400 dark:text-slate-500">{senderName}</span>
+                                                <span className="text-[8px] text-slate-400">
+                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                            <div className={`p-2.5 rounded-2xl text-xs font-semibold leading-relaxed break-words border ${
+                                                isMe 
+                                                    ? 'bg-[#FAF5EE] border-[#ebd9c7] text-[#7C5E3F] rounded-tr-none dark:bg-slate-800 dark:border-slate-700 dark:text-amber-400' 
+                                                    : 'bg-white border-slate-200 text-slate-700 rounded-tl-none dark:bg-slate-850 dark:border-slate-800 dark:text-slate-200'
+                                            }`}>
+                                                <p className="whitespace-pre-wrap select-text">{msg.content}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {classBroadcasts.length === 0 && (
+                                    <div className="h-full flex flex-col justify-center items-center text-center py-8">
+                                        <MessageSquare className="w-6 h-6 text-slate-300 mb-1" />
+                                        <p className="text-xs text-slate-400 italic font-semibold">No messages yet.</p>
+                                    </div>
+                                )}
+                                <div ref={chatEndRef} />
+                            </div>
+
+                            {/* Chat Input */}
+                            <form onSubmit={handleQuickSend} className="flex gap-2 border-t border-slate-100 dark:border-slate-800 pt-3 flex-shrink-0 bg-white dark:bg-slate-900">
+                                <input
+                                    type="text"
+                                    placeholder="Send chat to class..."
+                                    value={quickChatInput}
+                                    onChange={(e) => setQuickChatInput(e.target.value)}
+                                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-1 focus:ring-amber-500 text-slate-850 dark:text-slate-100 font-semibold"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!quickChatInput.trim()}
+                                    className="p-2 bg-[#ecb613] hover:bg-[#d49f0e] disabled:opacity-50 text-slate-900 rounded-xl text-xs flex items-center justify-center cursor-pointer shrink-0 transition-colors"
+                                >
+                                    <Send size={14} />
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -707,51 +802,65 @@ export default function OverviewTab({
                     </div>
 
                     {!isMeetingView && (
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4">
-                            <div className="flex flex-col gap-3">
-                                <div className="text-left">
-                                    <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Class Announcements</h3>
-                                    <p className="text-[11px] text-slate-500 dark:text-slate-405 font-semibold mt-0.5">Recent highlights broadcasted to this class</p>
-                                </div>
-                                <div className="relative w-full">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
-                                    <input 
-                                        className="pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 rounded-xl text-xs w-full focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-semibold text-slate-800 dark:text-slate-100" 
-                                        placeholder="Search announcements..." 
-                                        type="text" 
-                                        value={announcementSearchQuery}
-                                        onChange={(e) => setAnnouncementSearchQuery(e.target.value)}
-                                    />
-                                </div>
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 hover:shadow-md transition-shadow h-[400px] flex flex-col overflow-hidden text-left">
+                            <div className="mb-2">
+                                <h4 className="font-extrabold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+                                    <MessageSquare size={16} className="text-[#ecb613]" />
+                                    Classroom Chatbox
+                                </h4>
+                                <p className="text-[10px] text-slate-505">Real-time messaging and replies with class</p>
                             </div>
                             
-                            <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                                {filteredAnnouncements.map((bc, idx) => (
-                                    <div 
-                                        key={bc.id || idx} 
-                                        onClick={() => setSelectedAnnouncement(bc)}
-                                        className="p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:border-[#ecb613] transition-colors relative cursor-pointer text-left group"
-                                    >
-                                        <div className="flex-1 min-w-0 text-left">
-                                            <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate block group-hover:text-[#ecb613] transition-colors">{bc.subject}</span>
-                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 mt-0.5">{bc.content}</p>
+                            {/* Scrollable Chat Area */}
+                            <div className="space-y-3.5 overflow-y-auto pr-1 flex-1 flex flex-col gap-2 custom-scrollbar my-2">
+                                {[...classBroadcasts].reverse().map((msg: any) => {
+                                    const isMe = msg.teacher_id === teacherProfile?.id;
+                                    const senderName = isMe ? 'You' : (msg.sender?.name || 'Student');
+                                    
+                                    return (
+                                        <div key={msg.id} className={`flex flex-col text-left max-w-[85%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
+                                            <div className="flex items-baseline gap-1 px-1 mb-0.5">
+                                                <span className="text-[9px] font-black text-slate-400 dark:text-slate-500">{senderName}</span>
+                                                <span className="text-[8px] text-slate-400">
+                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                            <div className={`p-2.5 rounded-2xl text-xs font-semibold leading-relaxed break-words border ${
+                                                isMe 
+                                                    ? 'bg-[#FAF5EE] border-[#ebd9c7] text-[#7C5E3F] rounded-tr-none dark:bg-slate-800 dark:border-slate-700 dark:text-amber-400' 
+                                                    : 'bg-white border-slate-200 text-slate-700 rounded-tl-none dark:bg-slate-850 dark:border-slate-800 dark:text-slate-200'
+                                            }`}>
+                                                <p className="whitespace-pre-wrap select-text">{msg.content}</p>
+                                            </div>
                                         </div>
-                                        <span className="text-[9px] text-slate-455 dark:text-slate-500 font-semibold shrink-0">
-                                            {new Date(bc.created_at).toLocaleDateString('en-IN', {
-                                                month: 'short',
-                                                day: 'numeric'
-                                            })}
-                                        </span>
-                                    </div>
-                                ))}
-                                {filteredAnnouncements.length === 0 && (
-                                    <div className="py-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                                        <p className="text-slate-455 text-xs font-semibold">
-                                            {announcementSearchQuery ? 'No announcements match your search.' : 'No announcements sent yet.'}
-                                        </p>
+                                    );
+                                })}
+                                {classBroadcasts.length === 0 && (
+                                    <div className="h-full flex flex-col justify-center items-center text-center py-8">
+                                        <MessageSquare className="w-6 h-6 text-slate-300 mb-1" />
+                                        <p className="text-xs text-slate-400 italic font-semibold">No messages yet.</p>
                                     </div>
                                 )}
+                                <div ref={chatEndRef} />
                             </div>
+
+                            {/* Chat Input */}
+                            <form onSubmit={handleQuickSend} className="flex gap-2 border-t border-slate-100 dark:border-slate-800 pt-3 flex-shrink-0 bg-white dark:bg-slate-900">
+                                <input
+                                    type="text"
+                                    placeholder="Send chat to class..."
+                                    value={quickChatInput}
+                                    onChange={(e) => setQuickChatInput(e.target.value)}
+                                    className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-xs outline-none focus:ring-1 focus:ring-amber-500 text-slate-850 dark:text-slate-100 font-semibold"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!quickChatInput.trim()}
+                                    className="p-2 bg-[#ecb613] hover:bg-[#d49f0e] disabled:opacity-50 text-slate-900 rounded-xl text-xs flex items-center justify-center cursor-pointer shrink-0 transition-colors"
+                                >
+                                    <Send size={14} />
+                                </button>
+                            </form>
                         </div>
                     )}
                 </div>
