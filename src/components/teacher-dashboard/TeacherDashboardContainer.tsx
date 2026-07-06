@@ -8,7 +8,7 @@ import {
     Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, 
     LayoutDashboard, ClipboardList, Calendar, Trash2, Edit, 
     CheckCircle, AlertCircle, ChevronLeft, ChevronRight, X,
-    MessageSquare, StickyNote, Wallet, Sparkles, Coins
+    MessageSquare, StickyNote, Wallet, Sparkles, Coins, Search
 } from 'lucide-react';
 import TeacherSidebar from '../TeacherSidebar';
 import TeacherHeader from '../TeacherHeader';
@@ -127,9 +127,19 @@ const generateTimeOptions = () => {
             options.push({ value, label: formatTime12hr(value) });
         }
     }
-    return options;
 };
 const TIME_OPTIONS = generateTimeOptions();
+
+function addOneHour(timeStr: string): string {
+    if (!timeStr) return '';
+    const parts = timeStr.split(':');
+    if (parts.length < 2) return '';
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return '';
+    const newHour = (h + 1) % 24;
+    return `${String(newHour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
 /**
  * TeacherDashboardContainer is the master container for the teacher overview.
@@ -181,7 +191,8 @@ export default function TeacherDashboardContainer() {
     const [tempModalDate, setTempModalDate] = useState('');
     const [allStudents, setAllStudents] = useState<{ id: string; name: string }[]>([]);
     const [tempSelectedStudents, setTempSelectedStudents] = useState<string[]>([]);
-    const [tempForm, setTempForm] = useState({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: '' });
+    const [tempForm, setTempForm] = useState({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: '', delivery_format: 'offline' });
+    const [studentSearchQuery, setStudentSearchQuery] = useState('');
     
     // Admin features
     const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
@@ -299,6 +310,9 @@ export default function TeacherDashboardContainer() {
             }
 
             // 4. Calendar data: Recurring Schedules & Temporary Classes
+            let localSchedules: BatchSchedule[] = [];
+            let localTemps: TemporaryClass[] = [];
+
             if (classIds.length > 0) {
                 const { data: schedules } = await supabaseAuth
                     .from('classroom_schedules')
@@ -314,6 +328,7 @@ export default function TeacherDashboardContainer() {
                     end_time: sch.end_time
                 }));
                 setClassroomSchedules(formattedSchedules);
+                localSchedules = formattedSchedules;
 
                 // Fetch temporary classes
                 const { data: temps } = await supabaseAuth
@@ -331,14 +346,15 @@ export default function TeacherDashboardContainer() {
                     end_time: t.end_time
                 }));
                 setTemporaryClasses(formattedTemps);
+                localTemps = formattedTemps;
             }
 
             // 5. Today's Classes List
             if (classIds.length > 0) {
                 const todayDow = (new Date().getDay() + 6) % 7; // 0=Mon, 6=Sun
-                const todaySchedules = classroomSchedules.filter(sch => sch.day_of_week === todayDow);
+                const todaySchedules = localSchedules.filter(sch => sch.day_of_week === todayDow);
                 const todayDateStr = getLocalDateString(new Date());
-                const todayTemps = temporaryClasses.filter(t => t.class_date === todayDateStr);
+                const todayTemps = localTemps.filter(t => t.class_date === todayDateStr);
 
                 const unifiedClasses: UpcomingClass[] = [];
 
@@ -392,7 +408,7 @@ export default function TeacherDashboardContainer() {
                 const yesterdayStr = getLocalDateString(new Date(Date.now() - 86400000));
 
                 const scheduleMap: Record<number, BatchSchedule[]> = {};
-                classroomSchedules.forEach(sch => {
+                localSchedules.forEach(sch => {
                     if (!scheduleMap[sch.day_of_week]) scheduleMap[sch.day_of_week] = [];
                     scheduleMap[sch.day_of_week].push(sch);
                 });
@@ -571,8 +587,13 @@ export default function TeacherDashboardContainer() {
     };
 
     const handleCreateTempClass = async () => {
-        if (!tempForm.title.trim() || !tempForm.classroom_id) {
+        if (!tempForm.title.trim()) {
             alert('Please fill out all required fields!');
+            return;
+        }
+
+        if (tempForm.end_time <= tempForm.start_time) {
+            alert('End time must be after start time!');
             return;
         }
 
@@ -583,12 +604,15 @@ export default function TeacherDashboardContainer() {
                 return;
             }
 
+            const formatTag = `[delivery_format:${tempForm.delivery_format || 'offline'}]`;
+            const finalDescription = `Special makeup/extra class for date ${tempModalDate} ${formatTag}`;
+
             // 1. Create classroom
             const { data: newClassroom, error: classError } = await supabaseAuth
                 .from('classrooms')
                 .insert([{
                     name: tempForm.title,
-                    description: `Special makeup/extra class for date ${tempModalDate}`,
+                    description: finalDescription,
                     teacher_id: selectedTeacherId,
                     type: 'temporary',
                     status: 'active'
@@ -603,6 +627,7 @@ export default function TeacherDashboardContainer() {
                 .from('temporary_classes')
                 .insert([{
                     classroom_id: newClassroom.id,
+                    teacher_id: selectedTeacherId,
                     title: tempForm.title,
                     class_date: tempModalDate,
                     start_time: tempForm.start_time,
@@ -615,7 +640,6 @@ export default function TeacherDashboardContainer() {
             if (tempSelectedStudents.length > 0) {
                 const overrideRows = tempSelectedStudents.map(studentId => ({
                     student_id: studentId,
-                    source_classroom_id: tempForm.classroom_id,
                     target_classroom_id: newClassroom.id,
                     override_date: tempModalDate,
                     reason: `Assigned to temporary makeup session: ${tempForm.title}`
@@ -740,6 +764,8 @@ export default function TeacherDashboardContainer() {
         setPanelClassStudents(studentMap);
     };
 
+    const filteredStudents = allStudents.filter(s => s.name.toLowerCase().includes(studentSearchQuery.toLowerCase()));
+
     if (loading) {
         return (
             <div className="flex h-screen bg-[#f8f8f6] dark:bg-[#1a1608] font-sans">
@@ -815,7 +841,8 @@ export default function TeacherDashboardContainer() {
                                     onClick={() => {
                                         setTempModalDate(selectedDateStr);
                                         setTempSelectedStudents([]);
-                                        setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '' });
+                                        setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '', delivery_format: 'offline' });
+                                        setStudentSearchQuery('');
                                         setShowTempModal(true);
                                     }} 
                                     className="p-2 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-xs font-bold transition-all"
@@ -878,7 +905,8 @@ export default function TeacherDashboardContainer() {
                                         onClick={() => {
                                             setTempModalDate(selectedDateStr);
                                             setTempSelectedStudents([]);
-                                            setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '' });
+                                            setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '', delivery_format: 'offline' });
+                                            setStudentSearchQuery('');
                                             setShowTempModal(true);
                                         }}
                                         className="mt-4 text-xs font-bold text-[#ecb613] hover:underline"
@@ -895,11 +923,11 @@ export default function TeacherDashboardContainer() {
             {/* Temporary Class Modal */}
             {showTempModal && (
                 <>
-                    <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => setShowTempModal(false)} />
+                    <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => { setShowTempModal(false); setStudentSearchQuery(''); }} />
                     <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 text-left">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Add Temporary Class</h3>
-                            <button onClick={() => { setShowTempModal(false); setTempSelectedStudents([]); }} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <button onClick={() => { setShowTempModal(false); setTempSelectedStudents([]); setStudentSearchQuery(''); }} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <X size={18} />
                             </button>
                         </div>
@@ -917,7 +945,7 @@ export default function TeacherDashboardContainer() {
                             </div>
                             {isAdmin && (
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">Assign Instructor (Teacher)</label>
+                                    <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">Assign Instructor (Teacher)</label>
                                     <select
                                         required
                                         value={tempForm.teacher_id}
@@ -934,33 +962,59 @@ export default function TeacherDashboardContainer() {
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">Start Time</label>
-                                    <select
+                                    <input
+                                        type="time"
                                         value={tempForm.start_time}
-                                        onChange={e => setTempForm({ ...tempForm, start_time: e.target.value })}
-                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
-                                    >
-                                        {TIME_OPTIONS.map(opt => (
-                                            <option key={`start-${opt.value}`} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
+                                        onChange={e => {
+                                            const newStart = e.target.value;
+                                            setTempForm(prev => ({
+                                                ...prev,
+                                                start_time: newStart,
+                                                end_time: addOneHour(newStart)
+                                            }));
+                                        }}
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-855 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">End Time</label>
-                                    <select
+                                    <input
+                                        type="time"
                                         value={tempForm.end_time}
-                                        onChange={e => setTempForm({ ...tempForm, end_time: e.target.value })}
-                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
-                                    >
-                                        {TIME_OPTIONS.map(opt => (
-                                            <option key={`end-${opt.value}`} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
+                                        onChange={e => setTempForm(prev => ({ ...prev, end_time: e.target.value }))}
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-855 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Delivery Format</label>
+                                <div className="flex gap-3">
+                                    {(['offline', 'online'] as const).map(df => (
+                                        <button
+                                            key={df}
+                                            type="button"
+                                            onClick={() => setTempForm({ ...tempForm, delivery_format: df })}
+                                            className={`flex-1 py-2.5 px-3 border rounded-xl font-bold text-xs transition-all cursor-pointer text-center ${tempForm.delivery_format === df ? (df === 'online' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-400' : 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400') : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                        >
+                                            {df === 'online' ? 'Online' : 'Offline (In-Person)'}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">Select Students</label>
+                                <div className="relative mb-2">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-4" />
+                                    <input
+                                        type="text"
+                                        value={studentSearchQuery}
+                                        onChange={e => setStudentSearchQuery(e.target.value)}
+                                        placeholder="Search students..."
+                                        className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    />
+                                </div>
                                 <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl p-2 space-y-1 bg-slate-50 dark:bg-slate-850/50">
-                                    {allStudents.length > 0 ? allStudents.map(s => (
+                                    {filteredStudents.length > 0 ? filteredStudents.map(s => (
                                         <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-slate-80 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
                                             <input 
                                                 type="checkbox" 

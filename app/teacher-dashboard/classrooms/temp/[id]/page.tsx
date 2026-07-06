@@ -18,6 +18,17 @@ function formatTime12hr(time24: string) {
     return `${hours}:${m} ${ampm}`;
 }
 
+function addOneHour(timeStr: string): string {
+    if (!timeStr) return '';
+    const parts = timeStr.split(':');
+    if (parts.length < 2) return '';
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return '';
+    const newHour = (h + 1) % 24;
+    return `${String(newHour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function parseClassDate(dateStr?: string): Date | null {
     if (!dateStr) return null;
     const parts = dateStr.split('-');
@@ -243,6 +254,10 @@ export default function TempClassManagePage() {
 
     const handleSave = async () => {
         if (!tempClass || !teacherProfile) return;
+        if (endTime <= startTime) {
+            alert('End time must be after start time!');
+            return;
+        }
         setSaving(true);
         try {
             // Check for scheduling conflicts
@@ -387,40 +402,28 @@ export default function TempClassManagePage() {
                             <div>
                                 <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Start Time</label>
                                 <div className="relative">
-                                    <select 
+                                    <input 
+                                        type="time"
                                         value={startTime}
-                                        onChange={(e) => setStartTime(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-[#ecb613] rounded-2xl px-6 py-4 appearance-none font-bold text-slate-900 dark:text-white focus:ring-0 transition-all cursor-pointer"
-                                    >
-                                        {TIME_OPTIONS.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                    <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none">
-                                        <span className="text-xs font-black text-[#ecb613] px-2 py-1 bg-amber-50 dark:bg-amber-900/20 rounded-md">
-                                            {formatTime12hr(startTime).split(' ')[1]}
-                                        </span>
-                                    </div>
+                                        onChange={(e) => {
+                                            const newStart = e.target.value;
+                                            setStartTime(newStart);
+                                            setEndTime(addOneHour(newStart));
+                                        }}
+                                        className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-[#ecb613] rounded-2xl px-6 py-4 font-bold text-slate-900 dark:text-white focus:ring-0 transition-all cursor-pointer"
+                                    />
                                 </div>
                             </div>
 
                             <div>
                                 <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3 px-1">End Time</label>
                                 <div className="relative">
-                                    <select 
+                                    <input 
+                                        type="time"
                                         value={endTime}
                                         onChange={(e) => setEndTime(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-[#ecb613] rounded-2xl px-6 py-4 appearance-none font-bold text-slate-900 dark:text-white focus:ring-0 transition-all cursor-pointer"
-                                    >
-                                        {TIME_OPTIONS.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                    <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none">
-                                        <span className="text-xs font-black text-[#ecb613] px-2 py-1 bg-amber-50 dark:bg-amber-900/20 rounded-md">
-                                            {formatTime12hr(endTime).split(' ')[1]}
-                                        </span>
-                                    </div>
+                                        className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-[#ecb613] rounded-2xl px-6 py-4 font-bold text-slate-900 dark:text-white focus:ring-0 transition-all cursor-pointer"
+                                    />
                                 </div>
                             </div>
                         </div>

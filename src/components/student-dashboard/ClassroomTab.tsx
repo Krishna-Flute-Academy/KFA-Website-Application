@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
     Calendar, Users, MessageSquare, Clock, ChevronLeft, ChevronRight, 
-    Send, User, Loader2, CheckCircle, Info, AlertTriangle, Play, FileText, Download 
+    Send, User, Loader2, CheckCircle, Info, AlertTriangle, Play, FileText, Download,
+    BookOpen
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
 
@@ -25,6 +26,7 @@ interface ClassroomInfo {
     is_live?: boolean;
     live_meeting_link?: string | null;
     live_session_started_at?: string | null;
+    live_classroom_name?: string | null;
 }
 
 interface Classmate {
@@ -36,6 +38,7 @@ interface Classmate {
 
 interface ClassNote {
     id: string;
+    classroom_id: string;
     title: string;
     content?: string;
     file_url?: string;
@@ -43,6 +46,8 @@ interface ClassNote {
     file_size?: number;
     color?: string;
     created_at: string;
+    classroom_name?: string;
+    classroom_status?: string;
 }
 
 interface ClassroomTabProps {
@@ -55,6 +60,8 @@ interface ClassroomTabProps {
     refreshData: () => Promise<void>;
     classNotes: ClassNote[];
     assignments?: any[];
+    broadcasts?: any[];
+    onSelectAssignment?: (asg: any) => void;
 }
 
 export default function ClassroomTab({
@@ -66,12 +73,148 @@ export default function ClassroomTab({
     makeupSchedules,
     refreshData,
     classNotes,
-    assignments = []
+    assignments = [],
+    broadcasts = [],
+    onSelectAssignment
 }: ClassroomTabProps) {
-    const [subTab, setSubTab] = useState<'calendar' | 'logs' | 'notes'>('calendar');
+    const [subTab, setSubTab] = useState<'calendar' | 'logs' | 'notes' | 'assignments' | 'messages'>('calendar');
+    
+    // Classroom Discussion chat states
+    const [newMessage, setNewMessage] = useState('');
+    const [isSending, setIsSending] = useState(false);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+
+    // Filter class notes by current classroom
+    const filteredClassNotes = useMemo(() => {
+        if (!classroom?.id) return [];
+        return classNotes.filter(n => n.classroom_id === classroom.id);
+    }, [classNotes, classroom?.id]);
+
+    // Filter assignments by current classroom
+    const filteredAssignments = useMemo(() => {
+        if (!classroom?.id) return [];
+        return (assignments || []).filter(a => a.classroom_id === classroom.id);
+    }, [assignments, classroom?.id]);
+
+    // Filter and sort classroom broadcasts (announcements/chat messages) chronologically
+    const classroomBroadcasts = useMemo(() => {
+        if (!classroom?.id || !broadcasts) return [];
+        return broadcasts
+            .filter((b: any) => 
+                b.recipients?.some((r: any) => r.type === 'class' && r.id === classroom.id)
+            )
+            .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    }, [broadcasts, classroom?.id]);
+
+    // Scroll chat to bottom when tab becomes active or new messages are received
+    useEffect(() => {
+        if (subTab === 'messages' && chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [subTab, classroomBroadcasts]);
+
+    const getInitials = (name: string) => {
+        if (!name) return '??';
+        return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    };
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newMessage.trim() || !profile?.id || !classroom?.id) return;
+        setIsSending(true);
+        try {
+            const { error } = await supabaseAuth
+                .from('broadcasts')
+                .insert([{
+                    teacher_id: profile.id, // utilizing teacher_id column as sender ID
+                    subject: `Class Message from ${profile.name}`,
+                    content: newMessage.trim(),
+                    recipients: [{ id: classroom.id, name: classroom.name, type: 'class' }],
+                    channel: 'announcements'
+                }]);
+            if (error) throw error;
+            setNewMessage('');
+            await refreshData();
+        } catch (err) {
+            console.error('Error sending message:', err);
+            alert('Failed to send message. Please try again.');
+        } finally {
+            setIsSending(false);
+        }
+    };
     
     // Calendar Month state
     const [currentDate, setCurrentDate] = useState(new Date());
+
+    const getLocalYYYYMMDD = (date: Date): string => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    const getSchedulesForDate = (date: Date): any[] => {
+        const dateStr = getLocalYYYYMMDD(date);
+        const dayOfWeek = date.getDay();
+        
+        const dayClasses: any[] = [];
+        
+        // 1. Check matching temporary classes (overrides)
+        const makeups = makeupSchedules.filter(o => o.override_date === dateStr);
+        makeups.forEach(m => {
+            dayClasses.push({
+                type: 'temporary',
+                title: m.title || 'Temporary Class',
+                start_time: m.start_time,
+                end_time: m.end_time,
+                reason: m.reason,
+                date: new Date(date)
+            });
+        });
+        
+        // 2. Check matching recurring batch schedules (only if there are no overrides/makeups for today)
+        if (makeups.length === 0) {
+            const regulars = batchSchedules.filter(s => s.day_of_week === dayOfWeek);
+            regulars.forEach(r => {
+                dayClasses.push({
+                    type: 'permanent',
+                    title: classroom?.name || 'Regular Class',
+                    start_time: r.start_time,
+                    end_time: r.end_time,
+                    date: new Date(date)
+                });
+            });
+        }
+        
+        return dayClasses;
+    };
+
+    // Calculate today's classes
+    const todayClasses = useMemo(() => {
+        const today = new Date();
+        return getSchedulesForDate(today);
+    }, [batchSchedules, makeupSchedules, classroom]);
+
+    // Calculate tomorrow's classes and later classes
+    const tomorrowClasses = useMemo(() => {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return getSchedulesForDate(tomorrow);
+    }, [batchSchedules, makeupSchedules, classroom]);
+
+    const upcomingClassesLater = useMemo(() => {
+        const classes: any[] = [];
+        const today = new Date();
+        
+        // Next 7 days (excluding tomorrow which is day 1)
+        for (let i = 2; i <= 7; i++) {
+            const date = new Date();
+            date.setDate(today.getDate() + i);
+            const dayClasses = getSchedulesForDate(date);
+            classes.push(...dayClasses);
+        }
+        return classes.sort((a, b) => a.date.getTime() - b.date.getTime());
+    }, [batchSchedules, makeupSchedules, classroom]);
 
     // Format local date strings
     const formatLocalDate = (dateStr: string): Date => {
@@ -110,7 +253,7 @@ export default function ClassroomTab({
         for (let i = startingDayOfWeek - 1; i >= 0; i--) {
             const d = prevMonthLast - i;
             const pmDate = new Date(year, month - 1, d);
-            const dateStr = pmDate.toISOString().split('T')[0];
+            const dateStr = getLocalYYYYMMDD(pmDate);
             const matchedAssignments = assignments.filter(asg => {
                 if (!asg.due_date) return false;
                 const asgDatePart = asg.due_date.includes('T') ? asg.due_date.split('T')[0] : asg.due_date;
@@ -127,19 +270,21 @@ export default function ClassroomTab({
             });
         }
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getLocalYYYYMMDD(new Date());
 
         // Current month days
         for (let d = 1; d <= totalDays; d++) {
             const dateObj = new Date(year, month, d);
-            const dateStr = dateObj.toISOString().split('T')[0];
+            const dateStr = getLocalYYYYMMDD(dateObj);
             const dayOfWeek = dateObj.getDay();
-            
-            // Check recurring batch schedules (schedules matching day_of_week)
-            const matchedSchedules = batchSchedules.filter(s => s.day_of_week === dayOfWeek);
             
             // Check makeup session overrides matching dateStr
             const matchedMakeups = makeupSchedules.filter(o => o.override_date === dateStr);
+
+            // Check recurring batch schedules (schedules matching day_of_week) - only if no overrides exist for this day
+            const matchedSchedules = matchedMakeups.length === 0
+                ? batchSchedules.filter(s => s.day_of_week === dayOfWeek)
+                : [];
 
             const matchedAssignments = assignments.filter(asg => {
                 if (!asg.due_date) return false;
@@ -163,7 +308,7 @@ export default function ClassroomTab({
         const nextMonthDays = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
         for (let d = 1; d <= nextMonthDays; d++) {
             const nmDate = new Date(year, month + 1, d);
-            const dateStr = nmDate.toISOString().split('T')[0];
+            const dateStr = getLocalYYYYMMDD(nmDate);
             const matchedAssignments = assignments.filter(asg => {
                 if (!asg.due_date) return false;
                 const asgDatePart = asg.due_date.includes('T') ? asg.due_date.split('T')[0] : asg.due_date;
@@ -225,11 +370,15 @@ export default function ClassroomTab({
                                     </span>
                                 )}
                             </div>
-                            <h4 className="text-sm font-black text-slate-800 dark:text-white">Active Classroom Session In Progress</h4>
+                            <h4 className="text-sm font-black text-slate-800 dark:text-white">
+                                {classroom.live_classroom_name 
+                                    ? `Live Class: ${classroom.live_classroom_name}` 
+                                    : 'Active Classroom Session In Progress'}
+                            </h4>
                             <p className="text-xs text-slate-500 dark:text-slate-400">Join the live call to participate in instructions and class questions.</p>
                         </div>
                     </div>
-                    {classroom.live_meeting_link ? (
+                    {classroom.live_meeting_link && (
                         <a 
                             href={classroom.live_meeting_link}
                             target="_blank"
@@ -239,10 +388,6 @@ export default function ClassroomTab({
                             <Play className="w-3.5 h-3.5 fill-current" />
                             Join Session
                         </a>
-                    ) : (
-                        <span className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-400 font-bold rounded-full text-xs">
-                            Waiting for link...
-                        </span>
                     )}
                 </div>
             )}
@@ -257,7 +402,9 @@ export default function ClassroomTab({
                             {classroom?.name || 'Classroom Portal'}
                         </h2>
                         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
-                            {classroom?.description || 'Learn and interact with section members and practice flutes together.'}
+                            {classroom?.description 
+                                ? classroom.description.replace(/\[delivery_format:(online|offline)\]/g, '').trim() 
+                                : 'Learn and interact with section members and practice flutes together.'}
                         </p>
                     </div>
 
@@ -275,11 +422,13 @@ export default function ClassroomTab({
                     </div>
                 </div>
 
-                <div className="flex gap-2 border-t border-slate-100 dark:border-slate-800 mt-6 pt-5">
+                <div className="flex flex-wrap gap-2 border-t border-slate-100 dark:border-slate-800 mt-6 pt-5">
                     {[
                         { id: 'calendar', label: 'Class Calendar', icon: Calendar },
-                        { id: 'logs', label: 'Class logs & Presence', icon: Clock },
-                        { id: 'notes', label: 'Class Notes', icon: FileText }
+                        { id: 'assignments', label: 'Assignments', icon: BookOpen },
+                        { id: 'notes', label: 'Class Notes', icon: FileText },
+                        { id: 'messages', label: 'Messages & Discussion', icon: MessageSquare },
+                        { id: 'logs', label: 'Presence Logs', icon: Clock }
                     ].map(tab => {
                         const Icon = tab.icon;
                         const active = subTab === tab.id;
@@ -358,28 +507,33 @@ export default function ClassroomTab({
 
                                         {hasEvents && cell.isCurrentMonth && (
                                             <div className="space-y-1">
-                                                {regularClass && (
-                                                    <div className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 truncate" title={`Weekly Class: ${formatTime12hr(regularClass.start_time.slice(0, 5))}`}>
+                                                {cell.schedules.map((regularClass, sIdx) => (
+                                                    <div key={`reg-${sIdx}`} className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 truncate" title={`Weekly Class: ${formatTime12hr(regularClass.start_time.slice(0, 5))}`}>
                                                         {formatTime12hr(regularClass.start_time.slice(0, 5))} Class
                                                     </div>
-                                                )}
-                                                {makeupClass && (
-                                                    <div className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 truncate" title={`Makeup Class: ${makeupClass.reason || 'Rescheduled'}`}>
-                                                        Makeup Class
-                                                    </div>
-                                                )}
+                                                ))}
+                                                {cell.makeups.map((makeupClass, mIdx) => (
+                                                     <div 
+                                                         key={`make-${mIdx}`}
+                                                         className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 truncate" 
+                                                         title={`${makeupClass.title || 'Temporary Class'}: ${makeupClass.start_time ? formatTime12hr(makeupClass.start_time.slice(0, 5)) : ''} - ${makeupClass.end_time ? formatTime12hr(makeupClass.end_time.slice(0, 5)) : ''} (Reason: ${makeupClass.reason || 'N/A'})`}
+                                                     >
+                                                         ⚡ {makeupClass.title || 'Makeup Class'}
+                                                     </div>
+                                                 ))}
                                                 {cell.assignments && cell.assignments.map((asg) => (
-                                                    <div 
+                                                    <button 
                                                         key={asg.id} 
-                                                        className={`px-1.5 py-0.5 rounded text-[8px] font-black border truncate ${
+                                                        onClick={() => onSelectAssignment?.(asg)}
+                                                        className={`w-full text-left px-1.5 py-0.5 rounded text-[8px] font-black border truncate transition-all hover:scale-102 active:scale-98 cursor-pointer block ${
                                                             asg.status === 'pending' 
                                                                 ? 'bg-rose-500/10 text-rose-600 dark:text-rose-450 border-rose-500/20' 
                                                                 : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-450 border-emerald-500/20'
                                                         }`}
-                                                        title={`Task Due: ${asg.title} (${asg.status})`}
+                                                        title={`Task: ${asg.title}\nClass: ${asg.classroom_name || 'Classroom'}\nCreated: ${asg.created_at ? new Date(asg.created_at).toLocaleDateString() : 'N/A'}\nDue: ${asg.due_date ? new Date(asg.due_date).toLocaleDateString() : 'N/A'} (${asg.status})`}
                                                     >
                                                         📝 {asg.title}
-                                                    </div>
+                                                    </button>
                                                 ))}
                                             </div>
                                         )}
@@ -388,73 +542,155 @@ export default function ClassroomTab({
                             })}
                         </div>
                     </div>
-
                     {/* Schedule Side Panel */}
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-5 flex flex-col justify-between">
                         <div className="space-y-4">
                             <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Schedule Information</h3>
                             
-                            <div className="space-y-3.5">
+                            <div className="space-y-4">
+                                {/* Today's Classes */}
                                 <div>
-                                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">Weekly Recurring Schedule</span>
+                                    <span className="text-[10px] font-black text-rose-600 dark:text-rose-450 uppercase tracking-widest font-mono">Today's Classes</span>
+                                    {todayClasses.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic mt-1.5">No classes scheduled for today.</p>
+                                    ) : (
+                                        <div className="space-y-2 mt-2">
+                                            {todayClasses.map((c, idx) => (
+                                                <div key={idx} className="p-3 bg-rose-50/40 dark:bg-rose-950/10 border border-rose-200/50 dark:border-rose-900/30 rounded-xl space-y-1">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <p className="font-extrabold text-xs text-slate-800 dark:text-slate-200 truncate">{c.title}</p>
+                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                                            c.type === 'temporary' 
+                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                                                                : 'bg-blue-100 text-blue-805 dark:bg-blue-955/40 dark:text-blue-400'
+                                                        }`}>
+                                                            {c.type === 'temporary' ? 'Temporary' : 'Permanent'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold flex items-center gap-1">
+                                                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                                        {c.start_time ? formatTime12hr(c.start_time.slice(0, 5)) : ''} - {c.end_time ? formatTime12hr(c.end_time.slice(0, 5)) : ''}
+                                                    </p>
+                                                    {c.reason && (
+                                                        <p className="text-[9px] text-slate-400 italic">Reason: {c.reason}</p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Tomorrow's Classes */}
+                                <div>
+                                    <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest font-mono">Tomorrow's Classes</span>
+                                    {tomorrowClasses.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic mt-1.5">No classes scheduled for tomorrow.</p>
+                                    ) : (
+                                        <div className="space-y-2 mt-2">
+                                            {tomorrowClasses.map((c, idx) => (
+                                                <div key={idx} className="p-3 bg-amber-50/40 dark:bg-amber-955/10 border border-amber-200/50 dark:border-amber-900/30 rounded-xl space-y-1">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <p className="font-extrabold text-xs text-slate-800 dark:text-slate-200 truncate">{c.title}</p>
+                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                                            c.type === 'temporary' 
+                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                                                                : 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400'
+                                                        }`}>
+                                                            {c.type === 'temporary' ? 'Temporary' : 'Permanent'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold flex items-center gap-1">
+                                                        <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                                        {c.start_time ? formatTime12hr(c.start_time.slice(0, 5)) : ''} - {c.end_time ? formatTime12hr(c.end_time.slice(0, 5)) : ''}
+                                                    </p>
+                                                    {c.reason && (
+                                                        <p className="text-[9px] text-slate-400 italic">Reason: {c.reason}</p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Upcoming Classes (Next 7 Days) */}
+                                <div className="border-t border-slate-100 dark:border-slate-800 pt-3.5">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Upcoming Classes (Next 7 Days)</span>
+                                    {upcomingClassesLater.length === 0 ? (
+                                        <p className="text-xs text-slate-400 italic mt-1.5">No other classes scheduled for the next 7 days.</p>
+                                    ) : (
+                                        <div className="space-y-2 mt-2 max-h-[180px] overflow-y-auto pr-1">
+                                            {upcomingClassesLater.map((c, idx) => (
+                                                <div key={idx} className="p-2.5 bg-slate-50/50 dark:bg-slate-850/50 border border-slate-200/50 dark:border-slate-800 rounded-xl space-y-1">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <p className="font-bold text-xs text-slate-800 dark:text-slate-250 truncate">{c.title}</p>
+                                                        <span className={`px-1 py-0.2 rounded text-[7px] font-black uppercase tracking-wider ${
+                                                            c.type === 'temporary' 
+                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                                                                : 'bg-blue-100 text-blue-805 dark:bg-blue-955/40 dark:text-blue-400'
+                                                        }`}>
+                                                            {c.type === 'temporary' ? 'Temp' : 'Perm'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-550 dark:text-slate-400 font-semibold flex items-center gap-1 flex-wrap">
+                                                        <span>{c.date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                                                        <span>•</span>
+                                                        <span>{c.start_time ? formatTime12hr(c.start_time.slice(0, 5)) : ''} - {c.end_time ? formatTime12hr(c.end_time.slice(0, 5)) : ''}</span>
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Weekly Standard Schedule Reference */}
+                                <div className="border-t border-slate-100 dark:border-slate-800 pt-3.5">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-mono">Weekly Standard Schedule</span>
                                     {batchSchedules.length === 0 ? (
-                                        <p className="text-xs text-slate-405 italic mt-1.5">No recurring schedule has been set for this batch.</p>
+                                        <p className="text-xs text-slate-400 italic mt-1.5">No standard weekly schedule has been set.</p>
                                     ) : (
-                                        <div className="space-y-2 mt-2">
+                                        <div className="space-y-1.5 mt-1.5">
                                             {batchSchedules.map((s, idx) => (
-                                                <div key={idx} className="flex items-center gap-3 p-3 bg-blue-500/[0.02] border border-blue-500/10 rounded-xl">
-                                                    <Calendar className="w-4 h-4 text-blue-550 shrink-0" />
-                                                    <div className="text-xs text-left">
-                                                        <p className="font-black text-slate-800 dark:text-slate-200">{DAY_NAMES[s.day_of_week]}</p>
-                                                        <p className="text-[10px] text-slate-455 mt-0.5">{formatTime12hr(s.start_time.slice(0,5))} – {formatTime12hr(s.end_time.slice(0,5))}</p>
-                                                    </div>
+                                                <div key={idx} className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 p-1.5 bg-slate-50/20 rounded-lg">
+                                                    <span className="font-extrabold">{DAY_NAMES[s.day_of_week]}</span>
+                                                    <span className="font-mono text-[10px]">{formatTime12hr(s.start_time.slice(0,5))} – {formatTime12hr(s.end_time.slice(0,5))}</span>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                 </div>
-
+                                
+                                {/* Upcoming Task Deadlines */}
                                 <div className="border-t border-slate-100 dark:border-slate-800 pt-3.5">
-                                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">Upcoming Makeup / Overrides</span>
-                                    {makeupSchedules.length === 0 ? (
-                                        <p className="text-xs text-slate-405 italic mt-1.5">No temporary makeup sessions scheduled.</p>
-                                    ) : (
-                                        <div className="space-y-2 mt-2">
-                                            {makeupSchedules.slice(0, 3).map((o, idx) => (
-                                                <div key={idx} className="flex items-center gap-3 p-3 bg-emerald-500/[0.02] border border-emerald-500/10 rounded-xl">
-                                                    <CheckCircle className="w-4 h-4 text-emerald-550 shrink-0" />
-                                                    <div className="text-xs text-left">
-                                                        <p className="font-black text-slate-808 dark:text-slate-200">
-                                                            {formatLocalDate(o.override_date).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                        </p>
-                                                        <p className="text-[10px] text-slate-505 mt-0.5 italic">Reason: {o.reason || 'Temporary makeup allocation'}</p>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="border-t border-slate-100 dark:border-slate-800 pt-3.5">
-                                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">Upcoming Task Deadlines</span>
+                                    <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest font-mono">Tasks & Assignments</span>
                                     {assignments.filter(asg => asg.due_date && asg.status === 'pending').length === 0 ? (
-                                        <p className="text-xs text-slate-405 italic mt-1.5">No pending task deadlines.</p>
+                                        <p className="text-xs text-slate-400 italic mt-1.5">No pending task deadlines.</p>
                                     ) : (
                                         <div className="space-y-2 mt-2">
                                             {assignments
                                                 .filter(asg => asg.due_date && asg.status === 'pending')
                                                 .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
-                                                .slice(0, 3)
+                                                .slice(0, 2)
                                                 .map((asg, idx) => (
-                                                    <div key={idx} className="flex items-center gap-3 p-3 bg-rose-500/[0.02] border border-rose-500/10 rounded-xl">
-                                                        <FileText className="w-4 h-4 text-rose-550 shrink-0" />
-                                                        <div className="text-xs text-left">
-                                                            <p className="font-black text-slate-808 dark:text-slate-200">
-                                                                {new Date(asg.due_date).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                    <button 
+                                                        key={idx} 
+                                                        onClick={() => onSelectAssignment?.(asg)}
+                                                        className="w-full flex items-start gap-2.5 p-3 bg-rose-500/[0.01] hover:bg-rose-500/[0.04] border border-rose-500/10 hover:border-rose-500/20 rounded-xl transition-all text-left cursor-pointer hover:scale-102 active:scale-98"
+                                                    >
+                                                        <FileText className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                                                        <div className="text-[11px] space-y-0.5 w-full">
+                                                            <div className="flex items-center justify-between gap-1 w-full">
+                                                                <p className="font-extrabold text-slate-800 dark:text-slate-200 truncate max-w-[130px]">{asg.title}</p>
+                                                                <span className="text-[8px] font-black text-rose-600 dark:text-rose-450 uppercase tracking-wider font-mono">Pending</span>
+                                                            </div>
+                                                            <p className="text-[9px] text-slate-455 dark:text-slate-400 font-semibold truncate">
+                                                                Class: {asg.classroom_name || 'Classroom'}
                                                             </p>
-                                                            <p className="text-[10px] text-slate-500 mt-0.5 truncate">{asg.title}</p>
+                                                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-medium pt-1">
+                                                                <span>Created: {asg.created_at ? new Date(asg.created_at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : 'N/A'}</span>
+                                                                <span className="font-bold text-slate-600 dark:text-slate-350">Due: {new Date(asg.due_date).toLocaleDateString([], { day: 'numeric', month: 'short' })}</span>
+                                                            </div>
                                                         </div>
-                                                    </div>
+                                                    </button>
                                                 ))}
                                         </div>
                                     )}
@@ -478,7 +714,7 @@ export default function ClassroomTab({
                     <p className="text-xs text-slate-455 mb-6">Logs of completed live sessions and attendance results</p>
 
                     {mergedLogs.length === 0 ? (
-                        <div className="py-16 border border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center bg-slate-50/50 dark:bg-slate-950/10">
+                                <div className="py-16 border border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center bg-slate-50/50 dark:bg-slate-950/10">
                             <Clock className="w-10 h-10 text-slate-350 mx-auto mb-2" />
                             <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No session logs found.</p>
                             <p className="text-[10px] text-slate-400 mt-0.5">Logs will automatically populate when classes are held.</p>
@@ -488,8 +724,9 @@ export default function ClassroomTab({
                             <table className="w-full text-left text-xs border-collapse">
                                 <thead>
                                     <tr className="border-b border-slate-100 dark:border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">
-                                        <th className="pb-3 pt-1">Session Date</th>
+                                        <th className="pb-3 pt-1">Session Date / Class</th>
                                         <th className="pb-3 pt-1">Timing / Start</th>
+                                        <th className="pb-3 pt-1">Format</th>
                                         <th className="pb-3 pt-1">Type</th>
                                         <th className="pb-3 pt-1">Duration</th>
                                         <th className="pb-3 pt-1 text-right">My Attendance</th>
@@ -506,6 +743,8 @@ export default function ClassroomTab({
                                             ? `${Math.round(log.duration_seconds / 60)} mins`
                                             : '—';
 
+                                        const isTempLog = log.classroom_id && log.classroom_id !== classroom?.id;
+
                                         const statusColors = {
                                             present: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-500/20',
                                             absent: 'bg-rose-105 text-rose-700 dark:bg-rose-955/20 dark:text-rose-400 border border-rose-500/20',
@@ -516,15 +755,25 @@ export default function ClassroomTab({
 
                                         return (
                                             <tr key={idx} className="hover:bg-slate-50/40 dark:hover:bg-slate-850/20 transition-colors">
-                                                <td className="py-4 font-bold text-slate-808 dark:text-white">{dateLabel}</td>
+                                                <td className="py-4 text-left">
+                                                    <p className="font-bold text-slate-800 dark:text-white">{dateLabel}</p>
+                                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">{log.classroom_name || 'Classroom'}</p>
+                                                </td>
                                                 <td className="py-4 text-slate-505 dark:text-slate-400">{startTimeLabel}</td>
-                                                <td className="py-4 font-black">
+                                                <td className="py-4">
                                                     {log.session_type === 'online' ? (
-                                                        <span className="text-blue-550 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/15">Online</span>
+                                                        <span className="text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/15 font-black">Online</span>
                                                     ) : log.session_type === 'offline' ? (
-                                                        <span className="text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/15">Offline</span>
+                                                        <span className="text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/15 font-black">Offline</span>
                                                     ) : (
                                                         <span className="text-slate-400">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-4">
+                                                    {isTempLog ? (
+                                                        <span className="text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/15 font-black">Temporary</span>
+                                                    ) : (
+                                                        <span className="text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/15 font-black">Permanent</span>
                                                     )}
                                                 </td>
                                                 <td className="py-4 font-mono font-semibold text-slate-505 dark:text-slate-400">{durationMinutes}</td>
@@ -548,15 +797,15 @@ export default function ClassroomTab({
                     <h3 className="font-extrabold text-slate-808 dark:text-white text-base mb-1">Class Notes & Materials</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Resources and reference material uploaded by your instructor</p>
 
-                    {classNotes.length === 0 ? (
+                    {filteredClassNotes.length === 0 ? (
                         <div className="py-16 border border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center bg-slate-50/50 dark:bg-slate-950/10">
                             <FileText className="w-10 h-10 text-slate-350 mx-auto mb-2" />
                             <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No notes found.</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">Your teacher has not posted class notes yet.</p>
+                            <p className="text-[10px] text-slate-405 mt-0.5">Your teacher has not posted class notes yet.</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
-                            {classNotes.map((note) => {
+                            {filteredClassNotes.map((note) => {
                                 // Dynamic note color styling
                                 const bgClass =
                                     note.color === 'blue' ? 'bg-blue-50/50 border-blue-100/50 dark:bg-blue-950/10 dark:border-blue-900/30' :
@@ -570,7 +819,17 @@ export default function ClassroomTab({
                                         className={`border rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between gap-4 text-left ${bgClass}`}
                                     >
                                         <div>
-                                            <h4 className="font-extrabold text-xs md:text-sm text-slate-808 dark:text-white">{note.title}</h4>
+                                            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                                                <span className="text-[9px] font-black text-slate-455 dark:text-slate-500 uppercase tracking-wider font-mono">
+                                                    {note.classroom_name || 'Classroom'}
+                                                </span>
+                                                {note.classroom_status && note.classroom_status.toLowerCase() !== 'active' && (
+                                                    <span className="text-[7px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded">
+                                                        🚫 Inactive
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">{note.title}</h4>
                                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-4 leading-relaxed whitespace-pre-wrap">
                                                 {note.content}
                                             </p>
@@ -598,7 +857,175 @@ export default function ClassroomTab({
                         </div>
                     )}
                 </div>
-              )}
+            )}
+
+            {subTab === 'assignments' && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left">
+                    <h3 className="font-extrabold text-slate-808 dark:text-white text-base mb-1">Class Assignments</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Assigned tasks and practice works for this classroom</p>
+
+                    {filteredAssignments.length === 0 ? (
+                        <div className="py-16 border border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center bg-slate-50/50 dark:bg-slate-950/10">
+                            <BookOpen className="w-10 h-10 text-slate-350 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No assignments found.</p>
+                            <p className="text-[10px] text-slate-405 mt-0.5">There are no assignments posted for this classroom.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                            {filteredAssignments.map((asg) => {
+                                const statusColors = {
+                                    pending: 'bg-amber-100/50 text-amber-700 border-amber-500/20 dark:bg-amber-950/20 dark:text-amber-400',
+                                    submitted: 'bg-blue-100/50 text-blue-700 border-blue-500/20 dark:bg-blue-950/20 dark:text-blue-450',
+                                    reviewed: 'bg-purple-100/50 text-purple-700 border-purple-500/20 dark:bg-purple-950/20 dark:text-purple-400',
+                                    approved: 'bg-emerald-100/50 text-emerald-700 border-emerald-500/20 dark:bg-emerald-950/20 dark:text-emerald-450',
+                                };
+                                const isPending = asg.status === 'pending';
+
+                                return (
+                                    <div 
+                                        key={asg.id} 
+                                        className="border border-slate-200 dark:border-slate-800 rounded-2xl p-5 hover:shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col justify-between gap-4 text-left bg-white dark:bg-slate-900"
+                                    >
+                                        <div>
+                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${statusColors[asg.status as keyof typeof statusColors] || statusColors.pending}`}>
+                                                    {asg.status}
+                                                </span>
+                                                {asg.due_date && (
+                                                    <span className="text-[9px] text-slate-400 font-bold">
+                                                        Due: {new Date(asg.due_date).toLocaleDateString()}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h4 className="font-extrabold text-xs md:text-sm text-[#7C5E3F] dark:text-white line-clamp-1">{asg.title}</h4>
+                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-3 leading-relaxed">
+                                                {asg.description || 'No description provided.'}
+                                            </p>
+                                        </div>
+
+                                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                            {asg.score !== undefined && asg.score !== null ? (
+                                                <span className="text-xs font-black text-slate-808 dark:text-white">
+                                                    Score: <span className="text-[#ecb613]">{asg.score}/100</span>
+                                                </span>
+                                            ) : (
+                                                <span className="text-[9px] text-slate-405 font-semibold">Ungraded</span>
+                                            )}
+
+                                            <button 
+                                                onClick={() => onSelectAssignment?.(asg)}
+                                                className="inline-flex items-center gap-1 text-[9px] font-black text-[#7C5E3F] hover:text-amber-700 bg-[#FAF5EE] dark:bg-slate-800 dark:text-amber-400 hover:bg-amber-100/50 px-2.5 py-1.5 rounded-lg border border-transparent transition-colors cursor-pointer"
+                                            >
+                                                {isPending ? 'Submit Task' : 'View Details'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {subTab === 'messages' && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left flex flex-col h-[550px]">
+                    <div className="mb-4">
+                        <h3 className="font-extrabold text-slate-808 dark:text-white text-base mb-1 font-sans">Class Discussion</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Classroom announcements and peer discussion feed</p>
+                    </div>
+
+                    {/* Chat Area */}
+                    <div className="flex-1 overflow-y-auto space-y-4 p-4 border border-slate-100 dark:border-slate-800 rounded-2xl bg-slate-50/30 dark:bg-slate-950/15 mb-4 max-h-[350px]">
+                        {classroomBroadcasts.length === 0 ? (
+                            <div className="h-full flex flex-col justify-center items-center text-center">
+                                <MessageSquare className="w-8 h-8 text-slate-350 mb-2" />
+                                <p className="text-xs font-bold text-slate-600 dark:text-slate-400">No discussion history yet.</p>
+                                <p className="text-[10px] text-slate-405 mt-0.5">Send a message below to start the classroom conversation!</p>
+                            </div>
+                        ) : (
+                            classroomBroadcasts.map((msg: any) => {
+                                const isMe = msg.teacher_id === profile?.id;
+                                const isTeacher = msg.sender?.role === 'teacher' || msg.sender?.role === 'admin';
+                                const senderName = msg.sender?.name || 'Classmate';
+                                const senderRole = isTeacher ? (msg.sender?.role === 'admin' ? 'Admin' : 'Teacher') : 'Student';
+                                
+                                return (
+                                    <div key={msg.id} className={`flex items-start gap-2.5 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                        {/* Avatar (only show for others) */}
+                                        {!isMe && (
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 shadow-xs ${
+                                                isTeacher ? 'bg-[#ecb613]' : 'bg-slate-500'
+                                            }`}>
+                                                {getInitials(senderName)}
+                                            </div>
+                                        )}
+
+                                        <div className={`flex flex-col max-w-[75%] ${isMe ? 'items-end' : 'items-start'}`}>
+                                            {/* Name & Role */}
+                                            <div className="flex items-center gap-1.5 mb-1 px-1">
+                                                <span className="text-[10px] font-black text-slate-700 dark:text-slate-300">{senderName}</span>
+                                                <span className={`text-[8px] font-black uppercase tracking-wider px-1 py-0.2 rounded font-mono ${
+                                                    isTeacher 
+                                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/10'
+                                                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                                                }`}>
+                                                    {senderRole}
+                                                </span>
+                                                <span className="text-[8px] text-slate-405 font-medium">
+                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+
+                                            {/* Chat Bubble */}
+                                            <div className={`rounded-2xl px-4 py-2.5 text-xs font-semibold leading-relaxed break-words shadow-2xs border ${
+                                                isMe 
+                                                    ? 'bg-[#FAF5EE] text-[#7C5E3F] border-[#FAF5EE] rounded-tr-none dark:bg-slate-800 dark:text-amber-400 dark:border-slate-700'
+                                                    : 'bg-white text-slate-800 border-slate-200/80 rounded-tl-none dark:bg-slate-900 dark:text-slate-100 dark:border-slate-800'
+                                            }`}>
+                                                <p className="whitespace-pre-wrap">{msg.content}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Avatar (show for me on right side) */}
+                                        {isMe && (
+                                            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/25 flex items-center justify-center text-[10px] font-black text-amber-700 dark:text-amber-400 shrink-0 shadow-xs">
+                                                {getInitials(profile?.name || 'Me')}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Chat Input */}
+                    <form onSubmit={handleSendMessage} className="flex gap-2 bg-transparent">
+                        <input
+                            type="text"
+                            placeholder="Type your message..."
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            disabled={isSending}
+                            className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-amber-500 outline-none text-slate-805 dark:text-slate-100 placeholder:text-slate-405 transition-all"
+                        />
+                        <button
+                            type="submit"
+                            disabled={isSending || !newMessage.trim()}
+                            className="px-4 py-3 bg-[#ecb613] hover:bg-amber-600 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isSending ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                                <>
+                                    <Send className="w-3.5 h-3.5" />
+                                    Send
+                                </>
+                            )}
+                        </button>
+                    </form>
+                </div>
+            )}
         </div>
     );
 }

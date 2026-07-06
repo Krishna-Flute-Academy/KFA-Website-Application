@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
+import { sendClassroomNotification } from '../../../../src/lib/notifications';
 import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
@@ -28,6 +29,7 @@ export default function CreateClassPage() {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
+        deliveryFormat: 'offline',
         type: 'permanent',
         selectedDays: [] as number[], // 0=Sun, 1=Mon, ..., 6=Sat
         classDate: new Date().toISOString().split('T')[0],
@@ -44,6 +46,17 @@ export default function CreateClassPage() {
         hours = hours % 12;
         hours = hours ? hours : 12;
         return `${hours}:${m} ${ampm}`;
+    }
+
+    function addOneHour(timeStr: string): string {
+        if (!timeStr) return '';
+        const parts = timeStr.split(':');
+        if (parts.length < 2) return '';
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (isNaN(h) || isNaN(m)) return '';
+        const newHour = (h + 1) % 24;
+        return `${String(newHour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     }
 
     const generateTimeOptions = () => {
@@ -274,13 +287,16 @@ export default function CreateClassPage() {
                     ? formData.selectedDays.map(d => DAY_LABELS[d]).join(', ') + ` • ${formatTime12hr(formData.startTime)}`
                     : `${formatTime12hr(formData.startTime)}`;
 
+                const formatTag = `[delivery_format:${formData.deliveryFormat}]`;
+                const finalDescription = `${(formData.description || '').trim()} ${formatTag}`;
+
                 // 1. Create Permanent Classroom
                 const { data: classroom, error: classroomError } = await supabaseAuth
                     .from('classrooms')
                     .insert([{
                         teacher_id: formData.teacherId,
                         name: formData.name,
-                        description: formData.description,
+                        description: finalDescription,
                         type: formData.type
                     }])
                     .select()
@@ -323,13 +339,16 @@ export default function CreateClassPage() {
                     if (assignmentError) throw assignmentError;
                 }
             } else {
+                const formatTag = `[delivery_format:${formData.deliveryFormat}]`;
+                const finalDescription = `${(formData.description || 'Temporary class session').trim()} ${formatTag}`;
+
                 // 1. Create shadow Classroom first
                 const { data: classroom, error: classroomError } = await supabaseAuth
                     .from('classrooms')
                     .insert([{
                         teacher_id: formData.teacherId,
                         name: formData.name,
-                        description: formData.description || 'Temporary class session',
+                        description: finalDescription,
                         type: 'temporary'
                     }])
                     .select()
@@ -366,6 +385,43 @@ export default function CreateClassPage() {
                         .insert(studentInserts);
                     if (tempAssignmentError) throw tempAssignmentError;
                 }
+            }
+
+            // Notify Teacher, Students, and Admins
+            try {
+                // 1. Fetch active admins
+                const { data: admins } = await supabaseAuth
+                    .from('users')
+                    .select('id')
+                    .eq('role', 'admin')
+                    .eq('status', 'active');
+                
+                const adminIds = (admins || []).map(a => a.id);
+                const recipientIds = Array.from(new Set([
+                    formData.teacherId,
+                    ...selectedStudents,
+                    ...adminIds
+                ]));
+
+                if (recipientIds.length > 0) {
+                    const teacherName = teachers.find(t => t.id === formData.teacherId)?.name || 'Teacher';
+                    const title = formData.type === 'permanent' 
+                        ? `New Class Created: ${formData.name}`
+                        : `New Temporary Session: ${formData.name}`;
+                    const message = formData.type === 'permanent'
+                        ? `A new permanent class "${formData.name}" has been created with teacher ${teacherName}.`
+                        : `A new temporary class session "${formData.name}" has been scheduled for ${formData.classDate} from ${formatTime12hr(formData.startTime)} to ${formatTime12hr(formData.endTime)}.`;
+
+                    await sendClassroomNotification({
+                        teacherId: formData.teacherId,
+                        recipients: [],
+                        title,
+                        message,
+                        studentIds: recipientIds
+                    });
+                }
+            } catch (notifyErr) {
+                console.error('Error sending creation notifications:', notifyErr);
             }
 
             alert(`${formData.type === 'permanent' ? 'Permanent Class' : 'Temporary Session'} created successfully!`);
@@ -523,35 +579,57 @@ export default function CreateClassPage() {
                                         )}
                                     </div>
 
+                                    {/* Delivery Format */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Delivery Format</label>
+                                        <div className="flex gap-4 max-w-xs">
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData({ ...formData, deliveryFormat: 'offline' })}
+                                                className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer text-center ${formData.deliveryFormat === 'offline' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                            >
+                                                Offline (In-Person)
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData({ ...formData, deliveryFormat: 'online' })}
+                                                className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer text-center ${formData.deliveryFormat === 'online' ? 'border-blue-500 bg-blue-50 dark:bg-blue-955/20 text-blue-700 dark:text-blue-400' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                            >
+                                                Online
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div>
                                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Start Time</label>
                                             <div className="relative">
                                                 <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 size-5 pointer-events-none" />
-                                                <select
+                                                <input
+                                                    type="time"
                                                     value={formData.startTime}
-                                                    onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                                                    className="w-full pl-12 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all appearance-none"
-                                                >
-                                                    {TIME_OPTIONS.map(opt => (
-                                                        <option key={`start-${opt.value}`} value={opt.value}>{opt.label}</option>
-                                                    ))}
-                                                </select>
+                                                    onChange={(e) => {
+                                                        const newStart = e.target.value;
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            startTime: newStart,
+                                                            endTime: addOneHour(newStart)
+                                                        }));
+                                                    }}
+                                                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
+                                                />
                                             </div>
                                         </div>
                                         <div>
                                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">End Time</label>
                                             <div className="relative">
                                                 <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 size-5 pointer-events-none" />
-                                                <select
+                                                <input
+                                                    type="time"
                                                     value={formData.endTime}
                                                     onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                                                    className="w-full pl-12 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all appearance-none"
-                                                >
-                                                    {TIME_OPTIONS.map(opt => (
-                                                        <option key={`end-${opt.value}`} value={opt.value}>{opt.label}</option>
-                                                    ))}
-                                                </select>
+                                                    className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
+                                                />
                                             </div>
                                         </div>
                                     </div>

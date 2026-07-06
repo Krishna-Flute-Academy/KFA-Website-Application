@@ -51,6 +51,9 @@ interface EnrichedAssignment {
     feedback_text?: string | null;
     video_url?: string | null;
     submitted_at?: string | null;
+    created_at?: string;
+    classroom_id?: string;
+    classroom_name?: string;
 }
 
 interface ClassroomInfo {
@@ -63,6 +66,7 @@ interface ClassroomInfo {
     is_live?: boolean;
     live_meeting_link?: string | null;
     live_session_started_at?: string | null;
+    live_classroom_name?: string | null;
 }
 
 interface Classmate {
@@ -76,6 +80,7 @@ interface AttendanceRecord {
     id: string;
     date: string;
     status: 'present' | 'absent' | 'late' | 'excused';
+    classroom_id?: string;
 }
 
 interface Broadcast {
@@ -93,6 +98,7 @@ interface Broadcast {
 
 interface ClassNote {
     id: string;
+    classroom_id: string;
     title: string;
     content?: string;
     file_url?: string;
@@ -100,6 +106,8 @@ interface ClassNote {
     file_size?: number;
     color?: string;
     created_at: string;
+    classroom_name?: string;
+    classroom_status?: string;
 }
 
 /**
@@ -125,11 +133,16 @@ export default function StudentDashboardContainer() {
     const [makeupSchedules, setMakeupSchedules] = useState<any[]>([]);
     const [directMessages, setDirectMessages] = useState<any[]>([]);
     const [admins, setAdmins] = useState<any[]>([]);
+    const [activeRooms, setActiveRooms] = useState<any[]>([]);
 
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
     const [pushPermission, setPushPermission] = useState<boolean | null>(null);
     const notifDropdownRef = useRef<HTMLDivElement>(null);
+    const refreshDataRef = useRef<() => Promise<void>>(null as any);
+    useEffect(() => {
+        refreshDataRef.current = refreshData;
+    });
 
     // Curriculum states
     const [courseModules, setCourseModules] = useState<any[]>([]);
@@ -275,7 +288,7 @@ export default function StudentDashboardContainer() {
             let csData: any = null;
             const { data: initialData, error: csError } = await supabaseAuth
                 .from('classroom_students')
-                .select('classroom_id, classrooms(id, name, description, teacher_id, is_live, live_meeting_link, live_session_started_at, users!classrooms_teacher_id_fkey(name, email))')
+                .select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status, users!classrooms_teacher_id_fkey(name, email))')
                 .eq('student_id', userId);
             
             csData = initialData;
@@ -284,7 +297,7 @@ export default function StudentDashboardContainer() {
                 // Try fallback query without users join
                 const { data: fallbackData } = await supabaseAuth
                     .from('classroom_students')
-                    .select('classroom_id, classrooms(id, name, description, teacher_id, is_live, live_meeting_link, live_session_started_at)')
+                    .select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status)')
                     .eq('student_id', userId);
                 
                 if (fallbackData && fallbackData.length > 0) {
@@ -293,7 +306,7 @@ export default function StudentDashboardContainer() {
                     // Ultimate fallback
                     const { data: directClassrooms } = await supabaseAuth
                         .from('classrooms')
-                        .select('id, name, description, teacher_id, is_live, live_meeting_link, live_session_started_at')
+                        .select('id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status')
                         .eq('teacher_id', user.teacher_id);
                     
                     if (directClassrooms && directClassrooms.length > 0) {
@@ -313,82 +326,190 @@ export default function StudentDashboardContainer() {
                             classrooms: {
                                 id: 'synthetic-classroom',
                                 name: 'My Assigned Batch',
+                                type: 'permanent',
                                 teacher_id: user.teacher_id,
-                                users: teacherUser
+                                users: teacherUser,
+                                status: 'active'
                             }
                         }];
                     }
                 }
             }
 
-            const cs = csData && csData.length > 0 ? csData[0] : null;
+            const filteredCsData = (csData || []).filter((row: any) => {
+                const roomInfo = Array.isArray(row.classrooms) ? row.classrooms[0] : row.classrooms;
+                if (row.classroom_id === 'synthetic-classroom') return true;
+                return roomInfo && roomInfo.status !== 'inactive' && roomInfo.status !== 'archived';
+            });
+            const cs = filteredCsData.length > 0 ? filteredCsData[0] : null;
 
             let classroomId = '';
+            let cls: any = null;
             if (cs?.classrooms) {
-                const cls = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
+                cls = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
                 if (cls) {
                     classroomId = cls.id;
-                    let teacherUser = Array.isArray(cls.users) ? cls.users[0] : cls.users;
-                    
-                    // If fallback was used, fetch teacher info
-                    if (!teacherUser && cls.teacher_id) {
-                        const { data: tData } = await supabaseAuth
-                            .from('users')
-                            .select('name, email')
-                            .eq('id', cls.teacher_id)
-                            .maybeSingle();
-                        if (tData) teacherUser = tData;
-                    }
-
-                    setClassroom({
-                        id: cls.id,
-                        name: cls.name,
-                        description: cls.description || '',
-                        teacher_id: cls.teacher_id,
-                        teacher_name: teacherUser?.name || 'Academy Instructor',
-                        teacher_email: teacherUser?.email || '',
-                        is_live: cls.is_live || false,
-                        live_meeting_link: cls.live_meeting_link,
-                        live_session_started_at: cls.live_session_started_at
-                    });
-
-                    // Fetch classmates
-                    let classmatesList = [];
-                    if (classroomId === 'synthetic-classroom') {
-                        const { data } = await supabaseAuth
-                            .from('users')
-                            .select('id, name, level, profile_pic_url')
-                            .eq('teacher_id', cls.teacher_id)
-                            .eq('role', 'student')
-                            .neq('id', userId);
-                        if (data) classmatesList = data.map(u => ({ student_id: u.id, users: u }));
-                    } else {
-                        const { data } = await supabaseAuth
-                            .from('classroom_students')
-                            .select('student_id, users!student_id(id, name, level, profile_pic_url)')
-                            .eq('classroom_id', cls.id)
-                            .neq('student_id', userId);
-                        if (data) classmatesList = data;
-                    }
-
-                    if (classmatesList) {
-                        const formattedClassmates = classmatesList.map((c: any) => ({
-                            id: c.users?.id || c.student_id,
-                            name: c.users?.name || 'Classmate',
-                            level: c.users?.level || 'Beginner',
-                            profile_pic_url: c.users?.profile_pic_url || null
-                        }));
-                        setClassmates(formattedClassmates);
-                    }
-
-                    // Fetch class notes
-                    const { data: notes } = await supabaseAuth
-                        .from('class_notes')
-                        .select('*')
-                        .eq('classroom_id', cls.id)
-                        .order('created_at', { ascending: false });
-                    setClassNotes(notes || []);
                 }
+            }
+
+            // Fetch overrides for this student (temporary classroom assignments)
+            const { data: oData } = await supabaseAuth
+                .from('session_student_overrides')
+                .select(`
+                    id,
+                    student_id,
+                    override_date,
+                    reason,
+                    target_classroom_id,
+                    classrooms (
+                        id,
+                        name,
+                        description,
+                        status
+                    )
+                `)
+                .eq('student_id', userId);
+            const overridesData = oData || [];
+
+            const activeOverrides = overridesData.filter((o: any) => {
+                const roomInfo = Array.isArray(o.classrooms) ? o.classrooms[0] : o.classrooms;
+                return roomInfo && roomInfo.status !== 'inactive' && roomInfo.status !== 'archived';
+            });
+
+            // Fetch temporary classes details
+            const targetClassroomIds = activeOverrides.map(o => o.target_classroom_id).filter(Boolean);
+            let tempClasses: any[] = [];
+            if (targetClassroomIds.length > 0) {
+                const { data: tData } = await supabaseAuth
+                    .from('temporary_classes')
+                    .select('*')
+                    .in('classroom_id', targetClassroomIds);
+                tempClasses = tData || [];
+            }
+
+            const enrichedOverrides = activeOverrides.map(o => {
+                const tc = tempClasses.find(t => t.classroom_id === o.target_classroom_id);
+                const roomInfo = Array.isArray(o.classrooms) ? o.classrooms[0] : o.classrooms;
+                return {
+                    ...o,
+                    title: tc?.title || roomInfo?.name || 'Temporary Class',
+                    start_time: tc?.start_time || null,
+                    end_time: tc?.end_time || null,
+                };
+            });
+            // We will set makeup schedules state below after fetching overrides
+
+            const memberClassroomIds = filteredCsData
+                .map((row: any) => {
+                    const r = Array.isArray(row.classrooms) ? row.classrooms[0] : row.classrooms;
+                    return row.classroom_id || r?.id;
+                })
+                .filter(Boolean);
+
+            const allClassroomIds = Array.from(new Set([
+                classroomId,
+                ...memberClassroomIds,
+                ...targetClassroomIds
+            ])).filter(id => id && id !== 'synthetic-classroom');
+
+            let activeRooms: any[] = [];
+            if (allClassroomIds.length > 0) {
+                const { data } = await supabaseAuth
+                    .from('classrooms')
+                    .select('id, name, type, status, description, teacher_id, is_live, live_meeting_link, live_session_started_at, users!classrooms_teacher_id_fkey(name, email)')
+                    .in('id', allClassroomIds);
+                activeRooms = (data || []).filter((r: any) => r.status !== 'inactive' && r.status !== 'archived');
+            }
+
+            // Map and enrich activeRooms to contain teacher details
+            const enrichedActiveRooms = await Promise.all(activeRooms.map(async (r: any) => {
+                let teacherUser = Array.isArray(r.users) ? r.users[0] : r.users;
+                if (!teacherUser && r.teacher_id) {
+                    const { data: tData } = await supabaseAuth
+                        .from('users')
+                        .select('name, email')
+                        .eq('id', r.teacher_id)
+                        .maybeSingle();
+                    if (tData) teacherUser = tData;
+                }
+                return {
+                    id: r.id,
+                    name: r.name,
+                    type: r.type || 'permanent',
+                    description: r.description || '',
+                    teacher_id: r.teacher_id,
+                    teacher_name: teacherUser?.name || 'Academy Instructor',
+                    teacher_email: teacherUser?.email || '',
+                    is_live: r.is_live,
+                    live_meeting_link: r.live_meeting_link || null,
+                    live_session_started_at: r.live_session_started_at || null,
+                    live_classroom_name: r.is_live ? r.name : null
+                };
+            }));
+            setActiveRooms(enrichedActiveRooms);
+
+            if (cls) {
+                const liveRoom = enrichedActiveRooms.find(r => r.is_live);
+                const primaryRoom = enrichedActiveRooms.find(r => r.id === cls.id) || enrichedActiveRooms[0];
+                
+                // Prioritize live room if there is one, otherwise fallback to primary room
+                const defaultRoom = liveRoom || primaryRoom;
+                
+                if (defaultRoom) {
+                    setClassroom(prev => {
+                        if (prev) {
+                            const stillExists = enrichedActiveRooms.find(r => r.id === prev.id);
+                            if (stillExists) return stillExists;
+                        }
+                        return defaultRoom;
+                    });
+                }
+
+                // Fetch classmates
+                let classmatesList = [];
+                if (classroomId === 'synthetic-classroom') {
+                    const { data } = await supabaseAuth
+                        .from('users')
+                        .select('id, name, level, profile_pic_url')
+                        .eq('teacher_id', cls.teacher_id)
+                        .eq('role', 'student')
+                        .neq('id', userId);
+                    if (data) classmatesList = data.map(u => ({ student_id: u.id, users: u }));
+                } else {
+                    const { data } = await supabaseAuth
+                        .from('classroom_students')
+                        .select('student_id, users!student_id(id, name, level, profile_pic_url)')
+                        .eq('classroom_id', cls.id)
+                        .neq('student_id', userId);
+                    if (data) classmatesList = data;
+                }
+
+                if (classmatesList) {
+                    const formattedClassmates = classmatesList.map((c: any) => ({
+                        id: c.users?.id || c.student_id,
+                        name: c.users?.name || 'Classmate',
+                        level: c.users?.level || 'Beginner',
+                        profile_pic_url: c.users?.profile_pic_url || null
+                    }));
+                    setClassmates(formattedClassmates);
+                }
+
+                // Fetch class notes for all assigned classrooms (primary + temporary shadow classrooms)
+                const { data: notes } = await supabaseAuth
+                    .from('class_notes')
+                    .select('*')
+                    .in('classroom_id', allClassroomIds)
+                    .order('created_at', { ascending: false });
+
+                const enrichedNotes = (notes || []).map((note: any) => {
+                    const room = activeRooms.find(r => r.id === note.classroom_id);
+                    return {
+                        ...note,
+                        classroom_name: room?.name || 'Classroom',
+                        classroom_status: room?.status || 'Active'
+                    };
+                });
+                setClassNotes(enrichedNotes);
             }
 
             // 3. Fetch student assignment mappings (without join)
@@ -402,13 +523,13 @@ export default function StudentDashboardContainer() {
                 if (sa.assignment_id) studentAssignmentMap.set(sa.assignment_id, sa);
             });
 
-            // Fetch classroom assignments
+            // Fetch classroom assignments for all assigned classrooms
             let classroomAssignments: any[] = [];
-            if (classroomId && classroomId !== 'synthetic-classroom') {
+            if (allClassroomIds.length > 0) {
                 const { data: caData } = await supabaseAuth
                     .from('assignments')
                     .select('*')
-                    .eq('classroom_id', classroomId)
+                    .in('classroom_id', allClassroomIds)
                     .order('created_at', { ascending: false });
                 if (caData) classroomAssignments = caData;
             }
@@ -441,6 +562,7 @@ export default function StudentDashboardContainer() {
                 })
                 .map((asg: any) => {
                     const studentAsg = studentAssignmentMap.get(asg.id);
+                    const room = activeRooms.find(r => r.id === asg.classroom_id);
                     return {
                         id: asg.id,
                         title: asg.title || 'Assignment',
@@ -454,6 +576,9 @@ export default function StudentDashboardContainer() {
                         feedback_text: studentAsg?.feedback_text ?? null,
                         submitted_at: studentAsg?.submitted_at ?? null,
                         video_url: studentAsg?.video_url ?? '',
+                        created_at: asg.created_at || '',
+                        classroom_id: asg.classroom_id || '',
+                        classroom_name: room?.name || 'Classroom',
                     };
                 });
 
@@ -473,12 +598,12 @@ export default function StudentDashboardContainer() {
                 .order('date', { ascending: false });
             setAttendance(att || []);
 
-            // Fetch session logs
-            if (classroomId) {
+            // Fetch session logs for all classrooms (primary + overrides)
+            if (allClassroomIds.length > 0) {
                 const { data: logs, error: logsErr } = await supabaseAuth
                     .from('classroom_session_logs')
                     .select('*')
-                    .eq('classroom_id', classroomId)
+                    .in('classroom_id', allClassroomIds)
                     .order('started_at', { ascending: false });
                 if (!logsErr) {
                     setSessionLogs(logs || []);
@@ -495,7 +620,7 @@ export default function StudentDashboardContainer() {
                 return b.recipients?.some((r: any) => 
                     (r.type === 'global') ||
                     (r.type === 'student' && r.id === userId) ||
-                    (r.type === 'class' && r.id === classroomId)
+                    (r.type === 'class' && allClassroomIds.includes(r.id))
                 );
             });
             setBroadcasts(studentBroadcasts);
@@ -535,21 +660,7 @@ export default function StudentDashboardContainer() {
             }
             setBatchSchedules(schedulesData);
 
-            let overridesData: any[] = [];
-            if (classroomId && classroomId !== 'synthetic-classroom') {
-                const { data: oData } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .select(`
-                        id,
-                        student_id,
-                        override_date,
-                        reason,
-                        target_classroom_id
-                    `)
-                    .eq('target_classroom_id', classroomId);
-                overridesData = oData || [];
-            }
-            setMakeupSchedules(overridesData);
+            setMakeupSchedules(enrichedOverrides);
 
             let messagesData: any[] = [];
             try {
@@ -668,31 +779,21 @@ export default function StudentDashboardContainer() {
     }, [profile?.id]);
 
     useEffect(() => {
-        if (!classroom?.id || classroom.id === 'synthetic-classroom') return;
-
-        // 2. Subscribe to changes on student's classroom
+        // 2. Subscribe to changes on classrooms table to dynamically update live sessions
         const classroomChannel = supabaseAuth
-            .channel(`public:classrooms:id=eq.${classroom.id}`)
+            .channel('public:classrooms-all-live')
             .on(
                 'postgres_changes',
                 {
                     event: 'UPDATE',
                     schema: 'public',
-                    table: 'classrooms',
-                    filter: `id=eq.${classroom.id}`
+                    table: 'classrooms'
                 },
                 (payload) => {
-                    console.log('Realtime classroom payload received:', payload);
-                    const updatedRoom = payload.new;
-                    setClassroom(prev => {
-                        if (!prev) return null;
-                        return {
-                            ...prev,
-                            is_live: updatedRoom.is_live,
-                            live_meeting_link: updatedRoom.live_meeting_link,
-                            live_session_started_at: updatedRoom.live_session_started_at
-                        };
-                    });
+                    console.log('Realtime classroom update payload received:', payload);
+                    if (refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
                 }
             )
             .subscribe();
@@ -700,7 +801,32 @@ export default function StudentDashboardContainer() {
         return () => {
             supabaseAuth.removeChannel(classroomChannel);
         };
-    }, [classroom?.id]);
+    }, []);
+
+    useEffect(() => {
+        // 3. Subscribe to additions/updates on broadcasts to update chat/messages in real-time
+        const broadcastsChannel = supabaseAuth
+            .channel('public:broadcasts-realtime-sync')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*', // Listen to INSERT, UPDATE, DELETE
+                    schema: 'public',
+                    table: 'broadcasts'
+                },
+                (payload) => {
+                    console.log('Realtime broadcast payload received:', payload);
+                    if (refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(broadcastsChannel);
+        };
+    }, []);
 
     // Close dropdown on click outside
     useEffect(() => {
@@ -748,19 +874,32 @@ export default function StudentDashboardContainer() {
 
         const sortedDates = Array.from(allDates).sort((a, b) => b.localeCompare(a));
 
+        const roomNameMap = new Map<string, string>();
+        activeRooms.forEach(r => {
+            roomNameMap.set(r.id, r.name);
+        });
+
         return sortedDates.map(dateStr => {
             const log = logsMap.get(dateStr);
             const att = attendance.find(a => a.date === dateStr);
+            const targetClassroomId = log?.classroom_id || att?.classroom_id;
             return {
                 date: dateStr,
                 id: log?.id || att?.id || dateStr,
                 started_at: log?.started_at || null,
                 duration_seconds: log?.duration_seconds || null,
                 session_type: log?.session_type || null,
-                status: att?.status || 'unmarked'
+                status: att?.status || 'unmarked',
+                classroom_id: targetClassroomId || null,
+                classroom_name: targetClassroomId ? (roomNameMap.get(targetClassroomId) || 'Classroom') : 'Classroom'
             };
         });
-    }, [sessionLogs, attendance]);
+    }, [sessionLogs, attendance, activeRooms]);
+
+    const handleSelectAssignmentFromOtherTab = (asg: any) => {
+        setSelectedAssignment(asg);
+        setActiveTab('tasks');
+    };
 
     const handleLogout = async () => {
         if (audioRef.current) {
@@ -1446,6 +1585,8 @@ export default function StudentDashboardContainer() {
                         {activeTab === 'classroom' && (
                             <ClassroomTab 
                                 classroom={classroom}
+                                activeRooms={activeRooms}
+                                setClassroom={setClassroom}
                                 classmates={classmates}
                                 mergedLogs={mergedLogs}
                                 profile={profile}
@@ -1454,6 +1595,8 @@ export default function StudentDashboardContainer() {
                                 refreshData={refreshData}
                                 classNotes={classNotes}
                                 assignments={assignments}
+                                broadcasts={broadcasts}
+                                onSelectAssignment={handleSelectAssignmentFromOtherTab}
                             />
                         )}
 

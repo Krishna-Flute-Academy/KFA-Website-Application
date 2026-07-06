@@ -329,7 +329,23 @@ export default function ClassroomDashboardPage({
     const [removingStudentId, setRemovingStudentId] = useState<string | null>(null);
 
     // ── Classroom metadata edit ───────────────────────────────────────────────
-    const [metadataForm, setMetadataForm] = useState({ name: '', description: '', status: 'active' });
+    const [metadataForm, setMetadataForm] = useState<{
+        name: string;
+        description: string;
+        delivery_format: 'online' | 'offline';
+        status: string;
+        class_date: string;
+        start_time: string;
+        end_time: string;
+    }>({
+        name: '',
+        description: '',
+        delivery_format: 'offline',
+        status: 'active',
+        class_date: '',
+        start_time: '10:00',
+        end_time: '11:00'
+    });
     const [isSavingMetadata, setIsSavingMetadata] = useState(false);
     const [metadataSaved, setMetadataSaved] = useState(false);
     const [metadataError, setMetadataError] = useState('');
@@ -721,10 +737,19 @@ export default function ClassroomDashboardPage({
                 }
                 
                 // Seed metadata edit form
+                const cleanDesc = (roomData.description || '')
+                    .replace(/\[delivery_format:(online|offline)\]/g, '')
+                    .trim();
+                const format = ((roomData.description || '').includes('[delivery_format:online]') ? 'online' : 'offline') as 'online' | 'offline';
+
                 setMetadataForm({
                     name: roomData.name || '',
-                    description: roomData.description || '',
+                    description: cleanDesc,
+                    delivery_format: format,
                     status: roomData.status || 'active',
+                    class_date: classroomData.class_date || '',
+                    start_time: classroomData.start_time ? classroomData.start_time.slice(0, 5) : '10:00',
+                    end_time: classroomData.end_time ? classroomData.end_time.slice(0, 5) : '11:00',
                 });
 
                 // 5. Build Enrolled Students with Mock metrics for the UI
@@ -2486,15 +2511,24 @@ export default function ClassroomDashboardPage({
             setMetadataError('Class name is required.');
             return;
         }
+        if (classroom?.type === 'temporary') {
+            if ((metadataForm as any).end_time <= (metadataForm as any).start_time) {
+                setMetadataError('End time must be after start time.');
+                return;
+            }
+        }
         setIsSavingMetadata(true);
         setMetadataError('');
         setMetadataSaved(false);
         try {
+            const formatTag = `[delivery_format:${(metadataForm as any).delivery_format || 'offline'}]`;
+            const finalDesc = `${metadataForm.description.trim()} ${formatTag}`;
+
             let { error } = await supabaseAuth
                 .from('classrooms')
                 .update({
                     name: metadataForm.name.trim(),
-                    description: metadataForm.description.trim(),
+                    description: finalDesc,
                     status: metadataForm.status,
                 })
                 .eq('id', classroomId);
@@ -2504,7 +2538,7 @@ export default function ClassroomDashboardPage({
                     .from('classrooms')
                     .update({
                         name: metadataForm.name.trim(),
-                        description: metadataForm.description.trim(),
+                        description: finalDesc,
                     })
                     .eq('id', classroomId);
                 error = retryResult.error;
@@ -2512,11 +2546,28 @@ export default function ClassroomDashboardPage({
 
             if (error) throw error;
 
+            if (classroom?.type === 'temporary') {
+                const { error: tempErr } = await supabaseAuth
+                    .from('temporary_classes')
+                    .update({
+                        title: metadataForm.name.trim(),
+                        class_date: (metadataForm as any).class_date,
+                        start_time: (metadataForm as any).start_time,
+                        end_time: (metadataForm as any).end_time,
+                    })
+                    .eq('classroom_id', classroomId);
+                
+                if (tempErr) throw tempErr;
+            }
+
             setClassroom(prev => prev ? {
                 ...prev,
                 name: metadataForm.name.trim(),
                 description: metadataForm.description.trim(),
                 status: metadataForm.status,
+                class_date: classroom?.type === 'temporary' ? (metadataForm as any).class_date : prev.class_date,
+                start_time: classroom?.type === 'temporary' ? (metadataForm as any).start_time : prev.start_time,
+                end_time: classroom?.type === 'temporary' ? (metadataForm as any).end_time : prev.end_time,
             } : prev);
 
             setMetadataSaved(true);

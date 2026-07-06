@@ -72,13 +72,16 @@ export default function ClassroomsPage() {
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     const [tempClassrooms, setTempClassrooms] = useState<Classroom[]>([]);
-    const [activeView, setActiveView] = useState<'today' | 'permanent' | 'temporary'>('today');
+    const [activeView, setActiveView] = useState<'today' | 'permanent' | 'temporary' | 'all' | 'inactive'>('today');
     const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
     const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
     const [viewDate, setViewDate] = useState(new Date());
     const [searchQuery, setSearchQuery] = useState('');
     const [rawSchedules, setRawSchedules] = useState<any[]>([]);
     const [activeSession, setActiveSession] = useState<{ classroomId: string } | null>(null);
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'archived'>('all');
+    const [formatFilter, setFormatFilter] = useState<'all' | 'online' | 'offline'>('all');
+    const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
     useEffect(() => {
         const checkActiveSession = () => {
@@ -287,12 +290,12 @@ export default function ClassroomsPage() {
                         teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
                         schedule: scheduleMap[room.id] || room.schedule || 'No schedule set',
                         student_count: count || 0,
-                        status: 'Active',
+                        status: room.status || 'Active',
                         type: room.type || 'permanent'
                     };
                 }));
 
-                setClassrooms(roomsWithCounts);
+                setClassrooms(roomsWithCounts.filter(r => r.type === 'permanent'));
 
                 // Fetch Temporary Classes
                 const tempQuery = supabaseAuth
@@ -313,7 +316,7 @@ export default function ClassroomsPage() {
                     return {
                         id: room.id,
                         name: room.title || 'Temporary Class',
-                        description: `Temporary Session on ${room.class_date}`,
+                        description: (roomsData || []).find(c => c.id === room.classroom_id)?.description || `Temporary Session on ${room.class_date}`,
                         schedule: (() => {
                             const parsed = parseClassDate(room.class_date);
                             const dayName = parsed ? parsed.toLocaleDateString('en-US', { weekday: 'short' }) : 'Invalid Date';
@@ -321,7 +324,10 @@ export default function ClassroomsPage() {
                         })(),
                         teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
                         student_count: count || 0,
-                        status: 'Active',
+                        status: (() => {
+                            const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
+                            return shadowRoom ? (shadowRoom.status || 'Active') : 'Active';
+                        })(),
                         class_date: room.class_date,
                         classroom_id: room.classroom_id,
                         start_time: room.start_time,
@@ -375,10 +381,62 @@ export default function ClassroomsPage() {
     const prevMonth = () => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
 
     const scheduledDatesSet = React.useMemo(() => {
-        const scheduledDaysOfWeek = new Set(rawSchedules.map(s => s.day_of_week));
-        const tempDates = new Set(tempClassrooms.map(tc => (tc as any).class_date));
+        let filteredPerm = classrooms;
+        let filteredTemp = tempClassrooms;
+
+        // Apply status filter / default active filtering
+        if (statusFilter === 'all') {
+            filteredPerm = filteredPerm.filter(room => {
+                const status = (room.status || 'active').toLowerCase();
+                return status !== 'inactive' && status !== 'archived';
+            });
+            filteredTemp = filteredTemp.filter(room => {
+                const status = (room.status || 'active').toLowerCase();
+                return status !== 'inactive' && status !== 'archived';
+            });
+        } else {
+            filteredPerm = filteredPerm.filter(room => {
+                const status = (room.status || 'active').toLowerCase();
+                return status === statusFilter;
+            });
+            filteredTemp = filteredTemp.filter(room => {
+                const status = (room.status || 'active').toLowerCase();
+                return status === statusFilter;
+            });
+        }
+
+        // Apply delivery format filter
+        if (formatFilter !== 'all') {
+            filteredPerm = filteredPerm.filter(room => {
+                const isOnline = room.description?.includes('[delivery_format:online]');
+                return formatFilter === 'online' ? isOnline : !isOnline;
+            });
+            filteredTemp = filteredTemp.filter(room => {
+                const isOnline = room.description?.includes('[delivery_format:online]');
+                return formatFilter === 'online' ? isOnline : !isOnline;
+            });
+        }
+
+        // Apply search query
+        if (searchQuery.trim() !== '') {
+            const lowerQ = searchQuery.toLowerCase();
+            filteredPerm = filteredPerm.filter(room => 
+                room.name.toLowerCase().includes(lowerQ) || 
+                (room.description && room.description.toLowerCase().includes(lowerQ))
+            );
+            filteredTemp = filteredTemp.filter(room => 
+                room.name.toLowerCase().includes(lowerQ) || 
+                (room.description && room.description.toLowerCase().includes(lowerQ))
+            );
+        }
+
+        const activePermIds = new Set(filteredPerm.map(c => c.id));
+        const activeSchedules = rawSchedules.filter(s => activePermIds.has(s.classroom_id));
+
+        const scheduledDaysOfWeek = new Set(activeSchedules.map(s => s.day_of_week));
+        const tempDates = new Set(filteredTemp.map(tc => (tc as any).class_date));
         return { scheduledDaysOfWeek, tempDates };
-    }, [rawSchedules, tempClassrooms]);
+    }, [rawSchedules, classrooms, tempClassrooms, statusFilter, formatFilter, searchQuery]);
 
     const hasClassesOnDate = React.useCallback((dateStr: string) => {
         const dateObj = parseClassDate(dateStr);
@@ -425,6 +483,52 @@ export default function ClassroomsPage() {
         return combined;
     }, [rawSchedules, classrooms, tempClassrooms]);
 
+    const getFilteredClassesForDate = React.useCallback((dateStr: string) => {
+        const baseClasses = getClassesForDate(dateStr);
+        let filtered = baseClasses;
+
+        // Apply status filter / default active filtering
+        if (statusFilter === 'all') {
+            filtered = filtered.filter(room => {
+                const status = (room.status || 'active').toLowerCase();
+                return status !== 'inactive' && status !== 'archived';
+            });
+        } else {
+            filtered = filtered.filter(room => {
+                const status = (room.status || 'active').toLowerCase();
+                return status === statusFilter;
+            });
+        }
+
+        // Apply delivery format filter
+        if (formatFilter !== 'all') {
+            filtered = filtered.filter(room => {
+                const isOnline = room.description?.includes('[delivery_format:online]');
+                return formatFilter === 'online' ? isOnline : !isOnline;
+            });
+        }
+
+        // Apply search query
+        if (searchQuery.trim() !== '') {
+            const lowerQ = searchQuery.toLowerCase();
+            filtered = filtered.filter(room => 
+                room.name.toLowerCase().includes(lowerQ) || 
+                (room.description && room.description.toLowerCase().includes(lowerQ))
+            );
+        }
+
+        // Sort active ongoing classes above all others
+        filtered = [...filtered].sort((a, b) => {
+            const isOngoingA = activeSession && activeSession.classroomId === a.id;
+            const isOngoingB = activeSession && activeSession.classroomId === b.id;
+            if (isOngoingA && !isOngoingB) return -1;
+            if (!isOngoingA && isOngoingB) return 1;
+            return 0;
+        });
+
+        return filtered;
+    }, [getClassesForDate, statusFilter, formatFilter, searchQuery, activeSession]);
+
     if (loading) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6]">
@@ -437,7 +541,43 @@ export default function ClassroomsPage() {
     const todayStr = formatDate(new Date());
     let displayedClassrooms = activeView === 'today' 
         ? getClassesForDate(todayStr) 
-        : (activeView === 'permanent' ? classrooms : tempClassrooms);
+        : activeView === 'permanent' 
+            ? classrooms 
+            : activeView === 'temporary' 
+                ? tempClassrooms 
+                : activeView === 'inactive'
+                    ? [...classrooms, ...tempClassrooms]
+                    : [...classrooms, ...tempClassrooms];
+
+    // Apply status filter / default active/inactive tab partitioning
+    if (statusFilter === 'all') {
+        if (activeView === 'inactive') {
+            displayedClassrooms = displayedClassrooms.filter(room => {
+                const status = (room.status || 'active').toLowerCase();
+                return status === 'inactive' || status === 'archived';
+            });
+        } else {
+            // Exclude inactive/archived classes from Today, Permanent, Temporary, and All tabs
+            displayedClassrooms = displayedClassrooms.filter(room => {
+                const status = (room.status || 'active').toLowerCase();
+                return status !== 'inactive' && status !== 'archived';
+            });
+        }
+    } else {
+        // If status filter is explicitly selected, override the tab default partitioning
+        displayedClassrooms = displayedClassrooms.filter(room => {
+            const status = (room.status || 'active').toLowerCase();
+            return status === statusFilter;
+        });
+    }
+
+    // Apply delivery format filter (Online / Offline)
+    if (formatFilter !== 'all') {
+        displayedClassrooms = displayedClassrooms.filter(room => {
+            const isOnline = room.description?.includes('[delivery_format:online]');
+            return formatFilter === 'online' ? isOnline : !isOnline;
+        });
+    }
 
     if (searchQuery.trim() !== '') {
         const lowerQ = searchQuery.toLowerCase();
@@ -495,21 +635,33 @@ export default function ClassroomsPage() {
                                 <>
                                     <button 
                                         onClick={() => setActiveView('today')}
-                                        className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'today' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'today' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Today's Classes
                                     </button>
                                     <button 
                                         onClick={() => setActiveView('permanent')}
-                                        className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'permanent' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'permanent' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Permanent Classes
                                     </button>
                                     <button 
                                         onClick={() => setActiveView('temporary')}
-                                        className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'temporary' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'temporary' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Temporary Sessions
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveView('all')}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'all' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                    >
+                                        All Classes
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveView('inactive')}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'inactive' ? 'bg-white dark:bg-slate-700 text-rose-605 dark:text-rose-400' : 'text-slate-550 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                    >
+                                        Inactive / Archived
                                     </button>
                                 </>
                             ) : (
@@ -546,10 +698,80 @@ export default function ClassroomsPage() {
                                     <Calendar className="size-4" />
                                 </button>
                             </div>
-                            <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-[38px]">
-                                <Filter className="size-4" />
-                                Filter
-                            </button>
+                            <div className="relative">
+                                <button 
+                                    onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                                    className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-bold transition-all h-[38px] cursor-pointer ${
+                                        statusFilter !== 'all' || formatFilter !== 'all'
+                                            ? 'bg-amber-50 border-amber-300 text-[#b45309] dark:bg-amber-955/20 dark:border-amber-900/50 dark:text-amber-400'
+                                            : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                    }`}
+                                >
+                                    <Filter className="size-4" />
+                                    <span>Filter</span>
+                                    {(statusFilter !== 'all' || formatFilter !== 'all') && (
+                                        <span className="size-2 rounded-full bg-rose-500 animate-pulse" />
+                                    )}
+                                </button>
+                                
+                                {showFilterDropdown && (
+                                    <>
+                                        <div className="fixed inset-0 z-45" onClick={() => setShowFilterDropdown(false)} />
+                                        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 p-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 text-left">
+                                            <div>
+                                                <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5 px-1">Status</label>
+                                                <div className="grid grid-cols-2 gap-1.5">
+                                                    {(['all', 'active', 'inactive', 'archived'] as const).map(s => (
+                                                        <button
+                                                            key={s}
+                                                            onClick={() => setStatusFilter(s)}
+                                                            className={`px-2.5 py-1.5 text-xs font-bold rounded-lg border text-center uppercase tracking-wider transition-all cursor-pointer ${
+                                                                statusFilter === s
+                                                                    ? 'bg-[#ecb613] text-slate-900 border-transparent shadow-sm'
+                                                                    : 'bg-slate-50 dark:bg-slate-805 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                            }`}
+                                                        >
+                                                            {s}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="border-t border-slate-100 dark:border-slate-800/80 pt-3">
+                                                <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5 px-1">Delivery Format</label>
+                                                <div className="grid grid-cols-3 gap-1.5">
+                                                    {(['all', 'online', 'offline'] as const).map(f => (
+                                                        <button
+                                                            key={f}
+                                                            onClick={() => setFormatFilter(f)}
+                                                            className={`px-2 py-1.5 text-[10px] font-black rounded-lg border text-center uppercase tracking-wider transition-all cursor-pointer ${
+                                                                formatFilter === f
+                                                                    ? 'bg-[#ecb613] text-slate-900 border-transparent shadow-sm'
+                                                                    : 'bg-slate-50 dark:bg-slate-805 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                            }`}
+                                                        >
+                                                            {f}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {(statusFilter !== 'all' || formatFilter !== 'all') && (
+                                                <button
+                                                    onClick={() => {
+                                                        setStatusFilter('all');
+                                                        setFormatFilter('all');
+                                                        setShowFilterDropdown(false);
+                                                    }}
+                                                    className="w-full text-center py-1.5 text-[11px] font-black text-rose-500 dark:text-rose-455 hover:underline transition-all cursor-pointer border-t border-slate-100 dark:border-slate-800/80 pt-3 block"
+                                                >
+                                                    Clear All Filters
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -624,12 +846,17 @@ export default function ClassroomsPage() {
                                         Classes on {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                                     </h3>
                                     <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">
-                                        {getClassesForDate(selectedDate).length} Scheduled
+                                        {getFilteredClassesForDate(selectedDate).length} Scheduled
                                     </span>
                                 </div>
 
                                 <div className="space-y-4">
-                                    {getClassesForDate(selectedDate).map((room, idx) => {
+                                    {getFilteredClassesForDate(selectedDate).map((room, idx) => {
+                                        const statusLower = (room.status || 'active').toLowerCase();
+                                        const isInactive = statusLower === 'inactive';
+                                        const isArchived = statusLower === 'archived';
+                                        const isDisabled = isInactive || isArchived;
+
                                         const iconColors = [
                                             { bg: 'bg-[#fef3c7]/60 dark:bg-[#ecb613]/20', text: 'text-[#ecb613]', icon: Music },
                                             { bg: 'bg-blue-100/30 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400', icon: Activity },
@@ -644,6 +871,8 @@ export default function ClassroomsPage() {
                                             <div key={`${room.id}-${idx}`} className={`p-4 sm:p-6 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group ${
                                                 isOngoing
                                                     ? 'bg-rose-50/15 dark:bg-rose-950/10 border-rose-200 dark:border-rose-800 shadow-md shadow-rose-500/5'
+                                                    : isDisabled
+                                                    ? 'bg-slate-50/60 dark:bg-slate-900/20 border-dashed border-slate-300 dark:border-slate-850 opacity-75 hover:opacity-100'
                                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
                                             }`}>
                                                 <div className="flex items-center gap-3 sm:gap-4">
@@ -659,12 +888,12 @@ export default function ClassroomsPage() {
                                                         }}
                                                         className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 mr-1 sm:mr-2"
                                                     />
-                                                    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl ${styleConfig.bg} flex items-center justify-center ${styleConfig.text} shrink-0`}>
+                                                    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl ${isDisabled ? 'bg-slate-200/50 dark:bg-slate-800 text-slate-400 dark:text-slate-550' : styleConfig.bg} flex items-center justify-center ${isDisabled ? '' : styleConfig.text} shrink-0`}>
                                                         <IconComponent className="size-5 sm:size-6" />
                                                     </div>
                                                     <div>
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-base sm:text-lg text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
+                                                            <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`} className="font-bold text-base sm:text-lg text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
                                                                 {room.name}
                                                             </Link>
                                                             {isOngoing && (
@@ -679,6 +908,16 @@ export default function ClassroomsPage() {
                                                             ) : (
                                                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
                                                                     Perm
+                                                                </span>
+                                                            )}
+                                                            {isInactive && (
+                                                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-405">
+                                                                    Inactive
+                                                                </span>
+                                                            )}
+                                                            {isArchived && (
+                                                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-slate-205 text-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                                                                    Archived
                                                                 </span>
                                                             )}
                                                         </div>
@@ -696,7 +935,7 @@ export default function ClassroomsPage() {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 mt-2 md:mt-0 justify-end w-full md:w-auto border-t md:border-t-0 border-slate-100 dark:border-slate-800/60 pt-2 md:pt-0">
-                                                    <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="flex-1 md:flex-initial">
+                                                    <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`} className="flex-1 md:flex-initial">
                                                         <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
                                                             Manage
                                                         </button>
@@ -710,7 +949,14 @@ export default function ClassroomsPage() {
                                                         </Link>
                                                     ) : (
                                                         <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} className="flex-1 md:flex-initial">
-                                                            <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-[#0d5a5e] text-white text-xs font-bold rounded-lg hover:bg-[#115e59] transition-colors shadow-sm">
+                                                            <button 
+                                                                disabled={isDisabled}
+                                                                className={`w-full md:w-auto px-3 sm:px-4 py-2 text-xs font-bold rounded-lg transition-colors shadow-sm ${
+                                                                    isDisabled 
+                                                                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed' 
+                                                                        : 'bg-[#0d5a5e] text-white hover:bg-[#115e59]'
+                                                                }`}
+                                                            >
                                                                 Start
                                                             </button>
                                                         </Link>
@@ -727,7 +973,7 @@ export default function ClassroomsPage() {
                                             </div>
                                         );
                                     })}
-                                    {getClassesForDate(selectedDate).length === 0 && (
+                                    {getFilteredClassesForDate(selectedDate).length === 0 && (
                                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center">
                                             <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 mb-4">
                                                 <Calendar className="size-8 text-amber-500 animate-bounce" />
@@ -780,6 +1026,11 @@ export default function ClassroomsPage() {
                                 {/* Mobile view of list */}
                                 <div className="block md:hidden p-3 space-y-3">
                                     {displayedClassrooms.map((room, idx) => {
+                                        const statusLower = (room.status || 'active').toLowerCase();
+                                        const isInactive = statusLower === 'inactive';
+                                        const isArchived = statusLower === 'archived';
+                                        const isDisabled = isInactive || isArchived;
+
                                         const iconColors = [
                                             { bg: 'bg-[#fef3c7]/60 dark:bg-[#ecb613]/20', text: 'text-[#ecb613]', icon: Music },
                                             { bg: 'bg-blue-100/30 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400', icon: Activity },
@@ -794,6 +1045,8 @@ export default function ClassroomsPage() {
                                             <div key={room.id} className={`p-3 rounded-xl border transition-all flex flex-col gap-2.5 ${
                                                 isOngoing
                                                     ? 'bg-rose-50/15 dark:bg-rose-950/10 border-rose-200 dark:border-rose-800 shadow-sm'
+                                                    : isDisabled
+                                                    ? 'bg-slate-50/60 dark:bg-slate-900/20 border-dashed border-slate-300 dark:border-slate-850 opacity-75 hover:opacity-100'
                                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm'
                                             }`}>
                                                 <div className="flex items-center justify-between gap-2">
@@ -812,12 +1065,22 @@ export default function ClassroomsPage() {
                                                         />
                                                         <div className="min-w-0 flex-1">
                                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                                                <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-sm text-slate-900 dark:text-white hover:text-[#ecb613] transition-colors truncate block max-w-[150px] sm:max-w-none">
+                                                                <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`} className="font-bold text-sm text-slate-900 dark:text-white hover:text-[#ecb613] transition-colors truncate block max-w-[150px] sm:max-w-none">
                                                                     {room.name}
                                                                 </Link>
                                                                 {isOngoing && (
                                                                     <span className="px-1.5 py-0.5 rounded-full text-[7px] font-black uppercase bg-rose-500 text-white tracking-wider animate-pulse shrink-0">
                                                                         Live
+                                                                    </span>
+                                                                )}
+                                                                {isInactive && (
+                                                                    <span className="px-1.5 py-0.5 rounded-full text-[7px] font-black uppercase bg-rose-105 text-rose-800 dark:bg-rose-950/20 dark:text-rose-400 tracking-wider shrink-0">
+                                                                        Inactive
+                                                                    </span>
+                                                                )}
+                                                                {isArchived && (
+                                                                    <span className="px-1.5 py-0.5 rounded-full text-[7px] font-black uppercase bg-slate-205 text-slate-700 dark:bg-slate-800 dark:text-slate-400 tracking-wider shrink-0">
+                                                                        Archived
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -828,8 +1091,8 @@ export default function ClassroomsPage() {
                                                     </div>
                                                     <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider shrink-0 ${
                                                         room.type === 'temporary'
-                                                            ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-600'
-                                                            : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600'
+                                                            ? 'bg-amber-50 dark:bg-amber-955/30 text-amber-600'
+                                                            : 'bg-emerald-50 dark:bg-emerald-955/30 text-emerald-600'
                                                     }`}>
                                                         {room.type === 'temporary' ? 'Temp' : 'Perm'}
                                                     </span>
@@ -840,21 +1103,28 @@ export default function ClassroomsPage() {
                                                         ID: {room.id.substring(0, 4).toUpperCase()}
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`}>
+                                                        <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`}>
                                                             <button className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-md hover:bg-slate-200 transition-colors">
                                                                 Manage
                                                             </button>
                                                         </Link>
                                                         {isOngoing ? (
                                                             <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                <button className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5">
+                                                                <button className="px-2.5 py-1 bg-rose-505 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5">
                                                                     <Activity className="size-3 animate-spin" />
                                                                     Resume
                                                                 </button>
                                                             </Link>
                                                         ) : (
                                                             <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                <button className="px-2.5 py-1 bg-[#0d5a5e] hover:bg-[#115e59] text-white font-bold rounded-md transition-colors">
+                                                                <button 
+                                                                    disabled={isDisabled}
+                                                                    className={`px-2.5 py-1 font-bold rounded-md transition-colors ${
+                                                                        isDisabled
+                                                                            ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                                                                            : 'bg-[#0d5a5e] hover:bg-[#115e59] text-white'
+                                                                    }`}
+                                                                >
                                                                     Start
                                                                 </button>
                                                             </Link>
@@ -903,6 +1173,11 @@ export default function ClassroomsPage() {
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                                             {displayedClassrooms.map((room, idx) => {
+                                                const statusLower = (room.status || 'active').toLowerCase();
+                                                const isInactive = statusLower === 'inactive';
+                                                const isArchived = statusLower === 'archived';
+                                                const isDisabled = isInactive || isArchived;
+
                                                 const iconColors = [
                                                     { bg: 'bg-[#fef3c7]/60 dark:bg-[#ecb613]/20', text: 'text-[#ecb613]', icon: Music },
                                                     { bg: 'bg-blue-100/30 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400', icon: Activity },
@@ -921,7 +1196,9 @@ export default function ClassroomsPage() {
                                                 return (
                                                     <tr key={room.id} className={`transition-colors group border-b border-slate-100 dark:border-slate-800/50 ${
                                                         isOngoing
-                                                            ? 'bg-rose-50/15 dark:bg-rose-950/10 hover:bg-rose-50/20 dark:hover:bg-rose-950/15'
+                                                            ? 'bg-rose-50/15 dark:bg-rose-950/10 hover:bg-rose-50/20 dark:hover:bg-rose-955/15'
+                                                            : isDisabled
+                                                            ? 'bg-slate-50/40 dark:bg-slate-900/20 hover:bg-slate-100/40 dark:hover:bg-slate-800/30 opacity-75 hover:opacity-100'
                                                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 even:bg-slate-50/30 dark:even:bg-slate-800/20'
                                                     }`}>
                                                         <td className="px-6 py-6 w-12 text-center">
@@ -940,12 +1217,12 @@ export default function ClassroomsPage() {
                                                         </td>
                                                         <td className="px-6 py-6">
                                                             <div className="flex items-center gap-4">
-                                                                <div className={`w-10 h-10 rounded-lg ${styleConfig.bg} flex items-center justify-center ${styleConfig.text}`}>
+                                                                <div className={`w-10 h-10 rounded-lg ${isDisabled ? 'bg-slate-200/50 dark:bg-slate-800 text-slate-400 dark:text-slate-550' : styleConfig.bg} flex items-center justify-center ${isDisabled ? '' : styleConfig.text}`}>
                                                                     <IconComponent className="size-5" />
                                                                 </div>
                                                                 <div>
                                                                     <div className="flex items-center gap-2 flex-wrap">
-                                                                        <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`} className="font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
+                                                                        <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`} className="font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
                                                                             {room.name}
                                                                         </Link>
                                                                         {isOngoing && (
@@ -955,12 +1232,22 @@ export default function ClassroomsPage() {
                                                                             </span>
                                                                         )}
                                                                         {room.type === 'temporary' ? (
-                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400 tracking-wider">
+                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-955/20 dark:text-amber-400 tracking-wider">
                                                                                 ⚡ Temporary
                                                                             </span>
                                                                         ) : (
-                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400 tracking-wider">
+                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-955/20 dark:text-emerald-405 tracking-wider">
                                                                                 👥 Permanent
+                                                                            </span>
+                                                                        )}
+                                                                        {isInactive && (
+                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-100 text-rose-800 dark:bg-rose-950/20 dark:text-rose-450 tracking-wider">
+                                                                                🚫 Inactive
+                                                                            </span>
+                                                                        )}
+                                                                        {isArchived && (
+                                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-205 text-slate-700 dark:bg-slate-800 dark:text-slate-400 tracking-wider">
+                                                                                📦 Archived
                                                                             </span>
                                                                         )}
                                                                     </div>
@@ -980,13 +1267,13 @@ export default function ClassroomsPage() {
                                                                         +{room.student_count > 2 ? room.student_count - 2 : 0}
                                                                     </div>
                                                                 </div>
-                                                                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{room.student_count} Enrolled</p>
+                                                                <p className="text-xs font-semibold text-slate-505 dark:text-slate-400 whitespace-nowrap">{room.student_count} Enrolled</p>
                                                             </div>
                                                         </td>
                                                         <td className="px-6 py-6">
                                                              {activeView === 'today' ? (
-                                                                 <div className="flex flex-col bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 min-w-[150px] text-left">
-                                                                     <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Today</span>
+                                                                 <div className="flex flex-col bg-slate-50 dark:bg-slate-805/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 min-w-[150px] text-left">
+                                                                     <span className="text-[10px] font-black text-emerald-605 dark:text-emerald-400 uppercase tracking-wide">Today</span>
                                                                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">
                                                                          {room.start_time ? formatTime12hr(room.start_time.slice(0, 5)) : ''} - {room.end_time ? formatTime12hr(room.end_time.slice(0, 5)) : ''}
                                                                      </span>
@@ -995,7 +1282,7 @@ export default function ClassroomsPage() {
                                                                      </span>
                                                                  </div>
                                                              ) : room.type === 'temporary' ? (
-                                                                 <div className="flex flex-col bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 min-w-[150px] text-left">
+                                                                 <div className="flex flex-col bg-slate-50 dark:bg-slate-805/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 min-w-[150px] text-left">
                                                                      <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wide">
                                                                          {(() => {
                                                                              const parsed = parseClassDate(room.class_date);
@@ -1005,7 +1292,7 @@ export default function ClassroomsPage() {
                                                                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">
                                                                          {room.start_time ? formatTime12hr(room.start_time.slice(0, 5)) : ''} - {room.end_time ? formatTime12hr(room.end_time.slice(0, 5)) : ''}
                                                                      </span>
-                                                                     <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">
+                                                                     <span className="text-[9px] font-bold text-slate-400 dark:text-slate-550 mt-0.5">
                                                                          Duration: {room.start_time && room.end_time ? calculateDuration(room.start_time, room.end_time) : ''}
                                                                      </span>
                                                                  </div>
@@ -1017,10 +1304,10 @@ export default function ClassroomsPage() {
                                                                          const end = formatTime12hr(sched.end_time.slice(0, 5));
                                                                          const duration = calculateDuration(sched.start_time, sched.end_time);
                                                                          return (
-                                                                             <div key={sIdx} className="flex flex-col bg-slate-50 dark:bg-slate-800/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 text-left">
+                                                                             <div key={sIdx} className="flex flex-col bg-slate-50 dark:bg-slate-805/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 text-left">
                                                                                  <span className="text-[10px] font-black text-[#b45309] dark:text-[#ecb613] uppercase tracking-wide">{dayName}</span>
-                                                                                 <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">{start} - {end}</span>
-                                                                                 <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">Duration: {duration}</span>
+                                                                                 <span className="text-xs font-extrabold text-slate-705 dark:text-slate-200 mt-0.5">{start} - {end}</span>
+                                                                                 <span className="text-[9px] font-bold text-slate-400 dark:text-slate-550 mt-0.5">Duration: {duration}</span>
                                                                              </div>
                                                                          );
                                                                      })}
@@ -1032,7 +1319,7 @@ export default function ClassroomsPage() {
                                                         </td>
                                                         <td className="px-6 py-6">
                                                             {isOnline ? (
-                                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-105 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                                                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                                                                     Online
                                                                 </span>
@@ -1045,8 +1332,8 @@ export default function ClassroomsPage() {
                                                         </td>
                                                         <td className="px-6 py-6 text-right">
                                                             <div className="flex items-center justify-end gap-2">
-                                                                <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/temp/${room.id}`}>
-                                                                    <button className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
+                                                                <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`}>
+                                                                    <button className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-705 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
                                                                         Manage
                                                                     </button>
                                                                 </Link>
@@ -1059,7 +1346,14 @@ export default function ClassroomsPage() {
                                                                     </Link>
                                                                 ) : (
                                                                     <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                        <button className="px-4 py-2 bg-[#0d5a5e] text-white text-xs font-bold rounded-lg hover:bg-[#115e59] transition-colors shadow-sm">
+                                                                        <button 
+                                                                            disabled={isDisabled}
+                                                                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors shadow-sm ${
+                                                                                isDisabled
+                                                                                    ? 'bg-slate-205 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                                                                                    : 'bg-[#0d5a5e] text-white hover:bg-[#115e59]'
+                                                                            }`}
+                                                                        >
                                                                             Start
                                                                         </button>
                                                                     </Link>

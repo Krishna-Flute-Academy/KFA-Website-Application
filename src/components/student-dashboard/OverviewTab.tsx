@@ -282,7 +282,7 @@ export default function OverviewTab({
                             </p>
                         </div>
                     </div>
-                    {classroom.live_meeting_link ? (
+                    {classroom.live_meeting_link && (
                         <a 
                             href={classroom.live_meeting_link}
                             target="_blank"
@@ -292,10 +292,6 @@ export default function OverviewTab({
                             <PlayCircle className="w-4.5 h-4.5 text-red-600" />
                             Join Class
                         </a>
-                    ) : (
-                        <span className="px-6 py-3.5 bg-white/25 text-white/80 font-bold rounded-full text-xs shrink-0 select-none uppercase tracking-wider">
-                            Waiting for link...
-                        </span>
                     )}
                 </div>
             )}
