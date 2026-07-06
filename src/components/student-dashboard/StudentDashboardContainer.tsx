@@ -140,6 +140,7 @@ export default function StudentDashboardContainer() {
     const [pushPermission, setPushPermission] = useState<boolean | null>(null);
     const notifDropdownRef = useRef<HTMLDivElement>(null);
     const refreshDataRef = useRef<() => Promise<void>>(null as any);
+    const classroomIdsRef = useRef<string[]>([]);
     useEffect(() => {
         refreshDataRef.current = refreshData;
     });
@@ -411,6 +412,7 @@ export default function StudentDashboardContainer() {
                 ...memberClassroomIds,
                 ...targetClassroomIds
             ])).filter(id => id && id !== 'synthetic-classroom');
+            classroomIdsRef.current = allClassroomIds;
 
             let activeRooms: any[] = [];
             if (allClassroomIds.length > 0) {
@@ -800,44 +802,135 @@ export default function StudentDashboardContainer() {
     }, [profile?.id]);
 
     useEffect(() => {
-        // 2. Subscribe to changes on classrooms table to dynamically update live sessions
-        const classroomChannel = supabaseAuth
-            .channel('public:classrooms-all-live')
+        if (!profile?.id) return;
+        const userId = profile.id;
+
+        // Unified realtime channel for dashboard-wide instant sync
+        const dashboardChannel = supabaseAuth
+            .channel('public:student-dashboard-realtime-sync')
+            // Listen to classrooms (any INSERT, UPDATE, DELETE)
             .on(
                 'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'classrooms'
-                },
+                { event: '*', schema: 'public', table: 'classrooms' },
                 (payload) => {
-                    console.log('Realtime classroom update payload received:', payload);
-                    if (refreshDataRef.current) {
+                    console.log('Realtime classroom payload received:', payload);
+                    if (refreshDataRef.current) refreshDataRef.current();
+                }
+            )
+            // Listen to classroom_students changes (which affects enrollment/dashboard list)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'classroom_students' },
+                (payload) => {
+                    const newRecord = payload.new as any;
+                    const oldRecord = payload.old as any;
+                    const isRelevant = 
+                        (newRecord && newRecord.student_id === userId) ||
+                        (oldRecord && oldRecord.student_id === userId);
+                    console.log('Realtime classroom_students payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
                 }
             )
-            .subscribe();
-
-        return () => {
-            supabaseAuth.removeChannel(classroomChannel);
-        };
-    }, []);
-
-    useEffect(() => {
-        // 3. Subscribe to additions/updates on broadcasts to update chat/messages in real-time
-        const broadcastsChannel = supabaseAuth
-            .channel('public:broadcasts-realtime-sync')
+            // Listen to messages (direct messages/chat between student and teacher/admin)
             .on(
                 'postgres_changes',
-                {
-                    event: '*', // Listen to INSERT, UPDATE, DELETE
-                    schema: 'public',
-                    table: 'broadcasts'
-                },
+                { event: '*', schema: 'public', table: 'messages' },
+                (payload) => {
+                    const newMsg = payload.new as any;
+                    const oldMsg = payload.old as any;
+                    const isRelevant = 
+                        (newMsg && (newMsg.sender_id === userId || newMsg.receiver_id === userId)) ||
+                        (oldMsg && (oldMsg.sender_id === userId || oldMsg.receiver_id === userId));
+                    console.log('Realtime message payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
+            // Listen to broadcasts
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'broadcasts' },
                 (payload) => {
                     console.log('Realtime broadcast payload received:', payload);
-                    if (refreshDataRef.current) {
+                    if (refreshDataRef.current) refreshDataRef.current();
+                }
+            )
+            // Listen to class notes
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'class_notes' },
+                (payload) => {
+                    const newRecord = payload.new as any;
+                    const oldRecord = payload.old as any;
+                    const targetClassroomId = newRecord?.classroom_id || oldRecord?.classroom_id;
+                    const isRelevant = targetClassroomId && classroomIdsRef.current.includes(targetClassroomId);
+                    console.log('Realtime class_notes payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
+            // Listen to assignments
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'assignments' },
+                (payload) => {
+                    const newRecord = payload.new as any;
+                    const oldRecord = payload.old as any;
+                    const targetClassroomId = newRecord?.classroom_id || oldRecord?.classroom_id;
+                    const isRelevant = !targetClassroomId || classroomIdsRef.current.includes(targetClassroomId) || newRecord?.target_type === 'individual';
+                    console.log('Realtime assignments payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
+            // Listen to student-assignment mapping updates (grades, status, feedback)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'assignment_students' },
+                (payload) => {
+                    const newRecord = payload.new as any;
+                    const oldRecord = payload.old as any;
+                    const isRelevant = 
+                        (newRecord && newRecord.student_id === userId) ||
+                        (oldRecord && oldRecord.student_id === userId);
+                    console.log('Realtime assignment_students payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
+            // Listen to session student overrides (makeup classes)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'session_student_overrides' },
+                (payload) => {
+                    const newRecord = payload.new as any;
+                    const oldRecord = payload.old as any;
+                    const isRelevant = 
+                        (newRecord && newRecord.student_id === userId) ||
+                        (oldRecord && oldRecord.student_id === userId);
+                    console.log('Realtime session_student_overrides payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
+            // Listen to classroom session logs
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'classroom_session_logs' },
+                (payload) => {
+                    const newRecord = payload.new as any;
+                    const oldRecord = payload.old as any;
+                    const targetClassroomId = newRecord?.classroom_id || oldRecord?.classroom_id;
+                    const isRelevant = targetClassroomId && classroomIdsRef.current.includes(targetClassroomId);
+                    console.log('Realtime classroom_session_logs payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
                 }
@@ -845,9 +938,9 @@ export default function StudentDashboardContainer() {
             .subscribe();
 
         return () => {
-            supabaseAuth.removeChannel(broadcastsChannel);
+            supabaseAuth.removeChannel(dashboardChannel);
         };
-    }, []);
+    }, [profile?.id]);
 
     // Close dropdown on click outside
     useEffect(() => {

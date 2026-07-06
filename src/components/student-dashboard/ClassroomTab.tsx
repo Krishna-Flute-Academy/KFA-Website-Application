@@ -52,6 +52,8 @@ interface ClassNote {
 
 interface ClassroomTabProps {
     classroom: ClassroomInfo | null;
+    activeRooms?: any[];
+    setClassroom?: React.Dispatch<React.SetStateAction<any>>;
     classmates: Classmate[];
     mergedLogs: any[];
     profile: StudentProfile | null;
@@ -66,6 +68,8 @@ interface ClassroomTabProps {
 
 export default function ClassroomTab({
     classroom,
+    activeRooms = [],
+    setClassroom,
     classmates,
     mergedLogs,
     profile,
@@ -398,9 +402,28 @@ export default function ClassroomTab({
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="space-y-1.5 flex-1 min-w-0">
                         <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest block font-mono">My Classroom</span>
-                        <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white truncate">
-                            {classroom?.name || 'Classroom Portal'}
-                        </h2>
+                        {activeRooms && activeRooms.length > 1 ? (
+                            <div className="relative inline-block text-left mt-1">
+                                <select
+                                    value={classroom?.id || ''}
+                                    onChange={(e) => {
+                                        const selected = activeRooms.find(r => r.id === e.target.value);
+                                        if (selected && setClassroom) setClassroom(selected);
+                                    }}
+                                    className="text-xl md:text-2xl font-black text-slate-900 dark:text-white bg-transparent border-b-2 border-amber-500 pr-8 focus:outline-hidden cursor-pointer"
+                                >
+                                    {activeRooms.map((room) => (
+                                        <option key={room.id} value={room.id} className="text-sm font-semibold text-slate-800 dark:text-white bg-white dark:bg-slate-900">
+                                            {room.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : (
+                            <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white truncate">
+                                {classroom?.name || 'Classroom Portal'}
+                            </h2>
+                        )}
                         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
                             {classroom?.description 
                                 ? classroom.description.replace(/\[delivery_format:(online|offline)\]/g, '').trim() 
