@@ -11,7 +11,7 @@ import {
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
     Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe,
-    FolderPlus, Edit
+    FolderPlus, Edit, MessageSquare
 } from 'lucide-react';
 
 interface Broadcast {
@@ -464,6 +464,20 @@ function MessagesDashboardContent() {
     // Logs Search
     const [searchQuery, setSearchQuery] = useState('');
 
+    // Direct Messaging States for Student Chatbox
+    const [directMessages, setDirectMessages] = useState<any[]>([]);
+    const [activeChatStudentId, setActiveChatStudentId] = useState<string | null>(null);
+    const [chatInput, setChatInput] = useState('');
+    const [sendingDirectMsg, setSendingDirectMsg] = useState(false);
+    const [messageType, setMessageType] = useState<'broadcast' | 'normal'>('broadcast');
+
+    const teacherChatEndRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (activeChannel === 'chatbox' && activeChatStudentId) {
+            teacherChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [directMessages, activeChatStudentId, activeChannel]);
+
     // ── Auth & Data Loading ────────────────────────────────────────────────────
     useEffect(() => {
         const checkAuthAndLoad = async () => {
@@ -655,6 +669,18 @@ function MessagesDashboardContent() {
                     }
                 }
 
+                // 6. Fetch Direct Messages
+                try {
+                    const { data: dbDirectMessages } = await supabaseAuth
+                        .from('messages')
+                        .select('*')
+                        .or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`)
+                        .order('created_at', { ascending: true });
+                    setDirectMessages(dbDirectMessages || []);
+                } catch (dme) {
+                    console.warn('Failed to load direct messages:', dme);
+                }
+
             } catch (err) {
                 console.error('Error during initial portal load:', err);
             } finally {
@@ -666,11 +692,79 @@ function MessagesDashboardContent() {
         checkAuthAndLoad();
     }, [router]);
 
+    // Real-time listener for direct messages
+    useEffect(() => {
+        if (!teacherProfile?.id) return;
+        const channel = supabaseAuth.channel('public:teacher-messages-realtime')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'messages' },
+                (payload) => {
+                    const newMsg = payload.new as any;
+                    if (newMsg) {
+                        setDirectMessages(prev => {
+                            if (prev.some(m => m.id === newMsg.id)) return prev;
+                            return [...prev, newMsg];
+                        });
+                    }
+                }
+            )
+            .subscribe();
+        return () => {
+            supabaseAuth.removeChannel(channel);
+        };
+    }, [teacherProfile?.id]);
+
     // Logout Helper
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/login?type=teacher');
     };
+
+    const resolveTargetStudentIds = async (recipients: any[]) => {
+        const studentIds = new Set<string>();
+        const classIds: string[] = [];
+        
+        for (const r of recipients) {
+            if (r.type === 'student') {
+                studentIds.add(r.id);
+            } else if (r.type === 'class') {
+                classIds.push(r.id);
+            } else if (r.type === 'global') {
+                students.forEach(s => studentIds.add(s.id));
+            }
+        }
+        
+        if (classIds.length > 0) {
+            const { data: assoc } = await supabaseAuth
+                .from('classroom_students')
+                .select('student_id')
+                .in('classroom_id', classIds);
+            (assoc || []).forEach((row: any) => studentIds.add(row.student_id));
+        }
+        
+        return Array.from(studentIds);
+    };
+
+    const chatContacts = useMemo(() => {
+        return students.map(student => {
+            const threadMsgs = directMessages.filter(m => 
+                (m.sender_id === student.id && m.receiver_id === teacherProfile?.id) ||
+                (m.sender_id === teacherProfile?.id && m.receiver_id === student.id)
+            );
+            const lastMsg = threadMsgs.length > 0 ? threadMsgs[threadMsgs.length - 1] : null;
+            return {
+                ...student,
+                lastMessage: lastMsg ? lastMsg.message_text : 'No messages yet',
+                lastMessageAt: lastMsg ? new Date(lastMsg.created_at) : null
+            };
+        }).sort((a, b) => {
+            if (!a.lastMessageAt && !b.lastMessageAt) return 0;
+            if (!a.lastMessageAt) return 1;
+            if (!b.lastMessageAt) return -1;
+            return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
+        });
+    }, [students, directMessages, teacherProfile?.id]);
 
     // ── Save Broadcast Handler ─────────────────────────────────────────────────
     const handleSendBroadcast = async (e: React.FormEvent) => {
@@ -681,16 +775,59 @@ function MessagesDashboardContent() {
             showToast('Please select at least one recipient first!', 'error');
             return;
         }
-        if (!subject.trim()) {
+        if (messageType === 'broadcast' && !subject.trim()) {
             showToast('Please specify a broadcast subject!', 'error');
             return;
         }
         if (!content.trim()) {
-            showToast('Please compose your broadcast message!', 'error');
+            showToast('Please compose your message!', 'error');
             return;
         }
 
         setIsSending(true);
+
+        if (messageType === 'normal') {
+            try {
+                const targetStudentIds = await resolveTargetStudentIds(selectedRecipients);
+                if (targetStudentIds.length === 0) {
+                    showToast('Could not find any enrolled students in the selected recipients.', 'error');
+                    setIsSending(false);
+                    return;
+                }
+
+                const rows = targetStudentIds.map(sid => ({
+                    sender_id: teacherProfile.id,
+                    receiver_id: sid,
+                    message_text: content.trim(),
+                    created_at: new Date().toISOString()
+                }));
+
+                const { data: insertedData, error: mError } = await supabaseAuth
+                    .from('messages')
+                    .insert(rows)
+                    .select('*');
+
+                if (mError) throw mError;
+
+                if (insertedData) {
+                    setDirectMessages(prev => [...prev, ...insertedData]);
+                }
+
+                showToast(`Message successfully sent to ${targetStudentIds.length} student(s) chatbox!`, 'success');
+
+                // Clear Composer Form
+                setSubject('');
+                setContent('');
+                setSelectedRecipients([]);
+                setAttachedAudioNote(null);
+            } catch (err: any) {
+                console.error('Failed to send normal message:', err);
+                showToast('Failed to send normal messages. Try again.', 'error');
+            } finally {
+                setIsSending(false);
+            }
+            return;
+        }
 
         const newBroadcast: any = {
             teacher_id: teacherProfile.id,
@@ -1149,6 +1286,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                         { id: 'custom_groups', label: 'Custom Groups', desc: 'Performers, Beginners...', icon: Users, color: 'text-indigo-500 bg-indigo-50' },
                                         { id: 'new_joiners', label: 'New Joiners', desc: 'Automated workflows', icon: Sparkles, color: 'text-emerald-500 bg-emerald-50' },
                                         { id: 'fee_management', label: 'Fee Management', desc: 'Reminders & Receipts', icon: CreditCard, color: 'text-rose-500 bg-rose-50' },
+                                        { id: 'chatbox', label: 'Student Chatbox', desc: 'Normal/Direct Messages', icon: MessageSquare, color: 'text-teal-500 bg-teal-50 dark:bg-teal-950/20' },
                                     ].map((channel) => {
                                         const isSelected = activeChannel === channel.id;
                                         return (
@@ -1239,10 +1377,152 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
 
                         {/* Broadcast composer workspace (Col-span 8) */}
                         <div className="col-span-12 lg:col-span-8 flex flex-col gap-4">
-                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Messaging Workspace</span>
+                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                {activeChannel === 'chatbox' ? 'Student Chatbox' : 'Messaging Workspace'}
+                            </span>
                             
-                            {/* Main Composer Form */}
-                            <form onSubmit={handleSendBroadcast} className="bg-white p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-xs flex flex-col gap-6">
+                            {activeChannel === 'chatbox' ? (
+                                /* CHATBOX WORKSPACE */
+                                <div className="grid grid-cols-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-[600px] text-left">
+                                    {/* Sub-Left Panel: Chat Contacts */}
+                                    <div className="col-span-12 md:col-span-4 border-r border-slate-100 dark:border-slate-800 flex flex-col h-full">
+                                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+                                            <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Students</h4>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-850 custom-scrollbar">
+                                            {chatContacts.map(contact => {
+                                                const isActive = activeChatStudentId === contact.id;
+                                                return (
+                                                    <button
+                                                        key={contact.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setActiveChatStudentId(contact.id);
+                                                            setChatInput('');
+                                                        }}
+                                                        className={`w-full p-4 flex flex-col gap-1 transition-colors text-left cursor-pointer ${
+                                                            isActive
+                                                                ? 'bg-slate-50 dark:bg-slate-800/40 text-slate-900 dark:text-white'
+                                                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        <div className="flex justify-between items-baseline">
+                                                            <span className="font-extrabold text-xs">{contact.name}</span>
+                                                            {contact.lastMessageAt && (
+                                                                <span className="text-[9px] text-slate-400">
+                                                                    {contact.lastMessageAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate block mt-0.5">
+                                                            {contact.lastMessage}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                            {chatContacts.length === 0 && (
+                                                <p className="p-4 text-xs italic text-slate-400 text-center">No students found.</p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Sub-Right Panel: Message Thread */}
+                                    <div className="col-span-12 md:col-span-8 flex flex-col h-full bg-slate-50/20 dark:bg-slate-950/10">
+                                        {activeChatStudentId ? (
+                                            <>
+                                                {/* Chat Header */}
+                                                <div className="px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+                                                    <span className="font-extrabold text-xs text-slate-800 dark:text-white">
+                                                        Conversation with {students.find(s => s.id === activeChatStudentId)?.name}
+                                                    </span>
+                                                </div>
+
+                                                {/* Messages Scroll Area */}
+                                                <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar text-left flex flex-col">
+                                                    {directMessages
+                                                        .filter(m => 
+                                                            (m.sender_id === activeChatStudentId && m.receiver_id === teacherProfile?.id) ||
+                                                            (m.sender_id === teacherProfile?.id && m.receiver_id === activeChatStudentId)
+                                                        )
+                                                        .map(msg => {
+                                                            const isMe = msg.sender_id === teacherProfile?.id;
+                                                            return (
+                                                                <div
+                                                                    key={msg.id}
+                                                                    className={`max-w-[80%] p-3 rounded-2xl text-xs leading-relaxed ${
+                                                                        isMe
+                                                                            ? 'bg-[#0e5f59] text-white self-end rounded-tr-none'
+                                                                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 self-start rounded-tl-none border border-slate-100 dark:border-slate-750'
+                                                                    }`}
+                                                                >
+                                                                    <p className="whitespace-pre-wrap select-text">{msg.message_text}</p>
+                                                                    <span className={`block text-[8px] mt-1 text-right ${isMe ? 'text-teal-100/60' : 'text-slate-400'}`}>
+                                                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    <div ref={teacherChatEndRef} />
+                                                </div>
+
+                                                {/* Input Form */}
+                                                <form
+                                                    onSubmit={async (e) => {
+                                                        e.preventDefault();
+                                                        if (!chatInput.trim() || !teacherProfile?.id || !activeChatStudentId) return;
+                                                        setSendingDirectMsg(true);
+                                                        try {
+                                                            const payload = {
+                                                                sender_id: teacherProfile.id,
+                                                                receiver_id: activeChatStudentId,
+                                                                message_text: chatInput.trim(),
+                                                                created_at: new Date().toISOString()
+                                                            };
+                                                            const { data, error } = await supabaseAuth
+                                                                .from('messages')
+                                                                .insert([payload])
+                                                                .select();
+                                                            if (error) throw error;
+                                                            if (data) {
+                                                                setDirectMessages(prev => [...prev, data[0]]);
+                                                                setChatInput('');
+                                                            }
+                                                        } catch (err) {
+                                                            console.error('Failed to send reply:', err);
+                                                            alert('Failed to send reply.');
+                                                        } finally {
+                                                            setSendingDirectMsg(false);
+                                                        }
+                                                    }}
+                                                    className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex gap-2 items-center flex-shrink-0"
+                                                >
+                                                    <input
+                                                        type="text"
+                                                        value={chatInput}
+                                                        onChange={(e) => setChatInput(e.target.value)}
+                                                        placeholder="Type a reply..."
+                                                        className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-teal-500 outline-none text-slate-800 dark:text-slate-100"
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        disabled={sendingDirectMsg || !chatInput.trim()}
+                                                        className="px-4 py-2.5 bg-[#0e5f59] hover:bg-[#0b4e49] text-white font-bold rounded-xl text-xs flex items-center justify-center shrink-0 cursor-pointer disabled:opacity-50"
+                                                    >
+                                                        {sendingDirectMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                                    </button>
+                                                </form>
+                                            </>
+                                        ) : (
+                                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-400">
+                                                <MessageSquare className="w-8 h-8 text-[#ecb613] mb-2 animate-pulse" />
+                                                <p className="text-xs font-bold">Select a student from the left panel to open chat conversation.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Main Composer Form */
+                                <form onSubmit={handleSendBroadcast} className="bg-white p-6 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 shadow-xs flex flex-col gap-6 text-left">
                                 <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
                                     <div>
                                         <h2 className="text-lg font-bold text-slate-900 dark:text-white">Compose Notification</h2>
@@ -1274,6 +1554,35 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                         >
                                             {isSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                                             Send Notification
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Message Type Selector */}
+                                <div className="space-y-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+                                    <label className="block text-xs font-black text-slate-405 dark:text-slate-500 uppercase tracking-wide">Message Type</label>
+                                    <div className="flex gap-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMessageType('broadcast')}
+                                            className={`flex-1 py-3 px-4 rounded-xl border text-center transition-all cursor-pointer font-bold text-xs ${
+                                                messageType === 'broadcast'
+                                                    ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-955/20 dark:text-amber-400'
+                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                                            }`}
+                                        >
+                                            📣 Broadcast Announcement (No Student Reply)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setMessageType('normal')}
+                                            className={`flex-1 py-3 px-4 rounded-xl border text-center transition-all cursor-pointer font-bold text-xs ${
+                                                messageType === 'normal'
+                                                    ? 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-955/20 dark:text-teal-400'
+                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                                            }`}
+                                        >
+                                            💬 Normal Message (Replyable in Chatbox)
                                         </button>
                                     </div>
                                 </div>
@@ -1412,16 +1721,18 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 </div>
                                             </div>
                                         )}
-                                        <div className="flex flex-col gap-1.5">
-                                            <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Broadcast Subject</label>
-                                            <input 
-                                                className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-slate-800 dark:text-slate-200 bg-white placeholder:text-slate-300 dark:text-slate-600"
-                                                placeholder="e.g. Important Update: New Practice Schedule" 
-                                                type="text" 
-                                                value={subject}
-                                                onChange={(e) => setSubject(e.target.value)}
-                                            />
-                                        </div>
+                                        {messageType === 'broadcast' && (
+                                            <div className="flex flex-col gap-1.5">
+                                                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Broadcast Subject</label>
+                                                <input 
+                                                    className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-slate-800 dark:text-slate-200 bg-white placeholder:text-slate-300 dark:text-slate-600"
+                                                    placeholder="e.g. Important Update: New Practice Schedule" 
+                                                    type="text" 
+                                                    value={subject}
+                                                    onChange={(e) => setSubject(e.target.value)}
+                                                />
+                                            </div>
+                                        )}
 
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Message Content</label>
@@ -1436,7 +1747,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 </div>
                                                 <textarea 
                                                     className="p-4 text-xs font-semibold leading-relaxed text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:text-slate-500 resize-none h-44 outline-none border-none bg-white" 
-                                                    placeholder="Write your message here. You can use @name to personalize..."
+                                                    placeholder={messageType === 'broadcast' ? "Write your broadcast message here..." : "Write your normal replyable chat message here..."}
                                                     value={content}
                                                     onChange={(e) => setContent(e.target.value)}
                                                 />
@@ -1445,6 +1756,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                     </div>
                                 </div>
                             </form>
+                        )}
                         </div>
                     </div>
 
