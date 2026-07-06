@@ -171,9 +171,9 @@ export default function OverviewTab({
             setMessageContent('');
             setDirectMessageSuccess(true);
             setTimeout(() => setDirectMessageSuccess(false), 3000);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error sending direct message during session:', err);
-            alert('Failed to send direct message. Please try again.');
+            alert(`Failed to send direct message: ${err?.message || JSON.stringify(err)}`);
         } finally {
             setIsSendingDirectMessage(false);
         }
@@ -242,7 +242,7 @@ export default function OverviewTab({
                                             >
                                                 <option value="all">All Enrolled Students (Broadcast)</option>
                                                 {students.map(s => (
-                                                    <option key={s.id} value={s.id}>{s.name} (Direct Message)</option>
+                                                    <option key={s.id} value={s.student_id || s.id}>{s.name} (Direct Message)</option>
                                                 ))}
                                             </select>
                                         </div>
