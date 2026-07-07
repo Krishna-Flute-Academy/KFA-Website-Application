@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { 
-    Calendar, Mail, UserPlus, Trash2, Loader2, Plus, 
+    Calendar, UserPlus, Trash2, Loader2, Plus, 
     AlertTriangle, Sparkles, BarChart2
 } from 'lucide-react';
 
@@ -92,10 +92,7 @@ export default function StudentsTab({
                         <Calendar className="w-5 h-5" />
                         Schedule Makeup
                     </button>
-                    <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm">
-                        <Mail className="w-5 h-5" />
-                        Message All
-                    </button>
+
                     <button
                         onClick={openDirectoryModal}
                         className="flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-lg font-semibold hover:bg-[#ecb613]/90 transition-all shadow-md shadow-[#ecb613]/20"

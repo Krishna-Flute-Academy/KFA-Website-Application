@@ -35,6 +35,7 @@ interface CurriculumTabProps {
         badgeStyle: string;
         isLocked: boolean;
         isUnlocked: boolean;
+        isCompleted: boolean;
         statusLabel: string;
     };
     setSelectedTopic: (lesson: any) => void;
@@ -43,6 +44,11 @@ interface CurriculumTabProps {
     selectedStudentPermissions: any;
     syllabusLessons: any[];
     setIsInventoryDrawerOpen: (open: boolean) => void;
+    handleUpdatePacingState: (
+        targetType: 'level' | 'chapter' | 'topic',
+        targetId: string,
+        newStatus: 'locked' | 'unlocked' | 'completed'
+    ) => Promise<void>;
 }
 
 export default function CurriculumTab({
@@ -73,7 +79,8 @@ export default function CurriculumTab({
     livePreviewData,
     selectedStudentPermissions,
     syllabusLessons,
-    setIsInventoryDrawerOpen
+    setIsInventoryDrawerOpen,
+    handleUpdatePacingState
 }: CurriculumTabProps) {
     return (
         <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
@@ -346,6 +353,47 @@ export default function CurriculumTab({
                                                                                     )}
                                                                                     <span>Remove</span>
                                                                                 </button>
+
+                                                                                {isUpdatingProgress === mod.id ? (
+                                                                                    <Loader2 className="size-4 animate-spin text-[#ecb613] mx-2" />
+                                                                                ) : (
+                                                                                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUpdatePacingState('level', mod.id, 'locked');
+                                                                                            }}
+                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-350 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                            title="Lock Level (Lock all chapters and topics)"
+                                                                                        >
+                                                                                            <Lock className="size-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUpdatePacingState('level', mod.id, 'unlocked');
+                                                                                            }}
+                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                            title="Unlock Level (Unlock all chapters and topics)"
+                                                                                        >
+                                                                                            <Unlock className="size-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUpdatePacingState('level', mod.id, 'completed');
+                                                                                            }}
+                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                            title="Complete Level (Complete all chapters and topics)"
+                                                                                        >
+                                                                                            <CheckCircle className="size-3.5" />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                )}
+
                                                                                 <div 
                                                                                     onClick={(e) => {
                                                                                         e.stopPropagation();
@@ -384,18 +432,60 @@ export default function CurriculumTab({
                                                                                     </p>
                                                                                 </div>
                                                                             </div>
-                                                                            <div className="w-8 h-8 rounded-lg bg-slate-200/50 dark:bg-slate-800/50 flex items-center justify-center text-slate-400 group-hover/module:text-[#ecb613] transition-all duration-300">
-                                                                                {isModuleExpanded ? (
-                                                                                    <ChevronUp className="size-4" />
+                                                                            <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                                                                                {isUpdatingProgress === mod.id ? (
+                                                                                    <Loader2 className="size-4 animate-spin text-[#ecb613] mx-2" />
                                                                                 ) : (
-                                                                                    <ChevronDown className="size-4" />
+                                                                                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUpdatePacingState('level', mod.id, 'locked');
+                                                                                            }}
+                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-355 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                            title="Lock Level (Lock all chapters and topics)"
+                                                                                        >
+                                                                                            <Lock className="size-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUpdatePacingState('level', mod.id, 'unlocked');
+                                                                                            }}
+                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                            title="Unlock Level (Unlock all chapters and topics)"
+                                                                                        >
+                                                                                            <Unlock className="size-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUpdatePacingState('level', mod.id, 'completed');
+                                                                                            }}
+                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                            title="Complete Level (Complete all chapters and topics)"
+                                                                                        >
+                                                                                            <CheckCircle className="size-3.5" />
+                                                                                        </button>
+                                                                                    </div>
                                                                                 )}
+
+                                                                                <div className="w-8 h-8 rounded-lg bg-slate-200/50 dark:bg-slate-800/50 flex items-center justify-center text-slate-400 group-hover/module:text-[#ecb613] transition-all duration-300">
+                                                                                    {isModuleExpanded ? (
+                                                                                        <ChevronUp className="size-4" />
+                                                                                    ) : (
+                                                                                        <ChevronDown className="size-4" />
+                                                                                    )}
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     )}
 
                                                                     {/* Chapters Under This Module */}
-                                                                    {(isModuleExpanded || hasModuleAssignment) && (
+                                                                    {isModuleExpanded && (
                                                                         <div className="space-y-6 pl-3 md:pl-6 border-l border-slate-200 dark:border-slate-800/60">
                                                                             {mod.chapters.map((chap: any) => {
                                                                                 const isChapterExpanded = expandedChapters[chap.id] !== false;
@@ -451,6 +541,46 @@ export default function CurriculumTab({
                                                                                                                         <span>Remove</span>
                                                                                                                     </button>
                                                                                                                 )}
+                                                                                                {isUpdatingProgress === chap.id ? (
+                                                                                                    <Loader2 className="size-3.5 animate-spin text-[#ecb613] mx-1.5" />
+                                                                                                ) : (
+                                                                                                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                handleUpdatePacingState('chapter', chap.id, 'locked');
+                                                                                                            }}
+                                                                                                            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-350 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                                            title="Lock Chapter (Lock all topics)"
+                                                                                                        >
+                                                                                                            <Lock className="size-3" />
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                handleUpdatePacingState('chapter', chap.id, 'unlocked');
+                                                                                                            }}
+                                                                                                            className="p-1 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                                            title="Unlock Chapter (Unlock all topics)"
+                                                                                                        >
+                                                                                                            <Unlock className="size-3" />
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                handleUpdatePacingState('chapter', chap.id, 'completed');
+                                                                                                            }}
+                                                                                                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                                            title="Complete Chapter (Complete all topics)"
+                                                                                                        >
+                                                                                                            <CheckCircle className="size-3" />
+                                                                                                        </button>
+                                                                                                    </div>
+                                                                                                )}
+
                                                                                                 <div 
                                                                                                     onClick={(e) => {
                                                                                                         e.stopPropagation();
@@ -542,18 +672,63 @@ export default function CurriculumTab({
                                                                                                                             )}
                                                                                                                             <span>{pacing.statusLabel}</span>
                                                                                                                         </div>
-                                                                                                                        <button
-                                                                                                                            type="button"
-                                                                                                                            title="Manage pacing overrides"
-                                                                                                                            onClick={() => {
-                                                                                                                                if (isUpdating) return;
-                                                                                                                                openAllocationDrawer(lesson);
-                                                                                                                            }}
-                                                                                                                            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
-                                                                                                                        >
-                                                                                                                            <Sliders className="size-3.5" />
-                                                                                                                        </button>
-                                                                                                                        {lesson.isExplicit && (
+                                                                                        {isUpdatingProgress === lesson.id ? (
+                                                                                            <Loader2 className="size-4 animate-spin text-[#ecb613] mx-1.5" />
+                                                                                        ) : (
+                                                                                            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        handleUpdatePacingState('topic', lesson.id, 'locked');
+                                                                                                    }}
+                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                        pacing.isLocked ? 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-xs' : 'text-slate-400 hover:text-slate-650 hover:bg-white dark:hover:bg-slate-700'
+                                                                                                    }`}
+                                                                                                    title="Lock Topic"
+                                                                                                >
+                                                                                                    <Lock className="size-3" />
+                                                                                                </button>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        handleUpdatePacingState('topic', lesson.id, 'unlocked');
+                                                                                                    }}
+                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                        pacing.isUnlocked && !pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-[#ecb613] shadow-xs' : 'text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700'
+                                                                                                    }`}
+                                                                                                    title="Unlock Topic"
+                                                                                                >
+                                                                                                    <Unlock className="size-3" />
+                                                                                                </button>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        handleUpdatePacingState('topic', lesson.id, 'completed');
+                                                                                                    }}
+                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                        pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-emerald-505 shadow-xs' : 'text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700'
+                                                                                                    }`}
+                                                                                                    title="Complete Topic"
+                                                                                                >
+                                                                                                    <CheckCircle className="size-3" />
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            title="Manage pacing overrides"
+                                                                                            onClick={() => {
+                                                                                                if (isUpdating) return;
+                                                                                                openAllocationDrawer(lesson);
+                                                                                            }}
+                                                                                            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
+                                                                                        >
+                                                                                            <Sliders className="size-3.5" />
+                                                                                        </button>
+                                                                                        {lesson.isExplicit && (
                                                                                                                             <button
                                                                                                                                 type="button"
                                                                                                                                 onClick={() => handleDeallocateItem(lesson.allocationId)}

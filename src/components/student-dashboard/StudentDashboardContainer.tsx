@@ -132,6 +132,8 @@ export default function StudentDashboardContainer() {
     const [batchSchedules, setBatchSchedules] = useState<any[]>([]);
     const [makeupSchedules, setMakeupSchedules] = useState<any[]>([]);
     const [directMessages, setDirectMessages] = useState<any[]>([]);
+    const [classroomMessages, setClassroomMessages] = useState<any[]>([]);
+    const [isSendingClassroomMessage, setIsSendingClassroomMessage] = useState(false);
     const [admins, setAdmins] = useState<any[]>([]);
     const [activeRooms, setActiveRooms] = useState<any[]>([]);
 
@@ -677,6 +679,22 @@ export default function StudentDashboardContainer() {
             }
             setDirectMessages(messagesData);
 
+            if (allClassroomIds.length > 0) {
+                const { data: cmData, error: cmError } = await supabaseAuth
+                    .from('classroom_messages')
+                    .select('*, sender:users!classroom_messages_sender_id_fkey(name, role, profile_pic_url)')
+                    .in('classroom_id', allClassroomIds)
+                    .order('created_at', { ascending: true });
+
+                if (cmError) {
+                    console.warn('Failed to load classroom messages from DB:', cmError);
+                } else {
+                    setClassroomMessages(cmData || []);
+                }
+            } else {
+                setClassroomMessages([]);
+            }
+
             let adminsList: any[] = [];
             try {
                 const { data: aData } = await supabaseAuth
@@ -807,7 +825,7 @@ export default function StudentDashboardContainer() {
 
         // Unified realtime channel for dashboard-wide instant sync
         const dashboardChannel = supabaseAuth
-            .channel('public:student-dashboard-realtime-sync')
+            .channel('student-dashboard-realtime-sync')
             // Listen to classrooms (any INSERT, UPDATE, DELETE)
             .on(
                 'postgres_changes',
@@ -822,11 +840,16 @@ export default function StudentDashboardContainer() {
                                 ...prev,
                                 is_live: updatedRoom.is_live,
                                 live_meeting_link: updatedRoom.live_meeting_link,
-                                live_session_started_at: updatedRoom.live_session_started_at
+                                live_session_started_at: updatedRoom.live_session_started_at,
+                                live_classroom_name: updatedRoom.is_live ? updatedRoom.name : null
                             };
                         });
                     }
-                    if (refreshDataRef.current) refreshDataRef.current();
+                    // Introduce a 500ms delay before calling refreshData() to ensure that the
+                    // write transaction has fully committed and replica lag does not cause stale data read.
+                    setTimeout(() => {
+                        if (refreshDataRef.current) refreshDataRef.current();
+                    }, 500);
                 }
             )
             // Listen to classroom_students changes (which affects enrollment/dashboard list)
@@ -856,6 +879,21 @@ export default function StudentDashboardContainer() {
                         (newMsg && (newMsg.sender_id === userId || newMsg.receiver_id === userId)) ||
                         (oldMsg && (oldMsg.sender_id === userId || oldMsg.receiver_id === userId));
                     console.log('Realtime message payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
+            // Listen to shared classroom chat messages
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'classroom_messages' },
+                (payload) => {
+                    const newMsg = payload.new as any;
+                    const oldMsg = payload.old as any;
+                    const targetClassroomId = newMsg?.classroom_id || oldMsg?.classroom_id;
+                    const isRelevant = targetClassroomId && classroomIdsRef.current.includes(targetClassroomId);
+                    console.log('Realtime classroom message payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
@@ -947,12 +985,59 @@ export default function StudentDashboardContainer() {
                     }
                 }
             )
+            // Listen to student pacing/topic progress updates
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'student_topic_progress' },
+                (payload) => {
+                    const newRecord = payload.new as any;
+                    const oldRecord = payload.old as any;
+                    const isRelevant = 
+                        (newRecord && (newRecord.student_id === userId || newRecord.student_id === 'classwide_default')) ||
+                        (oldRecord && (oldRecord.student_id === userId || oldRecord.student_id === 'classwide_default'));
+                    console.log('Realtime student_topic_progress payload received:', payload, 'Is relevant:', isRelevant);
+                    if (isRelevant && refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+            )
             .subscribe();
 
         return () => {
             supabaseAuth.removeChannel(dashboardChannel);
         };
     }, [profile?.id]);
+
+    // Re-sync data on window focus or visibility change to catch up on missed realtime events
+    useEffect(() => {
+        const handleFocusOrVisible = () => {
+            console.log('[Dashboard Sync] Window focused or visible. Refreshing dashboard data...');
+            if (refreshDataRef.current) {
+                refreshDataRef.current();
+            }
+        };
+
+        window.addEventListener('focus', handleFocusOrVisible);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                handleFocusOrVisible();
+            }
+        });
+
+        // Periodic background poll every 60 seconds as an ultimate fallback
+        const intervalId = setInterval(() => {
+            console.log('[Dashboard Sync] Running periodic background sync...');
+            if (refreshDataRef.current) {
+                refreshDataRef.current();
+            }
+        }, 60000);
+
+        return () => {
+            window.removeEventListener('focus', handleFocusOrVisible);
+            document.removeEventListener('visibilitychange', handleFocusOrVisible);
+            clearInterval(intervalId);
+        };
+    }, []);
 
     // Close dropdown on click outside
     useEffect(() => {
@@ -1056,6 +1141,30 @@ export default function StudentDashboardContainer() {
         } catch (e) {
             console.error('Failed to send direct message:', e);
             alert('Failed to send message.');
+        }
+    };
+
+    const handleSendClassroomMessage = async (messageText: string) => {
+        if (!profile?.id || !classroom?.id || !messageText.trim()) return;
+
+        setIsSendingClassroomMessage(true);
+        try {
+            const { error } = await supabaseAuth
+                .from('classroom_messages')
+                .insert({
+                    classroom_id: classroom.id,
+                    sender_id: profile.id,
+                    message_text: messageText.trim()
+                });
+
+            if (error) throw error;
+            await refreshData();
+        } catch (error) {
+            console.error('Failed to send classroom message:', error);
+            alert('Failed to send classroom message.');
+            throw error;
+        } finally {
+            setIsSendingClassroomMessage(false);
         }
     };
 
@@ -1722,6 +1831,9 @@ export default function StudentDashboardContainer() {
                                 classNotes={classNotes}
                                 assignments={assignments}
                                 broadcasts={broadcasts}
+                                classroomMessages={classroomMessages.filter(message => message.classroom_id === classroom?.id)}
+                                isSendingClassroomMessage={isSendingClassroomMessage}
+                                onSendClassroomMessage={handleSendClassroomMessage}
                                 onSelectAssignment={handleSelectAssignmentFromOtherTab}
                             />
                         )}

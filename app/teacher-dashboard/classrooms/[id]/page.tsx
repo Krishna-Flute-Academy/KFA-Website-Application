@@ -25,6 +25,7 @@ import AssignmentsTab from '../../../../src/components/classroom/AssignmentsTab'
 import AttendanceTab from '../../../../src/components/classroom/AttendanceTab';
 import ClassLogsTab from '../../../../src/components/classroom/ClassLogsTab';
 import SettingsTab from '../../../../src/components/classroom/SettingsTab';
+import ClassroomChatTab from '../../../../src/components/classroom/ClassroomChatTab';
 
 interface ClassroomDetails {
     id: string;
@@ -141,6 +142,9 @@ export default function ClassroomDashboardPage({
     const [activeTab, setActiveTab] = useState('Overview');
     const [currentPage, setCurrentPage] = useState(1);
     const [activeClassroomIds, setActiveClassroomIds] = useState<string[]>([classroomId]);
+    const [classroomMessages, setClassroomMessages] = useState<any[]>([]);
+    const [isSendingClassroomMessage, setIsSendingClassroomMessage] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     useEffect(() => {
         if (classroomId) {
@@ -219,6 +223,83 @@ export default function ClassroomDashboardPage({
         };
     }, [teacherProfile, classroomId]);
 
+    const fetchClassroomMessages = useCallback(async () => {
+        if (!classroomId) return;
+        try {
+            const { data, error } = await supabaseAuth
+                .from('classroom_messages')
+                .select('*, sender:users!classroom_messages_sender_id_fkey(name, role, profile_pic_url)')
+                .eq('classroom_id', classroomId)
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+            setClassroomMessages(data || []);
+        } catch (error) {
+            console.error('Failed to load classroom chat messages:', error);
+        }
+    }, [classroomId]);
+
+    useEffect(() => {
+        if (!teacherProfile || !classroomId) return;
+
+        fetchClassroomMessages();
+
+        const channel = supabaseAuth
+            .channel(`classroom-messages-${classroomId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'classroom_messages',
+                    filter: `classroom_id=eq.${classroomId}`
+                },
+                () => {
+                    fetchClassroomMessages();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(channel);
+        };
+    }, [teacherProfile, classroomId, fetchClassroomMessages]);
+
+    const handleSendClassroomChatMessage = async (messageText: string) => {
+        if (!teacherProfile?.id || !classroomId || !messageText.trim()) return;
+
+        setIsSendingClassroomMessage(true);
+        try {
+            const { error } = await supabaseAuth
+                .from('classroom_messages')
+                .insert({
+                    classroom_id: classroomId,
+                    sender_id: teacherProfile.id,
+                    message_text: messageText.trim()
+                });
+
+            if (error) throw error;
+            await fetchClassroomMessages();
+        } finally {
+            setIsSendingClassroomMessage(false);
+        }
+    };
+
+    const classroomChatParticipants = useMemo(() => {
+        const teacher = teacherProfile
+            ? [{ id: teacherProfile.id, name: teacherProfile.name || 'Teacher', role: teacherProfile.role || 'teacher' }]
+            : [];
+
+        const enrolled = students.map(student => ({
+            id: student.student_id,
+            name: student.name || 'Student',
+            role: 'student',
+            profile_pic_url: student.profile_pic_url
+        }));
+
+        return [...teacher, ...enrolled];
+    }, [teacherProfile, students]);
+
     // Action handler to broadcast class messages
     const handleSendClassMessageAction = async () => {
         if (!messageContent.trim() || !teacherProfile || !classroom) return false;
@@ -286,7 +367,7 @@ export default function ClassroomDashboardPage({
     useEffect(() => {
         if (typeof window !== 'undefined' && classroomId) {
             const savedTab = sessionStorage.getItem(`classroom_tab_${classroomId}`);
-            if (savedTab && ['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Class Logs', 'Settings'].includes(savedTab)) {
+            if (savedTab && ['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Class Logs', 'Chat', 'Settings'].includes(savedTab)) {
                 setActiveTab(savedTab);
             }
         }
@@ -983,7 +1064,34 @@ export default function ClassroomDashboardPage({
         };
 
         fetchData();
-    }, [classroomId, router]);
+    }, [classroomId, router, refreshTrigger]);
+
+    // Re-sync classroom data on window focus, visibility change, or periodic background poll
+    useEffect(() => {
+        const handleFocusOrVisible = () => {
+            console.log('[Teacher Sync] Window focused or visible. Triggering dashboard refresh...');
+            setRefreshTrigger(prev => prev + 1);
+        };
+
+        window.addEventListener('focus', handleFocusOrVisible);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                handleFocusOrVisible();
+            }
+        });
+
+        // Periodic background poll every 60 seconds as an ultimate fallback
+        const intervalId = setInterval(() => {
+            console.log('[Teacher Sync] Running periodic background poll...');
+            setRefreshTrigger(prev => prev + 1);
+        }, 60000);
+
+        return () => {
+            window.removeEventListener('focus', handleFocusOrVisible);
+            document.removeEventListener('visibilitychange', handleFocusOrVisible);
+            clearInterval(intervalId);
+        };
+    }, []);
 
     // ── Fetch Assignments Callback ─────────────────────────────────────────────
     const fetchAssignments = useCallback(async () => {
@@ -2460,6 +2568,117 @@ export default function ClassroomDashboardPage({
         }
     };
 
+    const handleUpdatePacingState = async (
+        targetType: 'level' | 'chapter' | 'topic',
+        targetId: string,
+        newStatus: 'locked' | 'unlocked' | 'completed'
+    ) => {
+        if (!classroomId) return;
+        setIsUpdatingProgress(targetId);
+
+        // 1. Determine affected topics (lessons)
+        let affectedLessonIds: string[] = [];
+        if (targetType === 'level') {
+            const chaptersInMod = courseChapters.filter(c => c.module_id === targetId);
+            const chapterIds = chaptersInMod.map(c => c.id);
+            const lessonsInMod = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
+            affectedLessonIds = lessonsInMod.map(l => l.id);
+        } else if (targetType === 'chapter') {
+            const lessonsInChap = courseLessons.filter(l => l.chapter_id === targetId);
+            affectedLessonIds = lessonsInChap.map(l => l.id);
+        } else if (targetType === 'topic') {
+            affectedLessonIds = [targetId];
+        }
+
+        if (affectedLessonIds.length === 0) {
+            setIsUpdatingProgress(null);
+            return;
+        }
+
+        // 2. Determine target student IDs
+        const isIndividual = (curriculumTab === 'individual' && selectedStudentForCurriculum);
+        const targetStudentIds = isIndividual
+            ? [selectedStudentForCurriculum.student_id]
+            : activeAttendanceRoster.map(s => s.student_id);
+
+        // 3. Construct upsert rows
+        const rows: any[] = [];
+        if (targetStudentIds.length === 0) {
+            affectedLessonIds.forEach(lessonId => {
+                rows.push({
+                    student_id: 'classwide_default',
+                    classroom_id: classroomId,
+                    lesson_id: lessonId,
+                    status: newStatus,
+                    unlocked_by: 'manual',
+                    unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
+                    completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+                });
+            });
+        } else {
+            targetStudentIds.forEach(studentId => {
+                affectedLessonIds.forEach(lessonId => {
+                    const existingRow = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
+                    const existingStatus = existingRow ? existingRow.status : 'locked';
+
+                    let status = newStatus;
+                    // Preserve completed state if unlocking
+                    if (newStatus === 'unlocked' && existingStatus === 'completed') {
+                        status = 'completed';
+                    }
+
+                    rows.push({
+                        student_id: studentId,
+                        classroom_id: classroomId,
+                        lesson_id: lessonId,
+                        status: status,
+                        unlocked_by: 'manual',
+                        unlocked_at: status !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
+                        completed_at: status === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
+                    });
+                });
+            });
+        }
+
+        try {
+            const { error } = await supabaseAuth
+                .from('student_topic_progress')
+                .upsert(rows, {
+                    onConflict: 'student_id,lesson_id'
+                });
+
+            if (error) {
+                console.warn('[Pacing] Database upsert failed, updating in-memory only:', error.message);
+                setStudentProgress(prev => {
+                    const affectedPairs = new Set(rows.map(r => `${r.student_id}_${r.lesson_id}`));
+                    const filtered = prev.filter(p => !affectedPairs.has(`${p.student_id}_${p.lesson_id}`));
+                    return [...filtered, ...rows];
+                });
+            } else {
+                const studentIds = [
+                    ...students.map(s => s.student_id),
+                    ...sessionOverrides.map(o => o.student_id)
+                ];
+                let progressQuery = supabaseAuth
+                    .from('student_topic_progress')
+                    .select('*');
+                if (studentIds.length > 0) {
+                    progressQuery = progressQuery.in('student_id', studentIds);
+                } else {
+                    progressQuery = progressQuery.eq('classroom_id', classroomId);
+                }
+                const { data: progressData, error: fetchError } = await progressQuery;
+                if (fetchError) throw fetchError;
+                setStudentProgress(progressData || []);
+            }
+        } catch (err: any) {
+            console.error('Error saving pacing allocations:', err);
+            alert(`Failed to save pacing allocations: ${err.message || err}`);
+        } finally {
+            setIsUpdatingProgress(null);
+        }
+    };
+
     const handleAllocateItem = async (
         type: 'module' | 'chapter' | 'lesson',
         id: string,
@@ -3157,7 +3376,7 @@ export default function ClassroomDashboardPage({
                 <div className="p-4 sm:p-6 md:p-8 w-full flex-1 overflow-y-auto custom-scrollbar">
                     {/* Row-wise Tabs */}
                     <div className="flex items-center gap-8 border-b border-slate-205 dark:border-slate-800 mb-8 overflow-x-auto custom-scrollbar whitespace-nowrap">
-                        {['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Class Logs', 'Settings'].map((tab) => (
+                        {['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Class Logs', 'Chat', 'Settings'].map((tab) => (
                             <button 
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
@@ -3238,6 +3457,7 @@ export default function ClassroomDashboardPage({
                             selectedStudentPermissions={selectedStudentPermissions}
                             syllabusLessons={syllabusLessons}
                             setIsInventoryDrawerOpen={setIsInventoryDrawerOpen}
+                            handleUpdatePacingState={handleUpdatePacingState}
                         />
                     )}
 
@@ -3336,6 +3556,17 @@ export default function ClassroomDashboardPage({
                             sessionLogs={sessionLogs}
                             sessionLogsLoading={sessionLogsLoading}
                             fetchSessionLogs={fetchSessionLogs}
+                        />
+                    )}
+
+                    {activeTab === 'Chat' && (
+                        <ClassroomChatTab
+                            classroom={classroom}
+                            currentUser={teacherProfile}
+                            messages={classroomMessages}
+                            participants={classroomChatParticipants}
+                            sending={isSendingClassroomMessage}
+                            onSendMessage={handleSendClassroomChatMessage}
                         />
                     )}
 

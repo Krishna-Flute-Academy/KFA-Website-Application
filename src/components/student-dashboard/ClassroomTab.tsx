@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Calendar, Users, MessageSquare, Clock, ChevronLeft, ChevronRight, 
-    Send, User, Loader2, CheckCircle, Info, AlertTriangle, Play, FileText, Download,
-    BookOpen
+    User, CheckCircle, Info, AlertTriangle, Play, FileText, Download,
+    BookOpen, Megaphone
 } from 'lucide-react';
-import { supabaseAuth } from '../../lib/supabase-auth';
+import ClassroomChatTab from '../classroom/ClassroomChatTab';
 
 interface StudentProfile {
     id: string;
@@ -63,6 +63,9 @@ interface ClassroomTabProps {
     classNotes: ClassNote[];
     assignments?: any[];
     broadcasts?: any[];
+    classroomMessages?: any[];
+    isSendingClassroomMessage?: boolean;
+    onSendClassroomMessage?: (messageText: string) => Promise<void>;
     onSelectAssignment?: (asg: any) => void;
 }
 
@@ -79,14 +82,13 @@ export default function ClassroomTab({
     classNotes,
     assignments = [],
     broadcasts = [],
+    classroomMessages = [],
+    isSendingClassroomMessage = false,
+    onSendClassroomMessage,
     onSelectAssignment
 }: ClassroomTabProps) {
     const [subTab, setSubTab] = useState<'calendar' | 'logs' | 'notes' | 'assignments' | 'messages'>('calendar');
-    
-    // Classroom Discussion chat states
-    const [newMessage, setNewMessage] = useState('');
-    const [isSending, setIsSending] = useState(false);
-    const chatEndRef = useRef<HTMLDivElement>(null);
+    const [messageTab, setMessageTab] = useState<'broadcasts' | 'chat'>('broadcasts');
 
     // Filter class notes by current classroom
     const filteredClassNotes = useMemo(() => {
@@ -100,52 +102,26 @@ export default function ClassroomTab({
         return (assignments || []).filter(a => a.classroom_id === classroom.id);
     }, [assignments, classroom?.id]);
 
-    // Filter and sort classroom broadcasts (announcements/chat messages) chronologically
     const classroomBroadcasts = useMemo(() => {
         if (!classroom?.id || !broadcasts) return [];
         return broadcasts
-            .filter((b: any) => 
-                b.recipients?.some((r: any) => r.type === 'class' && r.id === classroom.id)
+            .filter((broadcast: any) =>
+                broadcast.recipients?.some((recipient: any) => recipient.type === 'class' && recipient.id === classroom.id)
             )
-            .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }, [broadcasts, classroom?.id]);
 
-    // Scroll chat to bottom when tab becomes active or new messages are received
-    useEffect(() => {
-        if (subTab === 'messages' && chatEndRef.current) {
-            chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
-    }, [subTab, classroomBroadcasts]);
+    const classroomChatParticipants = useMemo(() => {
+        const teacher = classroom?.teacher_id
+            ? [{ id: classroom.teacher_id, name: classroom.teacher_name || 'Academy Instructor', role: 'teacher' }]
+            : [];
 
-    const getInitials = (name: string) => {
-        if (!name) return '??';
-        return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-    };
-
-    const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newMessage.trim() || !profile?.id || !classroom?.id) return;
-        setIsSending(true);
-        try {
-            const { error } = await supabaseAuth
-                .from('broadcasts')
-                .insert([{
-                    teacher_id: profile.id, // utilizing teacher_id column as sender ID
-                    subject: `Class Message from ${profile.name}`,
-                    content: newMessage.trim(),
-                    recipients: [{ id: classroom.id, name: classroom.name, type: 'class' }],
-                    channel: 'announcements'
-                }]);
-            if (error) throw error;
-            setNewMessage('');
-            await refreshData();
-        } catch (err) {
-            console.error('Error sending message:', err);
-            alert('Failed to send message. Please try again.');
-        } finally {
-            setIsSending(false);
-        }
-    };
+        return [
+            ...teacher,
+            ...(profile ? [{ id: profile.id, name: profile.name || 'Me', role: 'student', profile_pic_url: profile.profile_pic_url || null }] : []),
+            ...classmates.map(mate => ({ ...mate, role: 'student' }))
+        ];
+    }, [classroom?.teacher_id, classroom?.teacher_name, profile, classmates]);
     
     // Calendar Month state
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -951,102 +927,104 @@ export default function ClassroomTab({
             )}
 
             {subTab === 'messages' && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left flex flex-col h-[550px]">
-                    <div className="mb-4">
-                        <h3 className="font-extrabold text-slate-808 dark:text-white text-base mb-1 font-sans">Class Discussion</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Classroom announcements and peer discussion feed</p>
-                    </div>
-
-                    {/* Chat Area */}
-                    <div className="flex-1 overflow-y-auto space-y-4 p-4 border border-slate-100 dark:border-slate-800 rounded-2xl bg-slate-50/30 dark:bg-slate-950/15 mb-4 max-h-[350px]">
-                        {classroomBroadcasts.length === 0 ? (
-                            <div className="h-full flex flex-col justify-center items-center text-center">
-                                <MessageSquare className="w-8 h-8 text-slate-350 mb-2" />
-                                <p className="text-xs font-bold text-slate-600 dark:text-slate-400">No discussion history yet.</p>
-                                <p className="text-[10px] text-slate-405 mt-0.5">Send a message below to start the classroom conversation!</p>
-                            </div>
-                        ) : (
-                            classroomBroadcasts.map((msg: any) => {
-                                const isMe = msg.teacher_id === profile?.id;
-                                const isTeacher = msg.sender?.role === 'teacher' || msg.sender?.role === 'admin';
-                                const senderName = msg.sender?.name || 'Classmate';
-                                const senderRole = isTeacher ? (msg.sender?.role === 'admin' ? 'Admin' : 'Teacher') : 'Student';
-                                
+                <div className="space-y-5 animate-in fade-in duration-300">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 shadow-xs">
+                        <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 dark:bg-slate-950/40 p-1 border border-slate-100 dark:border-slate-800">
+                            {[
+                                { id: 'broadcasts' as const, label: 'Broadcast Messages', icon: Megaphone },
+                                { id: 'chat' as const, label: 'Chat', icon: MessageSquare }
+                            ].map((tab) => {
+                                const Icon = tab.icon;
+                                const active = messageTab === tab.id;
                                 return (
-                                    <div key={msg.id} className={`flex items-start gap-2.5 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                        {/* Avatar (only show for others) */}
-                                        {!isMe && (
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black text-white shrink-0 shadow-xs ${
-                                                isTeacher ? 'bg-[#ecb613]' : 'bg-slate-500'
-                                            }`}>
-                                                {getInitials(senderName)}
-                                            </div>
-                                        )}
-
-                                        <div className={`flex flex-col max-w-[75%] ${isMe ? 'items-end' : 'items-start'}`}>
-                                            {/* Name & Role */}
-                                            <div className="flex items-center gap-1.5 mb-1 px-1">
-                                                <span className="text-[10px] font-black text-slate-700 dark:text-slate-300">{senderName}</span>
-                                                <span className={`text-[8px] font-black uppercase tracking-wider px-1 py-0.2 rounded font-mono ${
-                                                    isTeacher 
-                                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/10'
-                                                        : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                                                }`}>
-                                                    {senderRole}
-                                                </span>
-                                                <span className="text-[8px] text-slate-405 font-medium">
-                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                            </div>
-
-                                            {/* Chat Bubble */}
-                                            <div className={`rounded-2xl px-4 py-2.5 text-xs font-semibold leading-relaxed break-words shadow-2xs border ${
-                                                isMe 
-                                                    ? 'bg-[#FAF5EE] text-[#7C5E3F] border-[#FAF5EE] rounded-tr-none dark:bg-slate-800 dark:text-amber-400 dark:border-slate-700'
-                                                    : 'bg-white text-slate-800 border-slate-200/80 rounded-tl-none dark:bg-slate-900 dark:text-slate-100 dark:border-slate-800'
-                                            }`}>
-                                                <p className="whitespace-pre-wrap">{msg.content}</p>
-                                            </div>
-                                        </div>
-
-                                        {/* Avatar (show for me on right side) */}
-                                        {isMe && (
-                                            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/25 flex items-center justify-center text-[10px] font-black text-amber-700 dark:text-amber-400 shrink-0 shadow-xs">
-                                                {getInitials(profile?.name || 'Me')}
-                                            </div>
-                                        )}
-                                    </div>
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setMessageTab(tab.id)}
+                                        className={`min-h-[44px] px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                                            active
+                                                ? 'bg-white dark:bg-slate-900 text-[#7C5E3F] dark:text-amber-400 shadow-2xs border border-slate-200 dark:border-slate-700'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 border border-transparent'
+                                        }`}
+                                    >
+                                        <Icon className="w-4 h-4 shrink-0" />
+                                        <span className="truncate">{tab.label}</span>
+                                    </button>
                                 );
-                            })
-                        )}
-                        <div ref={chatEndRef} />
+                            })}
+                        </div>
                     </div>
 
-                    {/* Chat Input */}
-                    <form onSubmit={handleSendMessage} className="flex gap-2 bg-transparent">
-                        <input
-                            type="text"
-                            placeholder="Type your message..."
-                            value={newMessage}
-                            onChange={(e) => setNewMessage(e.target.value)}
-                            disabled={isSending}
-                            className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-amber-500 outline-none text-slate-805 dark:text-slate-100 placeholder:text-slate-405 transition-all"
-                        />
-                        <button
-                            type="submit"
-                            disabled={isSending || !newMessage.trim()}
-                            className="px-4 py-3 bg-[#ecb613] hover:bg-amber-600 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isSending ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    {messageTab === 'broadcasts' ? (
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs text-left min-h-[560px]">
+                            <div className="flex items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4 mb-5">
+                                <div className="min-w-0">
+                                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest block font-mono">Read Only</span>
+                                    <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mt-1 truncate">Classroom Announcements</h3>
+                                </div>
+                                <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-400/10 text-amber-600 dark:text-amber-300 flex items-center justify-center shrink-0">
+                                    <Megaphone className="w-5 h-5" />
+                                </div>
+                            </div>
+
+                            {classroomBroadcasts.length === 0 ? (
+                                <div className="min-h-[380px] flex flex-col items-center justify-center text-center border border-dashed border-slate-150 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-950/15 p-6">
+                                    <Megaphone className="w-10 h-10 text-slate-300 dark:text-slate-700 mb-3" />
+                                    <p className="text-sm font-extrabold text-slate-700 dark:text-slate-300">No classroom broadcasts yet.</p>
+                                    <p className="text-xs text-slate-400 mt-1 max-w-[260px] leading-relaxed">Announcements from your teacher will appear here.</p>
+                                </div>
                             ) : (
-                                <>
-                                    <Send className="w-3.5 h-3.5" />
-                                    Send
-                                </>
+                                <div className="space-y-4 max-h-[520px] overflow-y-auto custom-scrollbar pr-1">
+                                    {classroomBroadcasts.map((broadcast: any) => {
+                                        const senderName = broadcast.sender?.name || classroom?.teacher_name || 'Academy Instructor';
+                                        const senderRole = broadcast.sender?.role || 'teacher';
+
+                                        return (
+                                            <article
+                                                key={broadcast.id}
+                                                className="p-4 sm:p-5 rounded-2xl border border-amber-100 dark:border-slate-800 bg-[#FAF5EE]/60 dark:bg-slate-850/30 shadow-3xs"
+                                            >
+                                                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h4 className="font-extrabold text-sm text-slate-900 dark:text-white leading-snug">{broadcast.subject || 'Classroom Announcement'}</h4>
+                                                            <span className="text-[7.5px] font-black bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                                                {senderRole}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-[10px] font-bold text-slate-400 mt-1">From {senderName}</p>
+                                                    </div>
+                                                    <span className="text-[9px] font-bold text-slate-400 shrink-0">
+                                                        {new Date(broadcast.created_at).toLocaleString([], {
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit'
+                                                        })}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-slate-650 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                                                    {broadcast.content}
+                                                </p>
+                                            </article>
+                                        );
+                                    })}
+                                </div>
                             )}
-                        </button>
-                    </form>
+                        </div>
+                    ) : (
+                        <ClassroomChatTab
+                            classroom={classroom}
+                            currentUser={profile ? { id: profile.id, name: profile.name, role: 'student' } : null}
+                            messages={classroomMessages}
+                            participants={classroomChatParticipants}
+                            sending={isSendingClassroomMessage}
+                            onSendMessage={async (messageText) => {
+                                if (!onSendClassroomMessage) return;
+                                await onSendClassroomMessage(messageText);
+                            }}
+                        />
+                    )}
                 </div>
             )}
         </div>

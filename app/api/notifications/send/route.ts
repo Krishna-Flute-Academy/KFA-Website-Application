@@ -1,13 +1,36 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
+import fs from 'fs';
+import path from 'path';
 
-const supabaseAuthUrl = process.env.NEXT_PUBLIC_AUTH_SUPABASE_URL || '';
-const supabaseAuthAnonKey = process.env.NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY || '';
+// Fallback env reader to robustly handle server environment loading and avoid server restart issues
+function getEnvVariable(key: string): string {
+    if (process.env[key]) return process.env[key]!;
+    try {
+        const envPath = path.join(process.cwd(), '.env');
+        if (fs.existsSync(envPath)) {
+            const content = fs.readFileSync(envPath, 'utf8');
+            const lines = content.split('\n');
+            for (const line of lines) {
+                const parts = line.split('=');
+                if (parts[0]?.trim() === key) {
+                    return parts.slice(1).join('=').trim();
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Error reading fallback env:', e);
+    }
+    return '';
+}
+
+const supabaseAuthUrl = getEnvVariable('NEXT_PUBLIC_AUTH_SUPABASE_URL');
+const supabaseAuthAnonKey = getEnvVariable('NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY');
 
 // Set VAPID keys for direct web push delivery
-const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
+const vapidPublicKey = getEnvVariable('NEXT_PUBLIC_VAPID_PUBLIC_KEY');
+const vapidPrivateKey = getEnvVariable('VAPID_PRIVATE_KEY');
 
 if (vapidPublicKey && vapidPrivateKey) {
     webpush.setVapidDetails(
@@ -37,7 +60,21 @@ export async function POST(req: Request) {
 
         const token = authHeader.split(' ')[1];
 
-        // Initialize Supabase client dynamically with the user's token so queries run with RLS context of the teacher/admin,
+        // Verify token using a clean Supabase client configured with the token globally and persistSession: false
+        const supabaseAuthClient = createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false
+            },
+            global: {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            }
+        });
+        const { data: { user }, error: authError } = await supabaseAuthClient.auth.getUser();
+
+        // Initialize Supabase database client dynamically with the user's token so queries run with RLS context of the teacher/admin,
         // or bypass RLS if the system service role key is available.
         const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_AUTH_SUPABASE_SERVICE_ROLE_KEY;
         const supabase = serviceRoleKey 
@@ -50,11 +87,17 @@ export async function POST(req: Request) {
                 }
             });
 
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
         if (authError || !user) {
             console.error('[API Send Notification] Auth error:', authError);
-            return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
+            return NextResponse.json({ 
+                error: 'Unauthorized: Invalid token',
+                details: authError?.message || 'Unknown auth error',
+                debug: {
+                    url: supabaseAuthUrl,
+                    hasKey: !!supabaseAuthAnonKey,
+                    tokenLength: token?.length
+                }
+            }, { status: 401 });
         }
 
         // Check if the user is a teacher or admin in public.users table

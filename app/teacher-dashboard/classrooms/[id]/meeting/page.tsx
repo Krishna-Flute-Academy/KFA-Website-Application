@@ -232,17 +232,20 @@ export default function MeetingPage() {
             if (error) throw error;
 
             // Mark classroom as live in DB
-            const { error: liveError } = await supabaseAuth
+            const { data: liveData, error: liveError } = await supabaseAuth
                 .from('classrooms')
                 .update({
                     is_live: true,
                     live_meeting_link: sessionType === 'online' ? meetingLink : null,
                     live_session_started_at: new Date().toISOString()
                 })
-                .eq('id', classroomId);
+                .eq('id', classroomId)
+                .select();
 
             if (liveError) {
                 console.error('Failed to mark classroom as live:', liveError);
+            } else if (!liveData || liveData.length === 0) {
+                console.warn('Classroom was not marked as live (0 rows updated). RLS policy might be blocking the update.');
             }
 
             // Trigger push & in-app notifications for students in this classroom
@@ -323,17 +326,20 @@ export default function MeetingPage() {
             }
 
             // Mark classroom as no longer live in DB
-            const { error: liveError } = await supabaseAuth
+            const { data: endData, error: liveError } = await supabaseAuth
                 .from('classrooms')
                 .update({
                     is_live: false,
                     live_meeting_link: null,
                     live_session_started_at: null
                 })
-                .eq('id', classroomId);
+                .eq('id', classroomId)
+                .select();
 
             if (liveError) {
                 console.error('Failed to mark classroom as no longer live:', liveError);
+            } else if (!endData || endData.length === 0) {
+                console.warn('Classroom was not marked as offline (0 rows updated). RLS policy might be blocking the update.');
             }
         } catch (err: any) {
             console.error('Unexpected error ending active session:', err);
