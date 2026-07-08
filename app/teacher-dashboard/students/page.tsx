@@ -448,6 +448,20 @@ export default function StudentDirectory() {
         }
     };
 
+    // ─── Download CSV Template ────────────────────────────────────────────────
+    const downloadCsvTemplate = () => {
+        const headers = 'Name,Email,Phone\n';
+        const sampleData = 'Aarav Patel,aarav@email.com,+91 98001 00001\nRiya Sharma,riya@email.com,\nAnkit Verma,ankit@email.com,+91 98001 00003\n';
+        const blob = new Blob([headers + sampleData], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'kfa_students_bulk_enroll_template.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     // ─── Bulk Enroll: CSV Parse ───────────────────────────────────────────────
     const parseBulkCsv = () => {
         const lines = bulkCsvText.trim().split('\n').filter(l => l.trim() !== '');
@@ -905,13 +919,23 @@ export default function StudentDirectory() {
                                     </div>
 
                                     {/* CSV format info */}
-                                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
-                                        <p className="text-xs font-bold text-blue-700 dark:text-blue-400 mb-1 flex items-center gap-1.5">
-                                            <span className="material-symbols-outlined text-base">info</span>
-                                            CSV Format
-                                        </p>
-                                        <p className="text-xs text-blue-600 dark:text-blue-400 font-mono">Name, Email, Phone (optional)</p>
-                                        <p className="text-xs text-blue-500 dark:text-blue-500 mt-1">Supports comma or tab-separated values. First row header is auto-detected.</p>
+                                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 flex items-start justify-between gap-4">
+                                        <div>
+                                            <p className="text-xs font-bold text-blue-700 dark:text-blue-400 mb-1 flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-base">info</span>
+                                                CSV Format
+                                            </p>
+                                            <p className="text-xs text-blue-600 dark:text-blue-400 font-mono">Name, Email, Phone (optional)</p>
+                                            <p className="text-xs text-blue-500 dark:text-blue-500 mt-1">Supports comma or tab-separated values. First row header is auto-detected.</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={downloadCsvTemplate}
+                                            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-[#ecb613] hover:bg-[#d8a310] text-slate-900 text-xs font-bold rounded-lg shadow-sm transition-all"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">download</span>
+                                            Template CSV
+                                        </button>
                                     </div>
 
                                     {/* File upload */}
@@ -1110,7 +1134,7 @@ export default function StudentDirectory() {
                                         <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Student Directory</h2>
                                         <p className="text-sm text-slate-500 mt-1">Manage and track progress for {students.length} enrolled students.</p>
                                     </div>
-                                    {teacherProfile?.role === 'admin' && (
+                                    {(teacherProfile?.role === 'admin' || teacherProfile?.role === 'teacher') && (
                                         <Link
                                             href="/teacher-dashboard/students/add"
                                             className="bg-black dark:bg-[#ecb613] dark:text-slate-900 hover:bg-slate-800 text-white px-5 h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-all"
@@ -1496,7 +1520,7 @@ export default function StudentDirectory() {
                                     <div className="p-6">
                                         <h3 className="font-bold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
                                         <div className="grid grid-cols-2 gap-3">
-                                            {teacherProfile?.role === 'admin' && (
+                                            {(teacherProfile?.role === 'admin' || teacherProfile?.role === 'teacher') && (
                                                 <>
                                                     <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
                                                         <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">person_add</span>

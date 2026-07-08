@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { supabaseAuth } from '../lib/supabase-auth';
 
 interface TeacherSidebarProps {
-    teacherProfile: { name: string; email: string; role?: string } | null;
+    teacherProfile: { id?: string; name: string; email: string; role?: string } | null;
     handleLogout: () => void;
 }
 
@@ -21,6 +21,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     } | null>(null);
     const [secondsElapsed, setSecondsElapsed] = useState(0);
     const [unassignedCount, setUnassignedCount] = useState(0);
+    const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
     const [isOpen, setIsOpen] = useState(false);
 
     useEffect(() => {
@@ -61,6 +62,56 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         const pollingInterval = setInterval(fetchUnassignedCount, 30000);
         return () => clearInterval(pollingInterval);
     }, [userRole]);
+
+    useEffect(() => {
+        if (!teacherProfile || !teacherProfile.id) return;
+
+        const fetchPendingLeavesCount = async () => {
+            try {
+                if (userRole === 'admin') {
+                    const { count, error } = await supabaseAuth
+                        .from('leave_requests')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('status', 'pending');
+                    
+                    if (error) throw error;
+                    if (count !== null) {
+                        setPendingLeavesCount(count);
+                    }
+                } else {
+                    const { data: classrooms, error: roomsErr } = await supabaseAuth
+                        .from('classrooms')
+                        .select('id')
+                        .eq('teacher_id', teacherProfile.id);
+                    
+                    if (roomsErr) throw roomsErr;
+                    
+                    const roomIds = classrooms?.map(c => c.id) || [];
+                    if (roomIds.length > 0) {
+                        const { count, error: countErr } = await supabaseAuth
+                            .from('leave_requests')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('status', 'pending')
+                            .in('classroom_id', roomIds);
+                        
+                        if (countErr) throw countErr;
+                        if (count !== null) {
+                            setPendingLeavesCount(count);
+                        }
+                    } else {
+                        setPendingLeavesCount(0);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching pending leave requests count:', error);
+            }
+        };
+
+        fetchPendingLeavesCount();
+
+        const pollingInterval = setInterval(fetchPendingLeavesCount, 30000);
+        return () => clearInterval(pollingInterval);
+    }, [teacherProfile, userRole]);
 
     useEffect(() => {
         const checkSession = () => {
@@ -161,6 +212,11 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                             {item.name === 'Students' && userRole === 'admin' && unassignedCount > 0 && (
                                 <span className="bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
                                     {unassignedCount} New
+                                </span>
+                            )}
+                            {item.name === 'Attendance' && pendingLeavesCount > 0 && (
+                                <span className="bg-[#ecb613] text-slate-900 text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
+                                    {pendingLeavesCount} New
                                 </span>
                             )}
                         </Link>

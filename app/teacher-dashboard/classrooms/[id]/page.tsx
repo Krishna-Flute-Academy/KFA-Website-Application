@@ -737,7 +737,10 @@ export default function ClassroomDashboardPage({
     useEffect(() => {
         const fetchData = async () => {
             if (!classroomId) return;
-            setLoading(true);
+            // Only set loading to true on initial render when classroom is null
+            if (!classroom) {
+                setLoading(true);
+            }
             try {
                 // 1. Authenticate
                 const { data: { session } } = await supabaseAuth.auth.getSession();
@@ -746,92 +749,116 @@ export default function ClassroomDashboardPage({
                     return;
                 }
 
-                // 2. Fetch Teacher Profile
-                const { data: profile } = await supabaseAuth
-                    .from('users')
-                    .select('id, name, email, role')
-                    .eq('id', session.user.id)
-                    .single();
+                // 2. Fetch Teacher Profile and Classroom details in parallel
+                const [profileRes, roomRes] = await Promise.all([
+                    supabaseAuth.from('users').select('id, name, email, role').eq('id', session.user.id).single(),
+                    supabaseAuth.from('classrooms').select('*').eq('id', classroomId).single()
+                ]);
+
+                const profile = profileRes.data;
+                const roomData = roomRes.data;
+                const roomError = roomRes.error;
+
                 setTeacherProfile(profile);
-
                 if (!profile) return;
-
-                // 3. Fetch Classroom
-                const classroomsQuery = supabaseAuth
-                    .from('classrooms')
-                    .select('*')
-                    .eq('id', classroomId);
-
-                const { data: roomData, error: roomError } = profile.role === 'admin'
-                    ? await classroomsQuery.single()
-                    : await classroomsQuery.eq('teacher_id', profile.id).single();
-                
                 if (roomError) throw roomError;
 
-                let teacherName = '';
-                if (roomData.teacher_id) {
-                    const { data: tProfile } = await supabaseAuth
-                        .from('users')
-                        .select('name')
-                        .eq('id', roomData.teacher_id)
-                        .maybeSingle();
-                    if (tProfile) {
-                        teacherName = tProfile.name;
-                    }
+                // Authorization check
+                if (profile.role !== 'admin' && roomData.teacher_id !== profile.id) {
+                    throw new Error('Unauthorized classroom access');
                 }
 
-                const classroomData = { 
-                    ...roomData, 
-                    status: roomData.status || 'active',
-                    teacher_name: teacherName
-                };
-                setClassroom(classroomData);
+                // 3. Run Core Queries in Parallel (Phase 2)
+                const promises: any[] = [
+                    // P0: Teacher name if teacher_id is set
+                    roomData.teacher_id
+                        ? supabaseAuth.from('users').select('name').eq('id', roomData.teacher_id).maybeSingle()
+                        : Promise.resolve({ data: null }),
 
-                // 4. Fetch Enrolled Students
-                let roster: any[] = [];
-                let overridesData: any[] = [];
-                if (classroomData.type === 'temporary') {
-                    const { data: tempClassData } = await supabaseAuth
-                        .from('temporary_classes')
-                        .select('id, class_date, start_time, end_time')
-                        .eq('classroom_id', classroomId)
-                        .maybeSingle();
+                    // P1: Roster check
+                    roomData.type === 'temporary'
+                        ? supabaseAuth.from('temporary_classes').select('id, class_date, start_time, end_time').eq('classroom_id', classroomId).maybeSingle()
+                        : Promise.resolve({ data: null }),
 
-                    if (tempClassData) {
-                        classroomData.class_date = tempClassData.class_date;
-                        classroomData.start_time = tempClassData.start_time;
-                        classroomData.end_time = tempClassData.end_time;
-                        const { data: tempRoster, error: tempRosterError } = await supabaseAuth
-                            .from('session_student_overrides')
-                            .select(`
-                                id,
-                                student_id,
-                                users!student_id(name, profile_pic_url, level)
-                            `)
-                            .eq('target_classroom_id', classroomId);
-                        
-                        if (tempRosterError) throw tempRosterError;
-                        roster = (tempRoster || []).map(r => ({
-                            ...r,
-                            joined_at: tempClassData.class_date
-                        }));
-                    }
-                } else {
-                    const { data: permRoster, error: rosterError } = await supabaseAuth
-                        .from('classroom_students')
-                        .select(`
+                    // P2: Enrolled students list
+                    roomData.type === 'temporary'
+                        ? supabaseAuth.from('session_student_overrides').select(`
+                            id,
+                            student_id,
+                            users!student_id(name, profile_pic_url, level)
+                          `).eq('target_classroom_id', classroomId)
+                        : supabaseAuth.from('classroom_students').select(`
                             id,
                             student_id,
                             joined_at,
                             users!student_id(name, profile_pic_url, level)
-                        `)
-                        .eq('classroom_id', classroomId);
+                          `).eq('classroom_id', classroomId),
 
-                    if (rosterError) throw rosterError;
-                    roster = permRoster || [];
-                }
-                
-                // Seed metadata edit form
+                    // P3: Session Student Overrides list
+                    supabaseAuth.from('session_student_overrides').select(`
+                        id,
+                        student_id,
+                        override_date,
+                        reason,
+                        users!student_id(name, profile_pic_url, level)
+                    `).eq('target_classroom_id', classroomId).order('override_date', { ascending: true }),
+
+                    // P4: Batch schedules
+                    supabaseAuth.from('batch_schedules').select('*').eq('classroom_id', classroomId).order('day_of_week', { ascending: true }).order('start_time', { ascending: true }),
+
+                    // P5: Categories
+                    supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true }),
+
+                    // P6: Modules
+                    supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
+
+                    // P7: Chapters
+                    supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
+
+                    // P8: Lessons
+                    supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true }),
+
+                    // P9: Assignments
+                    supabaseAuth.from('assignments').select('*').eq('classroom_id', classroomId).order('created_at', { ascending: false })
+                ];
+
+                const [
+                    teacherRes,
+                    tempClassRes,
+                    rosterRes,
+                    overridesRes,
+                    schedulesRes,
+                    categoriesRes,
+                    modulesRes,
+                    chaptersRes,
+                    lessonsRes,
+                    asgRes
+                ] = await Promise.all(promises);
+
+                // Process P0 (Teacher Name)
+                const teacherName = teacherRes.data?.name || '';
+                const tempClassData = tempClassRes.data;
+                const roster = rosterRes.data || [];
+                const overridesData = overridesRes.data || [];
+
+                const classroomData = { 
+                    ...roomData, 
+                    status: roomData.status || 'active',
+                    teacher_name: teacherName,
+                    ...(roomData.type === 'temporary' && tempClassData ? {
+                        class_date: tempClassData.class_date,
+                        start_time: tempClassData.start_time,
+                        end_time: tempClassData.end_time
+                    } : {})
+                };
+                setClassroom(classroomData);
+
+                // Map temporary classes date onto roster if temporary
+                const finalRoster = (roomData.type === 'temporary' && tempClassData)
+                    ? roster.map((r: any) => ({ ...r, joined_at: tempClassData.class_date }))
+                    : roster;
+
+                // Process metadata edit form
                 const cleanDesc = (roomData.description || '')
                     .replace(/\[delivery_format:(online|offline)\]/g, '')
                     .trim();
@@ -847,10 +874,9 @@ export default function ClassroomDashboardPage({
                     end_time: classroomData.end_time ? classroomData.end_time.slice(0, 5) : '11:00',
                 });
 
-                // 5. Build Enrolled Students with Mock metrics for the UI
+                // Build Enrolled Students with Mock metrics
                 const milestoneOptions = ['Alankars Mastery', 'Breath Control II', 'Fingering Basics', 'Rhythm Training', 'Raag Yaman Intros'];
-                
-                const formattedRoster = (roster || []).map((r: any, idx) => {
+                const formattedRoster = finalRoster.map((r: any, idx: number) => {
                     const seed = parseInt(r.id.substring(0, 8), 16) || idx;
                     const rawLevel = r.users?.level || 'Level 1';
                     const formattedLevel = rawLevel.toLowerCase().startsWith('level')
@@ -871,101 +897,36 @@ export default function ClassroomDashboardPage({
                         mock_status: idx % 3 === 0 ? 'Consistent' : (idx % 2 === 0 ? 'Improving' : 'At Risk') as any
                     };
                 });
-
                 setStudents(formattedRoster);
+                setSessionOverrides(overridesData);
+                setSchedules(schedulesRes.data || []);
 
-                // 5b. Fetch Temporary Session Overrides
-                try {
-                    const { data } = await supabaseAuth
-                        .from('session_student_overrides')
-                        .select(`
-                            id,
-                            student_id,
-                            override_date,
-                            reason,
-                            users!student_id(name, profile_pic_url, level)
-                        `)
-                        .eq('target_classroom_id', classroomId)
-                        .order('override_date', { ascending: true });
-                    
-                    overridesData = data || [];
-                    setSessionOverrides(overridesData);
-                } catch (e) {
-                    console.error('Failed to load session overrides:', e);
-                }
-
-                // 5c. Fetch home classroom IDs of all students
-                let classroomIds = [classroomId];
-                try {
-                    const studentIds = [
-                        ...formattedRoster.map(s => s.student_id),
-                        ...(overridesData || []).map((o: any) => o.student_id)
-                    ];
-                    if (studentIds.length > 0) {
-                        const { data: homeRooms } = await supabaseAuth
-                            .from('classroom_students')
-                            .select('classroom_id')
-                            .in('student_id', studentIds);
-                        if (homeRooms) {
-                            const ids = homeRooms.map(r => r.classroom_id).filter(Boolean);
-                            classroomIds = Array.from(new Set([classroomId, ...ids]));
-                        }
-                    }
-                    setActiveClassroomIds(classroomIds);
-                } catch (e) {
-                    console.error('Failed to load home classrooms:', e);
-                }
-
-                // 6. Fetch Schedules
-                const { data: scheduleData } = await supabaseAuth
-                    .from('batch_schedules')
-                    .select('*')
-                    .eq('classroom_id', classroomId)
-                    .order('day_of_week', { ascending: true })
-                    .order('start_time', { ascending: true });
-                
-                setSchedules(scheduleData || []);
-
-                // 7. Fetch Static Course Curriculum data safely
-                let dbModulesData = [];
-                let dbChaptersData = [];
-                let dbLessonsData = [];
-
+                // Categories & Curriculum loading / fallback seeding
                 let loadedCats = INITIAL_CATEGORIES;
-                try {
-                    const { data: dbCategories, error: catErr } = await supabaseAuth
-                        .from('course_categories')
-                        .select('*')
-                        .order('category_order', { ascending: true });
-                    if (!catErr && dbCategories && dbCategories.length > 0) {
-                        loadedCats = dbCategories;
-                    }
-                } catch (e) {
-                    console.warn('Failed to query course_categories, using fallbacks:', e);
+                if (categoriesRes.data && categoriesRes.data.length > 0) {
+                    loadedCats = categoriesRes.data;
                 }
                 setCategories(loadedCats);
 
-                const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
-                
-                if (dbModules && dbModules.length > 0) {
-                    dbModulesData = dbModules;
-                    const { data: dbChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-                    const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
-                    dbChaptersData = dbChapters || [];
-                    dbLessonsData = dbLessons || [];
-                } else {
+                let dbModulesData = modulesRes.data || [];
+                let dbChaptersData = chaptersRes.data || [];
+                let dbLessonsData = lessonsRes.data || [];
+
+                if (dbModulesData.length === 0) {
                     try {
                         await supabaseAuth.from('course_modules').insert(INITIAL_MODULES);
                         await supabaseAuth.from('course_chapters').insert(INITIAL_CHAPTERS);
                         await supabaseAuth.from('course_lessons').insert(INITIAL_LESSONS);
 
-                        const { data: seedModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
-                        const { data: seedChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-                        const { data: seedLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+                        const [seedModules, seedChapters, seedLessons] = await Promise.all([
+                            supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
+                            supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
+                            supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true })
+                        ]);
 
-                        dbModulesData = seedModules || [];
-                        dbChaptersData = seedChapters || [];
-                        dbLessonsData = seedLessons || [];
+                        dbModulesData = seedModules.data || [];
+                        dbChaptersData = seedChapters.data || [];
+                        dbLessonsData = seedLessons.data || [];
                     } catch (seedingErr) {
                         console.error('Failed to auto-seed course curriculum data:', seedingErr);
                         dbModulesData = INITIAL_MODULES;
@@ -976,84 +937,94 @@ export default function ClassroomDashboardPage({
                 if (dbModulesData.length === INITIAL_MODULES.length) {
                     setCategories(INITIAL_CATEGORIES);
                 }
-
                 setCourseModules(dbModulesData);
                 setCourseChapters(dbChaptersData);
                 setCourseLessons(dbLessonsData);
 
-                try {
-                    const studentIds = [
-                        ...formattedRoster.map(s => s.student_id),
-                        ...(overridesData || []).map((o: any) => o.student_id)
-                    ];
-                    
-                    let progressQuery = supabaseAuth
-                        .from('student_topic_progress')
-                        .select('*');
-                    
-                    if (studentIds.length > 0) {
-                        progressQuery = progressQuery.in('student_id', studentIds);
-                    } else {
-                        progressQuery = progressQuery.eq('classroom_id', classroomId);
-                    }
-
-                    const { data: progressData, error: progressError } = await progressQuery;
-                    if (progressError) {
-                        console.warn('Could not fetch student_topic_progress:', progressError);
-                        if (progressError.code === 'PGRST205' || progressError.message?.includes('schema cache') || progressError.message?.includes('does not exist')) {
-                            setDbSetupError(true);
+                // 4. Fetch Home Classroom IDs of all students (so we can get curriculum allocations)
+                let classroomIds = [classroomId];
+                const studentIds = [
+                    ...formattedRoster.map(s => s.student_id),
+                    ...(overridesData || []).map((o: any) => o.student_id)
+                ];
+                
+                if (studentIds.length > 0) {
+                    try {
+                        const { data: homeRooms } = await supabaseAuth
+                            .from('classroom_students')
+                            .select('classroom_id')
+                            .in('student_id', studentIds);
+                        if (homeRooms) {
+                            const ids = homeRooms.map(r => r.classroom_id).filter(Boolean);
+                            classroomIds = Array.from(new Set([classroomId, ...ids]));
                         }
+                    } catch (e) {
+                        console.error('Failed to load home classrooms:', e);
                     }
-                    setStudentProgress(progressData || []);
-                } catch (pe) {
-                    console.warn('Could not fetch student_topic_progress:', pe);
-                    setStudentProgress([]);
                 }
+                setActiveClassroomIds(classroomIds);
 
-                // Pre-fetch assignments on mount
-                try {
-                    const { data: asgData, error: asgError } = await supabaseAuth
-                        .from('assignments')
-                        .select('*')
-                        .eq('classroom_id', classroomId)
-                        .order('created_at', { ascending: false });
+                // 5. Phase 3 Parallel Fetches (Dependent on Student IDs / Classroom IDs list)
+                const phase3Promises: Promise<any>[] = [
+                    // progressQuery
+                    (async () => {
+                        try {
+                            const progressQuery = studentIds.length > 0
+                                ? supabaseAuth.from('student_topic_progress').select('*').in('student_id', studentIds)
+                                : supabaseAuth.from('student_topic_progress').select('*').eq('classroom_id', classroomId);
+                            const { data, error } = await progressQuery;
+                            if (error) throw error;
+                            setStudentProgress(data || []);
+                        } catch (pe) {
+                            console.warn('Could not fetch student_topic_progress:', pe);
+                            setStudentProgress([]);
+                        }
+                    })(),
 
-                    if (!asgError && asgData) {
-                        const enriched = await Promise.all(asgData.map(async (a: Assignment) => {
-                            if (a.target_type === 'individual') {
-                                const { data: asData } = await supabaseAuth
-                                    .from('assignment_students')
-                                    .select('*')
-                                    .eq('assignment_id', a.id);
-                                const enrichedStudents = (asData || []).map((as: AssignmentStudent) => {
-                                    const match = formattedRoster.find(s => s.student_id === as.student_id);
-                                    return { ...as, student_name: match?.name || 'Unknown', student_pic: match?.profile_pic_url || null };
-                                });
-                                return { ...a, assignment_students: enrichedStudents };
+                    // Enriched Assignments query
+                    (async () => {
+                        try {
+                            const asgData = asgRes.data || [];
+                            const enriched = await Promise.all(asgData.map(async (a: Assignment) => {
+                                if (a.target_type === 'individual') {
+                                    const { data: asData } = await supabaseAuth
+                                        .from('assignment_students')
+                                        .select('*')
+                                        .eq('assignment_id', a.id);
+                                    const enrichedStudents = (asData || []).map((as: AssignmentStudent) => {
+                                        const match = formattedRoster.find(s => s.student_id === as.student_id);
+                                        return { ...as, student_name: match?.name || 'Unknown', student_pic: match?.profile_pic_url || null };
+                                    });
+                                    return { ...a, assignment_students: enrichedStudents };
+                                }
+                                return { ...a, assignment_students: [] };
+                            }));
+                            setAssignments(enriched);
+                        } catch (ae) {
+                            console.warn('Could not enrich assignments:', ae);
+                        }
+                    })(),
+
+                    // Fetch classroom allocations
+                    (async () => {
+                        try {
+                            const { data: curriculumData, error: curriculumError } = await supabaseAuth
+                                .from('classroom_inventory_allocation')
+                                .select('*')
+                                .in('classroom_id', classroomIds);
+                            if (!curriculumError && curriculumData) {
+                                setClassroomInventoryAllocations(curriculumData);
+                            } else if (curriculumError) {
+                                console.error('Fetch classroom_inventory_allocation error:', curriculumError);
+                                setDbSetupError(true);
                             }
-                            return { ...a, assignment_students: [] };
-                        }));
-                        setAssignments(enriched);
-                    }
-                } catch (ae) {
-                    console.warn('Could not pre-fetch assignments on mount:', ae);
-                }
+                        } catch (ce) {
+                            console.warn('Could not fetch classroom_inventory_allocation:', ce);
+                        }
+                    })()
+                ];
 
-                // Fetch curriculum allocations
-                try {
-                    const { data: curriculumData, error: curriculumError } = await supabaseAuth
-                        .from('classroom_inventory_allocation')
-                        .select('*')
-                        .in('classroom_id', classroomIds);
-                    if (!curriculumError && curriculumData) {
-                        setClassroomInventoryAllocations(curriculumData);
-                    } else if (curriculumError) {
-                        console.error('Mount pre-fetch classroom_inventory_allocation error:', curriculumError);
-                        setDbSetupError(true);
-                    }
-                } catch (ce) {
-                    console.warn('Could not pre-fetch classroom_inventory_allocation on mount:', ce);
-                }
+                await Promise.all(phase3Promises);
 
             } catch (err) {
                 console.error('Error fetching classroom data:', err);
@@ -1327,7 +1298,8 @@ export default function ClassroomDashboardPage({
                 fetchCurriculumAllocations();
             }
         }
-    }, [activeTab, fetchAssignments, fetchClassNotes, fetchCurriculumAllocations]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
 
     // ── Fetch Classroom Attendance ─────────────────────────────────────────────
     const fetchClassroomAttendance = useCallback(async () => {

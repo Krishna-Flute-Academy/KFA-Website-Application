@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { ClipboardList, Download, Video, X, Loader2, Search, Calendar, Award, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { ClipboardList, Download, Video, X, Loader2, Search, Calendar, Award, CheckCircle2, AlertCircle, Mic, Square, Trash2, Link as LinkIcon, Radio } from 'lucide-react';
 
 interface EnrichedAssignment {
     id: string;
@@ -25,6 +25,10 @@ interface TasksTabProps {
     setSelectedAssignment: (asg: EnrichedAssignment | null) => void;
     submitVideoUrl: string;
     setSubmitVideoUrl: (url: string) => void;
+    submissionType: 'link' | 'audio';
+    setSubmissionType: (type: 'link' | 'audio') => void;
+    submitAudioBlob: Blob | null;
+    setSubmitAudioBlob: (blob: Blob | null) => void;
     isSubmittingTask: boolean;
     handleSubmitTask: (e: React.FormEvent) => Promise<void>;
 }
@@ -35,11 +39,107 @@ export default function TasksTab({
     setSelectedAssignment,
     submitVideoUrl,
     setSubmitVideoUrl,
+    submissionType,
+    setSubmissionType,
+    submitAudioBlob,
+    setSubmitAudioBlob,
     isSubmittingTask,
     handleSubmitTask
 }: TasksTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'submitted' | 'graded'>('all');
+
+    // Audio Recorder States
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const [audioUrl, setAudioUrl] = useState<string | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<BlobPart[]>([]);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Clean up audio URL on unmount
+    useEffect(() => {
+        return () => {
+            if (audioUrl) URL.revokeObjectURL(audioUrl);
+        };
+    }, [audioUrl]);
+
+    // Timer logic
+    useEffect(() => {
+        if (isRecording) {
+            timerRef.current = setInterval(() => {
+                setRecordingTime(prev => {
+                    const newTime = prev + 1;
+                    if (newTime >= 600) { // 10 minutes = 600 seconds
+                        stopRecording();
+                        alert('Maximum recording limit of 10 minutes reached.');
+                        return 600;
+                    }
+                    return newTime;
+                });
+            }, 1000);
+        } else {
+            if (timerRef.current) clearInterval(timerRef.current);
+        }
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [isRecording]);
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
+    };
+
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                setSubmitAudioBlob(audioBlob);
+                const url = URL.createObjectURL(audioBlob);
+                setAudioUrl(url);
+                
+                // Stop all tracks to release microphone
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+            setRecordingTime(0);
+            if (audioUrl) URL.revokeObjectURL(audioUrl);
+            setAudioUrl(null);
+            setSubmitAudioBlob(null);
+        } catch (error) {
+            console.error('Error accessing microphone:', error);
+            alert('Could not access your microphone. Please check permissions.');
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+        }
+    };
+
+    const discardRecording = () => {
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        setAudioUrl(null);
+        setSubmitAudioBlob(null);
+        setRecordingTime(0);
+    };
 
     // Filter and search logic
     const filteredAssignments = useMemo(() => {
@@ -201,6 +301,18 @@ export default function TasksTab({
                                         </span>
                                     </div>
 
+                                    {asg.video_url && (
+                                        <a 
+                                            href={asg.video_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-3 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 shadow-2xs hover:scale-102 active:scale-98 cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 border border-slate-200/55 dark:border-slate-700"
+                                            title="View Submission"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            View
+                                        </a>
+                                    )}
                                     <button 
                                         onClick={() => {
                                             setSelectedAssignment(asg);
@@ -213,7 +325,7 @@ export default function TasksTab({
                                         }`}
                                     >
                                         <Video className="w-4 h-4" />
-                                        {asg.status === 'pending' ? 'Submit Video' : 'Update Video'}
+                                        {asg.status === 'pending' ? 'Submit' : 'Update'}
                                     </button>
                                 </div>
                             </div>
@@ -236,6 +348,7 @@ export default function TasksTab({
                                 onClick={() => {
                                     setSelectedAssignment(null);
                                     setSubmitVideoUrl('');
+                                    discardRecording();
                                 }} 
                                 className="p-1.5 hover:bg-slate-105 dark:hover:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500 transition-colors"
                             >
@@ -252,21 +365,120 @@ export default function TasksTab({
                                 </p>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <label htmlFor="video-url" className="text-[10px] font-black text-slate-500 dark:text-slate-455 uppercase tracking-widest block font-mono">Video / Recording Link</label>
-                                <input 
-                                    id="video-url"
-                                    type="url"
-                                    className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
-                                    placeholder="e.g., YouTube, Google Drive, Soundcloud, or Vimeo link"
-                                    value={submitVideoUrl}
-                                    onChange={(e) => setSubmitVideoUrl(e.target.value)}
-                                    required
-                                />
-                                <p className="text-[9px] text-slate-405 mt-1">
-                                    Upload your practice recording to Drive or YouTube (unlisted) and paste the link here.
-                                </p>
+                            {/* Submission Type Toggle */}
+                            <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
+                                <button
+                                    type="button"
+                                    onClick={() => setSubmissionType('link')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${submissionType === 'link' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                                >
+                                    <LinkIcon className="w-3.5 h-3.5" />
+                                    Provide Link
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSubmissionType('audio')}
+                                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${submissionType === 'audio' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                                >
+                                    <Mic className="w-3.5 h-3.5" />
+                                    Record Audio
+                                </button>
                             </div>
+
+                            {submissionType === 'link' ? (
+                                <div className="space-y-1.5 animate-in slide-in-from-right-4 duration-200">
+                                    <label htmlFor="video-url" className="text-[10px] font-black text-slate-500 dark:text-slate-455 uppercase tracking-widest block font-mono">Video / Recording Link</label>
+                                    <input 
+                                        id="video-url"
+                                        type="url"
+                                        className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                                        placeholder="e.g., YouTube, Google Drive, Soundcloud, or Vimeo link"
+                                        value={submitVideoUrl}
+                                        onChange={(e) => setSubmitVideoUrl(e.target.value)}
+                                        required={submissionType === 'link'}
+                                    />
+                                    
+                                    {/* Guidelines for uploading */}
+                                    <details className="mt-3 group rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 open:bg-white dark:open:bg-slate-800 transition-all overflow-hidden cursor-pointer">
+                                        <summary className="flex items-center gap-2 px-3 py-2 text-[10px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-500 transition-colors list-none outline-none">
+                                            <span className="material-symbols-outlined text-sm text-amber-500 transition-transform group-open:rotate-90">play_circle</span>
+                                            Need help submitting via YouTube?
+                                        </summary>
+                                        <div className="px-3 pb-3 pt-1 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 space-y-2 border-t border-slate-200 dark:border-slate-700 ml-1">
+                                            <p className="font-semibold text-slate-700 dark:text-slate-300">How to upload an "Unlisted" YouTube video (Free & Private):</p>
+                                            <ol className="list-decimal pl-4 space-y-1.5 marker:text-amber-500 marker:font-bold">
+                                                <li>Record your practice session using your phone or computer.</li>
+                                                <li>Open the YouTube app or website and click the <b>"+"</b> (Create) button.</li>
+                                                <li>Select <b>"Upload video"</b> and choose your recording.</li>
+                                                <li>Under "Visibility", select <b>"Unlisted"</b> (so only people with the link can watch it).</li>
+                                                <li>Wait for the upload to finish, then copy the video link and paste it in the box above!</li>
+                                            </ol>
+                                            <p className="text-[9px] text-slate-400 italic mt-2">Alternatively, you can share a Google Drive link. Just make sure the link access is set to "Anyone with the link".</p>
+                                        </div>
+                                    </details>
+                                </div>
+                            ) : (
+                                <div className="space-y-4 animate-in slide-in-from-left-4 duration-200 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center">
+                                    <div className="flex flex-col items-center justify-center gap-4">
+                                        {/* Status indicator */}
+                                        <div className="flex items-center justify-center gap-2">
+                                            {isRecording && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>}
+                                            <span className={`font-mono text-sm font-bold ${isRecording ? 'text-red-500' : 'text-slate-500 dark:text-slate-400'}`}>
+                                                {formatTime(recordingTime)}
+                                            </span>
+                                        </div>
+
+                                        {/* Controls */}
+                                        {!submitAudioBlob ? (
+                                            !isRecording ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={startRecording}
+                                                    className="w-16 h-16 rounded-full bg-red-100 hover:bg-red-200 dark:bg-red-950 dark:hover:bg-red-900 border-4 border-red-500 flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                                                    title="Start Recording"
+                                                >
+                                                    <Mic className="w-6 h-6 text-red-600 dark:text-red-400" />
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={stopRecording}
+                                                    className="w-16 h-16 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 border-4 border-slate-400 dark:border-slate-500 flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                                                    title="Stop Recording"
+                                                >
+                                                    <Square className="w-6 h-6 text-slate-600 dark:text-slate-300 fill-current" />
+                                                </button>
+                                            )
+                                        ) : (
+                                            <div className="w-full space-y-4">
+                                                {audioUrl && (
+                                                    <audio src={audioUrl} controls className="w-full h-10 rounded-lg outline-none" />
+                                                )}
+                                                <div className="flex justify-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={discardRecording}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 dark:bg-red-950/30 rounded-lg hover:bg-red-100 transition-colors"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        Discard & Re-record
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {!submitAudioBlob && !isRecording && (
+                                            <p className="text-xs text-slate-500 dark:text-slate-455">Click to start recording your practice session</p>
+                                        )}
+                                        {isRecording && (
+                                            <p className="text-xs text-red-500 animate-pulse">Recording in progress...</p>
+                                        )}
+                                        {submitAudioBlob && (
+                                            <p className="text-xs text-emerald-600 dark:text-emerald-450 font-bold">Recording ready to submit!</p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Grade summary */}
                             {(selectedAssignment.score !== undefined && selectedAssignment.score !== null) && (
@@ -290,6 +502,7 @@ export default function TasksTab({
                                     onClick={() => {
                                         setSelectedAssignment(null);
                                         setSubmitVideoUrl('');
+                                        discardRecording();
                                     }}
                                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-655 dark:text-slate-300 text-xs font-bold rounded-xl transition-all"
                                 >

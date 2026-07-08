@@ -8,7 +8,7 @@ import {
     Clock, Video, Play, Music, Award, Users, Search, PlayCircle, 
     Send, X, ClipboardList, Info, BarChart2, Plus, Volume2, 
     HelpCircle, ChevronRight, Download, LogOut, Check, Menu,
-    Sparkles
+    Sparkles, AlertTriangle, CreditCard
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -21,6 +21,8 @@ import MessagesTab from './MessagesTab';
 import AttendanceTab from './AttendanceTab';
 import LibraryTab from './LibraryTab';
 import ClassroomTab from './ClassroomTab';
+import FeesTab from './FeesTab';
+import { getStudentFeeStatus } from '../../lib/fee-utils';
 
 // --- Interfaces ---
 interface StudentProfile {
@@ -158,15 +160,23 @@ export default function StudentDashboardContainer() {
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
     // UI Navigation state
-    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees'>('overview');
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'drums'>('metronome');
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
+    const [submissionType, setSubmissionType] = useState<'link' | 'audio'>('link');
     const [submitVideoUrl, setSubmitVideoUrl] = useState('');
+    const [submitAudioBlob, setSubmitAudioBlob] = useState<Blob | null>(null);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+
+    // Fee Notification State
+    const feeStatus = useMemo(() => {
+        if (!profile) return null;
+        return getStudentFeeStatus(profile.fees_basis, profile.fees_collection_date, payments);
+    }, [profile, payments]);
 
     // Audio voice broadcast states
     const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -269,35 +279,84 @@ export default function StudentDashboardContainer() {
 
             const userId = session.user.id;
 
-            // 1. Fetch student profile
-            const { data: user } = await supabaseAuth
-                .from('users')
-                .select('id, name, email, level, profile_pic_url, role, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date')
-                .eq('id', userId)
-                .maybeSingle();
+            // Phase 1 Parallel Fetch (Queries dependent only on userId or static data)
+            const [
+                userRes,
+                payRes,
+                csRes,
+                overridesRes,
+                attRes,
+                broadcastsRes,
+                notifRes,
+                modulesRes,
+                chaptersRes,
+                lessonsRes,
+                progressRes,
+                messagesRes,
+                studentAssignmentsRes,
+                adminsRes
+            ] = await Promise.all([
+                // 1. Profile
+                supabaseAuth.from('users').select('id, name, email, level, profile_pic_url, role, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date').eq('id', userId).maybeSingle(),
+                
+                // 2. Payments
+                supabaseAuth.from('fees_payments').select('*').eq('student_id', userId).order('payment_date', { ascending: false }),
+                
+                // 3. Classroom Mapping
+                supabaseAuth.from('classroom_students').select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status, users!classrooms_teacher_id_fkey(name, email))').eq('student_id', userId),
+                
+                // 4. Overrides
+                supabaseAuth.from('session_student_overrides').select('id, student_id, override_date, reason, target_classroom_id, classrooms (id, name, description, status)').eq('student_id', userId),
+                
+                // 5. Attendance
+                supabaseAuth.from('attendance').select('*').eq('student_id', userId).order('date', { ascending: false }).limit(100),
+                
+                // 6. Broadcasts
+                supabaseAuth.from('broadcasts').select('*, sender:users!teacher_id(name, role)').order('created_at', { ascending: false }),
+                
+                // 7. Notifications
+                supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+                
+                // 8. Modules
+                supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
+                
+                // 9. Chapters
+                supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
+                
+                // 10. Lessons
+                supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true }),
+                
+                // 11. Curriculum Progress
+                supabaseAuth.from('student_topic_progress').select('*').eq('student_id', userId),
+                
+                // 12. Direct Messages
+                supabaseAuth.from('messages').select('*').or(`sender_id.eq.${userId},receiver_id.eq.${userId}`).order('created_at', { ascending: false }).limit(100),
 
+                // 13. Student Assignment mappings
+                supabaseAuth.from('assignment_students').select('id, assignment_id, status, feedback_text, score, submitted_at, video_url').eq('student_id', userId),
+
+                // 14. Admins list
+                supabaseAuth.from('users').select('id, name, email').eq('role', 'admin')
+            ]);
+
+            const user = userRes.data;
             if (!user || user.role === 'teacher') { router.push('/'); return; }
             setProfile(user);
+            setPayments(payRes.data || []);
+            setAttendance(attRes.data || []);
+            setNotifications(notifRes.data || []);
+            setCourseModules(modulesRes.data || []);
+            setCourseChapters(chaptersRes.data || []);
+            setCourseLessons(lessonsRes.data || []);
+            setStudentProgress(progressRes.data || []);
+            setDirectMessages([...(messagesRes.data || [])].reverse());
+            setAdmins(adminsRes.data || []);
 
-            // Fetch student payments
-            const { data: payData } = await supabaseAuth
-                .from('fees_payments')
-                .select('*')
-                .eq('student_id', userId)
-                .order('payment_date', { ascending: false });
-            setPayments(payData || []);
+            // Process classroom mapping fallbacks if empty
+            let csData: any = csRes.data;
+            const csError = csRes.error;
 
-            // 2. Fetch classroom mapping
-            let csData: any = null;
-            const { data: initialData, error: csError } = await supabaseAuth
-                .from('classroom_students')
-                .select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status, users!classrooms_teacher_id_fkey(name, email))')
-                .eq('student_id', userId);
-            
-            csData = initialData;
-
-            if (csError || !initialData || initialData.length === 0) {
-                // Try fallback query without users join
+            if (csError || !csData || csData.length === 0) {
                 const { data: fallbackData } = await supabaseAuth
                     .from('classroom_students')
                     .select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status)')
@@ -306,7 +365,6 @@ export default function StudentDashboardContainer() {
                 if (fallbackData && fallbackData.length > 0) {
                     csData = fallbackData;
                 } else if (user.teacher_id) {
-                    // Ultimate fallback
                     const { data: directClassrooms } = await supabaseAuth
                         .from('classrooms')
                         .select('id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status')
@@ -355,53 +413,14 @@ export default function StudentDashboardContainer() {
                 }
             }
 
-            // Fetch overrides for this student (temporary classroom assignments)
-            const { data: oData } = await supabaseAuth
-                .from('session_student_overrides')
-                .select(`
-                    id,
-                    student_id,
-                    override_date,
-                    reason,
-                    target_classroom_id,
-                    classrooms (
-                        id,
-                        name,
-                        description,
-                        status
-                    )
-                `)
-                .eq('student_id', userId);
-            const overridesData = oData || [];
-
+            // Session student overrides
+            const overridesData = overridesRes.data || [];
             const activeOverrides = overridesData.filter((o: any) => {
                 const roomInfo = Array.isArray(o.classrooms) ? o.classrooms[0] : o.classrooms;
                 return roomInfo && roomInfo.status !== 'inactive' && roomInfo.status !== 'archived';
             });
 
-            // Fetch temporary classes details
             const targetClassroomIds = activeOverrides.map(o => o.target_classroom_id).filter(Boolean);
-            let tempClasses: any[] = [];
-            if (targetClassroomIds.length > 0) {
-                const { data: tData } = await supabaseAuth
-                    .from('temporary_classes')
-                    .select('*')
-                    .in('classroom_id', targetClassroomIds);
-                tempClasses = tData || [];
-            }
-
-            const enrichedOverrides = activeOverrides.map(o => {
-                const tc = tempClasses.find(t => t.classroom_id === o.target_classroom_id);
-                const roomInfo = Array.isArray(o.classrooms) ? o.classrooms[0] : o.classrooms;
-                return {
-                    ...o,
-                    title: tc?.title || roomInfo?.name || 'Temporary Class',
-                    start_time: tc?.start_time || null,
-                    end_time: tc?.end_time || null,
-                };
-            });
-            // We will set makeup schedules state below after fetching overrides
-
             const memberClassroomIds = filteredCsData
                 .map((row: any) => {
                     const r = Array.isArray(row.classrooms) ? row.classrooms[0] : row.classrooms;
@@ -416,25 +435,105 @@ export default function StudentDashboardContainer() {
             ])).filter(id => id && id !== 'synthetic-classroom');
             classroomIdsRef.current = allClassroomIds;
 
-            let activeRooms: any[] = [];
-            if (allClassroomIds.length > 0) {
-                const { data } = await supabaseAuth
-                    .from('classrooms')
-                    .select('id, name, type, status, description, teacher_id, is_live, live_meeting_link, live_session_started_at, users!classrooms_teacher_id_fkey(name, email)')
-                    .in('id', allClassroomIds);
-                activeRooms = (data || []).filter((r: any) => r.status !== 'inactive' && r.status !== 'archived');
+            // Student Assignments Map setup
+            const studentAssignments = studentAssignmentsRes.data || [];
+            const studentAssignmentMap = new Map<string, any>();
+            studentAssignments.forEach((sa: any) => {
+                if (sa.assignment_id) studentAssignmentMap.set(sa.assignment_id, sa);
+            });
+            const studentAssignmentIds = studentAssignments.map((sa: any) => sa.assignment_id).filter(Boolean);
+
+            // Phase 2 Parallel Fetch (Classroom & Batch specific details)
+            const promisesPhase2: any[] = [
+                // P0: temporary_classes details
+                targetClassroomIds.length > 0
+                    ? supabaseAuth.from('temporary_classes').select('*').in('classroom_id', targetClassroomIds)
+                    : Promise.resolve({ data: [] }),
+
+                // P1: classrooms details
+                allClassroomIds.length > 0
+                    ? supabaseAuth.from('classrooms').select('id, name, type, status, description, teacher_id, is_live, live_meeting_link, live_session_started_at, users!classrooms_teacher_id_fkey(name, email)').in('id', allClassroomIds)
+                    : Promise.resolve({ data: [] }),
+
+                // P2: classmates
+                cls && classroomId !== 'synthetic-classroom'
+                    ? supabaseAuth.from('classroom_students').select('student_id, users!student_id(id, name, level, profile_pic_url)').eq('classroom_id', cls.id).neq('student_id', userId)
+                    : cls && classroomId === 'synthetic-classroom'
+                    ? supabaseAuth.from('users').select('id, name, level, profile_pic_url').eq('teacher_id', cls.teacher_id).eq('role', 'student').neq('id', userId)
+                    : Promise.resolve({ data: [] }),
+
+                // P3: class_notes
+                allClassroomIds.length > 0
+                    ? supabaseAuth.from('class_notes').select('*').in('classroom_id', allClassroomIds).order('created_at', { ascending: false })
+                    : Promise.resolve({ data: [] }),
+
+                // P4: classroom assignments
+                allClassroomIds.length > 0
+                    ? supabaseAuth.from('assignments').select('*').in('classroom_id', allClassroomIds).order('created_at', { ascending: false })
+                    : Promise.resolve({ data: [] }),
+
+                // P5: individual assignments
+                studentAssignmentIds.length > 0
+                    ? supabaseAuth.from('assignments').select('*').in('id', studentAssignmentIds)
+                    : Promise.resolve({ data: [] }),
+
+                // P6: classroom_session_logs
+                allClassroomIds.length > 0
+                    ? supabaseAuth.from('classroom_session_logs').select('*').in('classroom_id', allClassroomIds).order('started_at', { ascending: false }).limit(50)
+                    : Promise.resolve({ data: [] }),
+
+                // P7: batch_schedules
+                classroomId && classroomId !== 'synthetic-classroom'
+                    ? supabaseAuth.from('batch_schedules').select('*').eq('classroom_id', classroomId)
+                    : Promise.resolve({ data: [] }),
+
+                // P8: classroom_messages
+                allClassroomIds.length > 0
+                    ? supabaseAuth.from('classroom_messages').select('*, sender:users!classroom_messages_sender_id_fkey(name, role, profile_pic_url)').in('classroom_id', allClassroomIds).order('created_at', { ascending: false }).limit(100)
+                    : Promise.resolve({ data: [] })
+            ];
+
+            const [
+                tempClassesRes,
+                activeRoomsRes,
+                classmatesRes,
+                notesRes,
+                caRes,
+                iaRes,
+                logsRes,
+                schedulesRes,
+                cmRes
+            ] = await Promise.all(promisesPhase2);
+
+            // Process Phase 2
+            const tempClasses = tempClassesRes.data || [];
+            const activeRooms = (activeRoomsRes.data || []).filter((r: any) => r.status !== 'inactive' && r.status !== 'archived');
+
+            // 1. Identify classrooms missing teacher details in PostgREST join
+            const missingTeacherIds = activeRooms
+                .filter((r: any) => {
+                    const teacherUser = Array.isArray(r.users) ? r.users[0] : r.users;
+                    return !teacherUser && r.teacher_id;
+                })
+                .map((r: any) => r.teacher_id);
+
+            // 2. Fetch missing teacher profiles in one bulk query
+            const teacherMap = new Map<string, { name: string; email: string }>();
+            if (missingTeacherIds.length > 0) {
+                const { data: teachersData } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, email')
+                    .in('id', missingTeacherIds);
+                teachersData?.forEach((t: any) => {
+                    teacherMap.set(t.id, { name: t.name, email: t.email });
+                });
             }
 
-            // Map and enrich activeRooms to contain teacher details
-            const enrichedActiveRooms = await Promise.all(activeRooms.map(async (r: any) => {
+            // 3. Map activeRooms synchronously
+            const enrichedActiveRooms = activeRooms.map((r: any) => {
                 let teacherUser = Array.isArray(r.users) ? r.users[0] : r.users;
                 if (!teacherUser && r.teacher_id) {
-                    const { data: tData } = await supabaseAuth
-                        .from('users')
-                        .select('name, email')
-                        .eq('id', r.teacher_id)
-                        .maybeSingle();
-                    if (tData) teacherUser = tData;
+                    teacherUser = teacherMap.get(r.teacher_id);
                 }
                 return {
                     id: r.id,
@@ -449,14 +548,12 @@ export default function StudentDashboardContainer() {
                     live_session_started_at: r.live_session_started_at || null,
                     live_classroom_name: r.is_live ? r.name : null
                 };
-            }));
+            });
             setActiveRooms(enrichedActiveRooms);
 
             if (cls) {
                 const liveRoom = enrichedActiveRooms.find(r => r.is_live);
                 const primaryRoom = enrichedActiveRooms.find(r => r.id === cls.id) || enrichedActiveRooms[0];
-                
-                // Prioritize live room if there is one, otherwise fallback to primary room
                 const defaultRoom = liveRoom || primaryRoom;
                 
                 if (defaultRoom) {
@@ -469,43 +566,26 @@ export default function StudentDashboardContainer() {
                     });
                 }
 
-                // Fetch classmates
-                let classmatesList = [];
-                if (classroomId === 'synthetic-classroom') {
-                    const { data } = await supabaseAuth
-                        .from('users')
-                        .select('id, name, level, profile_pic_url')
-                        .eq('teacher_id', cls.teacher_id)
-                        .eq('role', 'student')
-                        .neq('id', userId);
-                    if (data) classmatesList = data.map(u => ({ student_id: u.id, users: u }));
-                } else {
-                    const { data } = await supabaseAuth
-                        .from('classroom_students')
-                        .select('student_id, users!student_id(id, name, level, profile_pic_url)')
-                        .eq('classroom_id', cls.id)
-                        .neq('student_id', userId);
-                    if (data) classmatesList = data;
-                }
-
-                if (classmatesList) {
-                    const formattedClassmates = classmatesList.map((c: any) => ({
+                // Process classmates
+                const classmatesList = classmatesRes.data || [];
+                const formattedClassmates = classroomId === 'synthetic-classroom'
+                    ? classmatesList.map((u: any) => ({
+                        id: u.id,
+                        name: u.name || 'Classmate',
+                        level: u.level || 'Beginner',
+                        profile_pic_url: u.profile_pic_url || null
+                      }))
+                    : classmatesList.map((c: any) => ({
                         id: c.users?.id || c.student_id,
                         name: c.users?.name || 'Classmate',
                         level: c.users?.level || 'Beginner',
                         profile_pic_url: c.users?.profile_pic_url || null
-                    }));
-                    setClassmates(formattedClassmates);
-                }
+                      }));
+                setClassmates(formattedClassmates);
 
-                // Fetch class notes for all assigned classrooms (primary + temporary shadow classrooms)
-                const { data: notes } = await supabaseAuth
-                    .from('class_notes')
-                    .select('*')
-                    .in('classroom_id', allClassroomIds)
-                    .order('created_at', { ascending: false });
-
-                const enrichedNotes = (notes || []).map((note: any) => {
+                // Process class notes
+                const notes = notesRes.data || [];
+                const enrichedNotes = notes.map((note: any) => {
                     const room = activeRooms.find(r => r.id === note.classroom_id);
                     return {
                         ...note,
@@ -516,49 +596,16 @@ export default function StudentDashboardContainer() {
                 setClassNotes(enrichedNotes);
             }
 
-            // 3. Fetch student assignment mappings (without join)
-            const { data: studentAssignments } = await supabaseAuth
-                .from('assignment_students')
-                .select('id, assignment_id, status, feedback_text, score, submitted_at, video_url')
-                .eq('student_id', userId);
-
-            const studentAssignmentMap = new Map<string, any>();
-            (studentAssignments || []).forEach((sa: any) => {
-                if (sa.assignment_id) studentAssignmentMap.set(sa.assignment_id, sa);
-            });
-
-            // Fetch classroom assignments for all assigned classrooms
-            let classroomAssignments: any[] = [];
-            if (allClassroomIds.length > 0) {
-                const { data: caData } = await supabaseAuth
-                    .from('assignments')
-                    .select('*')
-                    .in('classroom_id', allClassroomIds)
-                    .order('created_at', { ascending: false });
-                if (caData) classroomAssignments = caData;
-            }
-
-            // Fetch individual assignments that are assigned to this student but might not match classroomId
-            let individualAssignments: any[] = [];
-            const studentAssignmentIds = (studentAssignments || [])
-                .map((sa: any) => sa.assignment_id)
-                .filter(Boolean);
-
-            if (studentAssignmentIds.length > 0) {
-                const { data: iaData } = await supabaseAuth
-                    .from('assignments')
-                    .select('*')
-                    .in('id', studentAssignmentIds);
-                if (iaData) individualAssignments = iaData;
-            }
+            // Process assignments enrichment
+            const classroomAssignments = caRes.data || [];
+            const individualAssignments = iaRes.data || [];
 
             const assignmentMap = new Map<string, any>();
             classroomAssignments.forEach(a => assignmentMap.set(a.id, a));
             individualAssignments.forEach(a => assignmentMap.set(a.id, a));
 
-            const enriched: EnrichedAssignment[] = Array.from(assignmentMap.values())
+            const enriched = Array.from(assignmentMap.values())
                 .filter((asg: any) => {
-                    // For individual assignments, only show them to students who are explicitly assigned to them
                     if (asg.target_type === 'individual') {
                         return studentAssignmentMap.has(asg.id);
                     }
@@ -591,36 +638,14 @@ export default function StudentDashboardContainer() {
                 if (a.status !== 'pending' && b.status === 'pending') return 1;
                 return new Date(a.due_date || 0).getTime() - new Date(b.due_date || 0).getTime();
             });
-
             setAssignments(enriched);
 
-            // 4. Fetch Attendance
-            const { data: att } = await supabaseAuth
-                .from('attendance')
-                .select('*')
-                .eq('student_id', userId)
-                .order('date', { ascending: false });
-            setAttendance(att || []);
+            // Process logs
+            setSessionLogs(logsRes.data || []);
 
-            // Fetch session logs for all classrooms (primary + overrides)
-            if (allClassroomIds.length > 0) {
-                const { data: logs, error: logsErr } = await supabaseAuth
-                    .from('classroom_session_logs')
-                    .select('*')
-                    .in('classroom_id', allClassroomIds)
-                    .order('started_at', { ascending: false });
-                if (!logsErr) {
-                    setSessionLogs(logs || []);
-                }
-            }
-
-            // 5. Fetch broadcasts
-            const { data: broadcastsData } = await supabaseAuth
-                .from('broadcasts')
-                .select('*, sender:users!teacher_id(name, role)')
-                .order('created_at', { ascending: false });
-
-            const studentBroadcasts = (broadcastsData || []).filter((b: any) => {
+            // Process broadcasts filtering
+            const broadcastsData = broadcastsRes.data || [];
+            const studentBroadcasts = broadcastsData.filter((b: any) => {
                 return b.recipients?.some((r: any) => 
                     (r.type === 'global') ||
                     (r.type === 'student' && r.id === userId) ||
@@ -629,83 +654,24 @@ export default function StudentDashboardContainer() {
             });
             setBroadcasts(studentBroadcasts);
 
-            // Fetch notifications
-            const { data: notifData, error: notifError } = await supabaseAuth
-                .from('notifications')
-                .select('*')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false });
-            if (!notifError) {
-                setNotifications(notifData || []);
-            }
-
-            // 6. Fetch Curriculum Progress
-            const { data: modules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
-            const { data: chapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-            const { data: lessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
-            setCourseModules(modules || []);
-            setCourseChapters(chapters || []);
-            setCourseLessons(lessons || []);
-
-            const { data: progress } = await supabaseAuth
-                .from('student_topic_progress')
-                .select('*')
-                .eq('student_id', userId);
-            setStudentProgress(progress || []);
-
-            // 7. Fetch Batch Schedules, Overrides, and Direct Messages
-            let schedulesData: any[] = [];
-            if (classroomId && classroomId !== 'synthetic-classroom') {
-                const { data: sData } = await supabaseAuth
-                    .from('batch_schedules')
-                    .select('*')
-                    .eq('classroom_id', classroomId);
-                schedulesData = sData || [];
-            }
-            setBatchSchedules(schedulesData);
-
+            // Set schedules & overrides
+            setBatchSchedules(schedulesRes.data || []);
+            
+            // Enrich makeup overrides
+            const enrichedOverrides = activeOverrides.map(o => {
+                const tc = tempClasses.find(t => t.classroom_id === o.target_classroom_id);
+                const roomInfo = Array.isArray(o.classrooms) ? o.classrooms[0] : o.classrooms;
+                return {
+                    ...o,
+                    title: tc?.title || roomInfo?.name || 'Temporary Class',
+                    start_time: tc?.start_time || null,
+                    end_time: tc?.end_time || null,
+                };
+            });
             setMakeupSchedules(enrichedOverrides);
 
-            let messagesData: any[] = [];
-            try {
-                const { data: mData } = await supabaseAuth
-                    .from('messages')
-                    .select('*')
-                    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-                    .order('created_at', { ascending: true });
-                messagesData = mData || [];
-            } catch (me) {
-                console.warn('Failed to load messages from DB:', me);
-            }
-            setDirectMessages(messagesData);
-
-            if (allClassroomIds.length > 0) {
-                const { data: cmData, error: cmError } = await supabaseAuth
-                    .from('classroom_messages')
-                    .select('*, sender:users!classroom_messages_sender_id_fkey(name, role, profile_pic_url)')
-                    .in('classroom_id', allClassroomIds)
-                    .order('created_at', { ascending: true });
-
-                if (cmError) {
-                    console.warn('Failed to load classroom messages from DB:', cmError);
-                } else {
-                    setClassroomMessages(cmData || []);
-                }
-            } else {
-                setClassroomMessages([]);
-            }
-
-            let adminsList: any[] = [];
-            try {
-                const { data: aData } = await supabaseAuth
-                    .from('users')
-                    .select('id, name, email')
-                    .eq('role', 'admin');
-                adminsList = aData || [];
-            } catch (ae) {
-                console.warn('Failed to load admins from DB:', ae);
-            }
-            setAdmins(adminsList);
+            // Classroom messages (Reversed for chronological order)
+            setClassroomMessages([...(cmRes.data || [])].reverse());
 
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
@@ -844,6 +810,16 @@ export default function StudentDashboardContainer() {
                                 live_classroom_name: updatedRoom.is_live ? updatedRoom.name : null
                             };
                         });
+
+                        setActiveRooms(prevRooms => 
+                            prevRooms.map(r => r.id === updatedRoom.id ? {
+                                ...r,
+                                is_live: updatedRoom.is_live,
+                                live_meeting_link: updatedRoom.live_meeting_link,
+                                live_session_started_at: updatedRoom.live_session_started_at,
+                                live_classroom_name: updatedRoom.is_live ? updatedRoom.name : null
+                            } : r)
+                        );
                     }
                     // Introduce a 500ms delay before calling refreshData() to ensure that the
                     // write transaction has fully committed and replica lag does not cause stale data read.
@@ -1291,15 +1267,49 @@ export default function StudentDashboardContainer() {
         e.preventDefault();
         if (!profile || !selectedAssignment || isSubmittingTask) return;
 
-        const videoUrlStr = submitVideoUrl.trim();
-        if (!videoUrlStr) {
-            alert('Please provide a recording link!');
-            return;
+        let finalSubmissionUrl = '';
+
+        if (submissionType === 'link') {
+            const videoUrlStr = submitVideoUrl.trim();
+            if (!videoUrlStr) {
+                alert('Please provide a recording link!');
+                return;
+            }
+            finalSubmissionUrl = videoUrlStr;
+        } else {
+            if (!submitAudioBlob) {
+                alert('Please record audio first!');
+                return;
+            }
         }
 
         setIsSubmittingTask(true);
 
         try {
+            if (submissionType === 'audio' && submitAudioBlob) {
+                // Limit audio file to 20MB (roughly 20-30 mins of audio) to save storage
+                const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+                if (submitAudioBlob.size > MAX_FILE_SIZE) {
+                    alert('Your recording is too large (max 20MB). Please record a shorter practice session.');
+                    setIsSubmittingTask(false);
+                    return;
+                }
+
+                // Upload blob to Supabase storage
+                const fileName = `${profile.id}-${Date.now()}.webm`;
+                const { error: uploadError } = await supabaseAuth.storage
+                    .from('submissions')
+                    .upload(fileName, submitAudioBlob, { upsert: true, contentType: 'audio/webm' });
+
+                if (uploadError) throw uploadError;
+
+                const { data } = supabaseAuth.storage
+                    .from('submissions')
+                    .getPublicUrl(fileName);
+
+                finalSubmissionUrl = data.publicUrl;
+            }
+
             const { data: existingMapping } = await supabaseAuth
                 .from('assignment_students')
                 .select('*')
@@ -1314,7 +1324,7 @@ export default function StudentDashboardContainer() {
                     .from('assignment_students')
                     .update({
                         status: 'submitted',
-                        video_url: videoUrlStr,
+                        video_url: finalSubmissionUrl,
                         submitted_at: new Date().toISOString()
                     })
                     .eq('id', existingMapping.id);
@@ -1326,7 +1336,7 @@ export default function StudentDashboardContainer() {
                         assignment_id: selectedAssignment.id,
                         student_id: profile.id,
                         status: 'submitted',
-                        video_url: videoUrlStr,
+                        video_url: finalSubmissionUrl,
                         submitted_at: new Date().toISOString()
                     });
                 dbError = error;
@@ -1340,6 +1350,7 @@ export default function StudentDashboardContainer() {
             
             setSelectedAssignment(null);
             setSubmitVideoUrl('');
+            setSubmitAudioBlob(null);
         } catch (err: any) {
             console.error('Error submitting assignment:', err);
             alert(`Failed to submit practice recording: ${err.message}`);
@@ -1627,6 +1638,7 @@ export default function StudentDashboardContainer() {
                             { id: 'messages', label: 'Message Center', icon: Mail },
                             { id: 'attendance', label: 'Attendance logs', icon: Calendar },
                             { id: 'library', label: 'Library & Tools', icon: FileText },
+                            { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
                         ].map((item) => {
                             const Icon = item.icon;
                             const active = activeTab === item.id;
@@ -1795,6 +1807,65 @@ export default function StudentDashboardContainer() {
 
                     {/* Main Content Area */}
                     <main className="flex-1 p-3 sm:p-6 md:p-8 w-full max-w-[1400px]">
+                        {/* Fee Notification Banner */}
+                        {feeStatus && activeTab !== 'fees' && profile && (
+                            <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                                {(() => {
+                                    const classesLeft = profile.fees_classes_paid || 0;
+                                    const isOverdue = feeStatus.status === 'overdue' || classesLeft <= 0;
+                                    const isWarning = classesLeft === 1;
+                                    
+                                    if (isOverdue) {
+                                        return (
+                                            <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-r-xl flex items-start gap-4 shadow-sm relative overflow-hidden">
+                                                <div className="absolute -right-4 -top-4 w-24 h-24 bg-rose-500/5 rounded-full blur-xl pointer-events-none"></div>
+                                                <div className="p-2 bg-rose-100 rounded-full shrink-0 relative z-10">
+                                                    <AlertTriangle className="w-5 h-5 text-rose-600" />
+                                                </div>
+                                                <div className="flex-1 relative z-10">
+                                                    <h3 className="text-sm font-bold text-rose-800">Action Required: No Classes Remaining</h3>
+                                                    <p className="text-xs text-rose-600/90 mt-1 font-medium leading-relaxed max-w-2xl">
+                                                        Your class balance is currently empty. To attend the next scheduled class, please pay your fees.
+                                                    </p>
+                                                    <button 
+                                                        onClick={() => setActiveTab('fees')}
+                                                        className="mt-3 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg transition-all active:scale-95 shadow-sm inline-flex items-center gap-1.5"
+                                                    >
+                                                        Pay Fees Now <ChevronRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    
+                                    if (isWarning) {
+                                        return (
+                                            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl flex items-start gap-4 shadow-sm relative overflow-hidden">
+                                                <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none"></div>
+                                                <div className="p-2 bg-amber-100 rounded-full shrink-0 relative z-10">
+                                                    <Clock className="w-5 h-5 text-amber-600" />
+                                                </div>
+                                                <div className="flex-1 relative z-10">
+                                                    <h3 className="text-sm font-bold text-amber-800">Reminder: 1 Class Remaining</h3>
+                                                    <p className="text-xs text-amber-700/90 mt-1 font-medium leading-relaxed max-w-2xl">
+                                                        You have exactly 1 class left in your current balance. Please pay your fees soon to ensure you can continue attending after next week.
+                                                    </p>
+                                                    <button 
+                                                        onClick={() => setActiveTab('fees')}
+                                                        className="mt-3 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg transition-all active:scale-95 shadow-sm inline-flex items-center gap-1.5"
+                                                    >
+                                                        Review Fees <ChevronRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    
+                                    return null;
+                                })()}
+                            </div>
+                        )}
+
                         {activeTab === 'overview' && (
                             <OverviewTab 
                                 profile={profile}
@@ -1867,6 +1938,10 @@ export default function StudentDashboardContainer() {
                                 setSelectedAssignment={setSelectedAssignment}
                                 submitVideoUrl={submitVideoUrl}
                                 setSubmitVideoUrl={setSubmitVideoUrl}
+                                submissionType={submissionType}
+                                setSubmissionType={setSubmissionType}
+                                submitAudioBlob={submitAudioBlob}
+                                setSubmitAudioBlob={setSubmitAudioBlob}
                                 isSubmittingTask={isSubmittingTask}
                                 handleSubmitTask={handleSubmitTask}
                             />
@@ -1905,6 +1980,14 @@ export default function StudentDashboardContainer() {
                             <LibraryTab 
                                 setPracticeSuiteTab={setPracticeSuiteTab}
                                 setShowPracticeSuite={setShowPracticeSuite}
+                            />
+                        )}
+
+                        {activeTab === 'fees' && profile && (
+                            <FeesTab 
+                                profile={profile}
+                                payments={payments}
+                                refreshData={refreshData}
                             />
                         )}
                     </main>

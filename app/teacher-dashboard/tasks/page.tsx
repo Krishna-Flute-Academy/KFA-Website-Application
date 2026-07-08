@@ -7,6 +7,7 @@ import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircl
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
+import { sendClassroomNotification } from '../../../src/lib/notifications';
 
 interface Classroom {
     id: string;
@@ -56,52 +57,16 @@ export default function TaskReviewPage() {
     const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
     const [filteredSubmissions, setFilteredSubmissions] = useState<TaskSubmission[]>([]);
     const [selectedSub, setSelectedSub] = useState<TaskSubmission | null>(null);
-    const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['pending']);
-    const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
-    const statusDropdownRef = React.useRef<HTMLDivElement>(null);
+    const [activeTab, setActiveTab] = useState<'all' | 'assigned' | 'submitted' | 'reviewed' | 'approved' | 'draft'>('all');
 
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target as Node)) {
-                setIsStatusDropdownOpen(false);
-            }
-        }
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, []);
-
-    const statusOptions = [
-        { value: 'pending', label: 'Pending' },
-        { value: 'submitted', label: 'Submitted' },
-        { value: 'reviewed', label: 'Reviewed' },
-        { value: 'approved', label: 'Approved' },
-        { value: 'draft', label: 'Saved as Draft' }
-    ];
-
-    const handleToggleStatus = (status: string) => {
-        setSelectedStatuses(prev => {
-            if (prev.includes(status)) {
-                return prev.filter(s => s !== status);
-            } else {
-                return [...prev, status];
-            }
-        });
-    };
-
-    const handleSelectAllStatuses = () => {
-        setSelectedStatuses(statusOptions.map(opt => opt.value));
-    };
-
-    const handleClearAllStatuses = () => {
-        setSelectedStatuses([]);
-    };
-
-    const getStatusLabel = (statusVal: string) => {
-        const option = statusOptions.find(o => o.value === statusVal);
-        return option ? option.label : statusVal;
-    };
+    const tabConfig = [
+        { id: 'all',       label: 'All Tasks',  color: 'text-slate-600' },
+        { id: 'assigned',  label: 'Assigned',   color: 'text-blue-600' },
+        { id: 'submitted', label: 'Submitted',  color: 'text-amber-600' },
+        { id: 'reviewed',  label: 'Reviewed',   color: 'text-purple-600' },
+        { id: 'approved',  label: 'Approved',   color: 'text-emerald-600' },
+        { id: 'draft',     label: 'Drafts',     color: 'text-slate-400' },
+    ] as const;
 
     const formatFileSize = (size: number | string | null | undefined): string => {
         if (!size) return '';
@@ -122,8 +87,10 @@ export default function TaskReviewPage() {
     const [collapsedTasks, setCollapsedTasks] = useState<Record<string, boolean>>({});
     
     // Task Creation Form states
+    const isPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('popup') === 'true';
+    const isCreate = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('create') === 'true';
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(isPopup || isCreate);
     const [createTitle, setCreateTitle] = useState('');
     const [createDescription, setCreateDescription] = useState('');
     const [createDueDate, setCreateDueDate] = useState('');
@@ -238,8 +205,20 @@ export default function TaskReviewPage() {
                     .from('assignments')
                     .select('id, title, description, created_at, due_date, target_type, classroom_id, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
                     .in('classroom_id', classroomIds);
+                
                 assignmentsList = fallback.data;
                 assignmentsError = fallback.error;
+                
+                // Ultimate fallback if ALL new columns are missing
+                if (assignmentsError && assignmentsError.code === '42703') {
+                    console.warn('Other new columns missing (file_url, etc). Running ultimate fallback...');
+                    const ultimate = await supabaseAuth
+                        .from('assignments')
+                        .select('id, title, description, created_at, due_date, target_type, classroom_id')
+                        .in('classroom_id', classroomIds);
+                    assignmentsList = ultimate.data;
+                    assignmentsError = ultimate.error;
+                }
             }
 
             if (assignmentsError) {
@@ -479,7 +458,7 @@ export default function TaskReviewPage() {
 
             const { data: profile } = await supabaseAuth
                 .from('users')
-                .select('name, email, role')
+                .select('name, email, role, profile_pic_url')
                 .eq('id', session.user.id)
                 .single();
 
@@ -499,21 +478,33 @@ export default function TaskReviewPage() {
     }, [router, fetchSubmissions]);
 
     useEffect(() => {
-        setCurrentPage(1); // Reset pagination on filter change
+        setCurrentPage(1);
         let result = submissions;
-        
-        result = result.filter(s => selectedStatuses.includes(s.status.toLowerCase()));
-        
+
+        if (activeTab !== 'all') {
+            if (activeTab === 'assigned') {
+                // 'assigned' = active tasks with status pending (awaiting student submission)
+                result = result.filter(s => s.status === 'pending' && s.student_id !== 'draft' && s.student_id !== 'no-students');
+            } else if (activeTab === 'draft') {
+                result = result.filter(s => s.status === 'draft');
+            } else if (activeTab === 'reviewed') {
+                // both reviewed (needs revision) and approved tasks are reviewed
+                result = result.filter(s => s.status === 'reviewed' || s.status === 'approved');
+            } else {
+                result = result.filter(s => s.status.toLowerCase() === activeTab);
+            }
+        }
+
         if (searchQuery.trim() !== '') {
             const lowerQuery = searchQuery.toLowerCase();
-            result = result.filter(s => 
+            result = result.filter(s =>
                 s.student_name.toLowerCase().includes(lowerQuery) ||
                 s.task_title.toLowerCase().includes(lowerQuery) ||
                 (s.classroom_name && s.classroom_name.toLowerCase().includes(lowerQuery))
             );
         }
         setFilteredSubmissions(result);
-    }, [selectedStatuses, submissions, searchQuery]);
+    }, [activeTab, submissions, searchQuery]);
 
     const handleSelectSubmission = (sub: TaskSubmission) => {
         setSelectedSub(sub);
@@ -676,40 +667,81 @@ export default function TaskReviewPage() {
                 setInventoryLessons(lessonsData);
             }
 
-            // Fetch all students enrolled in teacher's classrooms
+            // Fetch all students enrolled or override in teacher's classrooms, plus direct student profiles
+            let studentIds: string[] = [];
+            const studentClassroomMap: Record<string, string[]> = {};
+
             if (classes && classes.length > 0) {
                 const classIds = classes.map((c: any) => c.id);
-                const { data: enrollments } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('student_id, classroom_id')
-                    .in('classroom_id', classIds);
+                const [enrollmentsRes, overridesRes] = await Promise.all([
+                    supabaseAuth.from('classroom_students').select('student_id, classroom_id').in('classroom_id', classIds),
+                    supabaseAuth.from('session_student_overrides').select('student_id, target_classroom_id').in('target_classroom_id', classIds)
+                ]);
 
-                if (enrollments && enrollments.length > 0) {
-                    const studentIds = [...new Set(enrollments.map((e: any) => e.student_id))];
-                    const studentClassroomMap: Record<string, string[]> = {};
-                    enrollments.forEach((e: any) => {
-                        if (!studentClassroomMap[e.student_id]) {
-                            studentClassroomMap[e.student_id] = [];
-                        }
-                        studentClassroomMap[e.student_id].push(e.classroom_id);
-                    });
+                const enrollments = enrollmentsRes.data || [];
+                const overrides = overridesRes.data || [];
 
-                    const { data: usersData } = await supabaseAuth
-                        .from('users')
-                        .select('id, name, profile_pic_url')
-                        .in('id', studentIds);
-
-                    if (usersData) {
-                        const formatted = usersData.map((item: any) => ({
-                            id: item.id,
-                            name: item.name || 'Unknown Student',
-                            profile_pic_url: item.profile_pic_url || null,
-                            selected: true,
-                            classroom_ids: studentClassroomMap[item.id] || []
-                        }));
-                        setCreateStudents(formatted);
+                enrollments.forEach((e: any) => {
+                    if (!studentClassroomMap[e.student_id]) {
+                        studentClassroomMap[e.student_id] = [];
                     }
+                    if (!studentClassroomMap[e.student_id].includes(e.classroom_id)) {
+                        studentClassroomMap[e.student_id].push(e.classroom_id);
+                    }
+                });
+
+                overrides.forEach((o: any) => {
+                    if (!studentClassroomMap[o.student_id]) {
+                        studentClassroomMap[o.student_id] = [];
+                    }
+                    if (!studentClassroomMap[o.student_id].includes(o.target_classroom_id)) {
+                        studentClassroomMap[o.student_id].push(o.target_classroom_id);
+                    }
+                });
+
+                studentIds = [...new Set([
+                    ...enrollments.map((e: any) => e.student_id),
+                    ...overrides.map((o: any) => o.student_id)
+                ])];
+            }
+
+            // Also fetch all student profiles assigned to this teacher directly
+            let studentsUserQuery = supabaseAuth
+                .from('users')
+                .select('id, name, profile_pic_url')
+                .eq('role', 'student');
+            
+            if (!isAdmin) {
+                studentsUserQuery = studentsUserQuery.eq('teacher_id', teacherId);
+            }
+
+            const { data: directStudents } = await studentsUserQuery;
+            if (directStudents) {
+                directStudents.forEach(item => {
+                    if (!studentIds.includes(item.id)) {
+                        studentIds.push(item.id);
+                    }
+                });
+            }
+
+            if (studentIds.length > 0) {
+                const { data: usersData } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, profile_pic_url')
+                    .in('id', studentIds);
+
+                if (usersData) {
+                    const formatted = usersData.map((item: any) => ({
+                        id: item.id,
+                        name: item.name || 'Unknown Student',
+                        profile_pic_url: item.profile_pic_url || null,
+                        selected: true,
+                        classroom_ids: studentClassroomMap[item.id] || []
+                    }));
+                    setCreateStudents(formatted);
                 }
+            } else {
+                setCreateStudents([]);
             }
         } catch (err) {
             console.error('Error loading creation details:', err);
@@ -1131,11 +1163,25 @@ export default function TaskReviewPage() {
 
                 if (updateError && (updateError.code === '42703' || updateError.message?.includes('status'))) {
                     delete updateData.status;
-                    const fallback = await supabaseAuth
+                    let fallbackUpdate = await supabaseAuth
                         .from('assignments')
                         .update(updateData)
                         .eq('id', editingTaskId);
-                    updateError = fallback.error;
+                    
+                    if (fallbackUpdate.error && fallbackUpdate.error.code === '42703') {
+                        delete updateData.file_url;
+                        delete updateData.file_name;
+                        delete updateData.file_size;
+                        delete updateData.inventory_ref_id;
+                        delete updateData.inventory_ref_title;
+                        delete updateData.inventory_ref_type;
+                        
+                        fallbackUpdate = await supabaseAuth
+                            .from('assignments')
+                            .update(updateData)
+                            .eq('id', editingTaskId);
+                    }
+                    updateError = fallbackUpdate.error;
                 }
 
                 if (updateError) throw updateError;
@@ -1182,6 +1228,20 @@ export default function TaskReviewPage() {
                 }
 
                 alert(isDraft ? 'Task draft saved successfully!' : 'Task changes saved successfully!');
+
+                if (!isDraft) {
+                    // Notify students whose tasks were updated
+                    const studentIds = selectedStudents.map(s => s.id);
+                    if (studentIds.length > 0) {
+                        await sendClassroomNotification({
+                            teacherId: session.user.id,
+                            recipients: [{ id: 'custom', name: 'Students', type: 'custom' }],
+                            title: `📋 Task Updated: ${createTitle}`,
+                            message: `Your teacher has updated the task "${createTitle}". Check your Tasks tab for details.`,
+                            studentIds
+                        });
+                    }
+                }
             } else {
                 const originalTask = previousTasks.find(t => t.id === selectedPreviousTaskId);
 
@@ -1244,11 +1304,27 @@ export default function TaskReviewPage() {
 
                         if (newAsgError && (newAsgError.code === '42703' || newAsgError.message?.includes('status'))) {
                             delete insertData.status;
-                            const fallback = await supabaseAuth
+                            let fallback = await supabaseAuth
                                 .from('assignments')
                                 .insert(insertData)
                                 .select()
                                 .single();
+                            
+                            if (fallback.error && fallback.error.code === '42703') {
+                                delete insertData.file_url;
+                                delete insertData.file_name;
+                                delete insertData.file_size;
+                                delete insertData.inventory_ref_id;
+                                delete insertData.inventory_ref_title;
+                                delete insertData.inventory_ref_type;
+                                
+                                fallback = await supabaseAuth
+                                    .from('assignments')
+                                    .insert(insertData)
+                                    .select()
+                                    .single();
+                            }
+                            
                             newAsg = fallback.data;
                             assignmentError = fallback.error;
                         }
@@ -1318,6 +1394,31 @@ export default function TaskReviewPage() {
                 }
 
                 alert(isDraft ? 'Task draft saved successfully!' : 'Task assigned successfully!');
+
+                if (!isDraft) {
+                    // Fire notifications for all assigned students across all classrooms
+                    const allAssignedStudentIds = selectedStudents.map(s => s.id);
+                    if (allAssignedStudentIds.length > 0) {
+                        await sendClassroomNotification({
+                            teacherId: session.user.id,
+                            recipients: [{ id: 'custom', name: 'Students', type: 'custom' }],
+                            title: `📋 New Task: ${createTitle}`,
+                            message: `Your teacher has assigned you a new task: "${createTitle}".${ createDueDate ? ` Due by ${new Date(createDueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.` : '' } Check your Tasks tab to get started!`,
+                            studentIds: allAssignedStudentIds
+                        });
+                    } else {
+                        // 'all' class assignment — notify entire classroom
+                        const classIds = Object.keys(studentsByClass);
+                        for (const classId of classIds) {
+                            await sendClassroomNotification({
+                                teacherId: session.user.id,
+                                recipients: [{ id: classId, name: 'Class', type: 'class' }],
+                                title: `📋 New Task: ${createTitle}`,
+                                message: `Your teacher has assigned a new task to your class: "${createTitle}".${ createDueDate ? ` Due by ${new Date(createDueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.` : '' } Check your Tasks tab!`
+                            });
+                        }
+                    }
+                }
             }
 
             setIsCreateModalOpen(false);
@@ -1335,8 +1436,14 @@ export default function TaskReviewPage() {
             setSelectedPreviousTaskId(null);
             
             // Refresh submissions list and dropdown previous tasks list
-            await fetchSubmissions(session.user.id);
+            const currentProfile = await supabaseAuth.from('users').select('role').eq('id', session.user.id).single();
+            const isAdmin = currentProfile?.data?.role === 'admin';
+            await fetchSubmissions(session.user.id, isAdmin);
             await loadCreationData(session.user.id);
+            
+            if (isPopup) {
+                window.parent.postMessage('kfa_popup_success', '*');
+            }
 
         } catch (error: any) {
             console.error('Error assigning/saving task:', error);
@@ -1499,10 +1606,10 @@ export default function TaskReviewPage() {
     }
 
     return (
-        <div className="bg-[#f8f8f6] dark:bg-[#221d10] text-slate-900 dark:text-slate-100 min-h-screen flex font-sans">
-            <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
+        <div className={`text-slate-900 dark:text-slate-100 min-h-screen flex font-sans ${isPopup ? 'bg-transparent' : 'bg-[#f8f8f6] dark:bg-[#221d10]'}`}>
+            {!isPopup && <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />}
 
-            <main className="flex-1 flex flex-col min-w-0">
+            <main className={`flex-1 flex flex-col min-w-0 ${isPopup ? 'hidden' : ''}`}>
                 <TeacherHeader 
                     title="Task Review" 
                     searchQuery={searchQuery}
@@ -1530,76 +1637,6 @@ export default function TaskReviewPage() {
                                         <span>Delete ({selectedSubIds.length})</span>
                                     </button>
                                 )}
-
-                                <div className="relative" ref={statusDropdownRef}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
-                                        className="flex items-center justify-between gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all font-semibold shadow-sm min-w-[140px]"
-                                    >
-                                        <Filter className="w-3.5 h-3.5 text-slate-400" />
-                                        <span className="truncate">
-                                            {selectedStatuses.length === 0
-                                                ? 'No Status'
-                                                : selectedStatuses.length === statusOptions.length
-                                                ? 'All Statuses'
-                                                : selectedStatuses.length <= 2
-                                                ? selectedStatuses.map(s => getStatusLabel(s)).join(', ')
-                                                : `Status (${selectedStatuses.length})`}
-                                        </span>
-                                        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isStatusDropdownOpen ? 'rotate-180' : ''}`} />
-                                    </button>
-
-                                    {isStatusDropdownOpen && (
-                                        <div className="absolute right-0 mt-2 w-64 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl z-50 py-2 animate-in fade-in slide-in-from-top-2 duration-150">
-                                            <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                                <span>Filter Status</span>
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleSelectAllStatuses}
-                                                        className="text-[#ecb613] hover:text-[#ecb613]/80 capitalize text-[10px]"
-                                                    >
-                                                        All
-                                                    </button>
-                                                    <span className="text-slate-200 dark:text-slate-700">|</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleClearAllStatuses}
-                                                        className="text-rose-500 hover:text-rose-600 capitalize text-[10px]"
-                                                    >
-                                                        Clear
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <div className="py-1 max-h-60 overflow-y-auto">
-                                                {statusOptions.map(opt => {
-                                                    const isChecked = selectedStatuses.includes(opt.value);
-                                                    const count = submissions.filter(s => s.status.toLowerCase() === opt.value).length;
-                                                    return (
-                                                        <label
-                                                            key={opt.value}
-                                                            className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer select-none text-sm text-slate-700 dark:text-slate-200 transition-colors"
-                                                        >
-                                                            <div className="flex items-center gap-2.5">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={isChecked}
-                                                                    onChange={() => handleToggleStatus(opt.value)}
-                                                                    className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer w-4 h-4"
-                                                                />
-                                                                <span className="font-semibold text-slate-800 dark:text-slate-200">{opt.label}</span>
-                                                            </div>
-                                                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold">
-                                                                {count}
-                                                            </span>
-                                                        </label>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
                                 <button 
                                     onClick={() => {
                                         setEditingTaskId(null);
@@ -1623,7 +1660,40 @@ export default function TaskReviewPage() {
                             </div>
                         </header>
 
-                        {/* List Area: Grouped by Task Accordion */}
+                        {/* Filter Tabs */}
+                        <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm flex-wrap">
+                            {tabConfig.map(tab => {
+                                const count = tab.id === 'all'
+                                    ? new Set(submissions.map(s => s.task_id)).size
+                                    : tab.id === 'assigned'
+                                    ? new Set(submissions.filter(s => s.status === 'pending' && s.student_id !== 'draft' && s.student_id !== 'no-students').map(s => s.task_id)).size
+                                    : tab.id === 'reviewed'
+                                    ? new Set(submissions.filter(s => s.status === 'reviewed' || s.status === 'approved').map(s => s.task_id)).size
+                                    : new Set(submissions.filter(s => s.status.toLowerCase() === tab.id).map(s => s.task_id)).size;
+
+                                const isActive = activeTab === tab.id;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                                            isActive
+                                                ? 'bg-[#ecb613] text-slate-900 shadow-sm'
+                                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                            isActive
+                                                ? 'bg-slate-900/15 text-slate-900'
+                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                                        }`}>{count}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+
                         <div className="space-y-4 flex-1 overflow-y-auto pr-1 max-h-[calc(100vh-280px)]">
                             {groupedSubmissions.map((group) => {
                                 const isCollapsed = collapsedTasks[group.taskTitle] ?? true;
@@ -1637,7 +1707,9 @@ export default function TaskReviewPage() {
                                     >
                                         {/* Task Accordion Header */}
                                         <header 
-                                            onClick={() => setSelectedOverviewTask(group.submissions[0])}
+                                            onClick={() => {
+                                                toggleTaskCollapse(group.taskTitle);
+                                            }}
                                             className="px-6 py-4 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100/50 dark:hover:bg-slate-800/60 transition-colors"
                                         >
                                             <div className="flex items-center gap-3">
@@ -1977,18 +2049,69 @@ export default function TaskReviewPage() {
                                         </section>
                                     )}
 
-                                    {/* Student Video Link if exists (Student Submission section removed as requested) */}
+                                    {/* Student Video Link if exists */}
                                     {selectedSub.video_url && (
-                                        <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
-                                            <a 
-                                                href={selectedSub.video_url} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer" 
-                                                className="flex items-center gap-2 text-primary font-bold text-xs cursor-pointer hover:underline"
-                                            >
-                                                <PlayCircle className="w-4 h-4" />
-                                                View Submission Video
-                                            </a>
+                                        <section className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                                            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2 mb-2">
+                                                <PlayCircle className="w-3.5 h-3.5" />
+                                                Student Submission
+                                            </h3>
+                                            {(() => {
+                                                const url = selectedSub.video_url;
+                                                if (!url) return null;
+                                                
+                                                // YouTube
+                                                const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+                                                const ytMatch = url.match(ytRegex);
+                                                if (ytMatch && ytMatch[1]) {
+                                                    return (
+                                                        <iframe 
+                                                            className="w-full aspect-video rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 bg-black" 
+                                                            src={`https://www.youtube.com/embed/${ytMatch[1]}`} 
+                                                            title="Student Submission Video"
+                                                            allowFullScreen
+                                                        ></iframe>
+                                                    );
+                                                }
+                                                // Google Drive
+                                                if (url.includes('drive.google.com')) {
+                                                    const embedUrl = url.replace(/\/view.*$/, '/preview');
+                                                    return (
+                                                        <iframe 
+                                                            className="w-full aspect-[4/3] w-full rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 bg-slate-100"
+                                                            src={embedUrl}
+                                                            title="Student Submission Video"
+                                                            allow="autoplay"
+                                                        ></iframe>
+                                                    );
+                                                }
+                                                // Direct Audio/Video (Supabase Storage or direct link)
+                                                if (url.includes('/storage/v1/object/public/') || url.match(/\.(mp4|webm|ogg|mp3|wav)$/i)) {
+                                                    return (
+                                                        <video 
+                                                            className="w-full rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 bg-black aspect-video max-h-[300px] object-contain"
+                                                            controls
+                                                            src={url}
+                                                        />
+                                                    );
+                                                }
+                                                
+                                                // Fallback
+                                                return (
+                                                    <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                                                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={url}>{url}</span>
+                                                        <a 
+                                                            href={url} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer" 
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-bold text-xs rounded-md transition-colors shrink-0 shadow-sm"
+                                                        >
+                                                            <PlayCircle className="w-3.5 h-3.5" />
+                                                            Open Link
+                                                        </a>
+                                                    </div>
+                                                );
+                                            })()}
                                         </section>
                                     )}
 
@@ -2074,8 +2197,8 @@ export default function TaskReviewPage() {
 
             {/* Embedded Create Task Modal */}
             {isCreateModalOpen && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col animate-in zoom-in-95 duration-200 text-left">
+                <div className={`fixed inset-0 z-50 flex animate-in fade-in duration-200 ${isPopup ? 'bg-transparent' : 'bg-black/60 backdrop-blur-sm items-center justify-center p-4'}`}>
+                    <div className={`bg-white dark:bg-slate-900 flex flex-col text-left ${isPopup ? 'w-full h-full overflow-y-auto' : 'rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200'}`}>
                         {/* Header */}
                         <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 rounded-t-3xl">
                             <div>
@@ -2084,9 +2207,9 @@ export default function TaskReviewPage() {
                                 </h2>
                                 <p className="text-xs text-slate-500 mt-1 font-semibold">Assign tasks, lesson materials, and checksheets to classrooms or individual students</p>
                             </div>
-                            <button 
-                                onClick={() => {
-                                    setIsCreateModalOpen(false);
+                                <button 
+                                    onClick={() => {
+                                        setIsCreateModalOpen(false);
                                     setEditingTaskId(null);
                                     // Clear form
                                     setCreateTitle('');
@@ -2098,6 +2221,9 @@ export default function TaskReviewPage() {
                                     setCreateSelectedLessonId(null);
                                     setCreateSelectedLessonTitle(null);
                                     setSelectedPreviousTaskId(null);
+                                    if (isPopup) {
+                                        window.parent.postMessage('close_popup', '*');
+                                    }
                                 }} 
                                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-full text-slate-400 dark:text-slate-500 transition-colors"
                             >
@@ -2584,117 +2710,6 @@ export default function TaskReviewPage() {
                 accept=".pdf,.mp3,.wav,.mp4,.png,.jpg,.jpeg"
             />
 
-            {/* Task Overview Modal */}
-            {selectedOverviewTask && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[50] p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto flex flex-col animate-in zoom-in-95 duration-200 text-left">
-                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 rounded-t-3xl">
-                            <div>
-                                <span className="text-[10px] font-black text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-2.5 py-1 rounded-md border border-amber-100 dark:border-amber-900/50 uppercase tracking-widest font-mono">
-                                    Task Overview
-                                </span>
-                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white mt-1">{selectedOverviewTask.task_title}</h3>
-                            </div>
-                            <button 
-                                onClick={() => setSelectedOverviewTask(null)}
-                                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="p-5 overflow-y-auto flex-1 space-y-4">
-                            {/* Description / Instructions */}
-                            <div className="space-y-1.5">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Instructions</h4>
-                                <p className="text-sm font-semibold leading-relaxed bg-slate-50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800 whitespace-pre-line text-slate-700 dark:text-slate-300">
-                                    {selectedOverviewTask.task_description || 'No detailed instructions provided.'}
-                                </p>
-                            </div>
-
-                            {/* Details (Due Date, Classroom) */}
-                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-800 pt-3">
-                                <div>
-                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono mb-1">Due Date</h4>
-                                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                                        <Clock className="w-4 h-4 text-slate-400" />
-                                        {selectedOverviewTask.due_date ? new Date(selectedOverviewTask.due_date).toLocaleDateString() : 'No due date set'}
-                                    </p>
-                                </div>
-                                {selectedOverviewTask.classroom_name && (
-                                    <div>
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono mb-1">Classroom</h4>
-                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                                            {selectedOverviewTask.classroom_name}
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Attachment Link */}
-                            {selectedOverviewTask.file_url && (
-                                <div className="space-y-1.5 border-t border-slate-100 dark:border-slate-800 pt-3">
-                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Attachment</h4>
-                                    <div className="p-3 bg-slate-50 dark:bg-slate-800/20 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className="w-9 h-9 rounded-lg bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-500 shrink-0 border border-red-100 dark:border-transparent">
-                                                <FileText className="w-4 h-4" />
-                                            </div>
-                                            <div className="min-w-0">
-                                                <p className="font-bold text-xs text-slate-850 dark:text-slate-200 truncate">
-                                                    {selectedOverviewTask.file_name || 'Learning Material'}
-                                                </p>
-                                                {selectedOverviewTask.file_size && (
-                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold font-mono uppercase mt-0.5">
-                                                        {formatFileSize(selectedOverviewTask.file_size)}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <a 
-                                            href={selectedOverviewTask.file_url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
-                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 text-slate-750 dark:text-slate-200 text-[10px] font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all flex items-center gap-1 shrink-0"
-                                        >
-                                            <Download className="w-3.5 h-3.5" /> Download
-                                        </a>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Topic Reference */}
-                            {selectedOverviewTask.inventory_ref_id && (
-                                <div className="space-y-1.5 border-t border-slate-100 dark:border-slate-800 pt-3">
-                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">Curriculum Reference</h4>
-                                    <div className="p-3 bg-amber-50/20 dark:bg-amber-955/5 rounded-xl border border-amber-100 dark:border-amber-900/20 flex items-center justify-between gap-4">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className="w-9 h-9 rounded-lg bg-amber-50 dark:bg-amber-950/20 flex items-center justify-center text-amber-500 shrink-0 border border-amber-100 dark:border-transparent">
-                                                <BookOpen className="w-4 h-4 text-amber-500" />
-                                            </div>
-                                            <div className="min-w-0">
-                                                <p className="font-bold text-xs text-slate-850 dark:text-slate-200 truncate">
-                                                    {selectedOverviewTask.inventory_ref_title}
-                                                </p>
-                                                <p className="text-[10px] text-amber-600 dark:text-amber-500 font-bold font-mono uppercase mt-0.5">
-                                                    Curriculum Topic
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <div className="p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 rounded-b-3xl flex justify-end">
-                            <button 
-                                onClick={() => setSelectedOverviewTask(null)}
-                                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-extrabold rounded-xl transition-all text-xs"
-                            >
-                                Close Overview
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

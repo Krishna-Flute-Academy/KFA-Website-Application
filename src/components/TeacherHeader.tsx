@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { supabaseAuth } from '../lib/supabase-auth';
 
@@ -25,6 +25,89 @@ export default function TeacherHeader({
     avatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
     backLink
 }: TeacherHeaderProps) {
+    const [notifications, setNotifications] = useState<any[]>([]);
+    const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const notifDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Fetch user and notifications
+    useEffect(() => {
+        const fetchUserAndNotifications = async () => {
+            try {
+                const { data: { user } } = await supabaseAuth.auth.getUser();
+                if (!user) return;
+                
+                setCurrentUserId(user.id);
+
+                const { data, error } = await supabaseAuth
+                    .from('notifications')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                setNotifications(data || []);
+            } catch (err) {
+                console.error('Error loading notifications:', err);
+            }
+        };
+
+        fetchUserAndNotifications();
+    }, []);
+
+    // Realtime notifications subscription
+    useEffect(() => {
+        if (!currentUserId) return;
+
+        const notifChannel = supabaseAuth
+            .channel(`teacher-notifications-${currentUserId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${currentUserId}`
+                },
+                (payload) => {
+                    const newNotif = payload.new;
+                    setNotifications(prev => [newNotif, ...prev]);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(notifChannel);
+        };
+    }, [currentUserId]);
+
+    // Close dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (notifDropdownRef.current && !notifDropdownRef.current.contains(e.target as Node)) {
+                setShowNotificationsDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const markAllNotificationsAsRead = async () => {
+        if (!currentUserId) return;
+        try {
+            const { error } = await supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', currentUserId);
+            if (error) throw error;
+            setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+        } catch (err) {
+            console.error('Error marking notifications as read:', err);
+        }
+    };
+
+    const unreadCount = notifications.filter(n => !n.is_read).length;
+
     return (
         <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
             <div className="w-full h-full flex items-center justify-between px-4 md:px-8">
@@ -79,13 +162,59 @@ export default function TeacherHeader({
                     </button>
                     
                     {/* Notifications Button */}
-                    <button className="size-9 sm:size-10 flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-400 hover:bg-[#ecb613]/10 hover:text-[#ecb613] transition-colors relative" aria-label="Notifications">
-                        <span className="material-symbols-outlined text-xl sm:text-2xl">notifications</span>
-                        {/* Red dot only if not in custom high-fidelity mode */}
-                        {!showAvatar && (
-                            <span className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 size-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+                    <div className="relative" ref={notifDropdownRef}>
+                        <button 
+                            onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+                            className="size-9 sm:size-10 flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-400 hover:bg-[#ecb613]/10 hover:text-[#ecb613] transition-colors relative" 
+                            aria-label="Notifications"
+                        >
+                            <span className="material-symbols-outlined text-xl sm:text-2xl">
+                                {unreadCount > 0 ? 'notifications_active' : 'notifications'}
+                            </span>
+                            {unreadCount > 0 && (
+                                <span className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 size-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+                            )}
+                        </button>
+
+                        {showNotificationsDropdown && (
+                            <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                                    <span className="font-bold text-sm text-slate-800 dark:text-white">Notifications</span>
+                                    {unreadCount > 0 && (
+                                        <button 
+                                            onClick={markAllNotificationsAsRead}
+                                            className="text-xs text-[#b45309] dark:text-[#ecb613] hover:underline font-semibold"
+                                        >
+                                            Mark all as read
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                <div className="max-h-64 overflow-y-auto">
+                                    {notifications.length === 0 ? (
+                                        <div className="px-4 py-6 text-center text-slate-400 dark:text-slate-500 text-xs">
+                                            No notifications yet.
+                                        </div>
+                                    ) : (
+                                        notifications.map((notif) => (
+                                            <div 
+                                                key={notif.id} 
+                                                className={`px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-b-0 flex flex-col gap-0.5 text-left ${!notif.is_read ? 'bg-amber-500/5 dark:bg-amber-500/10 font-medium' : ''}`}
+                                            >
+                                                <div className="flex justify-between items-start gap-1">
+                                                    <span className={`text-xs text-slate-800 dark:text-slate-200 ${!notif.is_read ? 'font-bold' : ''}`}>{notif.title}</span>
+                                                    <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
+                                                        {new Date(notif.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                                    </span>
+                                                </div>
+                                                <span className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{notif.message}</span>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
                         )}
-                    </button>
+                    </div>
 
                     {/* Settings Button */}
                     {showSettings && (

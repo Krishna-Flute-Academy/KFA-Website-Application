@@ -6,7 +6,7 @@ import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
-import { getStudentFeeStatus } from '../../../src/lib/fee-utils';
+import { getStudentFeeStatus, calculateClassesAdded } from '../../../src/lib/fee-utils';
 
 interface StudentFeesData {
     id: string;
@@ -30,6 +30,7 @@ interface PaymentRecord {
     payment_method: string;
     classes_added: number;
     notes: string | null;
+    status?: string;
     created_at: string;
 }
 
@@ -45,13 +46,13 @@ interface NotificationRecord {
 export default function FeesManagementDashboard() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string; profile_pic_url?: string } | null>(null);
     const [students, setStudents] = useState<StudentFeesData[]>([]);
     const [payments, setPayments] = useState<PaymentRecord[]>([]);
     
     // UI Filters
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'good' | 'due_date' | 'due_classes' | 'overdue'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'pending_verification' | 'good' | 'due_date' | 'due_classes' | 'overdue' | 'setup_required'>('all');
     const [basisFilter, setBasisFilter] = useState<'all' | 'monthly' | 'class'>('all');
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 8;
@@ -98,7 +99,7 @@ export default function FeesManagementDashboard() {
             // 2. Fetch Teacher Profile
             const { data: profile, error: profileError } = await supabaseAuth
                 .from('users')
-                .select('name, email, role')
+                .select('name, email, role, profile_pic_url')
                 .eq('id', userId)
                 .single();
 
@@ -107,7 +108,7 @@ export default function FeesManagementDashboard() {
                 return;
             }
 
-            setTeacherProfile({ id: userId, name: profile.name, email: profile.email, role: profile.role });
+            setTeacherProfile({ id: userId, name: profile.name, email: profile.email, role: profile.role, profile_pic_url: profile.profile_pic_url });
 
             // 3. Fetch Students with Fees columns
             const { data: studentsData, error: studentsError } = await supabaseAuth
@@ -171,6 +172,7 @@ export default function FeesManagementDashboard() {
                     payment_method,
                     classes_added,
                     notes,
+                    status,
                     created_at,
                     users!inner(teacher_id)
                 `)
@@ -199,10 +201,14 @@ export default function FeesManagementDashboard() {
 
     // Calculate student payment status
     const getStudentStatus = (student: StudentFeesData) => {
+        if (student.fees_amount <= 0) return 'setup_required';
         const classesCompleted = student.fees_classes_paid <= 0;
+        
+        const studentPayments = payments.filter(p => p.student_id === student.id);
+        const hasPending = studentPayments.some(p => p.status === 'pending_approval');
+        if (hasPending) return 'pending_verification';
 
         if (student.fees_basis === 'monthly' && student.fees_collection_date) {
-            const studentPayments = payments.filter(p => p.student_id === student.id);
             const feeStatus = getStudentFeeStatus(
                 student.fees_basis,
                 Number(student.fees_collection_date),
@@ -247,7 +253,7 @@ export default function FeesManagementDashboard() {
         }
 
         // Sort by status severity, then name
-        const statusPriority = { overdue: 0, due_classes: 1, due_date: 2, good: 3 };
+        const statusPriority: Record<string, number> = { overdue: 0, setup_required: 1, due_classes: 2, due_date: 3, good: 4 };
         return result.sort((a, b) => {
             const pA = statusPriority[getStudentStatus(a)];
             const pB = statusPriority[getStudentStatus(b)];
@@ -275,12 +281,14 @@ export default function FeesManagementDashboard() {
         let dueClassesCount = 0;
         let dueDateCount = 0;
         let goodCount = 0;
+        let setupCount = 0;
 
         students.forEach(s => {
             const status = getStudentStatus(s);
             if (status === 'overdue') overdueCount++;
             else if (status === 'due_classes') dueClassesCount++;
             else if (status === 'due_date') dueDateCount++;
+            else if (status === 'setup_required') setupCount++;
             else goodCount++;
         });
 
@@ -290,6 +298,7 @@ export default function FeesManagementDashboard() {
             dueClassesCount,
             dueDateCount,
             goodCount,
+            setupCount,
             totalStudents: students.length
         };
     }, [students, payments]);
@@ -435,6 +444,60 @@ export default function FeesManagementDashboard() {
         }
     };
 
+    const handleApprovePayment = async (paymentId: string, studentId: string, amount: number, basis: string) => {
+        try {
+            const classesToAdd = calculateClassesAdded(amount, selectedStudent?.fees_amount || 0);
+
+            // Update payment status
+            const { error: paymentError } = await supabaseAuth
+                .from('fees_payments')
+                .update({ status: 'approved', classes_added: classesToAdd })
+                .eq('id', paymentId);
+            
+            if (paymentError) throw paymentError;
+
+            // Update student balance
+            if (selectedStudent) {
+                const newClassesPaid = (selectedStudent.fees_classes_paid || 0) + classesToAdd;
+                const { error: studentUpdateError } = await supabaseAuth
+                    .from('users')
+                    .update({ fees_classes_paid: newClassesPaid })
+                    .eq('id', studentId);
+                
+                if (studentUpdateError) throw studentUpdateError;
+                
+                setSelectedStudent({ ...selectedStudent, fees_classes_paid: newClassesPaid });
+            }
+
+            setAlertMessage({ type: 'success', text: `Payment approved and balance updated.` });
+            
+            // Refresh local modal state
+            setStudentPayments(prev => prev.map(p => p.id === paymentId ? { ...p, status: 'approved', classes_added: classesToAdd } : p));
+            fetchData();
+        } catch (err: any) {
+            console.error('Error approving payment:', err);
+            setAlertMessage({ type: 'error', text: `Failed to approve payment: ${err.message}` });
+        }
+    };
+
+    const handleRejectPayment = async (paymentId: string) => {
+        try {
+            const { error } = await supabaseAuth
+                .from('fees_payments')
+                .update({ status: 'rejected' })
+                .eq('id', paymentId);
+            
+            if (error) throw error;
+
+            setAlertMessage({ type: 'success', text: `Payment rejected.` });
+            setStudentPayments(prev => prev.map(p => p.id === paymentId ? { ...p, status: 'rejected' } : p));
+            fetchData();
+        } catch (err: any) {
+            console.error('Error rejecting payment:', err);
+            setAlertMessage({ type: 'error', text: `Failed to reject payment: ${err.message}` });
+        }
+    };
+
     return (
         <div className="bg-[#f8f8f6] dark:bg-[#221d10] text-slate-900 dark:text-slate-100 font-sans min-h-screen">
             <div className="flex h-screen overflow-hidden">
@@ -452,7 +515,7 @@ export default function FeesManagementDashboard() {
                             {/* Header Section */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div>
-                                    <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Fees Dashboard</h1>
+                                    <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white tracking-tight leading-none">Fees Dashboard</h1>
                                     <p className="text-slate-500 dark:text-slate-400 mt-2.5">Track joining dates, collection cycles, payments history, and prepaid class balances.</p>
                                 </div>
                                 {alertMessage && (
@@ -469,7 +532,7 @@ export default function FeesManagementDashboard() {
                             {/* Stats Cards */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-5">
-                                    <div className="size-12 rounded-xl bg-emerald-100 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                                    <div className="size-12 rounded-xl bg-kfa-gold-100 dark:bg-kfa-gold-800/30 flex items-center justify-center text-kfa-gold dark:text-kfa-gold-dark">
                                         <DollarSign className="size-6" />
                                     </div>
                                     <div>
@@ -484,7 +547,8 @@ export default function FeesManagementDashboard() {
                                     </div>
                                     <div>
                                         <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Overdue Students</p>
-                                        <p className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1">{statsSummary.overdueCount}</p>
+                                        <p className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1 leading-none">{statsSummary.overdueCount}</p>
+                                        <p className="text-[10px] font-semibold text-slate-400 mt-1">Payment past due date</p>
                                     </div>
                                 </div>
 
@@ -494,17 +558,19 @@ export default function FeesManagementDashboard() {
                                     </div>
                                     <div>
                                         <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Classes Expired</p>
-                                        <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">{statsSummary.dueClassesCount}</p>
+                                        <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 leading-none">{statsSummary.dueClassesCount}</p>
+                                        <p className="text-[10px] font-semibold text-slate-400 mt-1">Prepaid classes used up</p>
                                     </div>
                                 </div>
 
                                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-5">
-                                    <div className="size-12 rounded-xl bg-blue-100 dark:bg-blue-950/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                                    <div className="size-12 rounded-xl bg-kfa-teal-100 dark:bg-kfa-teal-800/30 flex items-center justify-center text-kfa-teal dark:text-kfa-teal-dark">
                                         <ShieldCheck className="size-6" />
                                     </div>
                                     <div>
-                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Students in Good Standing</p>
-                                        <p className="text-2xl font-black text-green-600 dark:text-green-500 mt-1">{statsSummary.goodCount} / {statsSummary.totalStudents}</p>
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Good Standing</p>
+                                        <p className="text-2xl font-black text-slate-900 dark:text-white mt-1 leading-none">{statsSummary.goodCount} / {statsSummary.totalStudents}</p>
+                                        <p className="text-[10px] font-semibold text-slate-400 mt-1">Active & Paid</p>
                                     </div>
                                 </div>
                             </div>
@@ -535,7 +601,9 @@ export default function FeesManagementDashboard() {
                                                 className="bg-transparent border-none text-xs font-semibold py-1.5 pr-8 focus:ring-0 outline-none cursor-pointer"
                                             >
                                                 <option value="all">All statuses</option>
+                                                <option value="pending_verification">Pending Review</option>
                                                 <option value="good">Paid & Active</option>
+                                                <option value="setup_required">Setup Required</option>
                                                 <option value="due_classes">Classes Completed</option>
                                                 <option value="due_date">Due Date Arrived</option>
                                                 <option value="overdue">Overdue (Both)</option>
@@ -563,22 +631,32 @@ export default function FeesManagementDashboard() {
                                     <table className="w-full border-collapse text-left">
                                         <thead>
                                             <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/20">
-                                                <th className="px-6 py-4">Student</th>
-                                                <th className="px-6 py-4">Joining Date</th>
-                                                <th className="px-6 py-4">Billing Plan</th>
-                                                <th className="px-6 py-4">Prepaid Classes</th>
-                                                <th className="px-6 py-4">Next Collection</th>
-                                                <th className="px-6 py-4">Standard Amount</th>
-                                                <th className="px-6 py-4">Status</th>
-                                                <th className="px-6 py-4 text-right">Actions</th>
+                                                <th className="px-6 py-4 whitespace-nowrap">Student</th>
+                                                <th className="px-6 py-4 whitespace-nowrap">Joining Date</th>
+                                                <th className="px-6 py-4 whitespace-nowrap">Billing Plan</th>
+                                                <th className="px-6 py-4 whitespace-nowrap">Prepaid Classes</th>
+                                                <th className="px-6 py-4 whitespace-nowrap">Next Collection</th>
+                                                <th className="px-6 py-4 whitespace-nowrap">Standard Amount</th>
+                                                <th className="px-6 py-4 whitespace-nowrap">Status</th>
+                                                <th className="px-6 py-4 text-right whitespace-nowrap">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                             {paginatedStudents.length > 0 ? (
                                                 paginatedStudents.map(student => {
                                                     const status = getStudentStatus(student);
+                                                    const rowUrgencyClass = status === 'overdue' 
+                                                        ? 'border-l-4 border-l-rose-500 bg-rose-50/10 hover:bg-rose-50/40 dark:bg-rose-950/10'
+                                                        : status === 'due_classes'
+                                                        ? 'border-l-4 border-l-amber-500 bg-amber-50/10 hover:bg-amber-50/40 dark:bg-amber-950/10'
+                                                        : status === 'pending_verification'
+                                                        ? 'border-l-4 border-l-blue-500 bg-blue-50/10 hover:bg-blue-50/40 dark:bg-blue-950/10'
+                                                        : status === 'setup_required'
+                                                        ? 'border-l-4 border-l-slate-300 dark:border-l-slate-600 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/30'
+                                                        : 'border-l-4 border-l-transparent hover:bg-slate-50/50 dark:hover:bg-slate-800/10';
+
                                                     return (
-                                                        <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
+                                                        <tr key={student.id} className={`transition-colors border-b border-b-slate-100 dark:border-b-slate-800 ${rowUrgencyClass}`}>
                                                             
                                                             {/* Student Profile */}
                                                             <td className="px-6 py-4.5">
@@ -592,13 +670,13 @@ export default function FeesManagementDashboard() {
                                                                     </div>
                                                                     <div>
                                                                         <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">{student.name}</p>
-                                                                        <p className="text-[10px] font-medium text-slate-400 mt-1">{student.batch_name}</p>
+                                                                        <p className="text-[10px] font-medium text-slate-400 mt-1">{student.batch_name === 'Unassigned' ? 'No Batch' : student.batch_name}</p>
                                                                     </div>
                                                                 </div>
                                                             </td>
 
                                                             {/* Joining Date */}
-                                                            <td className="px-6 py-4.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                                            <td className="px-6 py-4.5 text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">
                                                                 {student.join_date ? new Date(student.join_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
                                                             </td>
 
@@ -614,7 +692,7 @@ export default function FeesManagementDashboard() {
                                                             </td>
 
                                                             {/* Prepaid Classes Balance */}
-                                                            <td className="px-6 py-4.5">
+                                                            <td className="px-6 py-4.5 whitespace-nowrap">
                                                                 <div className="flex items-center gap-2">
                                                                     <span className={`text-sm font-black ${
                                                                         student.fees_classes_paid <= 0
@@ -632,28 +710,42 @@ export default function FeesManagementDashboard() {
                                                             </td>
 
                                                             {/* Next Collection Date */}
-                                                            <td className="px-6 py-4.5 text-xs font-bold text-slate-700 dark:text-slate-350">
+                                                            <td className="px-6 py-4.5 text-xs font-bold text-slate-700 dark:text-slate-350 whitespace-nowrap">
                                                                 {(() => {
-                                                                    if (student.fees_basis === 'monthly' && student.fees_collection_date) {
-                                                                        const studentPayments = payments.filter(p => p.student_id === student.id);
-                                                                        const feeStatus = getStudentFeeStatus(
-                                                                            student.fees_basis,
-                                                                            Number(student.fees_collection_date),
-                                                                            studentPayments
-                                                                        );
-                                                                        return feeStatus ? feeStatus.formattedDueDate : 'N/A';
+                                                                    if (student.fees_amount <= 0) return <span className="text-slate-400 italic font-medium text-[10px]">Setup Required</span>;
+                                                                    
+                                                                    if (student.fees_basis === 'monthly') {
+                                                                        if (student.fees_collection_date) {
+                                                                            const studentPayments = payments.filter(p => p.student_id === student.id);
+                                                                            const feeStatus = getStudentFeeStatus(
+                                                                                student.fees_basis,
+                                                                                Number(student.fees_collection_date),
+                                                                                studentPayments
+                                                                            );
+                                                                            return feeStatus ? feeStatus.formattedDueDate : 'N/A';
+                                                                        } else if (student.join_date) {
+                                                                            // Calculate 30 days from join date as estimated next collection
+                                                                            const joinD = new Date(student.join_date);
+                                                                            joinD.setDate(joinD.getDate() + 30);
+                                                                            return <span className="text-slate-400 italic">Est: {joinD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>;
+                                                                        }
                                                                     }
-                                                                    return 'N/A';
+                                                                    return <span className="text-slate-400 text-[10px]">Based on usage</span>;
                                                                 })()}
                                                             </td>
 
                                                             {/* Fees Amount */}
-                                                            <td className="px-6 py-4.5 text-sm font-bold text-slate-800 dark:text-slate-200">
+                                                            <td className="px-6 py-4.5 text-sm font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                                                                 ₹{student.fees_amount.toLocaleString('en-IN')}
                                                             </td>
 
                                                             {/* Status Badge */}
-                                                            <td className="px-6 py-4.5">
+                                                            <td className="px-6 py-4.5 whitespace-nowrap">
+                                                                {status === 'setup_required' && (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                                        Setup Required
+                                                                    </span>
+                                                                )}
                                                                 {status === 'good' && (
                                                                     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-450 border border-emerald-100 dark:border-emerald-900/30">
                                                                         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
@@ -678,15 +770,22 @@ export default function FeesManagementDashboard() {
                                                                         Overdue
                                                                     </span>
                                                                 )}
+                                                                {status === 'pending_verification' && (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-450 border border-blue-100 dark:border-blue-900/30">
+                                                                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
+                                                                        Pending Review
+                                                                    </span>
+                                                                )}
                                                             </td>
 
                                                             {/* Actions */}
-                                                            <td className="px-6 py-4.5 text-right">
+                                                            <td className="px-6 py-4.5 text-right whitespace-nowrap">
                                                                 <div className="flex items-center justify-end gap-2">
-                                                                    {status !== 'good' && (
+                                                                    {status !== 'good' && status !== 'setup_required' && (
                                                                         <button
                                                                             onClick={() => handleSendReminder(student, status === 'due_classes' ? 'classes_completed' : 'due_date')}
-                                                                            title="Send Reminder Notification"
+                                                                            title="Send Reminder Email"
+                                                                            aria-label={`Send Reminder Email to ${student.name}`}
                                                                             className="p-2 rounded-lg border border-slate-200 hover:border-[#ecb613] dark:border-slate-800 hover:bg-[#ecb613]/5 text-slate-500 hover:text-[#ecb613] transition-colors"
                                                                         >
                                                                             <Mail className="size-4" />
@@ -695,16 +794,28 @@ export default function FeesManagementDashboard() {
                                                                     <button
                                                                         onClick={() => openHistoryModal(student)}
                                                                         title="View Payment History"
+                                                                        aria-label={`View Payment History for ${student.name}`}
                                                                         className="p-2 rounded-lg border border-slate-200 hover:border-[#ecb613] dark:border-slate-800 hover:bg-[#ecb613]/5 text-slate-500 hover:text-[#ecb613] transition-colors"
                                                                     >
                                                                         <History className="size-4" />
                                                                     </button>
-                                                                    <button
-                                                                        onClick={() => openPaymentModal(student)}
-                                                                        className="px-3 py-1.5 text-xs font-black bg-[#ecb613] hover:bg-[#ecb613]/90 text-white rounded-lg shadow-sm shadow-[#ecb613]/10 hover:shadow transition-all active:scale-[0.97]"
-                                                                    >
-                                                                        Collect ₹
-                                                                    </button>
+                                                                    {status === 'setup_required' ? (
+                                                                        <div className="group relative">
+                                                                            <button disabled className="px-3 py-1.5 text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 rounded-lg shadow-sm cursor-not-allowed">
+                                                                                Collect ₹
+                                                                            </button>
+                                                                            <div className="absolute bottom-full mb-2 right-0 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl text-center z-10 pointer-events-none">
+                                                                                No standard fee amount is configured for this student. Update their profile first.
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => openPaymentModal(student)}
+                                                                            className="px-3 py-1.5 text-xs font-black bg-[#ecb613] hover:bg-[#ecb613]/90 text-white rounded-lg shadow-sm shadow-[#ecb613]/10 hover:shadow transition-all active:scale-[0.97]"
+                                                                        >
+                                                                            Collect ₹
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             </td>
                                                         </tr>
@@ -712,9 +823,12 @@ export default function FeesManagementDashboard() {
                                                 })
                                             ) : (
                                                 <tr>
-                                                    <td colSpan={8} className="px-6 py-12 text-center text-slate-400">
-                                                        <span className="material-symbols-outlined text-4xl block mb-2">payments</span>
-                                                        <p className="text-sm font-semibold">No students found matching filters.</p>
+                                                    <td colSpan={8} className="px-6 py-16 text-center text-slate-400 bg-slate-50/50 dark:bg-slate-900/20">
+                                                        <div className="size-16 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center justify-center mx-auto shadow-sm mb-4">
+                                                            <DollarSign className="size-8 text-kfa-gold/50" />
+                                                        </div>
+                                                        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No matching students found</h3>
+                                                        <p className="text-xs text-slate-500 mt-1">Try adjusting your search filters or status selection.</p>
                                                     </td>
                                                 </tr>
                                             )}
@@ -904,21 +1018,52 @@ export default function FeesManagementDashboard() {
                                         <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                                             {studentPayments.length > 0 ? (
                                                 studentPayments.map(pay => (
-                                                    <div key={pay.id} className="p-3 bg-white dark:bg-slate-850 border border-slate-100 dark:border-slate-800/80 rounded-xl flex items-center justify-between text-xs hover:border-[#ecb613]/30 transition-all">
+                                                    <div key={pay.id} className={`p-3 border rounded-xl flex items-center justify-between text-xs transition-all ${
+                                                        pay.status === 'pending_approval' ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800' : 
+                                                        pay.status === 'rejected' ? 'bg-rose-50/50 dark:bg-rose-900/10 border-rose-200 dark:border-rose-800' :
+                                                        'bg-white dark:bg-slate-850 border-slate-100 dark:border-slate-800/80 hover:border-[#ecb613]/30'
+                                                    }`}>
                                                         <div>
                                                             <div className="flex items-center gap-2">
                                                                 <span className="font-black text-slate-900 dark:text-white">₹{pay.amount}</span>
                                                                 <span className="bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase">{pay.payment_method}</span>
+                                                                {pay.status === 'pending_approval' && (
+                                                                    <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase animate-pulse">Needs Review</span>
+                                                                )}
+                                                                {pay.status === 'rejected' && (
+                                                                    <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase">Rejected</span>
+                                                                )}
                                                             </div>
                                                             <p className="text-[10px] text-slate-450 mt-1">
                                                                 {pay.notes ? `"${pay.notes}"` : 'No notes added'}
                                                             </p>
                                                         </div>
-                                                        <div className="text-right">
-                                                            <p className="font-bold text-slate-700 dark:text-slate-300">+{pay.classes_added} classes</p>
-                                                            <p className="text-[9px] text-slate-400 mt-1">
-                                                                Paid on {new Date(pay.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                            </p>
+                                                        <div className="text-right flex flex-col items-end justify-center">
+                                                            {pay.status === 'pending_approval' ? (
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <button 
+                                                                        onClick={() => handleRejectPayment(pay.id)}
+                                                                        className="px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded text-[10px] font-bold hover:bg-slate-50 transition-colors"
+                                                                    >
+                                                                        Reject
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => handleApprovePayment(pay.id, selectedStudent.id, pay.amount, selectedStudent.fees_basis)}
+                                                                        className="px-2 py-1 bg-blue-600 text-white rounded text-[10px] font-bold hover:bg-blue-700 transition-colors"
+                                                                    >
+                                                                        Approve
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    {pay.status !== 'rejected' && (
+                                                                        <p className="font-bold text-slate-700 dark:text-slate-300">+{pay.classes_added} classes</p>
+                                                                    )}
+                                                                    <p className="text-[9px] text-slate-400 mt-1">
+                                                                        Paid on {new Date(pay.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                    </p>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 ))

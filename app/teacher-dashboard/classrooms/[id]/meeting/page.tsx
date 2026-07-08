@@ -231,22 +231,14 @@ export default function MeetingPage() {
 
             if (error) throw error;
 
-            // Mark classroom as live in DB
-            const { data: liveData, error: liveError } = await supabaseAuth
-                .from('classrooms')
-                .update({
-                    is_live: true,
-                    live_meeting_link: sessionType === 'online' ? meetingLink : null,
-                    live_session_started_at: new Date().toISOString()
-                })
-                .eq('id', classroomId)
-                .select();
+            // Mark classroom as live in DB via RPC
+            const { error: liveError } = await supabaseAuth.rpc('start_classroom_session', {
+                p_classroom_id: classroomId,
+                p_meeting_link: sessionType === 'online' ? meetingLink : null,
+                p_started_at: new Date().toISOString()
+            });
 
-            if (liveError) {
-                console.error('Failed to mark classroom as live:', liveError);
-            } else if (!liveData || liveData.length === 0) {
-                console.warn('Classroom was not marked as live (0 rows updated). RLS policy might be blocking the update.');
-            }
+            if (liveError) throw liveError;
 
             // Trigger push & in-app notifications for students in this classroom
             const targetStudentIds = students.map(s => s.id);
@@ -316,33 +308,23 @@ export default function MeetingPage() {
                 excused_count: excused
             };
 
-            const { error } = await supabaseAuth
-                .from('classroom_session_logs')
-                .insert([logRow]);
+            const { error: endError } = await supabaseAuth.rpc('end_classroom_session', {
+                p_classroom_id: classroomId,
+                p_session_date: sessionDate,
+                p_session_type: sessionType || 'online',
+                p_started_at: new Date(startedAtTime).toISOString(),
+                p_ended_at: new Date(endedAtTime).toISOString(),
+                p_duration_seconds: durationSecs,
+                p_present_count: present,
+                p_absent_count: absent,
+                p_late_count: late,
+                p_excused_count: excused
+            });
 
-            if (error) {
-                console.error('Error saving session logs:', error);
-                alert(`Failed to save classroom session log: ${error.message || 'Unknown error'}`);
-            }
-
-            // Mark classroom as no longer live in DB
-            const { data: endData, error: liveError } = await supabaseAuth
-                .from('classrooms')
-                .update({
-                    is_live: false,
-                    live_meeting_link: null,
-                    live_session_started_at: null
-                })
-                .eq('id', classroomId)
-                .select();
-
-            if (liveError) {
-                console.error('Failed to mark classroom as no longer live:', liveError);
-            } else if (!endData || endData.length === 0) {
-                console.warn('Classroom was not marked as offline (0 rows updated). RLS policy might be blocking the update.');
-            }
+            if (endError) throw endError;
         } catch (err: any) {
             console.error('Unexpected error ending active session:', err);
+            alert(`Failed to end session: ${err.message || 'Unknown error'}`);
         } finally {
             localStorage.removeItem('active_class_session');
             router.push(`/teacher-dashboard/classrooms/${classroomId}`);

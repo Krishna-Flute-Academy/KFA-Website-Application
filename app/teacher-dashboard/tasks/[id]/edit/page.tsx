@@ -44,7 +44,7 @@ export default function EditTaskPage() {
 
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string; profile_pic_url?: string } | null>(null);
     const [assignment, setAssignment] = useState<Assignment | null>(null);
     
     // Form state
@@ -71,7 +71,7 @@ export default function EditTaskPage() {
 
             const { data: profile } = await supabaseAuth
                 .from('users')
-                .select('id, name, email, role')
+                .select('id, name, email, role, profile_pic_url')
                 .eq('id', session.user.id)
                 .single();
 

@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
+import RichTextEditor from '../../../src/components/RichTextEditor';
 import { 
     CourseCategory,
     CourseModule, 
@@ -52,6 +53,11 @@ import {
     INITIAL_CHAPTERS,
     INITIAL_LESSONS
 } from './initial-data';
+
+const stripHtml = (html: string) => {
+    if (!html) return '';
+    return html.replace(/<[^>]*>?/gm, '');
+};
 
 export default function InventoryLibrary() {
     const router = useRouter();
@@ -871,85 +877,122 @@ export default function InventoryLibrary() {
             ? lessonForm.bullet_points_text.split('\n').map(l => l.trim()).filter(Boolean)
             : [];
 
+        // Fetch lessons belonging to the same chapter and sort by current lesson_number
+        const chapterLessons = lessons
+            .filter(l => l.chapter_id === lessonForm.chapter_id)
+            .sort((a, b) => a.lesson_number - b.lesson_number);
+
+        // Filter out the one we are editing
+        const otherLessons = chapterLessons.filter(l => l.id !== (editingItem?.id || ''));
+
+        // Insert at target index
+        const targetIdx = Math.max(0, lessonForm.lesson_number - 1);
+        const reordered = [...otherLessons];
+
+        const editedPayload = {
+            title: lessonForm.title,
+            description: lessonForm.description,
+            material_type: lessonForm.material_type,
+            material_url: lessonForm.material_url,
+            file_name: lessonForm.file_name,
+            file_size: lessonForm.file_size,
+            duration: lessonForm.duration,
+            link_url: lessonForm.link_url,
+            chapter_id: lessonForm.chapter_id,
+            bullet_points: parsedBulletPoints
+        };
+
         if (isUsingFallback) {
-            let updatedLess = [...lessons];
-            if (editingItem) {
-                updatedLess = updatedLess.map(l => l.id === editingItem.id ? { 
-                    ...l, 
-                    title: lessonForm.title,
-                    description: lessonForm.description,
-                    lesson_number: lessonForm.lesson_number,
-                    material_type: lessonForm.material_type,
-                    material_url: lessonForm.material_url,
-                    file_name: lessonForm.file_name,
-                    file_size: lessonForm.file_size,
-                    duration: lessonForm.duration,
-                    link_url: lessonForm.link_url,
-                    chapter_id: lessonForm.chapter_id,
-                    bullet_points: parsedBulletPoints 
-                } : l);
-            } else {
-                const newLesson: CourseLesson = {
-                    id: 'less_' + Math.random().toString(36).substring(7),
-                    title: lessonForm.title,
-                    description: lessonForm.description,
-                    lesson_number: lessonForm.lesson_number,
-                    material_type: lessonForm.material_type,
-                    material_url: lessonForm.material_url,
-                    file_name: lessonForm.file_name,
-                    file_size: lessonForm.file_size,
-                    duration: lessonForm.duration,
-                    link_url: lessonForm.link_url,
-                    chapter_id: lessonForm.chapter_id,
-                    bullet_points: parsedBulletPoints
-                };
-                updatedLess.push(newLesson);
-            }
+            // Reorder in local array
+            const localPayload = {
+                id: editingItem?.id || 'temp_id',
+                ...editedPayload
+            };
+            reordered.splice(targetIdx, 0, localPayload as any);
+
+            const finalLessons = reordered.map((l, index) => ({
+                ...l,
+                lesson_number: index + 1
+            }));
+
+            let updatedLess = lessons.filter(l => l.chapter_id !== lessonForm.chapter_id);
+            const newLessonsForChapter = finalLessons.map(l => {
+                if (l.id === 'temp_id') {
+                    return {
+                        ...l,
+                        id: 'less_' + Math.random().toString(36).substring(7)
+                    } as CourseLesson;
+                }
+                return l as CourseLesson;
+            });
+            updatedLess = [...updatedLess, ...newLessonsForChapter];
             persistLocalData(modules, chapters, updatedLess);
             setLoading(false);
             setActiveModal(null);
         } else {
             try {
-                if (editingItem) {
+                // 1. Temporarily shift all existing lessons in this chapter by +10000 in Supabase to prevent unique index constraint violation
+                const existingLessonsInDb = lessons.filter(l => l.chapter_id === lessonForm.chapter_id);
+                for (const l of existingLessonsInDb) {
                     await supabaseAuth
                         .from('course_lessons')
-                        .update({
-                            title: lessonForm.title,
-                            description: lessonForm.description,
-                            lesson_number: lessonForm.lesson_number,
-                            material_type: lessonForm.material_type,
-                            material_url: lessonForm.material_url,
-                            file_name: lessonForm.file_name,
-                            file_size: lessonForm.file_size,
-                            duration: lessonForm.duration,
-                            link_url: lessonForm.link_url,
-                            chapter_id: lessonForm.chapter_id,
-                            bullet_points: parsedBulletPoints
-                        })
-                        .eq('id', editingItem.id);
-                } else {
-                    await supabaseAuth
-                        .from('course_lessons')
-                        .insert([{
-                            id: crypto.randomUUID(),
-                            title: lessonForm.title,
-                            description: lessonForm.description,
-                            lesson_number: lessonForm.lesson_number,
-                            material_type: lessonForm.material_type,
-                            material_url: lessonForm.material_url,
-                            file_name: lessonForm.file_name,
-                            file_size: lessonForm.file_size,
-                            duration: lessonForm.duration,
-                            link_url: lessonForm.link_url,
-                            chapter_id: lessonForm.chapter_id,
-                            bullet_points: parsedBulletPoints
-                        }]);
+                        .update({ lesson_number: l.lesson_number + 10000 })
+                        .eq('id', l.id);
                 }
+
+                // 2. Build target sequence
+                const dbPayload = {
+                    id: editingItem?.id || crypto.randomUUID(),
+                    ...editedPayload
+                };
+                reordered.splice(targetIdx, 0, dbPayload as any);
+
+                // 3. Update or Insert each in order
+                for (let i = 0; i < reordered.length; i++) {
+                    const item = reordered[i];
+                    const isNew = item.id === dbPayload.id && !editingItem;
+                    if (isNew) {
+                        await supabaseAuth
+                            .from('course_lessons')
+                            .insert([{
+                                id: item.id,
+                                title: item.title,
+                                description: item.description,
+                                lesson_number: i + 1,
+                                material_type: item.material_type,
+                                material_url: item.material_url,
+                                file_name: item.file_name,
+                                file_size: item.file_size,
+                                duration: item.duration,
+                                link_url: item.link_url,
+                                chapter_id: item.chapter_id,
+                                bullet_points: item.bullet_points
+                            }]);
+                    } else {
+                        await supabaseAuth
+                            .from('course_lessons')
+                            .update({
+                                title: item.title,
+                                description: item.description,
+                                lesson_number: i + 1,
+                                material_type: item.material_type,
+                                material_url: item.material_url,
+                                file_name: item.file_name,
+                                file_size: item.file_size,
+                                duration: item.duration,
+                                link_url: item.link_url,
+                                chapter_id: item.chapter_id,
+                                bullet_points: item.bullet_points
+                            })
+                            .eq('id', item.id);
+                    }
+                }
+
                 await loadDatabaseData();
                 setActiveModal(null);
             } catch (err) {
                 console.error(err);
-                alert('Database update failed.');
+                alert('Database update failed: unique constraint or network error.');
             } finally {
                 setLoading(false);
             }
@@ -1203,7 +1246,7 @@ export default function InventoryLibrary() {
                                                                 {mod.title}
                                                             </h3>
                                                             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
-                                                                {parsed.description}
+                                                                {stripHtml(parsed.description)}
                                                             </p>
                                                         </div>
 
@@ -1263,9 +1306,10 @@ export default function InventoryLibrary() {
                                                 <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none text-white font-sans drop-shadow-sm">
                                                     {activeHeadline}
                                                 </h1>
-                                                <p className="text-xs md:text-sm text-teal-50/90 font-medium leading-relaxed max-w-xl">
-                                                    {activeModuleParsed?.description}
-                                                </p>
+                                                <div 
+                                                     className="text-xs md:text-sm text-teal-50/90 font-medium leading-relaxed max-w-xl prose prose-sm dark:prose-invert prose-teal"
+                                                     dangerouslySetInnerHTML={{ __html: activeModuleParsed?.description || '' }}
+                                                 />
                                             </div>
                                         </div>
                                     )}
@@ -1355,12 +1399,10 @@ export default function InventoryLibrary() {
                                                                         <div className="text-[10px] font-bold text-amber-500 uppercase tracking-widest leading-none font-mono mb-2">
                                                                             Chapter Heads Up / Introduction Overview
                                                                         </div>
-                                                                        {chap.description.split('\n').map((line, idx) => (
-                                                                            <div key={idx} className={line.startsWith('•') || line.startsWith('*') ? 'pl-4 py-0.5 relative' : 'font-extrabold text-slate-800 dark:text-slate-200 mb-1'}>
-                                                                                {(line.startsWith('•') || line.startsWith('*')) && <span className="absolute left-1 text-amber-500">•</span>}
-                                                                                {line.replace(/^(\*|•)\s*/, '')}
-                                                                            </div>
-                                                                        ))}
+                                                                        <div 
+                                                                            className="prose prose-sm dark:prose-invert text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed text-left max-w-none"
+                                                                            dangerouslySetInnerHTML={{ __html: chap.description }}
+                                                                        />
                                                                     </div>
                                                                 )}
 
@@ -1428,7 +1470,7 @@ export default function InventoryLibrary() {
                                                                                             {lesson.title}
                                                                                         </h4>
                                                                                         <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 font-medium leading-normal">
-                                                                                            {lesson.description}
+                                                                                            {stripHtml(lesson.description)}
                                                                                         </p>
                                                                                     </div>
 
@@ -1600,8 +1642,8 @@ export default function InventoryLibrary() {
                 {/* 0. MODULE EDIT / ADD MODAL */}
                 {activeModal === 'module' && (
                     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4">
-                            <div className="flex justify-between items-center">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
+                            <div className="flex justify-between items-center mb-4 shrink-0">
                                 <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none font-sans">
                                     {editingItem ? 'Edit Level / Module' : 'Create Level / Module'}
                                 </h3>
@@ -1610,7 +1652,7 @@ export default function InventoryLibrary() {
                                 </button>
                             </div>
                             
-                            <form onSubmit={saveModule} className="space-y-4 text-left">
+                            <form onSubmit={saveModule} className="flex-1 overflow-y-auto space-y-4 text-left pr-1.5 min-h-0">
                                 <div className="space-y-1.5">
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
                                         Level / Module Title
@@ -1660,12 +1702,10 @@ export default function InventoryLibrary() {
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none font-mono">
                                         Module Description
                                     </label>
-                                    <textarea 
-                                        rows={3}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-medium leading-relaxed"
-                                        placeholder="Brief foundation summary or composition focus details..."
+                                    <RichTextEditor
                                         value={moduleForm.description}
-                                        onChange={e => setModuleForm(prev => ({ ...prev, description: e.target.value }))}
+                                        onChange={val => setModuleForm(prev => ({ ...prev, description: val }))}
+                                        placeholder="Brief foundation summary or composition focus details..."
                                     />
                                 </div>
 
@@ -1739,8 +1779,8 @@ export default function InventoryLibrary() {
                 {/* 1. CHAPTER EDIT MODAL */}
                 {activeModal === 'chapter' && (
                     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4">
-                            <div className="flex justify-between items-center select-none">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
+                            <div className="flex justify-between items-center select-none mb-4 shrink-0">
                                 <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none">
                                     {editingItem ? 'Edit Chapter Heads Up' : 'Add New Chapter'}
                                 </h3>
@@ -1749,7 +1789,7 @@ export default function InventoryLibrary() {
                                 </button>
                             </div>
                             
-                            <form onSubmit={saveChapter} className="space-y-4 text-left">
+                            <form onSubmit={saveChapter} className="flex-1 overflow-y-auto space-y-4 text-left pr-1.5 min-h-0">
                                 <div className="space-y-1.5">
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
                                         Chapter Title / Headline
@@ -1768,12 +1808,10 @@ export default function InventoryLibrary() {
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
                                         Chapter Heads Up / Introduction Bullets
                                     </label>
-                                    <textarea 
-                                        rows={6}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-medium leading-relaxed"
-                                        placeholder="What is the Flute?&#10;• Introduction to the Indian bamboo flute&#10;• Importance of flute in Indian music"
+                                    <RichTextEditor
                                         value={chapterForm.description}
-                                        onChange={e => setChapterForm(prev => ({ ...prev, description: e.target.value }))}
+                                        onChange={val => setChapterForm(prev => ({ ...prev, description: val }))}
+                                        placeholder="What is the Flute? Introduction to the Indian bamboo flute, importance of flute in Indian music..."
                                     />
                                 </div>
 
@@ -1791,8 +1829,8 @@ export default function InventoryLibrary() {
                 {/* 2. SIMPLE TOPIC LESSON CARD EDIT MODAL (Headline, Description, Attachment upload, Link) */}
                 {activeModal === 'lesson' && (
                     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100 space-y-4">
-                            <div className="flex justify-between items-center select-none">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
+                            <div className="flex justify-between items-center select-none mb-4 shrink-0">
                                 <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none">
                                     {editingItem ? 'Edit Topic Material' : 'Add Topic Material'}
                                 </h3>
@@ -1801,7 +1839,7 @@ export default function InventoryLibrary() {
                                 </button>
                             </div>
                             
-                            <form onSubmit={saveLesson} className="space-y-4 text-left">
+                            <form onSubmit={saveLesson} className="flex-1 overflow-y-auto space-y-4 text-left pr-1.5 min-h-0">
                                 
                                 {/* Field 1: Headline */}
                                 <div className="space-y-1.5">
@@ -1818,17 +1856,31 @@ export default function InventoryLibrary() {
                                     />
                                 </div>
 
+                                {/* Topic Sequence Number */}
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                        Topic Sequence Number (Order)
+                                    </label>
+                                    <input 
+                                        type="number" 
+                                        required
+                                        min={1}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        placeholder="e.g. 1 or 2"
+                                        value={lessonForm.lesson_number}
+                                        onChange={e => setLessonForm(prev => ({ ...prev, lesson_number: Number(e.target.value) }))}
+                                    />
+                                </div>
+
                                 {/* Field 2: Description */}
                                 <div className="space-y-1.5">
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
                                         2. Description
                                     </label>
-                                    <textarea 
-                                        rows={4}
-                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-medium leading-relaxed"
-                                        placeholder="Using 4/4 rhythm with metronome."
+                                    <RichTextEditor
                                         value={lessonForm.description}
-                                        onChange={e => setLessonForm(prev => ({ ...prev, description: e.target.value }))}
+                                        onChange={val => setLessonForm(prev => ({ ...prev, description: val }))}
+                                        placeholder="Using 4/4 rhythm with metronome."
                                     />
                                 </div>
 
@@ -1987,9 +2039,10 @@ export default function InventoryLibrary() {
                             {/* Description Section */}
                             <div className="space-y-1">
                                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none font-mono">Overview & Description</h4>
-                                <p className="text-xs md:text-sm text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
-                                    {selectedLessonPreview.description}
-                                </p>
+                                <div 
+                                     className="text-xs md:text-sm text-slate-600 dark:text-slate-300 font-medium leading-relaxed prose prose-sm dark:prose-invert max-w-none"
+                                     dangerouslySetInnerHTML={{ __html: selectedLessonPreview.description || '' }}
+                                 />
                             </div>
 
                             {/* Bullet Points Requirements (Checklist/Key details) */}

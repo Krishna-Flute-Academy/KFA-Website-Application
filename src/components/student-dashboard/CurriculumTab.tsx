@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { 
-    Loader2, BookOpen, Clock, Award, Users, ChevronRight, Check, Music, Video, Info, FileText, Search
+    Loader2, BookOpen, Clock, Award, Users, ChevronRight, Check, Music, Video, Info, FileText, Search, ExternalLink
 } from 'lucide-react';
 
 interface ClassroomInfo {
@@ -40,6 +40,17 @@ interface CurriculumTabProps {
     setShowMaterialPopup: (show: boolean) => void;
     classmates: Classmate[];
 }
+
+const stripHtml = (html: string) => {
+    if (!html) return '';
+    return html.replace(/<[^>]*>?/gm, '');
+};
+
+const cleanModuleDescription = (desc: string) => {
+    if (!desc) return '';
+    const clean = desc.replace(/^\[(.*?)\]\s*/, '');
+    return stripHtml(clean);
+};
 
 /**
  * CurriculumTab displays the syllabus and detailed lesson information for students.
@@ -112,9 +123,9 @@ export default function CurriculumTab({
             </div>
 
             {/* Split layout: classmates on right, curriculum tree on left */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
                 {/* Left: Curriculum Syllabus Tree */}
-                <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
+                <div className="lg:col-span-3 bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
                     <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
                             <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">Academy Syllabus</h3>
@@ -172,7 +183,7 @@ export default function CurriculumTab({
                                                     <div className="min-w-0 flex-1 pr-4">
                                                         <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Module {module.module_number}</span>
                                                         <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 truncate">{module.title}</h4>
-                                                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{module.description}</p>
+                                                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{cleanModuleDescription(module.description)}</p>
                                                     </div>
                                                     <ChevronRight className={`w-4.5 h-4.5 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
                                                 </button>
@@ -290,7 +301,7 @@ export default function CurriculumTab({
                 </div>
 
                 {/* Right Space: Selected Topic Details + Classmates */}
-                <div className="space-y-6 lg:col-span-1">
+                <div className="space-y-6 lg:col-span-2">
                     {/* Selected Topic Details Card */}
                     <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
                         <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100 flex items-center justify-between">
@@ -315,8 +326,6 @@ export default function CurriculumTab({
                         <div className="p-6 space-y-5">
                             {selectedTopic ? (() => {
                                 const breadcrumb = getTopicBreadcrumbs(selectedTopic);
-                                const url = selectedTopic.material_url || selectedTopic.link_url;
-                                const hasAttachment = !!url;
                                 const status = getLessonStatus(selectedTopic.id, selectedTopic.chapter_id);
                                 const isCompleted = status === 'completed';
 
@@ -334,9 +343,10 @@ export default function CurriculumTab({
                                         </div>
 
                                         {selectedTopic.description && (
-                                            <p className="text-xs text-slate-500 leading-relaxed">
-                                                {selectedTopic.description}
-                                            </p>
+                                            <div 
+                                                className="text-xs text-slate-500 leading-relaxed prose prose-sm dark:prose-invert max-w-none"
+                                                dangerouslySetInnerHTML={{ __html: selectedTopic.description }}
+                                            />
                                         )}
 
                                         {/* Metadata Badges */}
@@ -377,14 +387,27 @@ export default function CurriculumTab({
 
                                         {/* Actions Panel */}
                                         <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-slate-100">
-                                            {hasAttachment ? (
+                                            {selectedTopic.material_url ? (
                                                 <button
                                                     onClick={() => setShowMaterialPopup(true)}
                                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl shadow-xs transition-colors"
                                                 >
                                                     <BookOpen className="w-4 h-4" /> Open Material
                                                 </button>
-                                            ) : (
+                                            ) : null}
+
+                                            {selectedTopic.link_url ? (
+                                                <a
+                                                    href={selectedTopic.link_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-750 transition-colors text-center"
+                                                >
+                                                    <ExternalLink className="w-4 h-4 text-slate-500" /> Reference Link
+                                                </a>
+                                            ) : null}
+
+                                            {!selectedTopic.material_url && !selectedTopic.link_url && (
                                                 <button
                                                     disabled
                                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl cursor-not-allowed"

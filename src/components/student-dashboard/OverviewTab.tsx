@@ -9,6 +9,11 @@ import {
 
 import { getStudentFeeStatus } from '../../lib/fee-utils';
 
+const stripHtml = (html: string) => {
+    if (!html) return '';
+    return html.replace(/<[^>]*>?/gm, '');
+};
+
 interface StudentProfile {
     id: string;
     name: string;
@@ -492,7 +497,7 @@ export default function OverviewTab({
                                                     Lesson {featuredLesson.lesson_number}: {featuredLesson.title}
                                                 </h4>
                                             </div>
-                                            <p className="text-xs text-[#5C5852] line-clamp-2 leading-relaxed">{featuredLesson.description || 'Practice your finger coordination and mouth alignment on your bansuri to perfect your sound projection.'}</p>
+                                            <p className="text-xs text-[#5C5852] line-clamp-2 leading-relaxed">{stripHtml(featuredLesson.description) || 'Practice your finger coordination and mouth alignment on your bansuri to perfect your sound projection.'}</p>
                                             
                                             <div className="flex items-center gap-2 pt-1 flex-wrap">
                                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#7C5E3F] bg-[#FAF5EE] px-2.5 py-1 rounded-full">
