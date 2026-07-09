@@ -588,6 +588,25 @@ export default function TaskReviewPage() {
             );
             setSubmissions(updatedSubmissions);
             setSelectedSub({ ...selectedSub, ...updates, status: newStatus as any });
+
+            // Send notification to the student
+            try {
+                const { data: { session } } = await supabaseAuth.auth.getSession();
+                const teacherId = session?.user?.id || '';
+                
+                await sendClassroomNotification({
+                    teacherId: teacherId || '',
+                    recipients: [{ id: selectedSub.student_id, name: selectedSub.student_name, type: 'student' }],
+                    title: newStatus === 'approved' ? `✅ Task Approved: ${selectedSub.task_title}` : `📝 Task Reviewed: ${selectedSub.task_title}`,
+                    message: newStatus === 'approved' 
+                        ? `Your submission for "${selectedSub.task_title}" has been approved!${score ? ` Score: ${score}/10.` : ''}`
+                        : `Your submission for "${selectedSub.task_title}" has been reviewed and needs revision.${feedback ? ` Feedback: "${feedback}"` : ''}`,
+                    studentIds: [selectedSub.student_id]
+                });
+            } catch (notifErr) {
+                console.error('Failed to send notification for task review:', notifErr);
+            }
+
             alert('Review saved successfully');
 
         } catch (error: any) {
