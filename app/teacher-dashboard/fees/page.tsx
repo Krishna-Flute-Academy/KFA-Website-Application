@@ -52,7 +52,7 @@ export default function FeesManagementDashboard() {
     
     // UI Filters
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'pending_verification' | 'good' | 'due_date' | 'due_classes' | 'overdue' | 'setup_required'>('all');
+    const [statusFilter, setStatusFilter] = useState<string>('all');
     const [basisFilter, setBasisFilter] = useState<'all' | 'monthly' | 'class'>('all');
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 8;
@@ -128,8 +128,7 @@ export default function FeesManagementDashboard() {
                         classrooms(name)
                     )
                 `)
-                .eq('role', 'student')
-                .eq('teacher_id', userId);
+                .eq('role', 'student');
 
             if (studentsError) throw studentsError;
 
@@ -173,10 +172,8 @@ export default function FeesManagementDashboard() {
                     classes_added,
                     notes,
                     status,
-                    created_at,
-                    users!inner(teacher_id)
+                    created_at
                 `)
-                .eq('users.teacher_id', userId)
                 .gte('payment_date', startSearchDate);
 
             if (paymentsData) {
@@ -192,6 +189,22 @@ export default function FeesManagementDashboard() {
 
     useEffect(() => {
         fetchData();
+
+        // Subscribe to realtime updates on fees_payments table
+        const feesChannel = supabaseAuth
+            .channel('admin-fees-payments-realtime')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'fees_payments' },
+                () => {
+                    fetchData();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(feesChannel);
+        };
     }, [router]);
 
     const handleLogout = async () => {
@@ -249,7 +262,14 @@ export default function FeesManagementDashboard() {
         }
 
         if (statusFilter !== 'all') {
-            result = result.filter(s => getStudentStatus(s) === statusFilter);
+            if (statusFilter === 'overdue_due') {
+                result = result.filter(s => {
+                    const status = getStudentStatus(s);
+                    return status === 'overdue' || status === 'due_classes' || status === 'due_date';
+                });
+            } else {
+                result = result.filter(s => getStudentStatus(s) === statusFilter);
+            }
         }
 
         // Sort by status severity, then name
@@ -282,6 +302,7 @@ export default function FeesManagementDashboard() {
         let dueDateCount = 0;
         let goodCount = 0;
         let setupCount = 0;
+        let pendingCount = 0;
 
         students.forEach(s => {
             const status = getStudentStatus(s);
@@ -289,6 +310,7 @@ export default function FeesManagementDashboard() {
             else if (status === 'due_classes') dueClassesCount++;
             else if (status === 'due_date') dueDateCount++;
             else if (status === 'setup_required') setupCount++;
+            else if (status === 'pending_verification') pendingCount++;
             else goodCount++;
         });
 
@@ -299,9 +321,18 @@ export default function FeesManagementDashboard() {
             dueDateCount,
             goodCount,
             setupCount,
+            pendingCount,
             totalStudents: students.length
         };
     }, [students, payments]);
+
+    const tabs = useMemo(() => [
+        { id: 'all', label: 'All Students', count: statsSummary.totalStudents },
+        { id: 'pending_verification', label: 'Pending Review', count: statsSummary.pendingCount },
+        { id: 'overdue_due', label: 'Overdue / Due', count: statsSummary.overdueCount + statsSummary.dueClassesCount + statsSummary.dueDateCount },
+        { id: 'good', label: 'Good Standing', count: statsSummary.goodCount },
+        { id: 'setup_required', label: 'Setup Required', count: statsSummary.setupCount }
+    ], [statsSummary]);
 
     // Open Payment Modal
     const openPaymentModal = (student: StudentFeesData) => {
@@ -424,6 +455,16 @@ export default function FeesManagementDashboard() {
 
             if (error) throw error;
 
+            // Also insert notification in public.notifications for the student
+            await supabaseAuth.from('notifications').insert({
+                user_id: student.id,
+                title: type === 'classes_completed' ? 'Fees Due: Classes Completed' : 'Fees Due: Payment Reminder',
+                message: type === 'classes_completed' 
+                    ? 'Your prepaid classes are completed. Please submit your fee payment.' 
+                    : `Your monthly fee payment is due. Please submit your fee payment.`,
+                is_read: false
+            });
+
             setAlertMessage({ 
                 type: 'success', 
                 text: `Reminder notification sent successfully to ${student.name} (${student.email}) via Email!` 
@@ -446,7 +487,9 @@ export default function FeesManagementDashboard() {
 
     const handleApprovePayment = async (paymentId: string, studentId: string, amount: number, basis: string) => {
         try {
-            const classesToAdd = calculateClassesAdded(amount, selectedStudent?.fees_amount || 0);
+            const student = students.find(s => s.id === studentId);
+            const studentFeesAmount = student ? student.fees_amount : (selectedStudent?.fees_amount || 0);
+            const classesToAdd = calculateClassesAdded(amount, studentFeesAmount);
 
             // Update payment status
             const { error: paymentError } = await supabaseAuth
@@ -457,17 +500,27 @@ export default function FeesManagementDashboard() {
             if (paymentError) throw paymentError;
 
             // Update student balance
-            if (selectedStudent) {
-                const newClassesPaid = (selectedStudent.fees_classes_paid || 0) + classesToAdd;
-                const { error: studentUpdateError } = await supabaseAuth
-                    .from('users')
-                    .update({ fees_classes_paid: newClassesPaid })
-                    .eq('id', studentId);
-                
-                if (studentUpdateError) throw studentUpdateError;
-                
+            const currentClasses = student ? student.fees_classes_paid : (selectedStudent?.fees_classes_paid || 0);
+            const newClassesPaid = currentClasses + classesToAdd;
+            
+            const { error: studentUpdateError } = await supabaseAuth
+                .from('users')
+                .update({ fees_classes_paid: newClassesPaid })
+                .eq('id', studentId);
+            
+            if (studentUpdateError) throw studentUpdateError;
+            
+            if (selectedStudent && selectedStudent.id === studentId) {
                 setSelectedStudent({ ...selectedStudent, fees_classes_paid: newClassesPaid });
             }
+
+            // Also insert notification for the student to confirm approval and classes credited
+            await supabaseAuth.from('notifications').insert({
+                user_id: studentId,
+                title: 'Fee Payment Approved',
+                message: `Your reported payment of ₹${amount.toLocaleString('en-IN')} has been approved. ${classesToAdd} classes have been credited to your balance.`,
+                is_read: false
+            });
 
             setAlertMessage({ type: 'success', text: `Payment approved and balance updated.` });
             
@@ -482,12 +535,29 @@ export default function FeesManagementDashboard() {
 
     const handleRejectPayment = async (paymentId: string) => {
         try {
+            // Find the payment to get the student_id and amount
+            const { data: paymentData } = await supabaseAuth
+                .from('fees_payments')
+                .select('student_id, amount')
+                .eq('id', paymentId)
+                .single();
+
             const { error } = await supabaseAuth
                 .from('fees_payments')
                 .update({ status: 'rejected' })
                 .eq('id', paymentId);
             
             if (error) throw error;
+
+            if (paymentData) {
+                // Add a notification for the student
+                await supabaseAuth.from('notifications').insert({
+                    user_id: paymentData.student_id,
+                    title: 'Fee Payment Marked Not Received',
+                    message: `Your reported payment of ₹${paymentData.amount.toLocaleString('en-IN')} was marked as not received by the admin. Please verify and try again.`,
+                    is_read: false
+                });
+            }
 
             setAlertMessage({ type: 'success', text: `Payment rejected.` });
             setStudentPayments(prev => prev.map(p => p.id === paymentId ? { ...p, status: 'rejected' } : p));
@@ -578,6 +648,33 @@ export default function FeesManagementDashboard() {
                             {/* Main Filter & Table Board */}
                             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
                                 
+                                {/* Tabs Panel */}
+                                <div className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/20 px-6 flex flex-wrap gap-1">
+                                    {tabs.map(tab => {
+                                        const isActive = statusFilter === tab.id;
+                                        return (
+                                            <button
+                                                key={tab.id}
+                                                onClick={() => setStatusFilter(tab.id)}
+                                                className={`px-4 py-4 text-xs font-bold transition-all relative border-b-2 -mb-px flex items-center gap-2 ${
+                                                    isActive
+                                                        ? 'border-[#ecb613] text-[#b45309] dark:text-[#ecb613]'
+                                                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                }`}
+                                            >
+                                                <span>{tab.label}</span>
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                                    isActive
+                                                        ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400'
+                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                                                }`}>
+                                                    {tab.count}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
                                 {/* Filters Panel */}
                                 <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-900/40">
                                     <div className="relative flex-1 max-w-md">
@@ -592,24 +689,6 @@ export default function FeesManagementDashboard() {
                                     </div>
                                     
                                     <div className="flex flex-wrap items-center gap-3">
-                                        {/* Status Filter */}
-                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase pl-1.5">Status:</span>
-                                            <select
-                                                value={statusFilter}
-                                                onChange={e => setStatusFilter(e.target.value as any)}
-                                                className="bg-transparent border-none text-xs font-semibold py-1.5 pr-8 focus:ring-0 outline-none cursor-pointer"
-                                            >
-                                                <option value="all">All statuses</option>
-                                                <option value="pending_verification">Pending Review</option>
-                                                <option value="good">Paid & Active</option>
-                                                <option value="setup_required">Setup Required</option>
-                                                <option value="due_classes">Classes Completed</option>
-                                                <option value="due_date">Due Date Arrived</option>
-                                                <option value="overdue">Overdue (Both)</option>
-                                            </select>
-                                        </div>
-
                                         {/* Basis Filter */}
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase pl-1.5">Basis:</span>
@@ -628,7 +707,7 @@ export default function FeesManagementDashboard() {
 
                                 {/* Table */}
                                 <div className="overflow-x-auto min-h-[350px]">
-                                    <table className="w-full border-collapse text-left">
+                                    <table className="w-full min-w-[1100px] border-collapse text-left">
                                         <thead>
                                             <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/20">
                                                 <th className="px-6 py-4 whitespace-nowrap">Student</th>
@@ -770,12 +849,16 @@ export default function FeesManagementDashboard() {
                                                                         Overdue
                                                                     </span>
                                                                 )}
-                                                                {status === 'pending_verification' && (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-450 border border-blue-100 dark:border-blue-900/30">
-                                                                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
-                                                                        Pending Review
-                                                                    </span>
-                                                                )}
+                                                                {status === 'pending_verification' && (() => {
+                                                                    const pendingPayment = payments.find(p => p.student_id === student.id && p.status === 'pending_approval');
+                                                                    const amountStr = pendingPayment ? ` (₹${pendingPayment.amount.toLocaleString('en-IN')})` : '';
+                                                                    return (
+                                                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-450 border border-blue-100 dark:border-blue-900/30 animate-pulse">
+                                                                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                                                                            Pending Review{amountStr}
+                                                                        </span>
+                                                                    );
+                                                                })()}
                                                             </td>
 
                                                             {/* Actions */}
@@ -807,6 +890,31 @@ export default function FeesManagementDashboard() {
                                                                             <div className="absolute bottom-full mb-2 right-0 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl text-center z-10 pointer-events-none">
                                                                                 No standard fee amount is configured for this student. Update their profile first.
                                                                             </div>
+                                                                        </div>
+                                                                    ) : status === 'pending_verification' ? (
+                                                                        <div className="flex items-center gap-1.5 animate-in fade-in duration-300">
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    const pendingPayment = payments.find(p => p.student_id === student.id && p.status === 'pending_approval');
+                                                                                    if (pendingPayment) {
+                                                                                        handleRejectPayment(pendingPayment.id);
+                                                                                    }
+                                                                                }}
+                                                                                className="px-2.5 py-1.5 text-xs font-black bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition-all active:scale-[0.97]"
+                                                                            >
+                                                                                Not Received
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    const pendingPayment = payments.find(p => p.student_id === student.id && p.status === 'pending_approval');
+                                                                                    if (pendingPayment) {
+                                                                                        handleApprovePayment(pendingPayment.id, student.id, pendingPayment.amount, student.fees_basis);
+                                                                                    }
+                                                                                }}
+                                                                                className="px-2.5 py-1.5 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition-all active:scale-[0.97]"
+                                                                            >
+                                                                                Collect
+                                                                            </button>
                                                                         </div>
                                                                     ) : (
                                                                         <button

@@ -32,10 +32,7 @@ body {
     background: linear-gradient(to bottom, #2563eb, #ca8a04);
 }
 
-/* Smooth animations */
-* {
-    transition: transform 0.2s ease-in-out;
-}
+
 
 /* Background pattern */
 .bg-pattern {

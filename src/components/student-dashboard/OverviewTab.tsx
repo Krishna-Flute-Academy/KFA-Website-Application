@@ -126,141 +126,61 @@ export default function OverviewTab({
         );
     }, [broadcasts]);
 
-    const feeAlert = React.useMemo(() => {
-        if (!profile || !profile.fees_collection_date || profile.fees_basis !== 'monthly') {
-            return null;
-        }
-
-        const feeStatus = getStudentFeeStatus(
-            profile.fees_basis,
-            Number(profile.fees_collection_date),
-            payments
-        );
-
-        if (!feeStatus || feeStatus.status === 'good') {
-            return null; // Hide the reminder for that month
-        }
-
-        if (feeStatus.status === 'upcoming') {
-            return {
-                type: 'upcoming',
-                title: 'Upcoming Fee Payment',
-                message: `Your monthly fee is due on ${feeStatus.formattedDueDate}.`
-            };
-        } else if (feeStatus.status === 'due') {
-            return {
-                type: 'due',
-                title: 'Fee Payment Due Today',
-                message: `Your monthly fee is due today.`
-            };
-        } else { // overdue
-            return {
-                type: 'overdue',
-                title: 'Payment Overdue',
-                message: `Your monthly fee is overdue. Please submit your fees.`
-            };
-        }
-    }, [profile, payments]);
-
     return (
         <div className="space-y-8 animate-in fade-in duration-300">
-            {/* Fee Reminder Banner */}
-            {feeAlert && (
-                <div className={`relative overflow-hidden rounded-2xl border p-5 shadow-lg flex items-center justify-between gap-6 animate-in slide-in-from-top-4 duration-300 ${
-                    feeAlert.type === 'overdue'
-                        ? 'bg-gradient-to-r from-rose-50 to-red-50/75 dark:from-red-950/20 dark:to-rose-950/10 border-red-200 dark:border-red-900/30 text-red-900 dark:text-red-300'
-                        : feeAlert.type === 'due'
-                            ? 'bg-gradient-to-r from-amber-50 to-rose-50/80 dark:from-amber-955/20 dark:to-rose-955/20 border-amber-200 dark:border-amber-900/30 text-amber-900 dark:text-amber-300'
-                            : 'bg-gradient-to-r from-amber-50/50 to-orange-50/30 dark:from-amber-950/10 dark:to-orange-950/5 border-amber-100 dark:border-amber-900/20 text-amber-800 dark:text-amber-400'
-                }`}>
-                    {/* Background glass/glow detail */}
-                    <div className="absolute -right-12 -top-12 w-32 h-32 rounded-full bg-white/20 dark:bg-white/5 blur-2xl pointer-events-none" />
-                    
-                    <div className="flex items-center gap-4 text-left relative z-10">
-                        <div className={`flex items-center justify-center size-12 rounded-2xl border shrink-0 ${
-                            feeAlert.type === 'overdue'
-                                ? 'bg-red-100 dark:bg-red-900/30 border-red-200 dark:border-red-800/40 text-red-600 dark:text-red-400 animate-pulse'
-                                : feeAlert.type === 'due'
-                                    ? 'bg-amber-100 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800/40 text-amber-600 dark:text-amber-450 animate-bounce'
-                                    : 'bg-amber-50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-800/20 text-amber-600 dark:text-amber-550'
-                        }`}>
-                            {feeAlert.type === 'overdue' ? (
-                                <AlertTriangle className="size-6 shrink-0" />
-                            ) : feeAlert.type === 'due' ? (
-                                <AlertCircle className="size-6 shrink-0" />
-                            ) : (
-                                <Clock className="size-6 shrink-0" />
-                            )}
-                        </div>
-                        
-                        <div>
-                            <h4 className="text-sm font-black tracking-tight leading-none mb-1.5 uppercase">
-                                {feeAlert.title}
-                            </h4>
-                            <p className="text-xs font-semibold opacity-90 leading-relaxed">
-                                {feeAlert.message}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            )}
             {/* Admin Broadcast Alert Banner */}
             {unreadAdminBroadcasts.length > 0 && (
-                <div className="bg-[#FAF5EE] border-l-4 border-[#7C5E3F] rounded-2xl p-4 sm:p-5 shadow-xs flex items-start justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
-                    <div className="flex items-start gap-3 text-left">
-                        <div className="w-9 h-9 rounded-full bg-[#FAF5EE] border border-[#7C5E3F]/20 text-[#7C5E3F] flex items-center justify-center shrink-0 mt-0.5">
-                            <span className="material-symbols-outlined text-lg">campaign</span>
+                <div className="bg-[#FAF5EE] border border-l-4 border-[#7C5E3F] rounded-xl py-2.5 px-4 shadow-xs flex items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-center gap-3 min-w-0 text-left">
+                        <div className="w-7 h-7 rounded-full bg-[#FAF5EE] border border-[#7C5E3F]/20 text-[#7C5E3F] flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-sm">campaign</span>
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                                <span className="text-[9px] font-black text-[#7C5E3F] uppercase tracking-wider bg-amber-100 dark:bg-amber-950/20 px-2 py-0.5 rounded">Important Notice</span>
+                                <span className="text-[8px] font-black text-[#7C5E3F] uppercase tracking-wider bg-amber-100 px-1.5 py-0.5 rounded leading-none">Notice</span>
                                 <span className="text-[9px] font-bold text-slate-400">
-                                    {new Date(unreadAdminBroadcasts[0].created_at).toLocaleDateString()}
+                                    {new Date(unreadAdminBroadcasts[0].created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                                 </span>
                             </div>
-                            <h4 className="font-extrabold text-slate-800 text-sm mt-1 truncate">{unreadAdminBroadcasts[0].subject}</h4>
-                            <p className="text-xs text-slate-600 mt-1 line-clamp-2 leading-relaxed">
-                                {unreadAdminBroadcasts[0].content}
+                            <p className="text-xs font-bold text-slate-800 mt-0.5 truncate">
+                                {unreadAdminBroadcasts[0].subject} — <span className="font-semibold text-slate-500">{unreadAdminBroadcasts[0].content}</span>
                             </p>
-                            <button 
-                                onClick={() => setActiveTab('messages')}
-                                className="text-xs font-black text-[#7C5E3F] hover:text-[#5c442c] transition-colors mt-2 flex items-center gap-0.5"
-                            >
-                                Read full announcement <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
                         </div>
                     </div>
-                    <button 
-                        onClick={() => handleDismissAdminBroadcast(unreadAdminBroadcasts[0].id)}
-                        className="text-[#9A958E] hover:text-[#7C5E3F] transition-colors p-1"
-                        aria-label="Dismiss Alert"
-                    >
-                        <X className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <button 
+                            onClick={() => setActiveTab('messages')}
+                            className="text-[10px] font-black text-[#7C5E3F] hover:text-[#5c442c] transition-colors"
+                        >
+                            Read
+                        </button>
+                        <button 
+                            onClick={() => handleDismissAdminBroadcast(unreadAdminBroadcasts[0].id)}
+                            className="text-[#9A958E] hover:text-[#7C5E3F] transition-colors p-1"
+                            aria-label="Dismiss Alert"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 </div>
             )}
-
+            
             {/* Pending Tasks Alert Banner */}
             {assignments.filter(a => a.status === 'pending').length > 0 && (
-                <div className="bg-gradient-to-r from-amber-500/10 to-amber-600/10 border border-amber-200 dark:border-amber-900/30 rounded-3xl p-5 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
-                    <div className="flex items-center gap-3.5">
-                        <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-                            <span className="material-symbols-outlined text-xl">assignment_late</span>
+                <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl py-2.5 px-4 text-left flex items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-7 h-7 rounded-full text-white flex items-center justify-center shrink-0 bg-amber-500">
+                            <span className="material-symbols-outlined text-sm">assignment_late</span>
                         </div>
-                        <div className="space-y-0.5">
-                            <h4 className="text-sm font-black text-slate-800 dark:text-white">
-                                You have {assignments.filter(a => a.status === 'pending').length} pending tasks
-                            </h4>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                                Submit before the due date.
-                            </p>
-                        </div>
+                        <p className="text-xs font-semibold text-slate-700 truncate">
+                            You have <strong className="text-slate-900">{assignments.filter(a => a.status === 'pending').length} pending tasks</strong> that require submission.
+                        </p>
                     </div>
                     <button 
                         onClick={() => setActiveTab('tasks')}
-                        className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-full text-xs transition-all flex items-center justify-center gap-1.5 hover:scale-102 active:scale-98 shadow-xs cursor-pointer uppercase tracking-wider font-mono shrink-0"
+                        className="text-[10px] bg-[#7C5E3F] hover:bg-[#654d33] text-white font-black px-3.5 py-1.5 rounded-lg transition-all active:scale-95 shadow-xs shrink-0 uppercase tracking-wider"
                     >
-                        Go to Tasks
+                        View Tasks
                     </button>
                 </div>
             )}
@@ -620,36 +540,36 @@ export default function OverviewTab({
 
                 {/* Right Column: Instructor Board & Practice Highlights */}
                 <div className="space-y-6">
-                    {/* Instructor Message Board */}
-                    <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-sm text-left">
-                        <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-[#E6E1DA] flex items-center justify-between">
-                            <h3 className="font-black text-[#3E3A35] text-sm flex items-center gap-2">
+                    {/* Notice Board */}
+                    <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-xs text-left">
+                        <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-5 py-4 border-b border-[#E6E1DA] flex items-center justify-between">
+                            <h3 className="font-extrabold text-[#3E3A35] text-xs flex items-center gap-2">
                                 <span className="material-symbols-outlined text-lg text-amber-500 shrink-0">campaign</span>
-                                Instructor Notice Board
+                                Notice Board
                             </h3>
+                            <button 
+                                onClick={() => setActiveTab('messages')}
+                                className="text-[10px] font-bold text-[#7C5E3F] hover:underline"
+                            >
+                                View All
+                            </button>
                         </div>
 
-                        <div className="p-6 divide-y divide-[#E6E1DA]/40 max-h-[400px] overflow-y-auto pr-1">
+                        <div className="p-4 space-y-3 max-h-[220px] overflow-y-auto pr-1">
                             {dashboardBroadcasts.length === 0 ? (
-                                <div className="py-12 text-center text-slate-400">
-                                    <p className="text-xs">No announcements or fee messages posted yet.</p>
-                                </div>
+                                <p className="text-[11px] text-slate-400 text-center py-6">No recent notices.</p>
                             ) : (
-                                dashboardBroadcasts.map((b) => (
-                                    <div key={b.id} className="py-4 first:pt-0 last:pb-0 text-left space-y-3">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0">
-                                                <h4 className="font-extrabold text-xs text-[#3E3A35] truncate">{b.subject}</h4>
-                                                <p className="text-[9px] text-[#9A958E] font-semibold mt-0.5">
-                                                    By {b.sender?.name || 'Academy Instructor'} · {new Date(b.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                </p>
-                                            </div>
-                                            <span className="bg-[#FAF5EE] text-[#7C5E3F] text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-[#7C5E3F]/10 shrink-0">
-                                                {b.channel === 'fee_management' ? 'Fees' : (b.channel ? b.channel.replace('_', ' ') : 'Announcement')}
-                                            </span>
+                                dashboardBroadcasts.slice(0, 3).map((b) => (
+                                    <div key={b.id} className="text-left py-2 border-b border-[#E6E1DA]/30 last:border-0 last:pb-0 flex justify-between items-start gap-3">
+                                        <div className="min-w-0 flex-1">
+                                            <h4 className="font-extrabold text-[11px] text-[#3E3A35] truncate">{b.subject}</h4>
+                                            <p className="text-[9px] text-[#9A958E] font-medium mt-0.5 line-clamp-1">
+                                                {b.content}
+                                            </p>
                                         </div>
-
-                                        <p className="text-[11px] text-[#5C5852] leading-relaxed whitespace-pre-line">{b.content}</p>
+                                        <span className="text-[9px] text-[#9A958E] font-bold shrink-0">
+                                            {new Date(b.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                        </span>
                                     </div>
                                 ))
                             )}

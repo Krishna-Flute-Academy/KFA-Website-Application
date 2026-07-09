@@ -46,8 +46,23 @@ export default function ClassesListWidget({
                     const isUpcoming = startStr > curTimeStr;
 
                     return (
-                        <div key={cl.id} className={`relative pl-6 border-l-2 ${isPast ? 'border-slate-200 dark:border-slate-800 opacity-60' : isOngoing ? 'border-emerald-500' : 'border-[#ecb613]'}`}>
-                            <div className={`absolute -left-[9px] top-0 size-4 rounded-full border-2 ${isPast ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900' : isOngoing ? 'border-emerald-500 bg-emerald-500' : 'border-[#ecb613] bg-[#ecb613]'} bg-white dark:bg-slate-900`}></div>
+                        <div 
+                            key={cl.id} 
+                            className={`relative pl-6 border-l-2 transition-all duration-300 p-3.5 rounded-r-xl ${
+                                isPast 
+                                    ? 'border-slate-200 dark:border-slate-800 opacity-60 bg-transparent' 
+                                    : isOngoing 
+                                        ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/10 shadow-xs' 
+                                        : 'border-[#ecb613] bg-[#ecb613]/5'
+                            }`}
+                        >
+                            <div className={`absolute -left-[9px] top-4.5 size-4 rounded-full border-2 ${
+                                isPast 
+                                    ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900' 
+                                    : isOngoing 
+                                        ? 'border-emerald-500 bg-emerald-500' 
+                                        : 'border-[#ecb613] bg-[#ecb613]'
+                            } bg-white dark:bg-slate-900`}></div>
                             <p className={`text-xs font-bold ${isPast ? 'text-slate-400' : isOngoing ? 'text-emerald-500' : 'text-[#ecb613]'} uppercase tracking-wider flex items-center gap-1.5`}>
                                 {formatTime12hr(cl.start_time.slice(0, 5))} - {formatTime12hr(cl.end_time.slice(0, 5))}
                                 {isOngoing && <span className="size-1.5 bg-emerald-500 rounded-full animate-pulse" />}

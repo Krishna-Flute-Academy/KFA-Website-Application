@@ -14,6 +14,7 @@ import TeacherSidebar from '../TeacherSidebar';
 import TeacherHeader from '../TeacherHeader';
 import Link from 'next/link';
 import { useToast } from '../../lib/ToastContext';
+import { getStudentFeeStatus } from '../../lib/fee-utils';
 
 // Import subcomponents
 import StatsSummary from './StatsSummary';
@@ -197,6 +198,13 @@ export default function TeacherDashboardContainer() {
     // Admin features
     const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
 
+    // Admin Priority Tasks details
+    const [unassignedStudents, setUnassignedStudents] = useState<{ id: string; name: string }[]>([]);
+    const [pendingLeaves, setPendingLeaves] = useState<any[]>([]);
+    const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+    const [dueStudents, setDueStudents] = useState<any[]>([]);
+    const [pendingSubmissionsList, setPendingSubmissionsList] = useState<any[]>([]);
+
     const isAdmin = teacherProfile?.role === 'admin';
 
     const loadDashboardData = async () => {
@@ -248,12 +256,24 @@ export default function TeacherDashboardContainer() {
                 studentsCount = count || 0;
             }
 
-            let pendingSubmissionsCount = 0;
+            // Fetch assignments list for these classrooms once to resolve mapping without DB joins
+            let assignmentIds: string[] = [];
+            let assignmentsList: any[] = [];
             if (classIds.length > 0) {
+                const { data: dbAsgs } = await supabaseAuth
+                    .from('assignments')
+                    .select('id, title, classroom_id')
+                    .in('classroom_id', classIds);
+                assignmentsList = dbAsgs || [];
+                assignmentIds = assignmentsList.map(a => a.id);
+            }
+
+            let pendingSubmissionsCount = 0;
+            if (assignmentIds.length > 0) {
                 const { count } = await supabaseAuth
-                    .from('task_attempts')
-                    .select('*, tasks!inner(classroom_id)', { count: 'exact', head: true })
-                    .in('tasks.classroom_id', classIds)
+                    .from('assignment_students')
+                    .select('id', { count: 'exact' })
+                    .in('assignment_id', assignmentIds)
                     .eq('status', 'submitted');
                 pendingSubmissionsCount = count || 0;
             }
@@ -269,44 +289,100 @@ export default function TeacherDashboardContainer() {
                 const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
                 
                 const { data: collections } = await supabaseAuth
-                    .from('fees')
-                    .select('amount_paid')
-                    .eq('status', 'paid')
-                    .gte('paid_at', startOfMonth);
+                    .from('fees_payments')
+                    .select('amount')
+                    .eq('status', 'approved')
+                    .gte('payment_date', startOfMonth);
                 
-                const totalCollected = (collections || []).reduce((acc, row) => acc + (row.amount_paid || 0), 0);
+                const totalCollected = (collections || []).reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
 
-                const { count: dueCount } = await supabaseAuth
-                    .from('fees')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('status', 'pending');
+                // Fetch due students count by running the calculation locally
+                const { data: allStudsForStats } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
+                    .eq('role', 'student');
+
+                const { data: allPayForStats } = await supabaseAuth
+                    .from('fees_payments')
+                    .select('id, student_id, amount, payment_date, status');
+
+                let localDueCount = 0;
+                if (allStudsForStats) {
+                    for (const student of allStudsForStats) {
+                        if (Number(student.fees_amount) > 0) {
+                            const studentPayments = (allPayForStats || []).filter(p => p.student_id === student.id);
+                            const classesCompleted = (student.fees_classes_paid || 0) <= 0;
+                            let isFeeDue = false;
+
+                            if (student.fees_basis === 'monthly' && student.fees_collection_date) {
+                                const feeStatus = getStudentFeeStatus(
+                                    student.fees_basis,
+                                    Number(student.fees_collection_date),
+                                    studentPayments
+                                );
+                                if (feeStatus) {
+                                    isFeeDue = feeStatus.status === 'overdue' || feeStatus.status === 'due' || classesCompleted;
+                                }
+                            } else {
+                                if (classesCompleted) {
+                                    isFeeDue = true;
+                                }
+                            }
+
+                            if (isFeeDue) {
+                                localDueCount++;
+                            }
+                        }
+                    }
+                }
 
                 setFeesStats({
                     collectedThisMonth: totalCollected,
-                    dueStudentsCount: dueCount || 0
+                    dueStudentsCount: localDueCount
                 });
             }
 
             // Recent Submissions
-            if (classIds.length > 0) {
+            if (assignmentIds.length > 0) {
                 const { data: attempts } = await supabaseAuth
-                    .from('task_attempts')
-                    .select('id, submitted_at, status, student_id, users!student_id(name, profile_pic_url), task_id, tasks!inner(title, classroom_id)')
-                    .in('tasks.classroom_id', classIds)
+                    .from('assignment_students')
+                    .select('id, submitted_at, status, student_id, video_url, assignment_id')
+                    .in('assignment_id', assignmentIds)
                     .order('submitted_at', { ascending: false })
                     .limit(5);
 
-                const formattedAttempts: Submission[] = (attempts || []).map((att: any) => ({
-                    id: att.id,
-                    student_name: att.users?.name || 'Student',
-                    student_profile_pic_url: att.users?.profile_pic_url || undefined,
-                    task_title: att.tasks?.title || 'Assignment Task',
-                    status: att.status || 'submitted',
-                    submitted_at: att.submitted_at 
-                        ? new Date(att.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) 
-                        : 'Recent'
-                }));
+                const attemptsList = attempts || [];
+                const studentIds = Array.from(new Set(attemptsList.map((att: any) => att.student_id)));
+
+                let studentLookup = new Map();
+                if (studentIds.length > 0) {
+                    const { data: studentUsers } = await supabaseAuth
+                        .from('users')
+                        .select('id, name, profile_pic_url')
+                        .in('id', studentIds);
+                    studentLookup = new Map(studentUsers?.map(u => [u.id, u]) || []);
+                }
+
+                const assignmentLookup = new Map(assignmentsList.map(a => [a.id, a]));
+
+                const formattedAttempts: Submission[] = attemptsList.map((att: any) => {
+                    const student = studentLookup.get(att.student_id);
+                    const assignment = assignmentLookup.get(att.assignment_id);
+                    return {
+                        id: att.id,
+                        student_name: student?.name || 'Student',
+                        student_profile_pic_url: student?.profile_pic_url || undefined,
+                        task_title: assignment?.title || 'Assignment Task',
+                        status: att.status || 'submitted',
+                        video_url: att.video_url,
+                        submitted_at: att.submitted_at 
+                            ? new Date(att.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) 
+                            : 'Recent'
+                    };
+                });
                 setRecentSubmissions(formattedAttempts);
+            } else {
+                setRecentSubmissions([]);
             }
 
             // 4. Calendar data: Recurring Schedules & Temporary Classes
@@ -315,7 +391,7 @@ export default function TeacherDashboardContainer() {
 
             if (classIds.length > 0) {
                 const { data: schedules } = await supabaseAuth
-                    .from('classroom_schedules')
+                    .from('batch_schedules')
                     .select('id, classroom_id, classrooms(name), day_of_week, start_time, end_time')
                     .in('classroom_id', classIds);
 
@@ -349,9 +425,9 @@ export default function TeacherDashboardContainer() {
                 localTemps = formattedTemps;
             }
 
-            // 5. Today's Classes List
+            // 5. Today's Classes List (Sunday=0, Monday=1, ... in batch_schedules)
             if (classIds.length > 0) {
-                const todayDow = (new Date().getDay() + 6) % 7; // 0=Mon, 6=Sun
+                const todayDow = new Date().getDay(); // Sunday=0, Monday=1, ...
                 const todaySchedules = localSchedules.filter(sch => sch.day_of_week === todayDow);
                 const todayDateStr = getLocalDateString(new Date());
                 const todayTemps = localTemps.filter(t => t.class_date === todayDateStr);
@@ -419,7 +495,7 @@ export default function TeacherDashboardContainer() {
 
                 while (loopDate <= yesterdayObj) {
                     const loopDateStr = getLocalDateString(loopDate);
-                    const dow = (loopDate.getDay() + 6) % 7; // Mon=0, Sun=6
+                    const dow = loopDate.getDay(); // Sunday=0, Monday=1, ...
                     const dayName = loopDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
 
                     const activeSchedules = scheduleMap[dow] || [];
@@ -453,6 +529,156 @@ export default function TeacherDashboardContainer() {
                 .eq('status', 'active')
                 .order('name', { ascending: true });
             setAllStudents(studentsList || []);
+
+            // 8. Fetch active students not assigned to any classroom
+            const { data: activeStudents } = await supabaseAuth
+                .from('users')
+                .select('id, name')
+                .eq('role', 'student')
+                .eq('status', 'active');
+
+            const { data: classroomStudents } = await supabaseAuth
+                .from('classroom_students')
+                .select('student_id');
+
+            const assignedSet = new Set((classroomStudents || []).map((cs: any) => cs.student_id));
+            const unassignedList = (activeStudents || []).filter((s: any) => !assignedSet.has(s.id));
+            setUnassignedStudents(unassignedList);
+
+            // 9. Fetch pending Leave/Excuse Requests
+            let leaveQuery = supabaseAuth
+                .from('leave_requests')
+                .select('id, class_date, reason, status, student_id, users!student_id(name), classroom_id, classrooms(name)')
+                .eq('status', 'pending');
+            if (profile.role !== 'admin' && classIds.length > 0) {
+                leaveQuery = leaveQuery.in('classroom_id', classIds);
+            }
+            const { data: dbLeaves } = await leaveQuery;
+            const formattedLeaves = (dbLeaves || []).map((lr: any) => ({
+                id: lr.id,
+                student_name: lr.users?.name || 'Student',
+                classroom_name: lr.classrooms?.name || 'Classroom',
+                class_date: lr.class_date,
+                reason: lr.reason || 'No reason provided'
+            }));
+            setPendingLeaves(formattedLeaves);
+
+            // 10. Fetch pending Payments & calculate Due Students for priority widget
+            const { data: allStuds } = await supabaseAuth
+                .from('users')
+                .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
+                .eq('role', 'student');
+
+            const { data: allPay } = await supabaseAuth
+                .from('fees_payments')
+                .select('id, student_id, amount, payment_date, status');
+
+            const pList: any[] = [];
+            const dList: any[] = [];
+
+            if (allStuds) {
+                for (const student of allStuds) {
+                    const studentPayments = (allPay || []).filter(p => p.student_id === student.id);
+                    
+                    const hasPendingApproval = studentPayments.some(p => p.status === 'pending_approval');
+                    if (hasPendingApproval) {
+                        const pendingPay = studentPayments.find(p => p.status === 'pending_approval');
+                        if (pendingPay) {
+                            pList.push({
+                                id: pendingPay.id,
+                                student_id: student.id,
+                                student_name: student.name,
+                                amount: pendingPay.amount,
+                                payment_date: pendingPay.payment_date
+                            });
+                        }
+                    }
+
+                    if (Number(student.fees_amount) > 0) {
+                        const classesCompleted = (student.fees_classes_paid || 0) <= 0;
+                        let isFeeDue = false;
+                        let dueReason = '';
+
+                        if (student.fees_basis === 'monthly' && student.fees_collection_date) {
+                            const feeStatus = getStudentFeeStatus(
+                                student.fees_basis,
+                                Number(student.fees_collection_date),
+                                studentPayments
+                            );
+                            if (feeStatus) {
+                                const dateIsDue = feeStatus.status === 'overdue' || feeStatus.status === 'due';
+                                if (dateIsDue && classesCompleted) {
+                                    isFeeDue = true;
+                                    dueReason = 'Overdue date & class balance';
+                                } else if (classesCompleted) {
+                                    isFeeDue = true;
+                                    dueReason = 'Class balance completed';
+                                } else if (feeStatus.status === 'overdue') {
+                                    isFeeDue = true;
+                                    dueReason = `Monthly fee overdue since ${feeStatus.formattedDueDate}`;
+                                } else if (feeStatus.status === 'due') {
+                                    isFeeDue = true;
+                                    dueReason = `Monthly fee due today (${feeStatus.formattedDueDate})`;
+                                }
+                            }
+                        } else {
+                            if (classesCompleted) {
+                                isFeeDue = true;
+                                dueReason = 'Prepaid classes finished';
+                            }
+                        }
+
+                        if (isFeeDue) {
+                            dList.push({
+                                student_id: student.id,
+                                student_name: student.name,
+                                reason: dueReason,
+                                fees_amount: Number(student.fees_amount)
+                            });
+                        }
+                    }
+                }
+            }
+            setPendingPayments(pList);
+            setDueStudents(dList);
+
+            // 11. Fetch pending submissions list for task validation
+            if (assignmentIds.length > 0) {
+                const { data: pendingAttempts } = await supabaseAuth
+                    .from('assignment_students')
+                    .select('id, submitted_at, student_id, assignment_id')
+                    .in('assignment_id', assignmentIds)
+                    .eq('status', 'submitted')
+                    .order('submitted_at', { ascending: false });
+                
+                const pendingAttemptsList = pendingAttempts || [];
+                const studentIds = Array.from(new Set(pendingAttemptsList.map((att: any) => att.student_id)));
+
+                let studentLookup = new Map();
+                if (studentIds.length > 0) {
+                    const { data: studentUsers } = await supabaseAuth
+                        .from('users')
+                        .select('id, name')
+                        .in('id', studentIds);
+                    studentLookup = new Map(studentUsers?.map(u => [u.id, u]) || []);
+                }
+
+                const assignmentLookup = new Map(assignmentsList.map(a => [a.id, a]));
+
+                const formattedPending = pendingAttemptsList.map((att: any) => {
+                    const student = studentLookup.get(att.student_id);
+                    const assignment = assignmentLookup.get(att.assignment_id);
+                    return {
+                        id: att.id,
+                        student_name: student?.name || 'Student',
+                        task_title: assignment?.title || 'Assignment Task',
+                        submitted_at: att.submitted_at
+                    };
+                });
+                setPendingSubmissionsList(formattedPending);
+            } else {
+                setPendingSubmissionsList([]);
+            }
 
         } catch (e) {
             console.error('Failed to load dashboard:', e);
@@ -819,6 +1045,12 @@ export default function TeacherDashboardContainer() {
                                 <PriorityTasksWidget 
                                     stats={stats} 
                                     forgottenClasses={forgottenClasses} 
+                                    isAdmin={isAdmin}
+                                    unassignedStudents={unassignedStudents}
+                                    pendingLeaves={pendingLeaves}
+                                    pendingPayments={pendingPayments}
+                                    dueStudents={dueStudents}
+                                    pendingSubmissionsList={pendingSubmissionsList}
                                 />
                             </section>
                         </div>

@@ -73,7 +73,7 @@ async function testTrigger() {
     const successInsert = postInsertBalance === (initialClassesPaid - 1);
     console.log(`Trigger Decrement Check: ${successInsert ? '✅ SUCCESS' : '❌ FAILED'}`);
 
-    // 4. Update attendance status to absent
+    // 4. Update attendance status to absent (should still be deducted)
     console.log(`\n3. Modifying attendance status to 'absent'...`);
     const { error: updateErr } = await supabase
         .from('attendance')
@@ -86,7 +86,7 @@ async function testTrigger() {
         return;
     }
 
-    // Fetch and check balance incremented back
+    // Fetch and check balance remains decremented
     const { data: studentPostUpdate } = await supabase
         .from('users')
         .select('fees_classes_paid')
@@ -95,8 +95,33 @@ async function testTrigger() {
 
     const postUpdateBalance = studentPostUpdate?.fees_classes_paid ?? 0;
     console.log(`Balance after changing status to absent: ${postUpdateBalance}`);
-    const successUpdate = postUpdateBalance === initialClassesPaid;
-    console.log(`Trigger Increment Check: ${successUpdate ? '✅ SUCCESS' : '❌ FAILED'}`);
+    const successUpdate = postUpdateBalance === (initialClassesPaid - 1);
+    console.log(`Trigger Absent Deduct Check: ${successUpdate ? '✅ SUCCESS' : '❌ FAILED'}`);
+
+    // 4b. Update attendance status to excused (should NOT be deducted, balance returns to initialClassesPaid)
+    console.log(`\n3b. Modifying attendance status to 'excused'...`);
+    const { error: updateExcusedErr } = await supabase
+        .from('attendance')
+        .update({ status: 'excused' })
+        .eq('student_id', testStudent.id)
+        .eq('date', testDate);
+
+    if (updateExcusedErr) {
+        console.error('Error updating attendance to excused:', updateExcusedErr.message);
+        return;
+    }
+
+    // Fetch and check balance returned to initial
+    const { data: studentPostExcused } = await supabase
+        .from('users')
+        .select('fees_classes_paid')
+        .eq('id', testStudent.id)
+        .single();
+
+    const postExcusedBalance = studentPostExcused?.fees_classes_paid ?? 0;
+    console.log(`Balance after changing status to excused: ${postExcusedBalance}`);
+    const successExcused = postExcusedBalance === initialClassesPaid;
+    console.log(`Trigger Excused Revert Check: ${successExcused ? '✅ SUCCESS' : '❌ FAILED'}`);
 
     // 5. Clean up by deleting the test attendance record
     console.log('\n4. Cleaning up test attendance record...');

@@ -40,6 +40,31 @@ export default function FeesTab({ profile, payments, refreshData }: FeesTabProps
             });
 
             if (error) throw error;
+
+            // Get all admins in the system to send them a notification
+            const { data: admins } = await supabaseAuth
+                .from('users')
+                .select('id')
+                .eq('role', 'admin');
+
+            const recipientIds = new Set<string>();
+            if (profile?.teacher_id) {
+                recipientIds.add(profile.teacher_id);
+            }
+            if (admins) {
+                admins.forEach((admin: any) => recipientIds.add(admin.id));
+            }
+
+            if (recipientIds.size > 0) {
+                const notificationsToInsert = Array.from(recipientIds).map(uid => ({
+                    user_id: uid,
+                    title: 'Fee Payment Reported',
+                    message: `${profile.name} reported a fee payment of ₹${Number(amount)} via ${paymentMethod}.`,
+                    is_read: false
+                }));
+
+                await supabaseAuth.from('notifications').insert(notificationsToInsert);
+            }
             
             setSuccessMsg('Payment reported successfully! Your teacher will verify and update your balance soon.');
             setAmount('');
@@ -238,9 +263,13 @@ export default function FeesTab({ profile, payments, refreshData }: FeesTabProps
                                         <div key={payment.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:border-amber-200 transition-colors gap-4">
                                             <div className="flex items-center gap-4">
                                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                                    payment.status === 'pending_approval' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'
+                                                    payment.status === 'pending_approval' ? 'bg-blue-100 text-blue-600' :
+                                                    payment.status === 'rejected' ? 'bg-rose-100 text-rose-600' :
+                                                    'bg-emerald-100 text-emerald-600'
                                                 }`}>
-                                                    {payment.status === 'pending_approval' ? <Clock className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+                                                    {payment.status === 'pending_approval' ? <Clock className="w-5 h-5" /> :
+                                                     payment.status === 'rejected' ? <AlertTriangle className="w-5 h-5" /> :
+                                                     <CheckCircle className="w-5 h-5" />}
                                                 </div>
                                                 <div>
                                                     <p className="font-bold text-slate-900 text-base">₹{payment.amount}</p>
@@ -253,9 +282,13 @@ export default function FeesTab({ profile, payments, refreshData }: FeesTabProps
                                                 <span className={`px-3 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg border ${
                                                     payment.status === 'pending_approval' 
                                                         ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                                                        : payment.status === 'rejected'
+                                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
                                                         : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                                 }`}>
-                                                    {payment.status === 'pending_approval' ? 'Reviewing' : 'Approved'}
+                                                    {payment.status === 'pending_approval' ? 'Reviewing' :
+                                                     payment.status === 'rejected' ? 'Not Received' :
+                                                     'Approved'}
                                                 </span>
                                             </div>
                                         </div>

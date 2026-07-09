@@ -741,6 +741,11 @@ export default function StudentDashboardContainer() {
                     const newNotif = payload.new;
                     setNotifications(prev => [newNotif, ...prev]);
 
+                    // Auto-refresh data if notification is related to fees/payments
+                    if (newNotif.title && (newNotif.title.includes('Fee') || newNotif.title.includes('Payment'))) {
+                        refreshDataRef.current();
+                    }
+
                     // Play a soft flute-like chime sound using the browser's Web Audio API
                     try {
                         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
@@ -1344,6 +1349,60 @@ export default function StudentDashboardContainer() {
 
             if (dbError) throw dbError;
 
+            // Send notification to teacher and admins
+            try {
+                let teacherId = classroom?.id === selectedAssignment.classroom_id ? classroom.teacher_id : null;
+                if (!teacherId && selectedAssignment.classroom_id) {
+                    const { data: classData } = await supabaseAuth
+                        .from('classrooms')
+                        .select('teacher_id')
+                        .eq('id', selectedAssignment.classroom_id)
+                        .maybeSingle();
+                    teacherId = classData?.teacher_id || null;
+                }
+
+                const { data: admins } = await supabaseAuth
+                    .from('users')
+                    .select('id')
+                    .eq('role', 'admin');
+
+                const notificationTitle = `Task Submission: ${profile.name}`;
+                const notificationMsg = `${profile.name} submitted their response for task "${selectedAssignment.title}".`;
+                
+                const notificationInserts: any[] = [];
+                
+                if (teacherId) {
+                    notificationInserts.push({
+                        user_id: teacherId,
+                        title: notificationTitle,
+                        message: notificationMsg,
+                        type: 'reminder'
+                    });
+                }
+
+                (admins || []).forEach((adm: any) => {
+                    if (adm.id !== teacherId) {
+                        notificationInserts.push({
+                            user_id: adm.id,
+                            title: notificationTitle,
+                            message: notificationMsg,
+                            type: 'reminder'
+                        });
+                    }
+                });
+
+                if (notificationInserts.length > 0) {
+                    const { error: notifError } = await supabaseAuth
+                        .from('notifications')
+                        .insert(notificationInserts);
+                    if (notifError) {
+                        console.error('Error writing task submission notifications:', notifError);
+                    }
+                }
+            } catch (notifErr) {
+                console.error('Failed to create notifications for task submission:', notifErr);
+            }
+
             alert('Practice recording submitted successfully!');
 
             await refreshData();
@@ -1806,62 +1865,101 @@ export default function StudentDashboardContainer() {
                     </header>
 
                     {/* Main Content Area */}
-                    <main className="flex-1 p-3 sm:p-6 md:p-8 w-full max-w-[1400px]">
-                        {/* Fee Notification Banner */}
+                    <main className="flex-1 p-3 sm:p-6 md:p-8 w-full max-w-[1400px]">                        {/* Fee Notification Banner */}
                         {feeStatus && activeTab !== 'fees' && profile && (
                             <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                 {(() => {
                                     const classesLeft = profile.fees_classes_paid || 0;
-                                    const isOverdue = feeStatus.status === 'overdue' || classesLeft <= 0;
-                                    const isWarning = classesLeft === 1;
                                     
-                                    if (isOverdue) {
-                                        return (
-                                            <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-r-xl flex items-start gap-4 shadow-sm relative overflow-hidden">
-                                                <div className="absolute -right-4 -top-4 w-24 h-24 bg-rose-500/5 rounded-full blur-xl pointer-events-none"></div>
-                                                <div className="p-2 bg-rose-100 rounded-full shrink-0 relative z-10">
-                                                    <AlertTriangle className="w-5 h-5 text-rose-600" />
-                                                </div>
-                                                <div className="flex-1 relative z-10">
-                                                    <h3 className="text-sm font-bold text-rose-800">Action Required: No Classes Remaining</h3>
-                                                    <p className="text-xs text-rose-600/90 mt-1 font-medium leading-relaxed max-w-2xl">
-                                                        Your class balance is currently empty. To attend the next scheduled class, please pay your fees.
-                                                    </p>
-                                                    <button 
-                                                        onClick={() => setActiveTab('fees')}
-                                                        className="mt-3 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg transition-all active:scale-95 shadow-sm inline-flex items-center gap-1.5"
-                                                    >
-                                                        Pay Fees Now <ChevronRight className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
+                                    // Hide notifications if there is a pending payment reported by the student
+                                    if (feeStatus.hasPendingPayment) return null;
+                                    
+                                    let bannerType: 'overdue' | 'due' | 'warning' | 'upcoming' | null = null;
+                                    let bannerTitle = '';
+                                    let bannerMessage = '';
+                                    let showButton = true;
+                                    
+                                    if (classesLeft <= 0) {
+                                        bannerType = 'overdue';
+                                        bannerTitle = 'Action Required: 4 Classes Completed';
+                                        bannerMessage = 'Your 4 classes are over. Please pay your fees to continue attending.';
+                                    } else if (feeStatus.status === 'overdue') {
+                                        bannerType = 'overdue';
+                                        bannerTitle = 'Action Required: Fee Overdue';
+                                        bannerMessage = 'Your monthly fee is overdue. Please submit your fees to keep your account active.';
+                                    } else if (feeStatus.status === 'due') {
+                                        bannerType = 'due';
+                                        bannerTitle = 'Reminder: Fee Due Today';
+                                        bannerMessage = 'Your monthly fee is due today. Please make a payment to continue classes.';
+                                    } else if (classesLeft === 1) {
+                                        bannerType = 'warning';
+                                        bannerTitle = 'Reminder: 1 Class Remaining';
+                                        bannerMessage = 'You have exactly 1 class left in your balance. Please pay your fees soon to ensure you can continue.';
+                                    } else if (feeStatus.status === 'upcoming') {
+                                        bannerType = 'upcoming';
+                                        bannerTitle = 'Upcoming Fee Payment';
+                                        bannerMessage = `Your monthly fee is due on ${feeStatus.formattedDueDate}.`;
                                     }
                                     
-                                    if (isWarning) {
-                                        return (
-                                            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl flex items-start gap-4 shadow-sm relative overflow-hidden">
-                                                <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none"></div>
-                                                <div className="p-2 bg-amber-100 rounded-full shrink-0 relative z-10">
-                                                    <Clock className="w-5 h-5 text-amber-600" />
-                                                </div>
-                                                <div className="flex-1 relative z-10">
-                                                    <h3 className="text-sm font-bold text-amber-800">Reminder: 1 Class Remaining</h3>
-                                                    <p className="text-xs text-amber-700/90 mt-1 font-medium leading-relaxed max-w-2xl">
-                                                        You have exactly 1 class left in your current balance. Please pay your fees soon to ensure you can continue attending after next week.
-                                                    </p>
-                                                    <button 
-                                                        onClick={() => setActiveTab('fees')}
-                                                        className="mt-3 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg transition-all active:scale-95 shadow-sm inline-flex items-center gap-1.5"
-                                                    >
-                                                        Review Fees <ChevronRight className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
+                                    if (!bannerType) return null;
+                                    
+                                    let bgClass = '';
+                                    let borderClass = '';
+                                    let titleColor = '';
+                                    let msgColor = '';
+                                    let btnClass = '';
+                                    let iconColor = '';
+                                    let Icon = Clock;
+                                    
+                                    if (bannerType === 'overdue') {
+                                        bgClass = 'bg-rose-50';
+                                        borderClass = 'border-rose-500';
+                                        titleColor = 'text-rose-800';
+                                        msgColor = 'text-rose-600/90';
+                                        btnClass = 'bg-rose-600 hover:bg-rose-700 text-white';
+                                        iconColor = 'text-rose-600 bg-rose-100';
+                                        Icon = AlertTriangle;
+                                    } else if (bannerType === 'due' || bannerType === 'warning') {
+                                        bgClass = 'bg-amber-50';
+                                        borderClass = 'border-amber-500';
+                                        titleColor = 'text-amber-800';
+                                        msgColor = 'text-amber-700/90';
+                                        btnClass = 'bg-amber-600 hover:bg-amber-700 text-white';
+                                        iconColor = 'text-amber-600 bg-amber-100';
+                                        Icon = Clock;
+                                    } else { // upcoming
+                                        bgClass = 'bg-[#FAF5EE]';
+                                        borderClass = 'border-amber-300';
+                                        titleColor = 'text-amber-900';
+                                        msgColor = 'text-amber-700/90';
+                                        btnClass = 'bg-[#a15912] hover:bg-[#8a4b0f] text-white';
+                                        iconColor = 'text-amber-700 bg-amber-50 border border-amber-100';
+                                        Icon = Clock;
                                     }
                                     
-                                    return null;
+                                    return (
+                                        <div className={`${bgClass} border border-l-4 ${borderClass} py-2.5 px-4 rounded-xl flex items-center justify-between gap-4 shadow-xs relative overflow-hidden`}>
+                                            <div className="flex items-center gap-3 min-w-0 text-left">
+                                                <div className={`p-1.5 ${iconColor} rounded-full shrink-0 relative z-10`}>
+                                                    <Icon className="w-4 h-4" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className={`text-xs font-bold ${titleColor} leading-none`}>{bannerTitle}</p>
+                                                    <p className={`text-[11px] mt-0.5 font-medium truncate ${msgColor}`}>
+                                                        {bannerMessage}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {showButton && (
+                                                <button 
+                                                    onClick={() => setActiveTab('fees')}
+                                                    className={`text-[10px] font-black px-3.5 py-1.5 rounded-lg transition-all active:scale-95 shadow-xs shrink-0 inline-flex items-center gap-1 uppercase tracking-wider ${btnClass}`}
+                                                >
+                                                    Pay Now <ChevronRight className="w-3 h-3" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
                                 })()}
                             </div>
                         )}

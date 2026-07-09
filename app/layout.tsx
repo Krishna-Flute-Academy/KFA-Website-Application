@@ -51,6 +51,8 @@ export default function RootLayout({
     return (
         <html lang="en" data-scroll-behavior="smooth" className={`${inter.variable} ${playfair.variable}`}>
             <head>
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
                 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
             </head>
             <body className={`${inter.className} antialiased font-sans`}>
