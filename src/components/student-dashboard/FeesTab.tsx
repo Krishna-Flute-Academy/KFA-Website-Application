@@ -60,6 +60,7 @@ export default function FeesTab({ profile, payments, refreshData }: FeesTabProps
                     user_id: uid,
                     title: 'Fee Payment Reported',
                     message: `${profile.name} reported a fee payment of ₹${Number(amount)} via ${paymentMethod}.`,
+                    type: 'fees',
                     is_read: false
                 }));
 

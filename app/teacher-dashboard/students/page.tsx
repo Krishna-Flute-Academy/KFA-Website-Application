@@ -20,6 +20,7 @@ interface StudentData {
     created_at?: string;
     teacher_id?: string | null;
     teacher_name?: string;
+    phone?: string;
 }
 
 interface BulkEnrollRow {
@@ -150,6 +151,7 @@ export default function StudentDirectory() {
                         profile_pic_url,
                         created_at,
                         teacher_id,
+                        phone,
                         classroom_students(
                             classrooms(name)
                         )
@@ -190,7 +192,8 @@ export default function StudentDirectory() {
                             status: s.status === 'active' ? 'Active' : 'Inactive',
                             created_at: s.created_at,
                             teacher_id: s.teacher_id,
-                            teacher_name: s.teacher_id ? (teacherMap.get(s.teacher_id) || 'Unknown Teacher') : 'Unassigned'
+                            teacher_name: s.teacher_id ? (teacherMap.get(s.teacher_id) || 'Unknown Teacher') : 'Unassigned',
+                            phone: s.phone || 'No Phone'
                         };
                     }));
 
@@ -202,72 +205,71 @@ export default function StudentDirectory() {
                     }
                 }
 
-                // 5. Fetch Unassigned Students (Admins only)
-                if (isAdminUser) {
-                    const { data: unassignedData, error: unassignedError } = await supabaseAuth
-                        .from('users')
-                        .select(`
-                            id,
-                            name,
-                            status,
-                            profile_pic_url,
-                            created_at,
-                            teacher_id,
-                            classroom_students(
-                                classrooms(name)
-                            )
-                        `)
-                        .eq('role', 'student')
-                        .is('teacher_id', null);
-
-                    if (unassignedError) {
-                        console.error('Supabase error fetching unassigned students:', unassignedError);
-                    }
-
-                    if (unassignedData) {
-                        const formattedUnassigned = unassignedData.map((s: any) => ({
-                            id: s.id,
-                            user_id: s.id,
-                            name: s.name,
-                            student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
-                            batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
-                            attendance_pct: 0,
-                            profile_pic_url: s.profile_pic_url,
-                            status: s.status === 'active' ? 'Active' : 'Inactive',
-                            created_at: s.created_at,
-                            teacher_id: s.teacher_id,
-                            teacher_name: 'Unassigned'
-                        }));
-                        setUnassignedStudents(formattedUnassigned);
-                    }
-                }
-
-                if (isAdminUser) {
-                    // Real-time subscription to listen for new student signups instantly!
-                    channel = supabaseAuth
-                        .channel('realtime-unassigned-students')
-                        .on(
-                            'postgres_changes',
-                            { event: 'INSERT', schema: 'public', table: 'users' },
-                            (payload) => {
-                                const newStudent = payload.new;
-                                if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
-                                    setUnassignedStudents(prev => [{
-                                        id: newStudent.id,
-                                        user_id: newStudent.id,
-                                        name: newStudent.name,
-                                        student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
-                                        batch: 'Unassigned',
-                                        attendance_pct: 0,
-                                        profile_pic_url: newStudent.profile_pic_url,
-                                        status: newStudent.status === 'active' ? 'Active' : 'Inactive',
-                                        created_at: newStudent.created_at || new Date().toISOString()
-                                    }, ...prev]);
-                                }
-                            }
+                // 5. Fetch Unassigned Students (Admins and Teachers)
+                const { data: unassignedData, error: unassignedError } = await supabaseAuth
+                    .from('users')
+                    .select(`
+                        id,
+                        name,
+                        status,
+                        profile_pic_url,
+                        created_at,
+                        teacher_id,
+                        phone,
+                        classroom_students(
+                            classrooms(name)
                         )
-                        .subscribe();
+                    `)
+                    .eq('role', 'student')
+                    .is('teacher_id', null);
+
+                if (unassignedError) {
+                    console.error('Supabase error fetching unassigned students:', unassignedError);
                 }
+
+                if (unassignedData) {
+                    const formattedUnassigned = unassignedData.map((s: any) => ({
+                        id: s.id,
+                        user_id: s.id,
+                        name: s.name,
+                        student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
+                        batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
+                        attendance_pct: 0,
+                        profile_pic_url: s.profile_pic_url,
+                        status: s.status === 'active' ? 'Active' : 'Inactive',
+                        created_at: s.created_at,
+                        teacher_id: s.teacher_id,
+                        teacher_name: 'Unassigned',
+                        phone: s.phone || 'No Phone'
+                    }));
+                    setUnassignedStudents(formattedUnassigned);
+                }
+
+                // Real-time subscription to listen for new student signups instantly!
+                channel = supabaseAuth
+                    .channel('realtime-unassigned-students')
+                    .on(
+                        'postgres_changes',
+                        { event: 'INSERT', schema: 'public', table: 'users' },
+                        (payload) => {
+                            const newStudent = payload.new;
+                            if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
+                                setUnassignedStudents(prev => [{
+                                    id: newStudent.id,
+                                    user_id: newStudent.id,
+                                    name: newStudent.name,
+                                    student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
+                                    batch: 'Unassigned',
+                                    attendance_pct: 0,
+                                    profile_pic_url: newStudent.profile_pic_url,
+                                    status: newStudent.status === 'active' ? 'Active' : 'Inactive',
+                                    created_at: newStudent.created_at || new Date().toISOString(),
+                                    phone: newStudent.phone || 'No Phone'
+                                }, ...prev]);
+                            }
+                        }
+                    )
+                    .subscribe();
 
             } catch (err) {
                 console.error('Error fetching students:', err);
@@ -616,8 +618,24 @@ export default function StudentDirectory() {
 
     const availableBatches = Array.from(new Set(students.map(s => s.batch).filter(b => b !== 'Unassigned'))).sort();
 
+    const allUnassignedStudents = React.useMemo(() => {
+        const map = new Map<string, StudentData>();
+        
+        unassignedStudents.forEach(s => {
+            map.set(s.id, s);
+        });
+
+        students.forEach(s => {
+            if (!s.teacher_id || s.teacher_name === 'Unassigned' || s.batch === 'Unassigned') {
+                map.set(s.id, s);
+            }
+        });
+        
+        return Array.from(map.values());
+    }, [students, unassignedStudents]);
+
     const displayedStudents = React.useMemo(() => {
-        let result = filterMode === 'unassigned' ? [...unassignedStudents] : [...students];
+        let result = filterMode === 'unassigned' ? [...allUnassignedStudents] : [...students];
 
         if (filterMode !== 'unassigned') {
             if (selectedBatch !== 'All Batches') {
@@ -649,7 +667,7 @@ export default function StudentDirectory() {
         }
 
         return result;
-    }, [students, unassignedStudents, filterMode, selectedBatch, statusFilter, searchQuery]);
+    }, [students, allUnassignedStudents, filterMode, selectedBatch, statusFilter, searchQuery]);
 
     const totalPages = Math.ceil(displayedStudents.length / ITEMS_PER_PAGE);
     const paginatedStudents = displayedStudents.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -1182,10 +1200,10 @@ export default function StudentDirectory() {
                                                 <button 
                                                     onClick={() => setFilterMode('recent')}
                                                     className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'recent' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Recent</button>
-                                                {teacherProfile?.role === 'admin' && (
+                                                {teacherProfile && (
                                                     <button 
                                                         onClick={() => setFilterMode('unassigned')}
-                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({unassignedStudents.length})</button>
+                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({allUnassignedStudents.length})</button>
                                                 )}
                                             </div>
                                             {filterMode !== 'unassigned' && (
@@ -1351,7 +1369,8 @@ export default function StudentDirectory() {
                                                             )}
                                                             <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Attendance</th>
                                                             <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">{filterMode === 'unassigned' ? 'Action' : 'Contact'}</th>
+                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Contact</th>
+                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1369,26 +1388,26 @@ export default function StudentDirectory() {
                                                                         <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
                                                                     )}
                                                                 </td>
-                                                                <td className="px-6 py-4">
+                                                                <td className="px-6 py-4 whitespace-nowrap">
                                                                     <div className="flex items-center gap-3">
-                                                                        <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
+                                                                        <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
                                                                             {student.profile_pic_url ? (
                                                                                 <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover rounded-full" loading="lazy" />
                                                                             ) : (
                                                                                 <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
                                                                             )}
                                                                         </div>
-                                                                        <div>
-                                                                            <Link href={`/teacher-dashboard/students/${student.id}`} className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">
+                                                                        <div className="min-w-0">
+                                                                            <Link href={`/teacher-dashboard/students/${student.id}`} className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors whitespace-nowrap block">
                                                                                 {student.name}
                                                                             </Link>
-                                                                            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-tight">{student.student_id_formatted}</p>
+                                                                            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-tight whitespace-nowrap block">{student.student_id_formatted}</p>
                                                                         </div>
                                                                     </div>
                                                                 </td>
-                                                                <td className="px-6 py-4"><span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.batch}</span></td>
+                                                                <td className="px-6 py-4"><span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">{student.batch}</span></td>
                                                                 {teacherProfile?.role === 'admin' && (
-                                                                    <td className="px-6 py-4"><span className="text-sm font-medium text-slate-600 dark:text-slate-400">{student.teacher_name || 'Unassigned'}</span></td>
+                                                                    <td className="px-6 py-4"><span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">{student.teacher_name || 'Unassigned'}</span></td>
                                                                 )}
                                                                 <td className="px-6 py-4">
                                                                     <div className="flex items-center gap-2">
@@ -1405,18 +1424,29 @@ export default function StudentDirectory() {
                                                                     </span>
                                                                 </td>
                                                                 <td className="px-6 py-4">
+                                                                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                                                        {student.phone || 'No Phone'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-right">
                                                                     {filterMode === 'unassigned' ? (
-                                                                        <div className="flex justify-center">
+                                                                        <div className="flex justify-end">
                                                                             <button onClick={() => setShowClaimModal(student)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1 hover:scale-[1.02] active:scale-95">
                                                                                 <span className="material-symbols-outlined text-sm">person_add</span>
                                                                                 Claim
                                                                             </button>
                                                                         </div>
                                                                     ) : (
-                                                                        <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                                             <Link href={`/teacher-dashboard/students/${student.id}`} className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="View details"><span className="material-symbols-outlined text-xl">visibility</span></Link>
                                                                             <Link href={`/teacher-dashboard/students/${student.id}/edit`} className="p-2 text-slate-400 hover:text-[#ecb613] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Edit profile"><span className="material-symbols-outlined text-xl">edit</span></Link>
-                                                                            <button className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Message"><span className="material-symbols-outlined text-xl">chat</span></button>
+                                                                            <button 
+                                                                                onClick={() => router.push(`/teacher-dashboard/messages?chat=${student.id}`)}
+                                                                                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" 
+                                                                                title="Message"
+                                                                            >
+                                                                                <span className="material-symbols-outlined text-xl">chat</span>
+                                                                            </button>
                                                                             <button onClick={() => setStudentToDelete({ id: student.id, name: student.name })} className="p-2 text-rose-500 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/20 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all" title="Delete"><span className="material-symbols-outlined text-xl">delete</span></button>
                                                                         </div>
                                                                     )}
@@ -1425,7 +1455,7 @@ export default function StudentDirectory() {
                                                         ))}
                                                         {paginatedStudents.length === 0 && (
                                                             <tr>
-                                                                <td colSpan={teacherProfile?.role === 'admin' ? 7 : 6} className="px-6 py-10 text-center text-slate-500">
+                                                                <td colSpan={teacherProfile?.role === 'admin' ? 8 : 7} className="px-6 py-10 text-center text-slate-500">
                                                                     {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
                                                                 </td>
                                                             </tr>

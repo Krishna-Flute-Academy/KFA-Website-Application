@@ -428,8 +428,13 @@ export default function CreateClassPage() {
             router.push('/teacher-dashboard/classrooms');
 
         } catch (err: any) {
-            console.error('Error creating class:', err);
-            const errorMessage = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+            console.error('Error creating class details:', err);
+            let errorMessage = '';
+            if (err && typeof err === 'object') {
+                errorMessage = err.message || err.details || err.hint || JSON.stringify(err);
+            } else {
+                errorMessage = String(err);
+            }
             alert(`Failed to create class: ${errorMessage}`);
         } finally {
             setSubmitting(false);

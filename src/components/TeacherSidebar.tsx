@@ -23,6 +23,9 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     const [unassignedCount, setUnassignedCount] = useState(0);
     const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
     const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
+    const [unreadFeesCount, setUnreadFeesCount] = useState(0);
+    const [unreadTasksCount, setUnreadTasksCount] = useState(0);
+    const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
     const [isOpen, setIsOpen] = useState(false);
 
     useEffect(() => {
@@ -154,6 +157,61 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     }, [teacherProfile, userRole]);
 
     useEffect(() => {
+        if (!teacherProfile?.id) return;
+
+        const fetchNotificationCounts = async () => {
+            try {
+                const { data, error } = await supabaseAuth
+                    .from('notifications')
+                    .select('type')
+                    .eq('user_id', teacherProfile.id)
+                    .eq('is_read', false);
+
+                if (error) throw error;
+
+                let fees = 0;
+                let tasks = 0;
+                let messages = 0;
+
+                (data || []).forEach(n => {
+                    if (n.type === 'fees') fees++;
+                    else if (n.type === 'tasks') tasks++;
+                    else if (n.type === 'messages') messages++;
+                });
+
+                setUnreadFeesCount(fees);
+                setUnreadTasksCount(tasks);
+                setUnreadMessagesCount(messages);
+            } catch (err) {
+                console.error('Error fetching notification counts in sidebar:', err);
+            }
+        };
+
+        fetchNotificationCounts();
+
+        // Subscribe to real-time notification changes (INSERT, UPDATE, DELETE) for this user
+        const notifChannel = supabaseAuth
+            .channel(`sidebar-notifications-${teacherProfile.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${teacherProfile.id}`
+                },
+                () => {
+                    fetchNotificationCounts();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(notifChannel);
+        };
+    }, [teacherProfile?.id]);
+
+    useEffect(() => {
         const checkSession = () => {
             const sessionStr = localStorage.getItem('active_class_session');
             if (sessionStr) {
@@ -259,9 +317,19 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                     {pendingLeavesCount} New
                                 </span>
                             )}
-                            {item.name === 'Fees' && userRole === 'admin' && pendingPaymentsCount > 0 && (
+                            {item.name === 'Fees' && userRole === 'admin' && unreadFeesCount > 0 && (
                                 <span className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
-                                    {pendingPaymentsCount} New
+                                    {unreadFeesCount} New
+                                </span>
+                            )}
+                            {item.name === 'Tasks' && unreadTasksCount > 0 && (
+                                <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
+                                    {unreadTasksCount} New
+                                </span>
+                            )}
+                            {item.name === 'Messages' && unreadMessagesCount > 0 && (
+                                <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-in zoom-in">
+                                    {unreadMessagesCount} New
                                 </span>
                             )}
                         </Link>

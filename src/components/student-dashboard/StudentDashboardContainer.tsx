@@ -154,10 +154,46 @@ export default function StudentDashboardContainer() {
     const [courseChapters, setCourseChapters] = useState<any[]>([]);
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
     const [studentProgress, setStudentProgress] = useState<any[]>([]);
+    const [studentAllocations, setStudentAllocations] = useState<any[]>([]);
     const [selectedTopic, setSelectedTopic] = useState<any | null>(null);
     const [showMaterialPopup, setShowMaterialPopup] = useState(false);
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+
+    const allocatedModuleIds = useMemo(() => {
+        return new Set(studentAllocations.map(a => a.module_id).filter(Boolean));
+    }, [studentAllocations]);
+
+    const allocatedChapterIds = useMemo(() => {
+        const direct = studentAllocations.map(a => a.chapter_id).filter(Boolean);
+        const fromModules = courseChapters.filter(c => allocatedModuleIds.has(c.module_id)).map(c => c.id);
+        return new Set([...direct, ...fromModules]);
+    }, [studentAllocations, courseChapters, allocatedModuleIds]);
+
+    const allocatedLessonIds = useMemo(() => {
+        const direct = studentAllocations.map(a => a.lesson_id).filter(Boolean);
+        const fromChapters = courseLessons.filter(l => allocatedChapterIds.has(l.chapter_id)).map(l => l.id);
+        const fromProgress = studentProgress.map(p => p.lesson_id);
+        return new Set([...direct, ...fromChapters, ...fromProgress]);
+    }, [studentAllocations, courseLessons, allocatedChapterIds, studentProgress]);
+
+    const allocatedLessons = useMemo(() => {
+        return courseLessons.filter(l => allocatedLessonIds.has(l.id));
+    }, [courseLessons, allocatedLessonIds]);
+
+    const allocatedChapters = useMemo(() => {
+        return courseChapters.filter(c => 
+            allocatedChapterIds.has(c.id) || 
+            courseLessons.some(l => l.chapter_id === c.id && allocatedLessonIds.has(l.id))
+        );
+    }, [courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
+
+    const allocatedModules = useMemo(() => {
+        return courseModules.filter(m => 
+            allocatedModuleIds.has(m.id) || 
+            courseChapters.some(c => c.module_id === m.id && (allocatedChapterIds.has(c.id) || courseLessons.some(l => l.chapter_id === c.id && allocatedLessonIds.has(l.id))))
+        );
+    }, [courseModules, allocatedModuleIds, courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
 
     // UI Navigation state
     const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees'>('overview');
@@ -490,6 +526,14 @@ export default function StudentDashboardContainer() {
                 // P8: classroom_messages
                 allClassroomIds.length > 0
                     ? supabaseAuth.from('classroom_messages').select('*, sender:users!classroom_messages_sender_id_fkey(name, role, profile_pic_url)').in('classroom_id', allClassroomIds).order('created_at', { ascending: false }).limit(100)
+                    : Promise.resolve({ data: [] }),
+
+                // P9: Curriculum allocations (student-specific and class-wide)
+                allClassroomIds.length > 0
+                    ? supabaseAuth.from('classroom_inventory_allocation')
+                        .select('*')
+                        .in('classroom_id', allClassroomIds)
+                        .or(`allocated_to_student_id.eq.${userId},allocated_to_student_id.is.null`)
                     : Promise.resolve({ data: [] })
             ];
 
@@ -502,8 +546,11 @@ export default function StudentDashboardContainer() {
                 iaRes,
                 logsRes,
                 schedulesRes,
-                cmRes
+                cmRes,
+                allocationsRes
             ] = await Promise.all(promisesPhase2);
+
+            setStudentAllocations(allocationsRes.data || []);
 
             // Process Phase 2
             const tempClasses = tempClassesRes.data || [];
@@ -1118,6 +1165,19 @@ export default function StudentDashboardContainer() {
             if (error) throw error;
             if (data) {
                 setDirectMessages(prev => [...prev, data[0]]);
+                
+                // Send notification to the recipient of the message
+                try {
+                    await supabaseAuth.from('notifications').insert({
+                        user_id: receiverId,
+                        title: `New Message: ${profile.name}`,
+                        message: text.trim().length > 60 ? `${text.trim().substring(0, 60)}...` : text.trim(),
+                        type: 'messages',
+                        is_read: false
+                    });
+                } catch (err) {
+                    console.error('Failed to create notification for direct message:', err);
+                }
             }
         } catch (e) {
             console.error('Failed to send direct message:', e);
@@ -1139,6 +1199,38 @@ export default function StudentDashboardContainer() {
                 });
 
             if (error) throw error;
+
+            // Send notification to teacher and admins
+            try {
+                const { data: admins } = await supabaseAuth
+                    .from('users')
+                    .select('id')
+                    .eq('role', 'admin');
+
+                const recipientIds = new Set<string>();
+                if (classroom.teacher_id) {
+                    recipientIds.add(classroom.teacher_id);
+                }
+                if (admins) {
+                    admins.forEach((admin: any) => recipientIds.add(admin.id));
+                }
+                recipientIds.delete(profile.id); // Don't notify the sender
+
+                if (recipientIds.size > 0) {
+                    const notificationsToInsert = Array.from(recipientIds).map(uid => ({
+                        user_id: uid,
+                        title: `New Classroom Message: ${profile.name}`,
+                        message: messageText.trim().length > 60 ? `${messageText.trim().substring(0, 60)}...` : messageText.trim(),
+                        type: 'messages',
+                        is_read: false
+                    }));
+
+                    await supabaseAuth.from('notifications').insert(notificationsToInsert);
+                }
+            } catch (notifErr) {
+                console.error('Failed to create notifications for classroom message:', notifErr);
+            }
+
             await refreshData();
         } catch (error) {
             console.error('Failed to send classroom message:', error);
@@ -1376,7 +1468,7 @@ export default function StudentDashboardContainer() {
                         user_id: teacherId,
                         title: notificationTitle,
                         message: notificationMsg,
-                        type: 'reminder'
+                        type: 'tasks'
                     });
                 }
 
@@ -1386,7 +1478,7 @@ export default function StudentDashboardContainer() {
                             user_id: adm.id,
                             title: notificationTitle,
                             message: notificationMsg,
-                            type: 'reminder'
+                            type: 'tasks'
                         });
                     }
                 });
@@ -1554,25 +1646,25 @@ export default function StudentDashboardContainer() {
     }, [profile]);
 
     const totalAllocatedLessons = useMemo(() => {
-        return courseLessons.filter(l => 
+        return allocatedLessons.filter(l => 
             getLessonStatus(l.id, l.chapter_id) !== 'locked'
         ).length;
-    }, [courseLessons, studentProgress]);
+    }, [allocatedLessons, studentProgress]);
 
     const completedLessonsCount = useMemo(() => {
         return studentProgress.filter(p => p.status === 'completed').length;
     }, [studentProgress]);
 
     const featuredLesson = useMemo(() => {
-        if (courseLessons.length === 0) return null;
-        for (const lesson of courseLessons) {
+        if (allocatedLessons.length === 0) return null;
+        for (const lesson of allocatedLessons) {
             const status = getLessonStatus(lesson.id, lesson.chapter_id);
             if (status === 'unlocked') {
                 return lesson;
             }
         }
-        return courseLessons[0] || null;
-    }, [courseLessons, studentProgress]);
+        return allocatedLessons[0] || null;
+    }, [allocatedLessons, studentProgress]);
 
     useEffect(() => {
         if (featuredLesson && !selectedTopic) {
@@ -2010,9 +2102,9 @@ export default function StudentDashboardContainer() {
                         {activeTab === 'curriculum' && (
                             <CurriculumTab 
                                 classroom={classroom}
-                                courseModules={courseModules}
-                                courseChapters={courseChapters}
-                                courseLessons={courseLessons}
+                                courseModules={allocatedModules}
+                                courseChapters={allocatedChapters}
+                                courseLessons={allocatedLessons}
                                 completedLessonsCount={completedLessonsCount}
                                 totalAllocatedLessons={totalAllocatedLessons}
                                 expandedModules={expandedModules}

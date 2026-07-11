@@ -503,32 +503,27 @@ export default function ClassroomDashboardPage({
 
     const openAllocationDrawer = (lesson: any) => {
         setAllocationTargetLesson(lesson);
-        const targetType = curriculumTab === 'individual' ? 'individual' : 'classwide';
+        const targetType = 'individual';
         setAllocationTargetType(targetType);
 
         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
         const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
-        if (students.length === 0) {
-            const classwideRow = progressForLesson.find(p => p.student_id === 'classwide_default');
-            if (classwideRow) {
-                if (classwideRow.status === 'completed') initialStatus = 'completed';
-                else if (classwideRow.status === 'unlocked') initialStatus = 'unlocked';
-            }
-        } else {
-            const completedCount = progressForLesson.filter(p => p.status === 'completed' && p.student_id !== 'classwide_default').length;
-            const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked' && p.student_id !== 'classwide_default').length;
-            if (completedCount === students.length) {
-                initialStatus = 'completed';
-            } else if (completedCount > 0 || unlockedCount > 0) {
-                initialStatus = 'unlocked';
+        
+        if (selectedStudentForCurriculum) {
+            const studentProgressRow = progressForLesson.find(p => p.student_id === selectedStudentForCurriculum.student_id);
+            if (studentProgressRow) {
+                initialStatus = studentProgressRow.status;
             }
         }
 
         setAllocationStatus(initialStatus);
 
-        const currentSelected = (curriculumTab === 'individual' && selectedStudentForCurriculum)
-            ? [selectedStudentForCurriculum.student_id]
-            : getStudentsWithStatus(initialStatus, lesson.id);
+        const currentSelected = selectedStudentForCurriculum
+            ? Array.from(new Set([
+                selectedStudentForCurriculum.student_id,
+                ...progressForLesson.filter(p => p.status === 'completed').map(p => p.student_id)
+              ]))
+            : progressForLesson.filter(p => p.status === 'completed').map(p => p.student_id);
 
         setAllocationSelectedStudents(currentSelected);
         setIsAllocationDrawerOpen(true);
@@ -1931,18 +1926,232 @@ export default function ClassroomDashboardPage({
             };
         });
 
+        const activeStudentIds = new Set([
+            ...students.map(s => s.student_id),
+            ...sessionOverrides.map(o => o.student_id)
+        ]);
+
         if (curriculumTab === 'classwide') {
-            return inventoryItems.filter(a => a.target_type === 'all');
+            // For classwide view, collect both classwide allocations and any individual student allocations for students currently in this class
+            const items = inventoryItems.filter(a => {
+                if (a.target_type === 'all') return true;
+                return a.assignment_students?.some(s => activeStudentIds.has(s.student_id));
+            });
+
+            // Add implicit allocations for any student currently in the class who has progress
+            const classProg = studentProgress.filter(p => activeStudentIds.has(p.student_id));
+            classProg.forEach(prog => {
+                const lessonId = prog.lesson_id;
+                const studentId = prog.student_id;
+                const alreadyAllocated = items.some(a => {
+                    const isForSameStudent = a.target_type === 'all' || a.assignment_students?.some(s => s.student_id === studentId);
+                    if (!isForSameStudent) return false;
+
+                    if (a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lessonId) return true;
+                    const lesson = courseLessons.find(l => l.id === lessonId);
+                    if (lesson) {
+                        if (a.inventory_ref_type === 'chapter' && a.inventory_ref_id === lesson.chapter_id) return true;
+                        const chap = courseChapters.find(c => c.id === lesson.chapter_id);
+                        if (chap && a.inventory_ref_type === 'module' && a.inventory_ref_id === chap.module_id) return true;
+                    }
+                    return false;
+                });
+
+                if (!alreadyAllocated) {
+                    const lesson = courseLessons.find(l => l.id === lessonId);
+                    if (lesson) {
+                        items.push({
+                            id: `implicit-${prog.id}`,
+                            classroom_id: classroomId,
+                            teacher_id: null,
+                            title: lesson.title,
+                            description: lesson.description || '',
+                            due_date: null,
+                            target_type: 'individual',
+                            created_at: prog.unlocked_at || prog.completed_at || new Date().toISOString(),
+                            inventory_ref_type: 'lesson',
+                            inventory_ref_id: lessonId,
+                            inventory_ref_title: lesson.title,
+                            assignment_students: [{ student_id: studentId }]
+                        });
+                    }
+                }
+            });
+
+            return items;
         } else {
             if (!selectedStudentForCurriculum) return [];
-            return inventoryItems.filter(a => {
-                if (a.target_type === 'all') return true;
+            const studentItems = inventoryItems.filter(a => {
                 return a.assignment_students?.some(
                     s => s.student_id === selectedStudentForCurriculum.student_id
                 );
             });
+
+            // Add implicit allocations from studentProgress for this student
+            const studentProg = studentProgress.filter(p => p.student_id === selectedStudentForCurriculum.student_id);
+            studentProg.forEach(prog => {
+                const lessonId = prog.lesson_id;
+                const alreadyAllocated = studentItems.some(a => {
+                    if (a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lessonId) return true;
+                    const lesson = courseLessons.find(l => l.id === lessonId);
+                    if (lesson) {
+                        if (a.inventory_ref_type === 'chapter' && a.inventory_ref_id === lesson.chapter_id) return true;
+                        const chap = courseChapters.find(c => c.id === lesson.chapter_id);
+                        if (chap && a.inventory_ref_type === 'module' && a.inventory_ref_id === chap.module_id) return true;
+                    }
+                    return false;
+                });
+
+                if (!alreadyAllocated) {
+                    const lesson = courseLessons.find(l => l.id === lessonId);
+                    if (lesson) {
+                        studentItems.push({
+                            id: `implicit-${prog.id}`,
+                            classroom_id: classroomId,
+                            teacher_id: null,
+                            title: lesson.title,
+                            description: lesson.description || '',
+                            due_date: null,
+                            target_type: 'individual',
+                            created_at: prog.unlocked_at || prog.completed_at || new Date().toISOString(),
+                            inventory_ref_type: 'lesson',
+                            inventory_ref_id: lessonId,
+                            inventory_ref_title: lesson.title,
+                            assignment_students: [{ student_id: selectedStudentForCurriculum.student_id }]
+                        });
+                    }
+                }
+            });
+
+            return studentItems;
         }
-    }, [classroomInventoryAllocations, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons]);
+    }, [classroomInventoryAllocations, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons, studentProgress, students, sessionOverrides, classroomId]);
+
+    const getStudentStatuses = useCallback((
+        itemType: 'level' | 'chapter' | 'topic',
+        itemId: string
+    ) => {
+        const activeRoster = [
+            ...students.map(s => ({ student_id: s.student_id, name: s.name, profile_pic_url: s.profile_pic_url })),
+            ...sessionOverrides.map(o => ({ student_id: o.student_id, name: o.name, profile_pic_url: o.profile_pic_url || null }))
+        ];
+
+        return activeRoster.map(student => {
+            const studentId = student.student_id;
+            
+            // Check if item is allocated to this student
+            let isAllocated = false;
+            if (itemType === 'level') {
+                isAllocated = classroomInventoryAllocations.some(
+                    a => a.module_id === itemId && a.allocated_to_student_id === studentId
+                ) || classroomInventoryAllocations.some(
+                    a => a.module_id === itemId && !a.allocated_to_student_id
+                );
+            } else if (itemType === 'chapter') {
+                const chap = courseChapters.find(c => c.id === itemId);
+                const modId = chap?.module_id;
+                isAllocated = classroomInventoryAllocations.some(
+                    a => (a.chapter_id === itemId || (modId && a.module_id === modId)) && 
+                         (a.allocated_to_student_id === studentId || !a.allocated_to_student_id)
+                );
+            } else if (itemType === 'topic') {
+                const lesson = courseLessons.find(l => l.id === itemId);
+                const chap = courseChapters.find(c => c.id === lesson?.chapter_id);
+                const modId = chap?.module_id;
+                isAllocated = classroomInventoryAllocations.some(
+                    a => (a.lesson_id === itemId || (lesson && a.chapter_id === lesson.chapter_id) || (modId && a.module_id === modId)) && 
+                         (a.allocated_to_student_id === studentId || !a.allocated_to_student_id)
+                );
+            }
+
+            // Also check implicit allocations from studentProgress
+            if (!isAllocated) {
+                if (itemType === 'topic') {
+                    isAllocated = studentProgress.some(p => p.student_id === studentId && p.lesson_id === itemId);
+                } else if (itemType === 'chapter') {
+                    const lessonsInChap = courseLessons.filter(l => l.chapter_id === itemId).map(l => l.id);
+                    isAllocated = studentProgress.some(p => p.student_id === studentId && lessonsInChap.includes(p.lesson_id));
+                } else if (itemType === 'level') {
+                    const chapsInMod = courseChapters.filter(c => c.module_id === itemId).map(c => c.id);
+                    const lessonsInMod = courseLessons.filter(l => chapsInMod.includes(l.chapter_id)).map(l => l.id);
+                    isAllocated = studentProgress.some(p => p.student_id === studentId && lessonsInMod.includes(p.lesson_id));
+                }
+            }
+
+            // Check completion and unlock status
+            let isCompleted = false;
+            let isUnlocked = false;
+
+            if (itemType === 'topic') {
+                const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === itemId);
+                if (prog) {
+                    isCompleted = prog.status === 'completed';
+                    isUnlocked = prog.status === 'unlocked';
+                }
+            } else if (itemType === 'chapter') {
+                const lessonsInChap = courseLessons.filter(l => l.chapter_id === itemId);
+                const progressForChap = studentProgress.filter(p => p.student_id === studentId && lessonsInChap.some(l => l.id === p.lesson_id));
+                
+                const completedCount = progressForChap.filter(p => p.status === 'completed').length;
+                const unlockedCount = progressForChap.filter(p => p.status === 'unlocked').length;
+                
+                isCompleted = lessonsInChap.length > 0 && completedCount === lessonsInChap.length;
+                isUnlocked = !isCompleted && (completedCount > 0 || unlockedCount > 0);
+            } else if (itemType === 'level') {
+                const chaptersInMod = courseChapters.filter(c => c.module_id === itemId);
+                const lessonsInMod = courseLessons.filter(l => chaptersInMod.some(c => c.id === l.chapter_id));
+                const progressForMod = studentProgress.filter(p => p.student_id === studentId && lessonsInMod.some(l => l.id === p.lesson_id));
+                
+                const completedCount = progressForMod.filter(p => p.status === 'completed').length;
+                const unlockedCount = progressForMod.filter(p => p.status === 'unlocked').length;
+
+                isCompleted = lessonsInMod.length > 0 && completedCount === lessonsInMod.length;
+                isUnlocked = !isCompleted && (completedCount > 0 || unlockedCount > 0);
+            }
+
+            let status: 'completed' | 'in_progress' | 'locked' | 'not_allocated' = 'not_allocated';
+            if (isAllocated) {
+                if (isCompleted) status = 'completed';
+                else if (isUnlocked) status = 'in_progress';
+                else status = 'locked';
+            }
+
+            return {
+                studentId,
+                name: student.name,
+                profilePic: student.profile_pic_url,
+                status
+            };
+        });
+    }, [students, sessionOverrides, classroomInventoryAllocations, studentProgress, courseChapters, courseLessons]);
+
+    const getClassSummary = useCallback((
+        itemType: 'level' | 'chapter' | 'topic',
+        itemId: string
+    ): 'not_allocated' | 'partially_allocated' | 'allocated_to_all' | 'in_progress' | 'completed_by_all' => {
+        const studentStatuses = getStudentStatuses(itemType, itemId);
+        if (studentStatuses.length === 0) return 'not_allocated';
+
+        const allocatedCount = studentStatuses.filter(s => s.status !== 'not_allocated').length;
+        const completedCount = studentStatuses.filter(s => s.status === 'completed').length;
+        const inProgressCount = studentStatuses.filter(s => s.status === 'in_progress' || s.status === 'completed').length;
+
+        if (allocatedCount === 0) return 'not_allocated';
+        
+        if (completedCount === studentStatuses.length && studentStatuses.length > 0) {
+            return 'completed_by_all';
+        }
+
+        if (inProgressCount > 0) {
+            return 'in_progress';
+        }
+
+        if (allocatedCount === studentStatuses.length) {
+            return 'allocated_to_all';
+        }
+
+        return 'partially_allocated';
+    }, [getStudentStatuses]);
 
     const selectedStudentPermissions = useMemo(() => {
         const completed = new Set<string>();
@@ -1985,52 +2194,50 @@ export default function ClassroomDashboardPage({
                 cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
             }
         } else {
-            const progressForLesson = studentProgress.filter(p => p.lesson_id === lessonId);
-            if (students.length === 0) {
-                const classwideRow = progressForLesson.find(p => p.student_id === 'classwide_default');
-                if (classwideRow) {
-                    if (classwideRow.status === 'completed') {
-                        statusLabel = "Completed";
-                        cardBorder = "border-emerald-500/30 dark:border-emerald-500/20 bg-emerald-50/[0.1] dark:bg-emerald-950/[0.03] shadow-[0_2px_8px_rgba(16,185,129,0.01)] hover:border-emerald-500/50 transition-all duration-300";
-                    } else if (classwideRow.status === 'unlocked') {
-                        statusLabel = "Unlocked";
-                        cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
-                    } else {
-                        statusLabel = "Locked";
-                    }
-                } else {
-                    statusLabel = "Locked";
-                }
+            const classSummary = getClassSummary('topic', lessonId);
+            if (classSummary === 'completed_by_all') {
+                statusLabel = "Completed by All";
+                cardBorder = "border-emerald-500/30 dark:border-emerald-500/20 bg-emerald-50/[0.1] dark:bg-emerald-950/[0.03] shadow-[0_2px_8px_rgba(16,185,129,0.01)] hover:border-emerald-500/50 transition-all duration-300";
+                isCompleted = true;
+            } else if (classSummary === 'in_progress') {
+                statusLabel = "In Progress";
+                cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
+                isUnlocked = true;
+            } else if (classSummary === 'allocated_to_all') {
+                statusLabel = "Allocated to All";
+                cardBorder = "border-indigo-500/30 dark:border-indigo-500/25 bg-indigo-50/[0.1] dark:bg-indigo-950/[0.01] transition-all duration-300";
+                isUnlocked = true;
+            } else if (classSummary === 'partially_allocated') {
+                statusLabel = "Partially Allocated";
+                cardBorder = "border-sky-500/30 dark:border-sky-500/25 bg-sky-50/[0.1] dark:bg-sky-950/[0.01] transition-all duration-300";
+                isUnlocked = true;
             } else {
-                const completedCount = progressForLesson.filter(p => p.status === 'completed' && p.student_id !== 'classwide_default').length;
-                const unlockedCount = progressForLesson.filter(p => p.status === 'unlocked' && p.student_id !== 'classwide_default').length;
-
-                if (completedCount === students.length) {
-                    statusLabel = "Completed";
-                    cardBorder = "border-emerald-500/30 dark:border-emerald-500/20 bg-emerald-50/[0.1] dark:bg-emerald-950/[0.03] shadow-[0_2px_8px_rgba(16,185,129,0.01)] hover:border-emerald-500/50 transition-all duration-300";
-                } else if (completedCount > 0 || unlockedCount > 0) {
-                    statusLabel = completedCount > 0 ? `Unlocked (${completedCount}/${students.length} Done)` : "Unlocked";
-                    cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
-                } else {
-                    statusLabel = "Locked";
-                    cardBorder = "border-slate-200/60 dark:border-slate-800/60 bg-slate-50/10 dark:bg-slate-900/[0.02] opacity-60 hover:opacity-100 transition-all duration-300";
-                }
+                statusLabel = "Not Allocated";
+                cardBorder = "border-slate-200/60 dark:border-slate-800/60 bg-slate-50/10 dark:bg-slate-900/[0.02] opacity-60 hover:opacity-100 transition-all duration-300";
             }
         }
 
-        const isCompletedLabel = statusLabel === "Completed";
-        const isUnlockedLabel = statusLabel === "Unlocked" || statusLabel.startsWith("Unlocked");
+        const isCompletedLabel = isCompleted;
+        const isUnlockedLabel = isUnlocked;
 
-        const badgeStyle = isCompletedLabel
+        const badgeStyle = statusLabel === "Completed" || statusLabel === "Completed by All"
             ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 dark:border-emerald-500/30"
-            : isUnlockedLabel
+            : statusLabel === "Unlocked" || statusLabel === "In Progress"
             ? "bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/20 dark:border-[#ecb613]/30"
+            : statusLabel === "Allocated to All"
+            ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 dark:border-indigo-500/30"
+            : statusLabel === "Partially Allocated"
+            ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20 dark:border-sky-500/30"
             : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200/60 dark:border-slate-700/60";
 
-        const textStyle = isCompletedLabel
+        const textStyle = statusLabel === "Completed" || statusLabel === "Completed by All"
             ? "text-emerald-600 dark:text-emerald-400"
-            : isUnlockedLabel
+            : statusLabel === "Unlocked" || statusLabel === "In Progress"
             ? "text-amber-600 dark:text-[#ecb613]"
+            : statusLabel === "Allocated to All"
+            ? "text-indigo-600 dark:text-indigo-400"
+            : statusLabel === "Partially Allocated"
+            ? "text-sky-600 dark:text-sky-400"
             : "text-slate-400 dark:text-slate-500";
 
         return {
@@ -2038,11 +2245,11 @@ export default function ClassroomDashboardPage({
             cardBorder,
             badgeStyle,
             textStyle,
-            isLocked: statusLabel === "Locked",
+            isLocked: statusLabel === "Not Allocated" || statusLabel === "Locked",
             isUnlocked: isUnlockedLabel,
             isCompleted: isCompletedLabel
         };
-    }, [curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress, students]);
+    }, [curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress, getClassSummary]);
 
     const visibleCurriculum = useMemo(() => {
         const categoriesMap: Record<string, {
@@ -2069,11 +2276,6 @@ export default function ClassroomDashboardPage({
         };
 
         const filterLesson = (lessonId: string) => {
-            if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                const isCompleted = selectedStudentPermissions.completedLessons.has(lessonId);
-                const isUnlocked = selectedStudentPermissions.unlockedLessons.has(lessonId);
-                return isCompleted || isUnlocked;
-            }
             return true;
         };
 
@@ -2430,107 +2632,102 @@ export default function ClassroomDashboardPage({
         setIsSavingAllocation(true);
         const lessonId = allocationTargetLesson.id;
 
-        try {
+        const activeStudentIds = [
+            ...students.map(s => s.student_id),
+            ...sessionOverrides.map(o => o.student_id)
+        ];
+
+        let targetStudentIds: string[] = [];
+        if (allocationTargetType === 'classwide') {
+            targetStudentIds = activeStudentIds;
+        } else {
+            targetStudentIds = allocationSelectedStudents;
+        }
+
+        if (targetStudentIds.length === 0) {
+            alert('Please select at least one student.');
+            setIsSavingAllocation(false);
+            return;
+        }
+
+        if (allocationStatus === 'completed') {
             if (allocationTargetType === 'classwide') {
-                await handleToggleTopicLockClasswide(lessonId, allocationStatus);
-            } else {
-                if (activeAttendanceRoster.length === 0) {
-                    const fallbackRow = {
-                        student_id: 'classwide_default',
-                        classroom_id: classroomId,
-                        lesson_id: lessonId,
-                        status: allocationStatus,
-                        unlocked_by: 'manual',
-                        unlocked_at: allocationStatus !== 'locked' ? new Date().toISOString() : null,
-                        completed_at: allocationStatus === 'completed' ? new Date().toISOString() : null
-                    };
-                    setStudentProgress(prev => {
-                        const filtered = prev.filter(p => p.lesson_id !== lessonId);
-                        return [...filtered, fallbackRow];
-                    });
-                    alert('Classroom has no students. Pacing saved to default setting in-memory!');
-                    setIsAllocationDrawerOpen(false);
+                targetStudentIds = targetStudentIds.filter(studentId => {
+                    const statuses = getStudentStatuses('topic', lessonId);
+                    const match = statuses.find(s => s.studentId === studentId);
+                    return match && match.status !== 'not_allocated';
+                });
+
+                if (targetStudentIds.length === 0) {
+                    alert('No students in this class have this topic allocated to them.');
+                    setIsSavingAllocation(false);
                     return;
                 }
 
-                const targetStudentIds = (curriculumTab === 'individual' && selectedStudentForCurriculum)
-                    ? [selectedStudentForCurriculum.student_id]
-                    : activeAttendanceRoster.map(s => s.student_id);
-
-                const rows = activeAttendanceRoster
-                    .filter(s => targetStudentIds.includes(s.student_id))
-                    .map(s => {
-                        const isSelected = allocationSelectedStudents.includes(s.student_id);
-                        const existingRow = studentProgress.find(p => p.student_id === s.student_id && p.lesson_id === lessonId);
-                        const existingStatus = existingRow ? existingRow.status : 'locked';
-                        
-                        let status = existingStatus;
-                        if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                            status = allocationStatus;
-                        } else {
-                            if (allocationStatus === 'unlocked') {
-                                if (isSelected) {
-                                    status = (existingStatus === 'completed') ? 'completed' : 'unlocked';
-                                } else {
-                                    status = 'locked';
-                                }
-                            } else if (allocationStatus === 'completed') {
-                                if (isSelected) {
-                                    status = 'completed';
-                                } else {
-                                    status = existingStatus;
-                                }
-                            } else if (allocationStatus === 'locked') {
-                                if (isSelected) {
-                                    status = 'locked';
-                                } else {
-                                    status = existingStatus;
-                                }
-                            }
-                        }
-
-                        return {
-                            student_id: s.student_id,
-                            classroom_id: classroomId,
-                            lesson_id: lessonId,
-                            status: status,
-                            unlocked_by: 'manual',
-                            unlocked_at: status !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
-                            completed_at: status === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
-                        };
-                    });
-
-                const { error } = await supabaseAuth
-                    .from('student_topic_progress')
-                    .upsert(rows, {
-                        onConflict: 'student_id,lesson_id'
-                    });
-
-                if (error) {
-                    console.warn('[Pacing] Database upsert failed, updating in-memory only:', error.message);
-                    setStudentProgress(prev => {
-                        const filtered = prev.filter(p => p.lesson_id !== lessonId);
-                        return [...filtered, ...rows];
-                    });
-                } else {
-                    const studentIds = [
-                        ...students.map(s => s.student_id),
-                        ...sessionOverrides.map(o => o.student_id)
-                    ];
-                    let progressQuery = supabaseAuth
-                        .from('student_topic_progress')
-                        .select('*');
-                    if (studentIds.length > 0) {
-                        progressQuery = progressQuery.in('student_id', studentIds);
-                    } else {
-                        progressQuery = progressQuery.eq('classroom_id', classroomId);
-                    }
-                    const { data: progressData, error: fetchError } = await progressQuery;
-                    if (fetchError) throw fetchError;
-                    setStudentProgress(progressData || []);
+                if (!window.confirm(`Are you sure you want to mark this topic complete for all ${targetStudentIds.length} allocated students?`)) {
+                    setIsSavingAllocation(false);
+                    return;
                 }
-                alert('Pacing allocations updated successfully!');
+            } else {
+                if (!window.confirm(`Are you sure you want to mark this topic complete for the selected students?`)) {
+                    setIsSavingAllocation(false);
+                    return;
+                }
             }
+        } else {
+            const actionVerb = allocationStatus === 'locked' ? 'lock' : 'unlock';
+            const scope = allocationTargetType === 'classwide' ? 'the entire class' : `${targetStudentIds.length} selected student(s)`;
+            if (!window.confirm(`Are you sure you want to ${actionVerb} this topic for ${scope}?`)) {
+                setIsSavingAllocation(false);
+                return;
+            }
+        }
+
+        try {
+            const rows = targetStudentIds.map(studentId => {
+                const existingRow = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
+                return {
+                    student_id: studentId,
+                    classroom_id: classroomId,
+                    lesson_id: lessonId,
+                    status: allocationStatus,
+                    unlocked_by: 'manual',
+                    unlocked_at: allocationStatus !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
+                    completed_at: allocationStatus === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
+                };
+            });
+
+            const { error } = await supabaseAuth
+                .from('student_topic_progress')
+                .upsert(rows, {
+                    onConflict: 'student_id,lesson_id'
+                });
+
+            if (error) {
+                console.warn('[Pacing] Database upsert failed, updating in-memory only:', error.message);
+                setStudentProgress(prev => {
+                    const affectedPairs = new Set(rows.map(r => `${r.student_id}_${r.lesson_id}`));
+                    const filtered = prev.filter(p => !affectedPairs.has(`${p.student_id}_${p.lesson_id}`));
+                    return [...filtered, ...rows];
+                });
+            } else {
+                const studentIds = [
+                    ...students.map(s => s.student_id),
+                    ...sessionOverrides.map(o => o.student_id)
+                ];
+                let progressQuery = supabaseAuth
+                    .from('student_topic_progress')
+                    .select('*');
+                if (studentIds.length > 0) {
+                    progressQuery = progressQuery.in('student_id', studentIds);
+                } else {
+                    progressQuery = progressQuery.eq('classroom_id', classroomId);
+                }
+                const { data: progressData, error: fetchError } = await progressQuery;
+                if (fetchError) throw fetchError;
+                setStudentProgress(progressData || []);
+            }
+            alert('Pacing allocations updated successfully!');
             setIsAllocationDrawerOpen(false);
         } catch (err: any) {
             console.error('Error saving pacing allocations:', err);
@@ -2546,9 +2743,28 @@ export default function ClassroomDashboardPage({
         newStatus: 'locked' | 'unlocked' | 'completed'
     ) => {
         if (!classroomId) return;
-        setIsUpdatingProgress(targetId);
 
-        // 1. Determine affected topics (lessons)
+        const activeStudentIds = [
+            ...students.map(s => s.student_id),
+            ...sessionOverrides.map(o => o.student_id)
+        ];
+
+        let targetStudentIds: string[] = [];
+        if (curriculumTab === 'classwide') {
+            targetStudentIds = activeStudentIds;
+        } else {
+            if (!selectedStudentForCurriculum) {
+                alert('Please select a student first.');
+                return;
+            }
+            targetStudentIds = [selectedStudentForCurriculum.student_id];
+        }
+
+        if (targetStudentIds.length === 0) {
+            alert('No active students to update.');
+            return;
+        }
+
         let affectedLessonIds: string[] = [];
         if (targetType === 'level') {
             const chaptersInMod = courseChapters.filter(c => c.module_id === targetId);
@@ -2563,53 +2779,71 @@ export default function ClassroomDashboardPage({
         }
 
         if (affectedLessonIds.length === 0) {
-            setIsUpdatingProgress(null);
             return;
         }
 
-        // 2. Determine target student IDs
-        const isIndividual = (curriculumTab === 'individual' && selectedStudentForCurriculum);
-        const targetStudentIds = isIndividual
-            ? [selectedStudentForCurriculum.student_id]
-            : activeAttendanceRoster.map(s => s.student_id);
+        if (newStatus === 'completed') {
+            if (curriculumTab === 'classwide') {
+                targetStudentIds = targetStudentIds.filter(studentId => {
+                    const statuses = getStudentStatuses(targetType, targetId);
+                    const match = statuses.find(s => s.studentId === studentId);
+                    return match && match.status !== 'not_allocated';
+                });
 
-        // 3. Construct upsert rows
+                if (targetStudentIds.length === 0) {
+                    alert('No students in this class have this item allocated to them.');
+                    return;
+                }
+
+                if (!window.confirm(`Are you sure you want to mark this complete for all ${targetStudentIds.length} allocated students?`)) {
+                    return;
+                }
+            } else {
+                if (!window.confirm(`Are you sure you want to mark this complete?`)) {
+                    return;
+                }
+            }
+        } else {
+            const actionVerb = newStatus === 'locked' ? 'lock' : 'unlock';
+            const scope = curriculumTab === 'classwide' ? 'the entire class' : 'the selected student';
+            if (!window.confirm(`Are you sure you want to ${actionVerb} this for ${scope}?`)) {
+                return;
+            }
+        }
+
+        setIsUpdatingProgress(targetId);
+
         const rows: any[] = [];
-        if (targetStudentIds.length === 0) {
+        targetStudentIds.forEach(studentId => {
             affectedLessonIds.forEach(lessonId => {
+                if (newStatus === 'completed') {
+                    const isAlloc = getStudentStatuses('topic', lessonId).find(s => s.studentId === studentId)?.status !== 'not_allocated';
+                    if (!isAlloc) return;
+                }
+
+                const existingRow = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
+                const existingStatus = existingRow ? existingRow.status : 'locked';
+
+                let status = newStatus;
+                if (newStatus === 'unlocked' && existingStatus === 'completed') {
+                    status = 'completed';
+                }
+
                 rows.push({
-                    student_id: 'classwide_default',
+                    student_id: studentId,
                     classroom_id: classroomId,
                     lesson_id: lessonId,
-                    status: newStatus,
+                    status: status,
                     unlocked_by: 'manual',
-                    unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
-                    completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+                    unlocked_at: status !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
+                    completed_at: status === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
                 });
             });
-        } else {
-            targetStudentIds.forEach(studentId => {
-                affectedLessonIds.forEach(lessonId => {
-                    const existingRow = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
-                    const existingStatus = existingRow ? existingRow.status : 'locked';
+        });
 
-                    let status = newStatus;
-                    // Preserve completed state if unlocking
-                    if (newStatus === 'unlocked' && existingStatus === 'completed') {
-                        status = 'completed';
-                    }
-
-                    rows.push({
-                        student_id: studentId,
-                        classroom_id: classroomId,
-                        lesson_id: lessonId,
-                        status: status,
-                        unlocked_by: 'manual',
-                        unlocked_at: status !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
-                        completed_at: status === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
-                    });
-                });
-            });
+        if (rows.length === 0) {
+            setIsUpdatingProgress(null);
+            return;
         }
 
         try {
@@ -2658,32 +2892,113 @@ export default function ClassroomDashboardPage({
         description: string
     ) => {
         if (!classroomId || !teacherProfile) return;
-        
-        const isAlreadyAllocated = classroomInventoryAllocations.some(a => {
-            const refId = a.module_id || a.chapter_id || a.lesson_id;
-            return refId === id && !a.allocated_to_student_id;
-        });
-        if (isAlreadyAllocated) {
-            alert(`"${title}" is already allocated to this classroom.`);
+
+        const activeStudentIds = [
+            ...students.map(s => s.student_id),
+            ...sessionOverrides.map(o => o.student_id)
+        ];
+
+        if (activeStudentIds.length === 0) {
+            alert('No active students in this classroom to allocate to.');
             return;
+        }
+
+        let targetStudentIds: string[] = [];
+        if (curriculumTab === 'classwide') {
+            targetStudentIds = activeStudentIds;
+        } else {
+            if (!selectedStudentForCurriculum) {
+                alert('Please select a student first.');
+                return;
+            }
+            targetStudentIds = [selectedStudentForCurriculum.student_id];
+        }
+
+        let allocateChapters = false;
+        let allocateLessons = false;
+
+        if (type === 'module') {
+            const depth = prompt(
+                `Allocate Level "${title}"\nChoose allocation option:\n1. Allocate only the Level\n2. Allocate the Level and all Chapters under it\n3. Allocate the Level, all Chapters, and all Topics under it\n\nEnter 1, 2, or 3:`,
+                "3"
+            );
+            if (depth === null) return;
+            if (depth === "2") {
+                allocateChapters = true;
+            } else if (depth === "3") {
+                allocateChapters = true;
+                allocateLessons = true;
+            } else if (depth !== "1") {
+                alert("Invalid choice. Allocation cancelled.");
+                return;
+            }
+        } else if (type === 'chapter') {
+            const depth = prompt(
+                `Allocate Chapter "${title}"\nChoose allocation option:\n1. Allocate only the Chapter\n2. Allocate the Chapter and all Topics under it\n\nEnter 1 or 2:`,
+                "2"
+            );
+            if (depth === null) return;
+            if (depth === "2") {
+                allocateLessons = true;
+            } else if (depth !== "1") {
+                alert("Invalid choice. Allocation cancelled.");
+                return;
+            }
         }
 
         setImportingItemId(id);
         try {
-            const insertData: any = {
-                classroom_id: classroomId,
-                allocated_by: teacherProfile.id,
-                allocated_to_student_id: null
-            };
-            if (type === 'module') insertData.module_id = id;
-            else if (type === 'chapter') insertData.chapter_id = id;
-            else if (type === 'lesson') insertData.lesson_id = id;
+            const itemsToAllocate: { refType: 'module' | 'chapter' | 'lesson'; refId: string }[] = [
+                { refType: type, refId: id }
+            ];
 
-            const { error } = await supabaseAuth
-                .from('classroom_inventory_allocation')
-                .insert([insertData]);
+            if (type === 'module' && allocateChapters) {
+                const chapters = courseChapters.filter(c => c.module_id === id);
+                chapters.forEach(c => {
+                    itemsToAllocate.push({ refType: 'chapter', refId: c.id });
+                    if (allocateLessons) {
+                        const lessons = courseLessons.filter(l => l.chapter_id === c.id);
+                        lessons.forEach(l => {
+                            itemsToAllocate.push({ refType: 'lesson', refId: l.id });
+                        });
+                    }
+                });
+            } else if (type === 'chapter' && allocateLessons) {
+                const lessons = courseLessons.filter(l => l.chapter_id === id);
+                lessons.forEach(l => {
+                    itemsToAllocate.push({ refType: 'lesson', refId: l.id });
+                });
+            }
 
-            if (error) throw error;
+            const insertRows: any[] = [];
+            targetStudentIds.forEach(studentId => {
+                itemsToAllocate.forEach(item => {
+                    const isAlready = classroomInventoryAllocations.some(a => {
+                        const sameId = a.module_id === item.refId || a.chapter_id === item.refId || a.lesson_id === item.refId;
+                        return sameId && a.allocated_to_student_id === studentId;
+                    });
+                    if (!isAlready) {
+                        const row: any = {
+                            classroom_id: classroomId,
+                            allocated_by: teacherProfile.id,
+                            allocated_to_student_id: studentId
+                        };
+                        if (item.refType === 'module') row.module_id = item.refId;
+                        else if (item.refType === 'chapter') row.chapter_id = item.refId;
+                        else if (item.refType === 'lesson') row.lesson_id = item.refId;
+                        insertRows.push(row);
+                    }
+                });
+            });
+
+            if (insertRows.length > 0) {
+                const { error } = await supabaseAuth
+                    .from('classroom_inventory_allocation')
+                    .insert(insertRows);
+                if (error) throw error;
+            }
+
+            alert('Allocation successful!');
             await fetchCurriculumAllocations();
         } catch (err) {
             console.error('Failed to allocate item:', err);
@@ -3430,6 +3745,8 @@ export default function ClassroomDashboardPage({
                             syllabusLessons={syllabusLessons}
                             setIsInventoryDrawerOpen={setIsInventoryDrawerOpen}
                             handleUpdatePacingState={handleUpdatePacingState}
+                            getClassSummary={getClassSummary}
+                            getStudentStatuses={getStudentStatuses}
                         />
                     )}
 
@@ -3674,8 +3991,12 @@ export default function ClassroomDashboardPage({
                                 <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
                                     <div className="space-y-3 text-left">
                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">1. Lesson Overview</h4>
-                                        <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold leading-relaxed whitespace-pre-wrap">
-                                            {selectedTopic.description || 'No detailed instructions uploaded. Follow general study guides for this level.'}
+                                        <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                                            {selectedTopic.description ? (
+                                                <div dangerouslySetInnerHTML={{ __html: selectedTopic.description }} />
+                                            ) : (
+                                                'No detailed instructions uploaded. Follow general study guides for this level.'
+                                            )}
                                         </div>
                                     </div>
 
@@ -4034,53 +4355,133 @@ export default function ClassroomDashboardPage({
                                     </div>
                                 </div>
 
-                                <div className="flex bg-slate-105 dark:bg-slate-900 p-1 rounded-xl">
-                                    <button
-                                        type="button"
-                                        onClick={() => setAllocationTargetType('classwide')}
-                                        className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
-                                            allocationTargetType === 'classwide'
-                                                ? 'bg-[#ecb613] text-slate-950 shadow-sm'
-                                                : 'text-slate-450 hover:text-slate-800 dark:hover:text-slate-100'
-                                        }`}
-                                    >
-                                        Classwide
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={curriculumTab === 'individual' && !!selectedStudentForCurriculum}
-                                        onClick={() => setAllocationTargetType('individual')}
-                                        className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer disabled:opacity-50 ${
-                                            allocationTargetType === 'individual'
-                                                ? 'bg-[#ecb613] text-slate-950 shadow-sm'
-                                                : 'text-slate-450 hover:text-slate-800 dark:hover:text-slate-100'
-                                        }`}
-                                    >
-                                        Individual Pacing
-                                    </button>
+                                {/* Target Choice Selector */}
+                                <div className="space-y-3">
+                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">Target Audience</span>
+                                    <div className="flex bg-slate-105 dark:bg-slate-900 p-1 rounded-xl">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAllocationTargetType('classwide');
+                                                const activeStudentIds = [
+                                                    ...students.map(s => s.student_id),
+                                                    ...sessionOverrides.map(o => o.student_id)
+                                                ];
+                                                setAllocationSelectedStudents(activeStudentIds);
+                                            }}
+                                            className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer text-center ${
+                                                allocationTargetType === 'classwide'
+                                                    ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-xs'
+                                                    : 'text-slate-400 hover:text-slate-650'
+                                            }`}
+                                        >
+                                            Entire Class
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAllocationTargetType('individual');
+                                                const progressForLesson = studentProgress.filter(p => p.lesson_id === allocationTargetLesson?.id);
+                                                const completedStudentIds = progressForLesson.filter(p => p.status === 'completed').map(p => p.student_id);
+                                                setAllocationSelectedStudents(
+                                                    selectedStudentForCurriculum 
+                                                        ? Array.from(new Set([selectedStudentForCurriculum.student_id, ...completedStudentIds]))
+                                                        : completedStudentIds
+                                                );
+                                            }}
+                                            className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer text-center ${
+                                                allocationTargetType === 'individual'
+                                                    ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-xs'
+                                                    : 'text-slate-400 hover:text-slate-650'
+                                            }`}
+                                        >
+                                            Selected Students
+                                        </button>
+                                    </div>
                                 </div>
 
+                                {allocationTargetType === 'classwide' ? (
+                                    <div className="p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shrink-0">
+                                            <Users className="w-5 h-5 text-amber-500" />
+                                        </div>
+                                        <div className="text-left">
+                                            <span className="text-[9px] font-black uppercase text-amber-500 font-mono tracking-wider">Setting Pacing For</span>
+                                            <h5 className="text-xs font-black text-slate-855 dark:text-slate-200 mt-0.5 leading-none">
+                                                All Class Students ({students.length + sessionOverrides.length})
+                                            </h5>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">Select Students</span>
+                                        <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1 bg-slate-50/50 dark:bg-slate-900/10 custom-scrollbar">
+                                            {allocationTargetLesson && getStudentStatuses('topic', allocationTargetLesson.id).map(student => {
+                                                const isChecked = allocationSelectedStudents.includes(student.studentId);
+                                                return (
+                                                    <label 
+                                                        key={student.studentId}
+                                                        className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-100/60 dark:hover:bg-slate-800/40 cursor-pointer transition-all select-none"
+                                                    >
+                                                        <div className="flex items-center gap-2.5">
+                                                            <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-300 dark:border-slate-700">
+                                                                {student.profilePic ? (
+                                                                    <img src={student.profilePic} alt={student.name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <span className="text-[10px] font-black text-slate-500">{student.name.charAt(0)}</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex flex-col text-left">
+                                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-350">{student.name}</span>
+                                                                <span className={`text-[9px] font-black uppercase mt-0.5 flex items-center gap-1 ${
+                                                                    student.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' :
+                                                                    student.status === 'in_progress' ? 'text-amber-600 dark:text-amber-400' :
+                                                                    student.status === 'locked' ? 'text-slate-505 dark:text-slate-400' :
+                                                                    'text-slate-400 dark:text-slate-500'
+                                                                }`}>
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${
+                                                                        student.status === 'completed' ? 'bg-emerald-500' :
+                                                                        student.status === 'in_progress' ? 'bg-amber-500' :
+                                                                        student.status === 'locked' ? 'bg-slate-400' :
+                                                                        'bg-slate-300'
+                                                                    }`} />
+                                                                    {student.status.replace('_', ' ')}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => {
+                                                                if (isChecked) {
+                                                                    setAllocationSelectedStudents(prev => prev.filter(id => id !== student.studentId));
+                                                                } else {
+                                                                    setAllocationSelectedStudents(prev => [...prev, student.studentId]);
+                                                                }
+                                                            }}
+                                                            className="rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 h-4.5 w-4.5 cursor-pointer accent-[#ecb613]"
+                                                        />
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="space-y-3">
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono font-semibold">Change Topic Pacing State</span>
+                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">Change Topic Pacing State</span>
                                     <div className="grid grid-cols-3 gap-2">
                                         {([
                                             { key: 'locked', label: 'Lock Topic', border: 'border-slate-200 dark:border-slate-800', active: 'bg-slate-100 border-slate-400 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300' },
                                             { key: 'unlocked', label: 'Unlock/Active', border: 'border-amber-200 dark:border-amber-850', active: 'bg-amber-50 border-amber-400 text-amber-700 dark:bg-amber-955/20 dark:border-amber-600 dark:text-amber-300' },
-                                            { key: 'completed', label: 'Mark Complete', border: 'border-emerald-200 dark:border-emerald-850', active: 'bg-emerald-50 border-emerald-400 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-600 dark:text-emerald-300' }
+                                            { key: 'completed', label: 'Mark Complete', border: 'border-emerald-200 dark:border-emerald-850', active: 'bg-emerald-50 border-emerald-400 text-emerald-700 dark:bg-emerald-955/10 dark:border-emerald-600 dark:text-emerald-350' }
                                         ] as const).map(opt => {
                                             const isActive = allocationStatus === opt.key;
                                             return (
                                                 <button
                                                     key={opt.key}
                                                     type="button"
-                                                    onClick={() => {
-                                                        setAllocationStatus(opt.key);
-                                                        if (allocationTargetType === 'classwide') {
-                                                            setAllocationSelectedStudents(students.map(s => s.student_id));
-                                                        } else {
-                                                            setAllocationSelectedStudents(getStudentsWithStatus(opt.key, allocationTargetLesson.id));
-                                                        }
-                                                    }}
+                                                    onClick={() => setAllocationStatus(opt.key)}
                                                     className={`py-3 px-2 text-[10px] font-black uppercase tracking-wider rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer text-center ${
                                                         isActive 
                                                             ? opt.active 
@@ -4096,67 +4497,6 @@ export default function ClassroomDashboardPage({
                                         })}
                                     </div>
                                 </div>
-
-                                {allocationTargetType === 'individual' && students.length > 0 && (
-                                    <div className="space-y-3 animate-in fade-in duration-300">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono font-semibold">Assign Students</span>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setAllocationSelectedStudents(students.map(s => s.student_id))}
-                                                    className="text-[9px] font-black uppercase text-[#ecb613] hover:underline"
-                                                >
-                                                    Select All
-                                                </button>
-                                                <span className="text-slate-300">|</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setAllocationSelectedStudents([])}
-                                                    className="text-[9px] font-black uppercase text-slate-455 hover:underline"
-                                                >
-                                                    Clear All
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="p-3 bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 rounded-2xl max-h-[220px] overflow-y-auto space-y-2">
-                                            {students.map(stud => {
-                                                const isSelected = allocationSelectedStudents.includes(stud.student_id);
-                                                return (
-                                                    <div 
-                                                        key={stud.id}
-                                                        onClick={() => {
-                                                            setAllocationSelectedStudents(prev => 
-                                                                isSelected 
-                                                                    ? prev.filter(id => id !== stud.student_id) 
-                                                                    : [...prev, stud.student_id]
-                                                            );
-                                                        }}
-                                                        className="flex items-center justify-between p-2.5 bg-white dark:bg-slate-950/40 border border-slate-100 dark:border-slate-805 hover:bg-slate-50 dark:hover:bg-slate-900/80 rounded-xl cursor-pointer select-none transition-colors"
-                                                    >
-                                                        <div className="flex items-center gap-2.5 min-w-0">
-                                                            <div className="w-7.5 h-7.5 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
-                                                                {stud.profile_pic_url ? (
-                                                                    <img src={stud.profile_pic_url} alt={stud.name} className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    <span className="text-[11px] font-bold text-slate-500">{stud.name.charAt(0)}</span>
-                                                                )}
-                                                            </div>
-                                                            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 truncate">{stud.name}</span>
-                                                        </div>
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={isSelected}
-                                                            onChange={() => {}}
-                                                            className="rounded text-amber-500 focus:ring-amber-400 size-4 border-slate-300 dark:border-slate-700 cursor-pointer"
-                                                        />
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
 
                             <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex items-center gap-3 bg-slate-50/50 dark:bg-slate-900/40">
@@ -4413,7 +4753,7 @@ export default function ClassroomDashboardPage({
                                                         className="flex items-center justify-between p-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-805 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg cursor-pointer select-none"
                                                     >
                                                         <div className="flex items-center gap-2.5 min-w-0">
-                                                            <div className="w-6.5 h-6.5 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                                                            <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
                                                                 {s.profile_pic_url ? (
                                                                     <img src={s.profile_pic_url} alt={s.name} className="w-full h-full object-cover" />
                                                                 ) : (

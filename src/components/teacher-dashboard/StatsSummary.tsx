@@ -6,7 +6,10 @@ import Link from 'next/link';
 interface StatsSummaryProps {
     stats: {
         totalStudents: number;
+        liveStudents: number;
         activeClassrooms: number;
+        permanentClassrooms: number;
+        temporaryClassroomsNotDone: number;
         pendingSubmissions: number;
     };
     feesStats: {
@@ -27,49 +30,51 @@ export default function StatsSummary({
 }: StatsSummaryProps) {
     const statsList = [
         { 
-            label: 'Total Students', 
+            label: 'Students', 
             value: stats.totalStudents, 
             icon: 'person', 
             colorClass: 'bg-blue-50 dark:bg-blue-950/20 text-blue-600', 
             borderClass: 'border-l-4 border-blue-500', 
-            status: 'Live', 
-            statusClass: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20', 
+            status: `${stats.liveStudents} Live`, 
+            statusClass: stats.liveStudents > 0 
+                ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 font-bold animate-pulse' 
+                : 'text-slate-500 bg-slate-50 dark:bg-slate-900/20', 
             href: '/teacher-dashboard/students' 
         },
         { 
-            label: 'Active Classrooms', 
+            label: 'Classrooms', 
             value: stats.activeClassrooms, 
             icon: 'meeting_room', 
             colorClass: 'bg-amber-50 dark:bg-amber-950/20 text-amber-600', 
             borderClass: 'border-l-4 border-amber-500', 
-            status: 'Active', 
-            statusClass: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', 
+            status: `${stats.permanentClassrooms} Perm / ${stats.temporaryClassroomsNotDone} Temp`, 
+            statusClass: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20 font-semibold', 
             href: '/teacher-dashboard/classrooms' 
         },
         { 
-            label: 'Pending Submissions', 
+            label: 'Task Submitted', 
             value: stats.pendingSubmissions, 
             icon: 'assignment_late', 
             colorClass: 'bg-purple-50 dark:bg-purple-950/20 text-purple-600', 
             borderClass: 'border-l-4 border-purple-500', 
-            status: 'Review', 
+            status: 'Submitted', 
             statusClass: 'text-purple-600 bg-purple-50 dark:bg-purple-900/20', 
-            href: '/teacher-dashboard/submissions' 
+            href: '/teacher-dashboard/tasks' 
         },
         ...(isAdmin ? [{ 
             label: 'Fees Collection', 
             value: `₹${feesStats.collectedThisMonth.toLocaleString('en-IN')}`, 
             icon: 'payments', 
-            colorClass: 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600', 
+            colorClass: 'bg-emerald-50 dark:bg-emerald-955/20 text-emerald-600', 
             borderClass: 'border-l-4 border-emerald-500', 
             status: feesStats.dueStudentsCount > 0 ? `${feesStats.dueStudentsCount} Due` : 'Paid', 
-            statusClass: feesStats.dueStudentsCount > 0 ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 animate-pulse' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20', 
+            statusClass: feesStats.dueStudentsCount > 0 ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 animate-pulse' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-955/20', 
             href: '/teacher-dashboard/fees' 
         }] : [])
     ];
 
     return (
-        <section className={`grid grid-cols-2 gap-3 sm:gap-6 ${isAdmin ? 'lg:grid-cols-4' : 'md:grid-cols-3'}`}>
+        <section className={`grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 ${isAdmin ? 'lg:grid-cols-4' : 'md:grid-cols-3'}`}>
             {statsList.map((stat, i) => (
                 <Link 
                     key={i} 

@@ -96,6 +96,14 @@ export default function FeesManagementDashboard() {
 
             const userId = session.user.id;
 
+            // Clear unread fees notifications for the admin
+            await supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', userId)
+                .eq('type', 'fees')
+                .eq('is_read', false);
+
             // 2. Fetch Teacher Profile
             const { data: profile, error: profileError } = await supabaseAuth
                 .from('users')

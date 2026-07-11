@@ -49,7 +49,14 @@ interface CurriculumTabProps {
         targetId: string,
         newStatus: 'locked' | 'unlocked' | 'completed'
     ) => Promise<void>;
+    getClassSummary: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => 'not_allocated' | 'partially_allocated' | 'allocated_to_all' | 'in_progress' | 'completed_by_all';
+    getStudentStatuses: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => any[];
 }
+
+const stripHtml = (html: string) => {
+    if (!html) return '';
+    return html.replace(/<[^>]*>?/gm, '');
+};
 
 export default function CurriculumTab({
     curriculumTab,
@@ -80,8 +87,68 @@ export default function CurriculumTab({
     selectedStudentPermissions,
     syllabusLessons,
     setIsInventoryDrawerOpen,
-    handleUpdatePacingState
+    handleUpdatePacingState,
+    getClassSummary,
+    getStudentStatuses
 }: CurriculumTabProps) {
+    const [expandedStudentStatuses, setExpandedStudentStatuses] = React.useState<Record<string, boolean>>({});
+
+    React.useEffect(() => {
+        if (!selectedStudentForCurriculum && activeAttendanceRoster.length > 0) {
+            setSelectedStudentForCurriculum(activeAttendanceRoster[0]);
+        }
+    }, [activeAttendanceRoster, selectedStudentForCurriculum, setSelectedStudentForCurriculum]);
+
+    const renderStudentStatuses = (itemType: 'level' | 'chapter' | 'topic', itemId: string) => {
+        const statuses = getStudentStatuses(itemType, itemId);
+        return (
+            <div className="mt-4 p-4 rounded-2xl bg-slate-50/50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Student Status Breakdown</span>
+                    <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md font-mono">
+                        {statuses.filter(s => s.status !== 'not_allocated').length}/{statuses.length} Allocated
+                    </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {statuses.map(student => {
+                        let statusBadge = '';
+                        let textClass = '';
+                        if (student.status === 'completed') {
+                            statusBadge = 'Completed';
+                            textClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+                        } else if (student.status === 'in_progress') {
+                            statusBadge = 'In Progress';
+                            textClass = 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/20';
+                        } else if (student.status === 'locked') {
+                            statusBadge = 'Locked';
+                            textClass = 'bg-slate-100 dark:bg-slate-850 text-slate-500 border-slate-200/50';
+                        } else {
+                            statusBadge = 'Not Allocated';
+                            textClass = 'bg-slate-105/55 text-slate-400 border-slate-200/20 opacity-60';
+                        }
+
+                        return (
+                            <div key={student.studentId} className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-955 border border-slate-150 dark:border-slate-855 hover:border-slate-300 dark:hover:border-slate-700 transition-all select-none">
+                                <div className="flex items-center gap-2">
+                                     <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 dark:border-slate-800 flex items-center justify-center shrink-0">
+                                         {student.profilePic ? (
+                                             <img src={student.profilePic} alt={student.name} className="w-full h-full object-cover" />
+                                         ) : (
+                                             <span className="text-[10px] font-black text-slate-400">{student.name.charAt(0)}</span>
+                                         )}
+                                     </div>
+                                     <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate max-w-[140px] sm:max-w-[160px]">{student.name}</span>
+                                </div>
+                                <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-md border font-mono tracking-wider ${textClass}`}>
+                                    {statusBadge}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    };
     return (
         <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
             {/* Section 1: Dashboard Header */}
@@ -124,7 +191,7 @@ export default function CurriculumTab({
                                     : 'border-transparent text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-400'
                             }`}
                         >
-                            Class-wide Roster Lock
+                            Class Curriculum
                         </button>
                         <button
                             onClick={() => {
@@ -139,7 +206,7 @@ export default function CurriculumTab({
                                     : 'border-transparent text-slate-400 hover:text-slate-655 dark:text-slate-500 dark:hover:text-slate-400'
                             }`}
                         >
-                            Individual Override Pacing
+                            Student Curriculum
                         </button>
                     </div>
                 </div>
@@ -202,7 +269,7 @@ export default function CurriculumTab({
                                 This student has no active or unlocked study materials in their personalized learning path yet.
                             </p>
                             <p className="text-xs text-slate-400 dark:text-slate-505 mt-2.5 max-w-sm text-center leading-normal">
-                                You can switch to the <strong>Class-wide Roster Lock</strong> tab to unlock specific topics for them, or assign specialized materials individually from the Inventory Library.
+                                You can switch to the <strong>Class Curriculum</strong> tab to unlock specific topics for them, or assign specialized materials individually from the Inventory Library.
                             </p>
                         </div>
                     ) : (
@@ -325,9 +392,25 @@ export default function CurriculumTab({
                                                                                         <h3 className="font-black text-base md:text-lg text-slate-800 dark:text-white leading-tight tracking-tight">
                                                                                             {mod.title}
                                                                                         </h3>
-                                                                                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/10 text-[#ecb613] border border-[#ecb613]/20">
-                                                                                            Level Allocated
-                                                                                        </span>
+{curriculumTab === 'classwide' ? (
+                                                                                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                                                                                                getClassSummary('level', mod.id) === 'completed_by_all'
+                                                                                                    ? 'bg-emerald-500/10 text-emerald-605 dark:text-emerald-400 border-emerald-500/20'
+                                                                                                    : getClassSummary('level', mod.id) === 'in_progress'
+                                                                                                    ? 'bg-amber-500/10 text-amber-605 dark:text-[#ecb613] border-amber-500/20'
+                                                                                                    : getClassSummary('level', mod.id) === 'allocated_to_all'
+                                                                                                    ? 'bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 border-indigo-500/20'
+                                                                                                    : getClassSummary('level', mod.id) === 'partially_allocated'
+                                                                                                    ? 'bg-sky-500/10 text-sky-655 dark:text-sky-400 border-sky-500/20'
+                                                                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200'
+                                                                                            }`}>
+                                                                                                {getClassSummary('level', mod.id).replace('_', ' ')}
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-[#ecb613]/10 text-[#ecb613] border border-[#ecb613]/20">
+                                                                                                Level Allocated
+                                                                                            </span>
+                                                                                        )}
                                                                                     </div>
                                                                                     <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider font-mono">
                                                                                         {mod.chapters.length} {mod.chapters.length === 1 ? 'Chapter' : 'Chapters'}
@@ -358,6 +441,21 @@ export default function CurriculumTab({
                                                                                     <Loader2 className="size-4 animate-spin text-[#ecb613] mx-2" />
                                                                                 ) : (
                                                                                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                        {curriculumTab === 'classwide' && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    setExpandedStudentStatuses(prev => ({ 
+                                                                                                        ...prev, 
+                                                                                                        [`module-${mod.id}`]: !prev[`module-${mod.id}`] 
+                                                                                                    }));
+                                                                                                }}
+                                                                                                className="text-[9px] font-black uppercase tracking-wider text-amber-500 hover:text-amber-600 hover:bg-amber-500/5 px-2 py-1 rounded-lg transition-all cursor-pointer border border-amber-500/10 mr-1"
+                                                                                            >
+                                                                                                {expandedStudentStatuses[`module-${mod.id}`] ? 'Hide' : 'Students'}
+                                                                                            </button>
+                                                                                        )}
                                                                                         <button
                                                                                             type="button"
                                                                                             onClick={(e) => {
@@ -423,9 +521,25 @@ export default function CurriculumTab({
                                                                                         <h4 className="text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
                                                                                             {mod.title}
                                                                                         </h4>
-                                                                                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200/50 dark:border-slate-700/50">
-                                                                                            Custom Pacing
-                                                                                        </span>
+{curriculumTab === 'classwide' ? (
+                                                                                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                                                                                                getClassSummary('level', mod.id) === 'completed_by_all'
+                                                                                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                                                                    : getClassSummary('level', mod.id) === 'in_progress'
+                                                                                                    ? 'bg-amber-500/10 text-amber-605 dark:text-[#ecb613] border-amber-500/20'
+                                                                                                    : getClassSummary('level', mod.id) === 'allocated_to_all'
+                                                                                                    ? 'bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 border-indigo-500/20'
+                                                                                                    : getClassSummary('level', mod.id) === 'partially_allocated'
+                                                                                                    ? 'bg-sky-500/10 text-sky-655 dark:text-sky-400 border-sky-500/20'
+                                                                                                    : 'bg-slate-150 dark:bg-slate-805 text-slate-405 border-slate-200/50'
+                                                                                            }`}>
+                                                                                                {getClassSummary('level', mod.id).replace('_', ' ')}
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-slate-200 text-slate-550 dark:bg-slate-805 dark:text-slate-400 border border-slate-200/50 dark:border-slate-700/50">
+                                                                                                Custom Pacing
+                                                                                                </span>
+                                                                                        )}
                                                                                     </div>
                                                                                     <p className="text-[9px] text-slate-400 dark:text-slate-550 font-bold uppercase tracking-wider font-mono mt-0.5">
                                                                                         {mod.chapters.length} {mod.chapters.length === 1 ? 'Chapter' : 'Chapters'}
@@ -437,6 +551,21 @@ export default function CurriculumTab({
                                                                                     <Loader2 className="size-4 animate-spin text-[#ecb613] mx-2" />
                                                                                 ) : (
                                                                                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                        {curriculumTab === 'classwide' && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation();
+                                                                                                    setExpandedStudentStatuses(prev => ({ 
+                                                                                                        ...prev, 
+                                                                                                        [`module-${mod.id}`]: !prev[`module-${mod.id}`] 
+                                                                                                    }));
+                                                                                                }}
+                                                                                                className="text-[9px] font-black uppercase tracking-wider text-amber-500 hover:text-amber-600 hover:bg-amber-500/5 px-2 py-1 rounded-lg transition-all cursor-pointer border border-amber-500/10 mr-1"
+                                                                                            >
+                                                                                                {expandedStudentStatuses[`module-${mod.id}`] ? 'Hide' : 'Students'}
+                                                                                            </button>
+                                                                                        )}
                                                                                         <button
                                                                                             type="button"
                                                                                             onClick={(e) => {
@@ -484,6 +613,12 @@ export default function CurriculumTab({
                                                                         </div>
                                                                     )}
 
+                                                                    {curriculumTab === 'classwide' && expandedStudentStatuses[`module-${mod.id}`] && (
+                                                                        <div className="w-full animate-in fade-in slide-in-from-top-1" onClick={e => e.stopPropagation()}>
+                                                                            {renderStudentStatuses('level', mod.id)}
+                                                                        </div>
+                                                                    )}
+
                                                                     {/* Chapters Under This Module */}
                                                                     {isModuleExpanded && (
                                                                         <div className="space-y-6 pl-3 md:pl-6 border-l border-slate-200 dark:border-slate-800/60">
@@ -510,11 +645,27 @@ export default function CurriculumTab({
                                                                                                         <h5 className="text-sm font-black text-slate-800 dark:text-slate-100 leading-tight">
                                                                                                             {chap.title}
                                                                                                         </h5>
-                                                                                                        {hasChapterAssignment && (
-                                                                                                            <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-gradient-to-r from-[#ecb613]/15 to-[#ecb613]/5 text-[#ecb613] border border-[#ecb613]/20">
-                                                                                                                Chapter Allocated
-                                                                                                            </span>
-                                                                                                        )}
+                                                                                                        {curriculumTab === 'classwide' ? (
+                                                                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                                                                                getClassSummary('chapter', chap.id) === 'completed_by_all'
+                                                                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                                                    : getClassSummary('chapter', chap.id) === 'in_progress'
+                                                                                    ? 'bg-amber-500/10 text-amber-605 dark:text-[#ecb613] border-amber-500/20'
+                                                                                    : getClassSummary('chapter', chap.id) === 'allocated_to_all'
+                                                                                    ? 'bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 border-indigo-500/20'
+                                                                                    : getClassSummary('chapter', chap.id) === 'partially_allocated'
+                                                                                    ? 'bg-sky-500/10 text-sky-655 dark:text-sky-400 border-sky-500/20'
+                                                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200/50'
+                                                                            }`}>
+                                                                                {getClassSummary('chapter', chap.id).replace('_', ' ')}
+                                                                            </span>
+                                                                        ) : (
+                                                                            hasChapterAssignment && (
+                                                                                <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-gradient-to-r from-[#ecb613]/15 to-[#ecb613]/5 text-[#ecb613] border border-[#ecb613]/20">
+                                                                                    Chapter Allocated
+                                                                                </span>
+                                                                            )
+                                                                        )}
                                                                                                     </div>
                                                                                                     <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold mt-1 uppercase tracking-wider font-mono">
                                                                                                         {chap.lessons.length} {chap.lessons.length === 1 ? 'Study Unit' : 'Study Units'}
@@ -545,6 +696,21 @@ export default function CurriculumTab({
                                                                                                     <Loader2 className="size-3.5 animate-spin text-[#ecb613] mx-1.5" />
                                                                                                 ) : (
                                                                                                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                                        {curriculumTab === 'classwide' && (
+                                                                                                            <button
+                                                                                                                type="button"
+                                                                                                                onClick={(e) => {
+                                                                                                                    e.stopPropagation();
+                                                                                                                    setExpandedStudentStatuses(prev => ({ 
+                                                                                                                        ...prev, 
+                                                                                                                        [`chapter-${chap.id}`]: !prev[`chapter-${chap.id}`] 
+                                                                                                                    }));
+                                                                                                                }}
+                                                                                                                className="text-[9px] font-black uppercase tracking-wider text-amber-550 hover:text-amber-655 hover:bg-amber-500/5 px-2 py-1 rounded-lg transition-all cursor-pointer border border-amber-500/10 mr-1"
+                                                                                                            >
+                                                                                                                {expandedStudentStatuses[`chapter-${chap.id}`] ? 'Hide' : 'Students'}
+                                                                                                            </button>
+                                                                                                        )}
                                                                                                         <button
                                                                                                             type="button"
                                                                                                             onClick={(e) => {
@@ -596,6 +762,11 @@ export default function CurriculumTab({
                                                                                                 </div>
                                                                                             </div>
                                                                                         </div>
+                                                                                        {curriculumTab === 'classwide' && expandedStudentStatuses[`chapter-${chap.id}`] && (
+                                                                                            <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/20" onClick={e => e.stopPropagation()}>
+                                                                                                {renderStudentStatuses('chapter', chap.id)}
+                                                                                            </div>
+                                                                                        )}
 
                                                                                         {/* Chapter Lessons */}
                                                                                         {isChapterExpanded && (
@@ -607,146 +778,188 @@ export default function CurriculumTab({
                                                                                                 ) : (
                                                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative pl-3 border-l border-slate-200/60 dark:border-slate-800">
                                                                                                         {chap.lessons.map((lesson: any) => {
-                                                                                                            const isUpdating = isUpdatingProgress === lesson.id;
-                                                                                                            const pacing = getLessonPacingStatus(lesson.id);
+                                                                                const isUpdating = isUpdatingProgress === lesson.id;
+                                                                                const pacing = getLessonPacingStatus(lesson.id);
 
-                                                                                                            const isAudio = lesson.material_type === 'audio';
-                                                                                                            const isVideo = lesson.material_type === 'video';
-                                                                                                            const isPdf = lesson.material_type === 'pdf';
+                                                                                const isAudio = lesson.material_type === 'audio';
+                                                                                const isVideo = lesson.material_type === 'video';
+                                                                                const isPdf = lesson.material_type === 'pdf';
 
-                                                                                                            return (
-                                                                                                                <div 
-                                                                                                                    key={lesson.id} 
-                                                                                                                    onClick={() => setSelectedTopic(lesson)}
-                                                                                                                    className={`group rounded-2xl p-4 border flex items-center justify-between gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md text-left ${pacing.cardBorder}`}
-                                                                                                                >
-                                                                                                                    {/* Left side: Material Type Icon */}
-                                                                                                                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                                                                                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
-                                                                                                                            isPdf 
-                                                                                                                                ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/[0.05] border-blue-500/20'
-                                                                                                                                : isVideo 
-                                                                                                                                ? 'text-rose-505 bg-rose-500/10 dark:bg-rose-500/[0.05] border-rose-500/20' 
-                                                                                                                                : isAudio 
-                                                                                                                                ? 'text-amber-505 bg-amber-500/10 border-amber-500/20' 
-                                                                                                                                : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
-                                                                                                                        }`}>
-                                                                                                                            {isVideo ? (
-                                                                                                                                <Film className="size-4.5" />
-                                                                                                                            ) : isAudio ? (
-                                                                                                                                <Music className="size-4.5" />
-                                                                                                                            ) : (
-                                                                                                                                <FileText className="size-4.5" />
-                                                                                                                            )}
-                                                                                                                        </div>
+                                                                                return (
+                                                                                    <div 
+                                                                                        key={lesson.id} 
+                                                                                        onClick={() => setSelectedTopic(lesson)}
+                                                                                        className={`group rounded-2xl p-4 border flex flex-col gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md text-left ${pacing.cardBorder}`}
+                                                                                    >
+                                                                                        <div className="flex items-start gap-3.5 w-full">
+                                                                                            {/* Left side: Material Type Icon */}
+                                                                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
+                                                                                                isPdf 
+                                                                                                    ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/[0.05] border-blue-500/20'
+                                                                                                    : isVideo 
+                                                                                                    ? 'text-rose-500 bg-rose-500/10 dark:bg-rose-500/[0.05] border-rose-500/20' 
+                                                                                                    : isAudio 
+                                                                                                    ? 'text-amber-550 bg-amber-500/10 border-amber-500/20' 
+                                                                                                    : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                                                                                            }`}>
+                                                                                                {isVideo ? (
+                                                                                                    <Film className="size-4.5" />
+                                                                                                ) : isAudio ? (
+                                                                                                    <Music className="size-4.5" />
+                                                                                                ) : (
+                                                                                                    <FileText className="size-4.5" />
+                                                                                                )}
+                                                                                            </div>
 
-                                                                                                                        {/* Middle: Details */}
-                                                                                                                        <div className="text-left min-w-0 flex-1">
-                                                                                                                            <div className="flex items-center gap-2">
-                                                                                                                                <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${pacing.textStyle}`}>
-                                                                                                                                    Topic {lesson.lesson_number}
-                                                                                                                                </span>
-                                                                                                                                {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-[#ecb613]" />}
-                                                                                                                                {lesson.isExplicit && (
-                                                                                                                                    <span className="px-1.5 py-0.25 rounded text-[8px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                                                                                                                        Topic Allocated
-                                                                                                                                    </span>
-                                                                                                                                )}
-                                                                                                                            </div>
-                                                                                                                            <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug truncate mt-0.5">{lesson.title}</h5>
-                                                                                                                            {lesson.description && (
-                                                                                                                                <p className="text-[10px] text-slate-500 dark:text-slate-450 line-clamp-1 leading-relaxed font-semibold mt-0.5">{lesson.description}</p>
-                                                                                                                            )}
-                                                                                                                        </div>
-                                                                                                                    </div>
+                                                                                            {/* Middle: Details */}
+                                                                                            <div className="text-left min-w-0 flex-1">
+                                                                                                <div className="flex items-center flex-wrap gap-2">
+                                                                                                    <span className={`text-[9px] font-black uppercase tracking-wider font-mono whitespace-nowrap ${pacing.textStyle}`}>
+                                                                                                        Topic {lesson.lesson_number}
+                                                                                                    </span>
+                                                                                                    {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-[#ecb613]" />}
+                                                                                                    {lesson.isExplicit && (
+                                                                                                        <span className="px-1.5 py-0.25 rounded text-[8px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-400 border border-slate-200 dark:border-slate-700 whitespace-nowrap">
+                                                                                                            Topic Allocated
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug mt-0.5">{lesson.title}</h5>
+                                                                                                {lesson.description && (
+                                                                                                    <p className="text-[10px] text-slate-505 dark:text-slate-455 line-clamp-1 leading-relaxed font-semibold mt-0.5">{stripHtml(lesson.description)}</p>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
 
-                                                                                                                    {/* Right side: Status indicator & actions */}
-                                                                                                                    <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                                                                                                                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${pacing.badgeStyle}`}>
-                                                                                                                            {pacing.isLocked ? (
-                                                                                                                                <Lock className="size-3" />
-                                                                                                                            ) : pacing.isUnlocked ? (
-                                                                                                                                <Unlock className="size-3" />
-                                                                                                                            ) : (
-                                                                                                                                <CheckCircle className="size-3" />
-                                                                                                                            )}
-                                                                                                                            <span>{pacing.statusLabel}</span>
-                                                                                                                        </div>
-                                                                                        {isUpdatingProgress === lesson.id ? (
-                                                                                            <Loader2 className="size-4 animate-spin text-[#ecb613] mx-1.5" />
-                                                                                        ) : (
-                                                                                            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                        {/* Bottom side: Status indicator & actions */}
+                                                                                        <div className="flex flex-wrap items-center justify-between gap-3 w-full border-t border-slate-100 dark:border-slate-800/80 pt-3" onClick={e => e.stopPropagation()}>
+                                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                                {curriculumTab === 'classwide' ? (
+                                                                                                    <span className={`px-2 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border ${
+                                                                                                        getClassSummary('topic', lesson.id) === 'completed_by_all'
+                                                                                                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                                                                            : getClassSummary('topic', lesson.id) === 'in_progress'
+                                                                                                            ? 'bg-amber-500/10 text-amber-605 dark:text-[#ecb613] border-amber-500/20'
+                                                                                                            : getClassSummary('topic', lesson.id) === 'allocated_to_all'
+                                                                                                            ? 'bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 border-indigo-500/20'
+                                                                                                            : getClassSummary('topic', lesson.id) === 'partially_allocated'
+                                                                                                            ? 'bg-sky-500/10 text-sky-655 dark:text-sky-400 border-sky-500/20'
+                                                                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200'
+                                                                                                    }`}>
+                                                                                                        {getClassSummary('topic', lesson.id).replace('_', ' ')}
+                                                                                                    </span>
+                                                                                                ) : (
+                                                                                                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${pacing.badgeStyle}`}>
+                                                                                                        {pacing.isLocked ? (
+                                                                                                            <Lock className="size-3" />
+                                                                                                        ) : pacing.isUnlocked ? (
+                                                                                                            <Unlock className="size-3" />
+                                                                                                        ) : (
+                                                                                                            <CheckCircle className="size-3" />
+                                                                                                        )}
+                                                                                                        <span>{pacing.statusLabel}</span>
+                                                                                                    </div>
+                                                                                                )}
+
+                                                                                                {curriculumTab === 'classwide' && (
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            setExpandedStudentStatuses(prev => ({ 
+                                                                                                                ...prev, 
+                                                                                                                [`topic-${lesson.id}`]: !prev[`topic-${lesson.id}`] 
+                                                                                                            }));
+                                                                                                        }}
+                                                                                                        className="text-[9px] font-black uppercase tracking-wider text-amber-500 hover:text-amber-605 hover:bg-amber-500/5 px-2 py-1.5 rounded-xl border border-amber-500/10 transition-all cursor-pointer shadow-xs"
+                                                                                                    >
+                                                                                                        {expandedStudentStatuses[`topic-${lesson.id}`] ? 'Hide' : 'Students'}
+                                                                                                    </button>
+                                                                                                )}
+                                                                                            </div>
+
+                                                                                            <div className="flex items-center gap-1.5">
+                                                                                                {isUpdatingProgress === lesson.id ? (
+                                                                                                    <Loader2 className="size-4 animate-spin text-[#ecb613] mx-1.5" />
+                                                                                                ) : (
+                                                                                                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-805 p-1 rounded-xl border border-slate-205 dark:border-slate-700/60 shadow-xs">
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                handleUpdatePacingState('topic', lesson.id, 'locked');
+                                                                                                            }}
+                                                                                                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                                pacing.isLocked ? 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-xs' : 'text-slate-400 hover:text-slate-650 hover:bg-white dark:hover:bg-slate-700'
+                                                                                                            }`}
+                                                                                                            title="Lock Topic"
+                                                                                                        >
+                                                                                                            <Lock className="size-3" />
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                handleUpdatePacingState('topic', lesson.id, 'unlocked');
+                                                                                                            }}
+                                                                                                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                                pacing.isUnlocked && !pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-[#ecb613] shadow-xs' : 'text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700'
+                                                                                                            }`}
+                                                                                                            title="Unlock Topic"
+                                                                                                        >
+                                                                                                            <Unlock className="size-3" />
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                handleUpdatePacingState('topic', lesson.id, 'completed');
+                                                                                                            }}
+                                                                                                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                                pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-emerald-500 shadow-xs' : 'text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700'
+                                                                                                            }`}
+                                                                                                            title="Complete Topic"
+                                                                                                        >
+                                                                                                            <CheckCircle className="size-3" />
+                                                                                                        </button>
+                                                                                                    </div>
+                                                                                                )}
                                                                                                 <button
                                                                                                     type="button"
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        handleUpdatePacingState('topic', lesson.id, 'locked');
+                                                                                                    title="Manage pacing overrides"
+                                                                                                    onClick={() => {
+                                                                                                        if (isUpdating) return;
+                                                                                                        openAllocationDrawer(lesson);
                                                                                                     }}
-                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                                                                                        pacing.isLocked ? 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-xs' : 'text-slate-400 hover:text-slate-650 hover:bg-white dark:hover:bg-slate-700'
-                                                                                                    }`}
-                                                                                                    title="Lock Topic"
+                                                                                                    className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-855 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
                                                                                                 >
-                                                                                                    <Lock className="size-3" />
+                                                                                                    <Sliders className="size-3.5" />
                                                                                                 </button>
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        handleUpdatePacingState('topic', lesson.id, 'unlocked');
-                                                                                                    }}
-                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                                                                                        pacing.isUnlocked && !pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-[#ecb613] shadow-xs' : 'text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700'
-                                                                                                    }`}
-                                                                                                    title="Unlock Topic"
-                                                                                                >
-                                                                                                    <Unlock className="size-3" />
-                                                                                                </button>
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        handleUpdatePacingState('topic', lesson.id, 'completed');
-                                                                                                    }}
-                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                                                                                        pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-emerald-505 shadow-xs' : 'text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700'
-                                                                                                    }`}
-                                                                                                    title="Complete Topic"
-                                                                                                >
-                                                                                                    <CheckCircle className="size-3" />
-                                                                                                </button>
+                                                                                                {lesson.isExplicit && (
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={() => handleDeallocateItem(lesson.allocationId)}
+                                                                                                        disabled={deletingAssignmentId === lesson.allocationId}
+                                                                                                        className="w-8 h-8 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white flex items-center justify-center border border-transparent transition-all cursor-pointer"
+                                                                                                        title="Deallocate topic from class"
+                                                                                                    >
+                                                                                                        {deletingAssignmentId === lesson.allocationId ? (
+                                                                                                            <Loader2 className="size-3.5 animate-spin" />
+                                                                                                        ) : (
+                                                                                                            <Trash2 className="size-3.5" />
+                                                                                                        )}
+                                                                                                    </button>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        {curriculumTab === 'classwide' && expandedStudentStatuses[`topic-${lesson.id}`] && (
+                                                                                            <div className="w-full pt-4 border-t border-slate-200 dark:border-slate-800" onClick={e => e.stopPropagation()}>
+                                                                                                {renderStudentStatuses('topic', lesson.id)}
                                                                                             </div>
                                                                                         )}
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            title="Manage pacing overrides"
-                                                                                            onClick={() => {
-                                                                                                if (isUpdating) return;
-                                                                                                openAllocationDrawer(lesson);
-                                                                                            }}
-                                                                                            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-850 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
-                                                                                        >
-                                                                                            <Sliders className="size-3.5" />
-                                                                                        </button>
-                                                                                        {lesson.isExplicit && (
-                                                                                                                            <button
-                                                                                                                                type="button"
-                                                                                                                                onClick={() => handleDeallocateItem(lesson.allocationId)}
-                                                                                                                                disabled={deletingAssignmentId === lesson.allocationId}
-                                                                                                                                className="w-8 h-8 rounded-xl bg-rose-505/10 hover:bg-rose-500 text-rose-500 hover:text-white flex items-center justify-center border border-transparent transition-all cursor-pointer"
-                                                                                                                                title="Deallocate topic from class"
-                                                                                                                            >
-                                                                                                                                {deletingAssignmentId === lesson.allocationId ? (
-                                                                                                                                    <Loader2 className="size-3.5 animate-spin" />
-                                                                                                                                ) : (
-                                                                                                                                    <Trash2 className="size-3.5" />
-                                                                                                                                )}
-                                                                                                                            </button>
-                                                                                                                        )}
-                                                                                                                    </div>
-                                                                                                                </div>
-                                                                                                            );
-                                                                                                        })}
+                                                                                    </div>
+                                                                                );
+                                                                            })}
                                                                                                     </div>
                                                                                                 )}
                                                                                             </div>

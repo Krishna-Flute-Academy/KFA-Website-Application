@@ -102,22 +102,30 @@ function MessagesDashboardContent() {
     const [sqlGroupsCopied, setSqlGroupsCopied] = useState(false);
 
     // Message Templates states
-    const [customTemplates, setCustomTemplates] = useState<any[]>([]);
+    const [defaultTemplates, setDefaultTemplates] = useState<Record<string, { subject: string, content: string }>>({
+        announcements: {
+            subject: 'Academy Announcement: [Topic] 📢',
+            content: 'Hello students, here is an important announcement regarding our upcoming sessions: [Details]'
+        },
+        classroom: {
+            subject: 'Classroom Update: [Class Name] 👥',
+            content: 'Hello classroom students, please note the following update for our class: [Details]'
+        },
+        custom_groups: {
+            subject: 'Group Update: [Group Name] 🌟',
+            content: 'Hi team, here is a special update for our group: [Details]'
+        },
+        new_joiners: {
+            subject: 'Welcome to Krishna Flute Academy! 🎶',
+            content: 'Welcome! We are thrilled to have you join our flute family. Let\'s begin this wonderful musical journey together!'
+        },
+        fee_management: {
+            subject: 'Tuition Fee Invoice Ready 💳',
+            content: 'Hi there, this is a gentle reminder that your tuition fee invoice for this month is ready. Please check your billing dashboard to make a payment.'
+        }
+    });
     const [dbSetupErrorTemplates, setDbSetupErrorTemplates] = useState(false);
-    const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
-    const [newTemplateName, setNewTemplateName] = useState('');
     const [isSavingTemplate, setIsSavingTemplate] = useState(false);
-    const [templateSearchQuery, setTemplateSearchQuery] = useState('');
-
-    const filteredTemplates = useMemo(() => {
-        const query = templateSearchQuery.toLowerCase().trim();
-        if (!query) return customTemplates;
-        return customTemplates.filter(t => 
-            t.name.toLowerCase().includes(query) || 
-            t.subject.toLowerCase().includes(query) || 
-            t.content.toLowerCase().includes(query)
-        );
-    }, [customTemplates, templateSearchQuery]);
 
     // Toast Notifications states
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -455,6 +463,76 @@ function MessagesDashboardContent() {
     const [content, setContent] = useState('');
     const [isSending, setIsSending] = useState(false);
 
+    // Auto-populate inputs based on selected channel and template
+    useEffect(() => {
+        if (activeChannel && activeChannel !== 'chatbox') {
+            const template = defaultTemplates[activeChannel];
+            if (template) {
+                setSubject(template.subject);
+                setContent(template.content);
+            } else {
+                setSubject('');
+                setContent('');
+            }
+        }
+    }, [activeChannel, defaultTemplates]);
+
+    const handleSaveDefaultTemplate = async () => {
+        if (!teacherProfile?.id || !activeChannel || activeChannel === 'chatbox') return;
+        setIsSavingTemplate(true);
+        try {
+            const newTpl = {
+                subject: subject.trim(),
+                content: content.trim()
+            };
+
+            // Update local state and localStorage
+            setDefaultTemplates(prev => {
+                const updated = {
+                    ...prev,
+                    [activeChannel]: newTpl
+                };
+                localStorage.setItem('kfa_channel_templates', JSON.stringify(updated));
+                return updated;
+            });
+
+            if (!dbSetupErrorTemplates) {
+                // Check if template exists for teacher and channel name
+                const { data: existing } = await supabaseAuth
+                    .from('message_templates')
+                    .select('id')
+                    .eq('teacher_id', teacherProfile.id)
+                    .eq('name', activeChannel)
+                    .maybeSingle();
+
+                if (existing?.id) {
+                    await supabaseAuth
+                        .from('message_templates')
+                        .update({
+                            subject: newTpl.subject,
+                            content: newTpl.content
+                        })
+                        .eq('id', existing.id);
+                } else {
+                    await supabaseAuth
+                        .from('message_templates')
+                        .insert({
+                            teacher_id: teacherProfile.id,
+                            name: activeChannel,
+                            subject: newTpl.subject,
+                            content: newTpl.content
+                        });
+                }
+            }
+            showToast('Channel template saved successfully!', 'success');
+        } catch (err) {
+            console.error('Failed to save channel template:', err);
+            showToast('Failed to save channel template.', 'error');
+        } finally {
+            setIsSavingTemplate(false);
+        }
+    };
+
     // Recipients Modal Selection
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalTab, setModalTab] = useState<'class' | 'student'>('class');
@@ -490,6 +568,14 @@ function MessagesDashboardContent() {
                     return;
                 }
 
+                // Clear unread messages notifications for this user
+                await supabaseAuth
+                    .from('notifications')
+                    .update({ is_read: true })
+                    .eq('user_id', session.user.id)
+                    .eq('type', 'messages')
+                    .eq('is_read', false);
+
                 const { data: profile } = await supabaseAuth
                     .from('users')
                     .select('id, name, email, role')
@@ -517,18 +603,43 @@ function MessagesDashboardContent() {
                 const { data: rooms } = await roomsQuery;
                 setClassrooms(rooms || []);
 
-                let studentsQuery = supabaseAuth
-                    .from('users')
-                    .select('id, name')
-                    .eq('role', 'student');
-                if (!isAdmin) {
-                    studentsQuery = studentsQuery.eq('teacher_id', profile.id);
+                let uniqueStudents: any[] = [];
+                if (isAdmin) {
+                    const { data: studentList } = await supabaseAuth
+                        .from('users')
+                        .select('id, name')
+                        .eq('role', 'student');
+                    uniqueStudents = (studentList || []).map((s: any) => ({
+                        id: s.id,
+                        name: s.name || 'Unknown'
+                    }));
+                } else {
+                    // Fetch classroom IDs for this teacher
+                    const { data: teacherRooms } = await supabaseAuth
+                        .from('classrooms')
+                        .select('id')
+                        .eq('teacher_id', profile.id);
+                    const teacherRoomIds = (teacherRooms || []).map(r => r.id);
+                    
+                    if (teacherRoomIds.length > 0) {
+                        const { data: roomStuds } = await supabaseAuth
+                            .from('classroom_students')
+                            .select('student_id')
+                            .in('classroom_id', teacherRoomIds);
+                        const studIds = Array.from(new Set((roomStuds || []).map(rs => rs.student_id)));
+                        
+                        if (studIds.length > 0) {
+                            const { data: studentList } = await supabaseAuth
+                                .from('users')
+                                .select('id, name')
+                                .in('id', studIds);
+                            uniqueStudents = (studentList || []).map((s: any) => ({
+                                id: s.id,
+                                name: s.name || 'Unknown'
+                            }));
+                        }
+                    }
                 }
-                const { data: studentList } = await studentsQuery;
-                const uniqueStudents = (studentList || []).map((s: any) => ({
-                    id: s.id,
-                    name: s.name || 'Unknown'
-                }));
                 setStudents(uniqueStudents);
 
                 // 3. Test/Query Broadcasts Table
@@ -592,81 +703,50 @@ function MessagesDashboardContent() {
 
                 // 5. Test/Query Message Templates Table
                 try {
+                    const localTemp = localStorage.getItem('kfa_channel_templates');
+                    if (localTemp) {
+                        try {
+                            setDefaultTemplates(prev => ({
+                                ...prev,
+                                ...JSON.parse(localTemp)
+                            }));
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    }
+
                     let tplQuery = supabaseAuth
                         .from('message_templates')
                         .select('*');
                     if (!isAdmin) {
                         tplQuery = tplQuery.eq('teacher_id', profile.id);
                     }
-                    const { data: tplData, error: tplError } = await tplQuery.order('created_at', { ascending: false });
+                    const { data: tplData, error: tplError } = await tplQuery;
 
                     if (tplError) {
-                        console.warn('[Messages] Message templates table check failed:', tplError.message);
+                        console.warn('[Messages] Message templates table query failed:', tplError.message);
                         if (tplError.code === '42P01' || tplError.code === 'PGRST205' || tplError.message?.includes('schema cache') || tplError.message?.includes('does not exist')) {
                             setDbSetupErrorTemplates(true);
                         }
-                        const local = localStorage.getItem('kfa_local_templates');
-                        if (local) {
-                            setCustomTemplates(JSON.parse(local));
-                        } else {
-                            // Seed local storage with system defaults
-                            const seedLocal = QUICK_TEMPLATES.map(t => ({
-                                id: `local-tpl-${t.id}`,
-                                name: t.name,
-                                subject: t.subject,
-                                content: t.content,
-                                created_at: new Date().toISOString()
-                            }));
-                            setCustomTemplates(seedLocal);
-                            localStorage.setItem('kfa_local_templates', JSON.stringify(seedLocal));
-                        }
                     } else {
-                        if (!tplData || tplData.length === 0) {
-                            // Seed database with system defaults
-                            const seedData = QUICK_TEMPLATES.map(t => ({
-                                teacher_id: profile.id,
-                                name: t.name,
-                                subject: t.subject,
-                                content: t.content
-                            }));
-                            const { data: insertedData, error: insertError } = await supabaseAuth
-                                .from('message_templates')
-                                .insert(seedData)
-                                .select('*');
-                            
-                            if (!insertError && insertedData) {
-                                setCustomTemplates(insertedData);
-                            } else {
-                                const fallbackLocal = QUICK_TEMPLATES.map(t => ({
-                                    id: `local-tpl-${t.id}`,
-                                    name: t.name,
-                                    subject: t.subject,
-                                    content: t.content,
-                                    created_at: new Date().toISOString()
-                                }));
-                                setCustomTemplates(fallbackLocal);
-                            }
-                        } else {
-                            setCustomTemplates(tplData);
+                        if (tplData && tplData.length > 0) {
+                            setDefaultTemplates(prev => {
+                                const loaded = { ...prev };
+                                tplData.forEach((t: any) => {
+                                    if (t.name) {
+                                        loaded[t.name] = {
+                                            subject: t.subject || '',
+                                            content: t.content || ''
+                                        };
+                                    }
+                                });
+                                return loaded;
+                            });
                         }
                         setDbSetupErrorTemplates(false);
                     }
                 } catch (te) {
                     console.warn('[Messages] Exception querying templates:', te);
-                    const local = localStorage.getItem('kfa_local_templates');
-                    if (local) {
-                        setCustomTemplates(JSON.parse(local));
-                    } else {
-                        const fallbackLocal = QUICK_TEMPLATES.map(t => ({
-                            id: `local-tpl-${t.id}`,
-                            name: t.name,
-                            subject: t.subject,
-                            content: t.content,
-                            created_at: new Date().toISOString()
-                        }));
-                        setCustomTemplates(fallbackLocal);
-                        localStorage.setItem('kfa_local_templates', JSON.stringify(fallbackLocal));
-                    }
                 }
 
                 // 6. Fetch Direct Messages
@@ -747,7 +827,8 @@ function MessagesDashboardContent() {
     };
 
     const chatContacts = useMemo(() => {
-        return students.map(student => {
+        const query = searchQuery.trim().toLowerCase();
+        const list = students.map(student => {
             const threadMsgs = directMessages.filter(m => 
                 (m.sender_id === student.id && m.receiver_id === teacherProfile?.id) ||
                 (m.sender_id === teacherProfile?.id && m.receiver_id === student.id)
@@ -756,15 +837,26 @@ function MessagesDashboardContent() {
             return {
                 ...student,
                 lastMessage: lastMsg ? lastMsg.message_text : 'No messages yet',
-                lastMessageAt: lastMsg ? new Date(lastMsg.created_at) : null
+                lastMessageAt: lastMsg ? new Date(lastMsg.created_at) : null,
+                threadMessages: threadMsgs
             };
-        }).sort((a, b) => {
+        });
+
+        const filtered = query
+            ? list.filter(contact => 
+                contact.name.toLowerCase().includes(query) ||
+                contact.lastMessage.toLowerCase().includes(query) ||
+                contact.threadMessages.some(m => m.message_text.toLowerCase().includes(query))
+              )
+            : list;
+
+        return filtered.sort((a, b) => {
             if (!a.lastMessageAt && !b.lastMessageAt) return 0;
             if (!a.lastMessageAt) return 1;
             if (!b.lastMessageAt) return -1;
             return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
         });
-    }, [students, directMessages, teacherProfile?.id]);
+    }, [students, directMessages, teacherProfile?.id, searchQuery]);
 
     // ── Save Broadcast Handler ─────────────────────────────────────────────────
     const handleSendBroadcast = async (e: React.FormEvent) => {
@@ -829,9 +921,14 @@ function MessagesDashboardContent() {
             return;
         }
 
+        const hasGlobal = selectedRecipients.some(r => r.type === 'global');
+        const classRecipients = selectedRecipients.filter(r => r.type === 'class');
+        const hasMultipleClasses = classRecipients.length > 1;
+        const resolvedChannel = (hasGlobal || hasMultipleClasses) ? 'announcements' : activeChannel;
+
         const newBroadcast: any = {
             teacher_id: teacherProfile.id,
-            channel: activeChannel,
+            channel: resolvedChannel,
             recipients: selectedRecipients,
             subject: subject.trim(),
             content: content.trim(),
@@ -973,12 +1070,6 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
         setTimeout(() => setSqlGroupsCopied(false), 3000);
     };
 
-    const handleApplyCustomTemplate = (tpl: any) => {
-        setSubject(tpl.subject);
-        setContent(tpl.content);
-        showToast(`Applied template "${tpl.name}"!`, 'success');
-    };
-
     const handleLoadForResend = (bc: Broadcast) => {
         setSubject(bc.subject);
         setContent(bc.content);
@@ -993,92 +1084,16 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
         showToast('Previous message loaded into the composer!', 'info');
     };
 
-    const handleSaveTemplate = async (name: string) => {
-        if (!teacherProfile || !name.trim()) return;
-        setIsSavingTemplate(true);
-
-        const newTemplate = {
-            teacher_id: teacherProfile.id,
-            name: name.trim(),
-            subject: subject.trim(),
-            content: content.trim(),
-            created_at: new Date().toISOString()
-        };
-
-        try {
-            if (dbSetupErrorTemplates) {
-                const updatedList = [
-                    { id: `local-tpl-${Date.now()}`, ...newTemplate },
-                    ...customTemplates
-                ];
-                setCustomTemplates(updatedList);
-                localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
-                showToast('Template saved locally!', 'success');
-            } else {
-                const { data, error } = await supabaseAuth
-                    .from('message_templates')
-                    .insert(newTemplate)
-                    .select('*');
-
-                if (error) {
-                    console.error('Error saving template to database:', error);
-                    showToast('Failed to save to database. Saved locally.', 'error');
-                    const updatedList = [
-                        { id: `local-tpl-${Date.now()}`, ...newTemplate },
-                        ...customTemplates
-                    ];
-                    setCustomTemplates(updatedList);
-                    localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
-                } else {
-                    setCustomTemplates(prev => [data[0], ...prev]);
-                    showToast('Template saved successfully!', 'success');
-                }
-            }
-
-            setNewTemplateName('');
-            setIsCreateTemplateModalOpen(false);
-        } catch (err: any) {
-            console.error('Exception saving template:', err);
-            showToast('An unexpected error occurred.', 'error');
-        } finally {
-            setIsSavingTemplate(false);
-        }
-    };
-
-    const handleDeleteTemplate = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this template?')) return;
-
-        try {
-            if (dbSetupErrorTemplates || id.startsWith('local-')) {
-                const updatedList = customTemplates.filter(t => t.id !== id);
-                setCustomTemplates(updatedList);
-                localStorage.setItem('kfa_local_templates', JSON.stringify(updatedList));
-                showToast('Template deleted locally!', 'success');
-            } else {
-                const { error } = await supabaseAuth
-                    .from('message_templates')
-                    .delete()
-                    .eq('id', id);
-
-                if (error) {
-                    console.error('Error deleting template:', error);
-                    showToast(`Database deletion failed.`, 'error');
-                } else {
-                    setCustomTemplates(prev => prev.filter(t => t.id !== id));
-                    showToast('Template deleted successfully!', 'success');
-                }
-            }
-        } catch (err: any) {
-            console.error('Exception deleting template:', err);
-            showToast('An unexpected error occurred.', 'error');
-        }
-    };
-
     // ── Recipients Selection Modal Controls ────────────────────────────────────
     const openRecipientsModal = () => {
         // Hydrate initial checked targets
         setTempSelectedTargets(selectedRecipients.map(r => r.id));
         setModalSearchQuery('');
+        
+        if (activeChannel === 'classroom' || activeChannel === 'announcements') {
+            setModalTab('class');
+        }
+        
         setIsModalOpen(true);
     };
 
@@ -1087,6 +1102,24 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
             if (prev.includes(id)) {
                 return prev.filter(t => t !== id);
             }
+
+            // 1. Classroom Broadcast: only allow a single classroom selection
+            if (activeChannel === 'classroom') {
+                const isClass = classrooms.some(c => c.id === id);
+                if (isClass) {
+                    return [id];
+                }
+            }
+
+            // 2. Announcements: 'global' (All Students) overrides any selected classes
+            if (activeChannel === 'announcements') {
+                if (id === 'global') {
+                    return ['global'];
+                } else {
+                    return [...prev.filter(t => t !== 'global'), id];
+                }
+            }
+
             return [...prev, id];
         });
     };
@@ -1120,16 +1153,18 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
 
     // ── Search & Filter Broadcast Logs ─────────────────────────────────────────
     const filteredBroadcasts = useMemo(() => {
-        const query = searchQuery.toLowerCase().trim();
-        if (!query) return broadcasts;
+        let list = broadcasts.filter(b => b.channel === activeChannel);
 
-        return broadcasts.filter(b => {
+        const query = searchQuery.toLowerCase().trim();
+        if (!query) return list;
+
+        return list.filter(b => {
             const matchesSubject = b.subject.toLowerCase().includes(query);
             const matchesContent = b.content.toLowerCase().includes(query);
             const matchesRecipient = b.recipients.some(r => r.name.toLowerCase().includes(query));
             return matchesSubject || matchesContent || matchesRecipient;
         });
-    }, [broadcasts, searchQuery]);
+    }, [broadcasts, activeChannel, searchQuery]);
 
     // ── Copy SQL Code Block Helper ──────────────────────────────────────────────
     const handleCopySQL = () => {
@@ -1437,13 +1472,35 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     </span>
                                                 </div>
 
+                                                {/* Chat Search Status Banner */}
+                                                {searchQuery.trim() && (
+                                                    <div className="mx-6 mt-4 p-3 bg-amber-50 dark:bg-amber-955/20 border border-amber-200/50 rounded-2xl flex justify-between items-center text-xs font-bold text-amber-800 dark:text-amber-300">
+                                                        <span>
+                                                            🔍 Showing messages containing "{searchQuery}"
+                                                        </span>
+                                                        <button 
+                                                            onClick={() => setSearchQuery('')}
+                                                            className="text-amber-600 hover:underline hover:text-amber-700"
+                                                            type="button"
+                                                        >
+                                                            Clear Search
+                                                        </button>
+                                                    </div>
+                                                )}
+
                                                 {/* Messages Scroll Area */}
                                                 <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar text-left flex flex-col">
                                                     {directMessages
-                                                        .filter(m => 
-                                                            (m.sender_id === activeChatStudentId && m.receiver_id === teacherProfile?.id) ||
-                                                            (m.sender_id === teacherProfile?.id && m.receiver_id === activeChatStudentId)
-                                                        )
+                                                        .filter(m => {
+                                                            const belongsToThread = 
+                                                                (m.sender_id === activeChatStudentId && m.receiver_id === teacherProfile?.id) ||
+                                                                (m.sender_id === teacherProfile?.id && m.receiver_id === activeChatStudentId);
+                                                            if (!belongsToThread) return false;
+                                                            
+                                                            const query = searchQuery.trim().toLowerCase();
+                                                            if (!query) return true;
+                                                            return m.message_text.toLowerCase().includes(query);
+                                                        })
                                                         .map(msg => {
                                                             const isMe = msg.sender_id === teacherProfile?.id;
                                                             return (
@@ -1530,22 +1587,13 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <button 
-                                            type="button" 
-                                            className="px-4 py-2 hover:bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 text-xs font-bold rounded-full transition-all"
-                                        >
-                                            View Analytics
-                                        </button>
-                                        <button 
                                             type="button"
-                                            onClick={() => {
-                                                setNewTemplateName('');
-                                                setIsCreateTemplateModalOpen(true);
-                                            }}
-                                            disabled={!subject.trim() || !content.trim()}
+                                            onClick={handleSaveDefaultTemplate}
+                                            disabled={isSavingTemplate || !subject.trim() || !content.trim()}
                                             className="px-4 py-2 hover:bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                                         >
-                                            <FolderPlus className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                                            Save as Template
+                                            {isSavingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderPlus className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />}
+                                            Save as Channel Template
                                         </button>
                                         <button 
                                             type="submit" 
@@ -1588,8 +1636,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                 </div>
 
                                 <div className="grid grid-cols-12 gap-6 items-start">
-                                    {/* Left inputs column: recipients & templates */}
-                                    <div className="col-span-12 md:col-span-5 flex flex-col gap-5 border-r border-slate-100/80 dark:border-slate-800/80 pr-4">
+                                    {/* Left inputs column: recipients */}
+                                    <div className="col-span-12 md:col-span-4 flex flex-col gap-5 border-r border-slate-100/80 dark:border-slate-800/80 pr-4">
                                         {/* Recipients list block */}
                                         <div className="space-y-2.5">
                                             <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Recipients</span>
@@ -1637,65 +1685,10 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 )}
                                             </div>
                                         </div>
-
-                                        {/* Templates block */}
-                                        <div className="space-y-3 pt-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Message Templates</span>
-                                                {customTemplates.length > 0 && (
-                                                    <span className="text-[9px] font-bold text-[#ecb613] bg-[#ecb613]/10 px-2 py-0.5 rounded-full">
-                                                        {filteredTemplates.length} of {customTemplates.length}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            
-                                            {/* Template Search Input */}
-                                            <div className="relative">
-                                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 w-3.5 h-3.5" />
-                                                <input 
-                                                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] outline-none focus:ring-1 focus:ring-[#ecb613] font-semibold text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:text-slate-600"
-                                                    placeholder="Search templates..."
-                                                    type="text"
-                                                    value={templateSearchQuery}
-                                                    onChange={(e) => setTemplateSearchQuery(e.target.value)}
-                                                />
-                                            </div>
-
-                                            {filteredTemplates.length === 0 ? (
-                                                <p className="text-[10px] text-slate-400 dark:text-slate-500 italic text-center py-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                                                    No templates found matching "{templateSearchQuery}"
-                                                </p>
-                                            ) : (
-                                                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                                                    {filteredTemplates.map((tpl) => (
-                                                        <div key={tpl.id} className="flex items-center gap-2">
-                                                            <button 
-                                                                type="button" 
-                                                                onClick={() => handleApplyCustomTemplate(tpl)}
-                                                                className="flex-1 flex items-center gap-3 p-2.5 bg-white hover:bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:border-slate-700 transition-all text-left group"
-                                                            >
-                                                                <div className="p-1.5 bg-slate-100 dark:bg-slate-800 group-hover:bg-[#ecb613]/10 rounded-lg text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] transition-colors shrink-0">
-                                                                    <FileText className="w-4 h-4" />
-                                                                </div>
-                                                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">{tpl.name}</span>
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleDeleteTemplate(tpl.id)}
-                                                                className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:bg-slate-800 transition-colors shrink-0"
-                                                                title="Delete Template"
-                                                            >
-                                                                <X className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
                                     </div>
 
                                     {/* Right inputs column: subject & body content editor */}
-                                    <div className="col-span-12 md:col-span-7 flex flex-col gap-4">
+                                    <div className="col-span-12 md:col-span-8 flex flex-col gap-4">
                                         {attachedAudioNote && (
                                             <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 p-3 rounded-xl animate-in fade-in slide-in-from-top-2">
                                                 <div className="flex items-center gap-2 text-xs font-bold text-amber-850 dark:text-amber-300">
@@ -1761,7 +1754,8 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                     </div>
 
                     {/* Bottom Recent Broadcasts log section */}
-                    <div className="flex flex-col gap-4">
+                    {activeChannel !== 'chatbox' && (
+                        <div className="flex flex-col gap-4">
                         <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700/80 pb-3">
                             <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Recent Broadcasts</h3>
                             <button 
@@ -2039,6 +2033,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                             )}
                         </div>
                     </div>
+                    )}
                 </div>
             </main>
         </div>
@@ -2065,24 +2060,38 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         {/* Search and Tab selectors */}
                         <div className="px-6 py-4 flex flex-col gap-4 border-b border-slate-100 dark:border-slate-800">
                             {/* Target Class vs Student Toggle */}
-                            <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex gap-1 select-none">
-                                <button 
-                                    onClick={() => setModalTab('class')}
-                                    className={`flex-1 py-2 text-xs font-bold rounded-lg tracking-wide transition-all ${
-                                        modalTab === 'class' ? 'bg-white text-[#0e5f59] shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200'
-                                    }`}
-                                >
-                                    Classrooms
-                                </button>
-                                <button 
-                                    onClick={() => setModalTab('student')}
-                                    className={`flex-1 py-2 text-xs font-bold rounded-lg tracking-wide transition-all ${
-                                        modalTab === 'student' ? 'bg-white text-[#0e5f59] shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200'
-                                    }`}
-                                >
-                                    Students
-                                </button>
-                            </div>
+                            {(activeChannel !== 'classroom' && activeChannel !== 'announcements') ? (
+                                <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex gap-1 select-none">
+                                    <button 
+                                        onClick={() => setModalTab('class')}
+                                        type="button"
+                                        className={`flex-1 py-2 text-xs font-bold rounded-lg tracking-wide transition-all ${
+                                            modalTab === 'class' ? 'bg-white text-[#0e5f59] shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200'
+                                        }`}
+                                    >
+                                        Classrooms
+                                    </button>
+                                    <button 
+                                        onClick={() => setModalTab('student')}
+                                        type="button"
+                                        className={`flex-1 py-2 text-xs font-bold rounded-lg tracking-wide transition-all ${
+                                            modalTab === 'student' ? 'bg-white text-[#0e5f59] shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200'
+                                        }`}
+                                    >
+                                        Students
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className={`p-3 rounded-xl border text-xs font-bold select-none ${
+                                    activeChannel === 'classroom' 
+                                        ? 'bg-blue-50 border-blue-100 text-blue-800 dark:bg-blue-950/20 dark:border-blue-900 dark:text-blue-400' 
+                                        : 'bg-amber-50 border-amber-100 text-amber-800 dark:bg-amber-955/20 dark:border-amber-900 dark:text-amber-400'
+                                }`}>
+                                    {activeChannel === 'classroom' 
+                                        ? '👥 Classroom Broadcast: Target a single classroom' 
+                                        : '📢 Announcement: Target All Students (Global) or multiple classrooms'}
+                                </div>
+                            )}
 
                             {/* Inner Search Box */}
                             <div className="relative">
@@ -2100,7 +2109,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                         {/* List items with checkboxes */}
                         <div className="flex-1 overflow-y-auto p-6 space-y-3 max-h-60">
                             {/* Special global targeting option when Class tab is open */}
-                            {modalTab === 'class' && !modalSearchQuery && (
+                            {modalTab === 'class' && activeChannel !== 'classroom' && !modalSearchQuery && (
                                 <label className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:bg-slate-800/80 rounded-xl cursor-pointer border border-transparent hover:border-slate-200 dark:border-slate-700 transition-all">
                                     <input 
                                         type="checkbox" 
@@ -2233,70 +2242,6 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                 className="px-5 py-2 bg-[#0e5f59] hover:bg-[#0c4e49] text-white text-xs font-bold rounded-full transition-all shadow-xs disabled:bg-stone-300 disabled:cursor-not-allowed"
                             >
                                 {isSavingGroup ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save Group'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Create Custom Template Modal */}
-            {isCreateTemplateModalOpen && (
-                <div className="fixed inset-0 z-50 bg-slate-900/65 dark:bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col max-h-[500px]">
-                        
-                        {/* Modal Header */}
-                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                            <div>
-                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Save Message as Template</h3>
-                                <p className="text-[11px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">Give your composed message a reusable template name</p>
-                            </div>
-                            <button 
-                                onClick={() => setIsCreateTemplateModalOpen(false)}
-                                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:bg-slate-800/40 p-1.5 rounded-full"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        {/* Modal Fields */}
-                        <div className="p-6 space-y-4 flex-1 overflow-y-auto">
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Template Name</label>
-                                <input 
-                                    className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-semibold text-slate-800 dark:text-slate-200 bg-white placeholder:text-slate-300 dark:text-slate-600"
-                                    placeholder="e.g. Student Progress Update, Saturday Reschedule" 
-                                    type="text" 
-                                    value={newTemplateName}
-                                    onChange={(e) => setNewTemplateName(e.target.value)}
-                                />
-                            </div>
-
-                            {/* Template Preview */}
-                            <div className="flex flex-col gap-2 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
-                                <span className="text-[9px] font-extrabold uppercase tracking-widest text-[#0e5f59]">Template Content Preview</span>
-                                <div className="space-y-1">
-                                    <h5 className="text-xs font-bold text-slate-900 dark:text-white truncate">Subject: {subject}</h5>
-                                    <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
-                                        {content}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Modal Footer actions */}
-                        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 shrink-0">
-                            <button 
-                                onClick={() => setIsCreateTemplateModalOpen(false)}
-                                className="px-4 py-2 hover:bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 text-xs font-bold rounded-full transition-all"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                onClick={() => handleSaveTemplate(newTemplateName)}
-                                disabled={!newTemplateName.trim() || isSavingTemplate}
-                                className="px-5 py-2 bg-[#0e5f59] hover:bg-[#0c4e49] text-white text-xs font-bold rounded-full transition-all shadow-xs disabled:bg-stone-300 disabled:cursor-not-allowed"
-                            >
-                                {isSavingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save Template'}
                             </button>
                         </div>
                     </div>

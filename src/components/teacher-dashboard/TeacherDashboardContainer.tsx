@@ -158,7 +158,14 @@ export default function TeacherDashboardContainer() {
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
     
     // Core metrics
-    const [stats, setStats] = useState({ totalStudents: 0, activeClassrooms: 0, pendingSubmissions: 0 });
+    const [stats, setStats] = useState({ 
+        totalStudents: 0, 
+        liveStudents: 0, 
+        activeClassrooms: 0, 
+        permanentClassrooms: 0, 
+        temporaryClassroomsNotDone: 0, 
+        pendingSubmissions: 0 
+    });
     const [feesStats, setFeesStats] = useState({ collectedThisMonth: 0, dueStudentsCount: 0 });
     const [recentSubmissions, setRecentSubmissions] = useState<Submission[]>([]);
     
@@ -237,7 +244,7 @@ export default function TeacherDashboardContainer() {
             }
 
             // 2. Classrooms (All classrooms for Admin, assigned classrooms for Teachers)
-            let classQuery = supabaseAuth.from('classrooms').select('id, name, description, teacher_id');
+            let classQuery = supabaseAuth.from('classrooms').select('id, name, description, teacher_id, type');
             if (profile.role !== 'admin') {
                 classQuery = classQuery.eq('teacher_id', userId);
             }
@@ -245,15 +252,73 @@ export default function TeacherDashboardContainer() {
             const classIds = (dbClassrooms || []).map(c => c.id);
             setClassrooms(dbClassrooms || []);
 
+            const permanentRooms = (dbClassrooms || []).filter(r => r.type === 'permanent' || !r.type);
+            const permanentCount = permanentRooms.length;
+
+            // Fetch temporary classes and calculate temporary classrooms count which are not yet done
+            let temporaryCountNotDone = 0;
+            try {
+                const tempQuery = supabaseAuth
+                    .from('temporary_classes')
+                    .select('classroom_id, class_date');
+                const { data: tempRoomsData } = profile.role === 'admin'
+                    ? await tempQuery
+                    : await tempQuery.eq('teacher_id', userId);
+
+                const { data: sessionLogs } = await supabaseAuth
+                    .from('classroom_session_logs')
+                    .select('classroom_id, session_date');
+
+                const notDoneTempRooms = (tempRoomsData || []).filter(room => {
+                    const isDone = (sessionLogs || []).some(log => log.classroom_id === room.classroom_id && log.session_date === room.class_date);
+                    return !isDone;
+                });
+                temporaryCountNotDone = notDoneTempRooms.length;
+            } catch (err) {
+                console.error('Error fetching temp classes:', err);
+            }
+
             // 3. Stats & Submissions
-            // Core stats count
+            // Core stats count (unique students count)
             let studentsCount = 0;
-            if (classIds.length > 0) {
+            if (profile.role === 'admin') {
                 const { count } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('*', { count: 'exact', head: true })
-                    .in('classroom_id', classIds);
+                    .from('users')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('role', 'student');
                 studentsCount = count || 0;
+            } else if (classIds.length > 0) {
+                const { data: classroomStudents } = await supabaseAuth
+                    .from('classroom_students')
+                    .select('student_id')
+                    .in('classroom_id', classIds);
+                const uniqueIds = new Set((classroomStudents || []).map(row => row.student_id));
+                studentsCount = uniqueIds.size;
+            }
+
+            // Live students count (unique students in live classrooms)
+            let liveStudentsCount = 0;
+            try {
+                let liveClassQuery = supabaseAuth
+                    .from('classrooms')
+                    .select('id')
+                    .eq('is_live', true);
+                if (profile.role !== 'admin') {
+                    liveClassQuery = liveClassQuery.eq('teacher_id', userId);
+                }
+                const { data: liveRooms } = await liveClassQuery;
+                const liveRoomIds = (liveRooms || []).map(r => r.id);
+
+                if (liveRoomIds.length > 0) {
+                    const { data: liveClassStudents } = await supabaseAuth
+                        .from('classroom_students')
+                        .select('student_id')
+                        .in('classroom_id', liveRoomIds);
+                    const uniqueLiveIds = new Set((liveClassStudents || []).map(row => row.student_id));
+                    liveStudentsCount = uniqueLiveIds.size;
+                }
+            } catch (err) {
+                console.error('Error calculating live students:', err);
             }
 
             // Fetch assignments list for these classrooms once to resolve mapping without DB joins
@@ -280,7 +345,10 @@ export default function TeacherDashboardContainer() {
 
             setStats({
                 totalStudents: studentsCount,
-                activeClassrooms: classIds.length,
+                liveStudents: liveStudentsCount,
+                activeClassrooms: permanentCount + temporaryCountNotDone,
+                permanentClassrooms: permanentCount,
+                temporaryClassroomsNotDone: temporaryCountNotDone,
                 pendingSubmissions: pendingSubmissionsCount
             });
 

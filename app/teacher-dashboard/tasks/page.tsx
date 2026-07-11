@@ -456,6 +456,14 @@ export default function TaskReviewPage() {
                 return;
             }
 
+            // Clear unread task notifications
+            await supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', session.user.id)
+                .eq('type', 'tasks')
+                .eq('is_read', false);
+
             const { data: profile } = await supabaseAuth
                 .from('users')
                 .select('name, email, role, profile_pic_url')

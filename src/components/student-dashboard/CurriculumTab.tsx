@@ -155,13 +155,19 @@ export default function CurriculumTab({
                                 {searchQuery.trim() !== '' ? (
                                     <>
                                         <Search className="w-8 h-8 mx-auto mb-2 text-slate-300 animate-pulse" />
-                                        <p className="text-xs font-bold text-slate-705">No matching topics found.</p>
+                                        <p className="text-xs font-bold text-slate-500">No matching topics found.</p>
                                         <p className="text-[10px] text-slate-400 mt-0.5">Try searching with a different keyword.</p>
                                     </>
-                                ) : (
+                                ) : courseLessons.length === 0 ? (
                                     <>
                                         <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-slate-300" />
                                         <p className="text-xs">Loading course modules...</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <BookOpen className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                                        <p className="text-xs font-bold text-slate-500">No unlocked syllabus materials yet.</p>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Your instructor has not unlocked any topics for this class yet.</p>
                                     </>
                                 )}
                             </div>
