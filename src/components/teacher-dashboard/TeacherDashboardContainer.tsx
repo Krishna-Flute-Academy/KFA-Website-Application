@@ -495,20 +495,51 @@ export default function TeacherDashboardContainer() {
 
             // 5. Today's Classes List (Sunday=0, Monday=1, ... in batch_schedules)
             if (classIds.length > 0) {
-                const todayDow = new Date().getDay(); // Sunday=0, Monday=1, ...
+                const todayDow = new Date().getDay();
                 const todaySchedules = localSchedules.filter(sch => sch.day_of_week === todayDow);
                 const todayDateStr = getLocalDateString(new Date());
                 const todayTemps = localTemps.filter(t => t.class_date === todayDateStr);
 
+                // Batch-fetch student counts for all today's classrooms in ONE query
+                const todayClassroomIds = [
+                    ...todaySchedules.map(s => s.classroom_id),
+                    ...todayTemps.map(t => t.classroom_id).filter(Boolean)
+                ];
+
+                // Map: classroom_id -> student count
+                const studentCountMap: Record<string, number> = {};
+                const overrideCountMap: Record<string, number> = {};
+
+                if (todayClassroomIds.length > 0) {
+                    const { data: allTodayStudents } = await supabaseAuth
+                        .from('classroom_students')
+                        .select('classroom_id, student_id')
+                        .in('classroom_id', todayClassroomIds);
+
+                    (allTodayStudents || []).forEach((row: any) => {
+                        studentCountMap[row.classroom_id] = (studentCountMap[row.classroom_id] || 0) + 1;
+                    });
+                }
+
+                // Batch-fetch session student overrides for temp classes in ONE query
+                if (todayTemps.length > 0) {
+                    const tempClassroomIds = todayTemps.map(t => t.classroom_id).filter(Boolean);
+                    if (tempClassroomIds.length > 0) {
+                        const { data: allOverrides } = await supabaseAuth
+                            .from('session_student_overrides')
+                            .select('target_classroom_id, student_id')
+                            .in('target_classroom_id', tempClassroomIds)
+                            .eq('override_date', todayDateStr);
+
+                        (allOverrides || []).forEach((row: any) => {
+                            overrideCountMap[row.target_classroom_id] = (overrideCountMap[row.target_classroom_id] || 0) + 1;
+                        });
+                    }
+                }
+
                 const unifiedClasses: UpcomingClass[] = [];
 
-                // Recurring classes
                 for (const sch of todaySchedules) {
-                    const { data: studentList } = await supabaseAuth
-                        .from('classroom_students')
-                        .select('student_id')
-                        .eq('classroom_id', sch.classroom_id);
-                    
                     unifiedClasses.push({
                         id: `rec-${sch.id}`,
                         classroom_id: sch.classroom_id,
@@ -516,18 +547,11 @@ export default function TeacherDashboardContainer() {
                         start_time: sch.start_time,
                         end_time: sch.end_time,
                         classroom_name: sch.classroom_name,
-                        students_joined: studentList?.length || 0
+                        students_joined: studentCountMap[sch.classroom_id] || 0
                     });
                 }
 
-                // Temporary classes
                 for (const t of todayTemps) {
-                    const { data: overrideList } = await supabaseAuth
-                        .from('session_student_overrides')
-                        .select('student_id')
-                        .eq('target_classroom_id', t.classroom_id)
-                        .eq('override_date', todayDateStr);
-
                     unifiedClasses.push({
                         id: `temp-${t.id}`,
                         classroom_id: t.classroom_id || '',
@@ -535,57 +559,60 @@ export default function TeacherDashboardContainer() {
                         start_time: t.start_time,
                         end_time: t.end_time,
                         classroom_name: t.classroom_name,
-                        students_joined: overrideList?.length || 0
+                        students_joined: overrideCountMap[t.classroom_id || ''] || 0
                     });
                 }
 
-                // Sort by time
                 unifiedClasses.sort((a, b) => a.start_time.localeCompare(b.start_time));
                 setUpcomingClasses(unifiedClasses);
             }
 
-            // 6. Forgotten Attendance
+            // 6. Forgotten Attendance — single batch query instead of N+1 loop
             if (classIds.length > 0) {
                 const weekAgo = new Date();
                 weekAgo.setDate(weekAgo.getDate() - 7);
                 const weekAgoStr = getLocalDateString(weekAgo);
                 const yesterdayStr = getLocalDateString(new Date(Date.now() - 86400000));
 
-                const scheduleMap: Record<number, BatchSchedule[]> = {};
-                localSchedules.forEach(sch => {
-                    if (!scheduleMap[sch.day_of_week]) scheduleMap[sch.day_of_week] = [];
-                    scheduleMap[sch.day_of_week].push(sch);
-                });
-
-                const forgottenList: any[] = [];
+                // Build the complete list of expected (classroom_id, date) pairs from schedules
+                const expectedPairs: Array<{ classroom_id: string; classroom_name: string; date: string; dayName: string }> = [];
                 let loopDate = new Date(weekAgo);
                 const yesterdayObj = new Date(yesterdayStr);
 
                 while (loopDate <= yesterdayObj) {
                     const loopDateStr = getLocalDateString(loopDate);
-                    const dow = loopDate.getDay(); // Sunday=0, Monday=1, ...
+                    const dow = loopDate.getDay();
                     const dayName = loopDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
 
-                    const activeSchedules = scheduleMap[dow] || [];
-                    for (const sch of activeSchedules) {
-                        const { data: attendanceRecord } = await supabaseAuth
-                            .from('attendance')
-                            .select('id')
-                            .eq('classroom_id', sch.classroom_id)
-                            .eq('date', loopDateStr)
-                            .limit(1);
-
-                        if (!attendanceRecord || attendanceRecord.length === 0) {
-                            forgottenList.push({
-                                classroom_id: sch.classroom_id,
-                                classroom_name: sch.classroom_name,
-                                date: loopDateStr,
-                                dayName: dayName
-                            });
-                        }
-                    }
+                    (localSchedules || []).filter(sch => sch.day_of_week === dow).forEach(sch => {
+                        expectedPairs.push({
+                            classroom_id: sch.classroom_id,
+                            classroom_name: sch.classroom_name,
+                            date: loopDateStr,
+                            dayName
+                        });
+                    });
                     loopDate.setDate(loopDate.getDate() + 1);
                 }
+
+                // ONE query: fetch all attendance records for these classrooms in the date range
+                const { data: existingAttendance } = await supabaseAuth
+                    .from('attendance')
+                    .select('classroom_id, date')
+                    .in('classroom_id', classIds)
+                    .gte('date', weekAgoStr)
+                    .lte('date', yesterdayStr);
+
+                // Build a Set of "classroom_id|date" for O(1) lookup
+                const attendedSet = new Set(
+                    (existingAttendance || []).map((r: any) => `${r.classroom_id}|${r.date}`)
+                );
+
+                // Find all expected classes that have NO attendance record
+                const forgottenList = expectedPairs.filter(
+                    p => !attendedSet.has(`${p.classroom_id}|${p.date}`)
+                );
+
                 setForgottenClasses(forgottenList);
             }
 
@@ -1341,6 +1368,7 @@ export default function TeacherDashboardContainer() {
                             </button>
                         </div>
                     </div>
+                </div>
                 </>
             )}
 

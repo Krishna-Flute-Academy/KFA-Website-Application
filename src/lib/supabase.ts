@@ -3,12 +3,6 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-console.debug('Supabase client initializing with:', {
-  url: supabaseUrl,
-  hasKey: !!supabaseAnonKey,
-  keyStart: supabaseAnonKey ? supabaseAnonKey.substring(0, 10) + '...' : 'none'
-});
-
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase: Missing environment variables');
 }

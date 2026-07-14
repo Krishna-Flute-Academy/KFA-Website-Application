@@ -1026,33 +1026,47 @@ export default function StudentDashboardContainer() {
         };
     }, [profile?.id]);
 
-    // Re-sync data on window focus or visibility change to catch up on missed realtime events
+    // Re-sync data on window focus or visibility change ONLY if the page was hidden for 5+ minutes.
+    // Realtime subscriptions keep data live for shorter absences — no need to hammer the DB every tab switch.
     useEffect(() => {
-        const handleFocusOrVisible = () => {
-            console.log('[Dashboard Sync] Window focused or visible. Refreshing dashboard data...');
-            if (refreshDataRef.current) {
-                refreshDataRef.current();
+        let hiddenAt: number | null = null;
+        const REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                hiddenAt = Date.now();
+            } else if (document.visibilityState === 'visible') {
+                if (hiddenAt !== null && Date.now() - hiddenAt >= REFRESH_THRESHOLD_MS) {
+                    if (refreshDataRef.current) {
+                        refreshDataRef.current();
+                    }
+                }
+                hiddenAt = null;
             }
         };
 
-        window.addEventListener('focus', handleFocusOrVisible);
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                handleFocusOrVisible();
+        const handleFocus = () => {
+            if (hiddenAt !== null && Date.now() - hiddenAt >= REFRESH_THRESHOLD_MS) {
+                if (refreshDataRef.current) {
+                    refreshDataRef.current();
+                }
+                hiddenAt = null;
             }
-        });
+        };
 
-        // Periodic background poll every 60 seconds as an ultimate fallback
+        window.addEventListener('focus', handleFocus);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // Background poll every 5 minutes as a fallback for missed realtime events
         const intervalId = setInterval(() => {
-            console.log('[Dashboard Sync] Running periodic background sync...');
-            if (refreshDataRef.current) {
+            if (document.visibilityState === 'visible' && refreshDataRef.current) {
                 refreshDataRef.current();
             }
-        }, 60000);
+        }, 300000); // 5 minutes
 
         return () => {
-            window.removeEventListener('focus', handleFocusOrVisible);
-            document.removeEventListener('visibilitychange', handleFocusOrVisible);
+            window.removeEventListener('focus', handleFocus);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             clearInterval(intervalId);
         };
     }, []);

@@ -75,9 +75,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     .is('teacher_id', null);
                 
                 if (error) throw error;
-                if (count !== null) {
-                    setUnassignedCount(count);
-                }
+                if (count !== null) setUnassignedCount(count);
             } catch (error: any) {
                 if (isNetworkError(error)) {
                     console.warn('Network issue fetching unassigned count (will retry):', error?.message || error);
@@ -88,10 +86,16 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
 
         fetchUnassignedCount();
-        
-        // Polling every 30 seconds for new signups
-        const pollingInterval = setInterval(fetchUnassignedCount, 30000);
-        return () => clearInterval(pollingInterval);
+
+        // Realtime: refresh count when users table changes (new signup or teacher_id assignment)
+        const channel = supabaseAuth
+            .channel('sidebar-unassigned-users')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+                fetchUnassignedCount();
+            })
+            .subscribe();
+
+        return () => { supabaseAuth.removeChannel(channel); };
     }, [userRole]);
 
     useEffect(() => {
@@ -105,9 +109,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     .eq('status', 'pending_approval');
                 
                 if (error) throw error;
-                if (count !== null) {
-                    setPendingPaymentsCount(count);
-                }
+                if (count !== null) setPendingPaymentsCount(count);
             } catch (error: any) {
                 if (isNetworkError(error)) {
                     console.warn('Network issue fetching pending payments count (will retry):', error?.message || error);
@@ -118,10 +120,16 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
 
         fetchPendingPaymentsCount();
-        
-        // Polling every 30 seconds
-        const pollingInterval = setInterval(fetchPendingPaymentsCount, 30000);
-        return () => clearInterval(pollingInterval);
+
+        // Realtime: refresh count when fees_payments table changes
+        const channel = supabaseAuth
+            .channel('sidebar-pending-payments')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'fees_payments' }, () => {
+                fetchPendingPaymentsCount();
+            })
+            .subscribe();
+
+        return () => { supabaseAuth.removeChannel(channel); };
     }, [userRole]);
 
     useEffect(() => {

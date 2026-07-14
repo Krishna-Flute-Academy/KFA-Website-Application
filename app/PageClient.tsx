@@ -257,36 +257,50 @@ export function PageClient() {
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    // 2. Fetch All Data on Load
+    // 2. Fetch All Data on Load — run all queries in parallel for speed
     useEffect(() => {
         const fetchData = async () => {
-            // A. Fetch Blog Posts
-            const { data: posts, error: postsError } = await supabase
-                .from('blog_posts')
-                .select('*')
-                .eq('published', true)
-                .order('published_at', { ascending: false })
-                .limit(3);
+            const [
+                { data: posts, error: postsError },
+                { data: eventData, error: eventError },
+                { data: reviews, error: reviewsError },
+                { data: gallery, error: galleryError }
+            ] = await Promise.all([
+                // A. Blog Posts
+                supabase
+                    .from('blog_posts')
+                    .select('*')
+                    .eq('published', true)
+                    .order('published_at', { ascending: false })
+                    .limit(3),
+                // B. Active Event
+                supabase
+                    .from('events')
+                    .select('title, registration_link, image_url, button_text, description')
+                    .eq('is_active', true)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle(),
+                // C. Testimonials
+                supabase
+                    .from('testimonials')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(3),
+                // D. Gallery Items
+                supabase
+                    .from('gallery_items')
+                    .select('*')
+                    .eq('is_active', true)
+                    .order('created_at', { ascending: false })
+            ]);
+
             if (posts) {
-                const validPosts = posts.filter(p => p && typeof p === 'object' && p.title && p.id);
+                const validPosts = posts.filter((p: any) => p && typeof p === 'object' && p.title && p.id);
                 setRecentBlogPosts(validPosts);
             } else if (postsError) {
-                console.error('Supabase Error Details (blog_posts):', {
-                    message: postsError.message,
-                    details: postsError.details,
-                    hint: postsError.hint,
-                    code: postsError.code
-                });
+                console.error('Supabase Error Details (blog_posts):', postsError);
             }
-
-            // B. Fetch Active Event
-            const { data: eventData, error: eventError } = await supabase
-                .from('events')
-                .select('title, registration_link, image_url, button_text, description')
-                .eq('is_active', true)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
 
             if (eventData) {
                 setActiveEvent(eventData);
@@ -295,27 +309,15 @@ export function PageClient() {
                 console.error('Supabase Error (events):', eventError);
             }
 
-            // C. Fetch Testimonials
-            const { data: reviews, error: reviewsError } = await supabase
-                .from('testimonials')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(3);
             if (reviews) {
-                const validReviews = reviews.filter(r => r && typeof r === 'object' && r.name && (r.content || r.message));
+                const validReviews = (reviews as any[]).filter((r: any) => r && typeof r === 'object' && r.name && (r.content || r.message));
                 setTestimonials(validReviews);
             } else if (reviewsError) {
                 console.error('Supabase Error (testimonials):', reviewsError);
             }
 
-            // D. Fetch Gallery Items
-            const { data: gallery, error: galleryError } = await supabase
-                .from('gallery_items')
-                .select('*')
-                .eq('is_active', true)
-                .order('created_at', { ascending: false });
             if (gallery) {
-                const validGallery = gallery.filter(g => g && typeof g === 'object' && g.url);
+                const validGallery = (gallery as any[]).filter((g: any) => g && typeof g === 'object' && g.url);
                 setGalleryItems(validGallery);
             } else if (galleryError) {
                 console.error('Supabase Error (gallery_items):', galleryError);

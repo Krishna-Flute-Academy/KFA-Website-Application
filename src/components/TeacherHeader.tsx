@@ -30,20 +30,21 @@ export default function TeacherHeader({
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const notifDropdownRef = useRef<HTMLDivElement>(null);
 
-    // Fetch user and notifications
+    // Fetch user and notifications using cached getSession (no extra getUser() round-trip)
     useEffect(() => {
-        const fetchUserAndNotifications = async () => {
+        const fetchNotifications = async () => {
             try {
-                const { data: { user } } = await supabaseAuth.auth.getUser();
-                if (!user) return;
+                const { data: { session } } = await supabaseAuth.auth.getSession();
+                if (!session?.user) return;
                 
-                setCurrentUserId(user.id);
+                setCurrentUserId(session.user.id);
 
                 const { data, error } = await supabaseAuth
                     .from('notifications')
                     .select('*')
-                    .eq('user_id', user.id)
-                    .order('created_at', { ascending: false });
+                    .eq('user_id', session.user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(30);
 
                 if (error) throw error;
                 setNotifications(data || []);
@@ -52,26 +53,33 @@ export default function TeacherHeader({
             }
         };
 
-        fetchUserAndNotifications();
+        fetchNotifications();
     }, []);
 
-    // Realtime notifications subscription
+    // Realtime notifications — use a single channel, update local state on INSERT/UPDATE
+    // Note: The ToastContext global channel already handles showing toast popups.
+    // This channel only keeps the header dropdown list in sync.
     useEffect(() => {
         if (!currentUserId) return;
 
         const notifChannel = supabaseAuth
-            .channel(`teacher-notifications-${currentUserId}`)
+            .channel(`header-notif-${currentUserId}`)
             .on(
                 'postgres_changes',
                 {
-                    event: 'INSERT',
+                    event: '*',
                     schema: 'public',
                     table: 'notifications',
                     filter: `user_id=eq.${currentUserId}`
                 },
                 (payload) => {
-                    const newNotif = payload.new;
-                    setNotifications(prev => [newNotif, ...prev]);
+                    if (payload.eventType === 'INSERT') {
+                        setNotifications(prev => [payload.new as any, ...prev]);
+                    } else if (payload.eventType === 'UPDATE') {
+                        setNotifications(prev =>
+                            prev.map(n => n.id === (payload.new as any).id ? { ...n, ...(payload.new as any) } : n)
+                        );
+                    }
                 }
             )
             .subscribe();
