@@ -261,18 +261,28 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     const activeTanpuraNodesRef = useRef<ActiveTanpuraNode[]>([]);
     const tanpuraBufferRef = useRef<AudioBuffer | null>(null);
 
-    // Pre-load Tanpura Audio
+    // Pre-load Tanpura Audio (decode without creating a persistent AudioContext)
     useEffect(() => {
         const loadTanpura = async () => {
             try {
                 const response = await fetch('/sounds/tanpura/Tanpura_c.mp3');
                 if (response.ok) {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('text/html')) {
+                        console.error('Tanpura file not found — server returned HTML instead of audio.');
+                        return;
+                    }
                     const arrayBuffer = await response.arrayBuffer();
-                    const ctx = getCtx();
-                    tanpuraBufferRef.current = await ctx.decodeAudioData(arrayBuffer);
+                    // Use a temporary offline context just for decoding — no autoplay issues
+                    const tempCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                    tanpuraBufferRef.current = await tempCtx.decodeAudioData(arrayBuffer);
+                    await tempCtx.close(); // Immediately close — we only needed it for decoding
+                    console.log('✅ Tanpura audio decoded and ready.');
+                } else {
+                    console.error('❌ Failed to fetch Tanpura file. HTTP Status:', response.status);
                 }
             } catch (e) {
-                // Silently fallback to synthesizer if not found
+                console.error('❌ Error decoding Tanpura audio:', e);
             }
         };
         loadTanpura();
@@ -423,74 +433,100 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
         return { osc1, osc2, gainNode };
     }, []);
 
+    // ── CROSSFADE LOOP ENGINE ────────────────────────────────────────────────
+    // Instead of source.loop (causes click at boundary), we schedule overlapping
+    // copies of the buffer with gain envelopes that cross-fade seamlessly.
+    const droneActiveRef = useRef(false);
+    const droneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const droneNodesRef = useRef<{ src: AudioBufferSourceNode; gain: GainNode }[]>([]);
+
     const stopTanpuraNodes = useCallback(() => {
+        droneActiveRef.current = false;
+        if (droneTimerRef.current) { clearTimeout(droneTimerRef.current); droneTimerRef.current = null; }
         const ctx = audioCtxRef.current;
-        activeTanpuraNodesRef.current.forEach((node) => {
+        droneNodesRef.current.forEach(({ src, gain }) => {
             try {
                 if (ctx) {
-                    node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
-                    node.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+                    gain.gain.cancelScheduledValues(ctx.currentTime);
+                    gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
                 }
-                setTimeout(() => {
-                    try {
-                        if (node.osc1) node.osc1.stop();
-                        if (node.osc2) node.osc2.stop();
-                        if (node.source) node.source.stop();
-                    } catch (_) {}
-                }, 850);
+                setTimeout(() => { try { src.stop(); } catch (_) {} }, 900);
             } catch (_) {}
         });
-        activeTanpuraNodesRef.current = [];
+        droneNodesRef.current = [];
+        activeTanpuraNodesRef.current = []; // keep compat with synth fallback
     }, []);
 
-    const startTanpura = useCallback(() => {
+    // Schedule one buffer chunk starting at `startTime`, then queue the next.
+    const scheduleDroneChunk = useCallback((
+        ctx: AudioContext,
+        buffer: AudioBuffer,
+        pitchRatio: number,
+        volume: number,
+        startTime: number
+    ) => {
+        if (!droneActiveRef.current) return;
+
+        const CROSSFADE = Math.min(3.0, buffer.duration * 0.12); // 12% or 3 s max
+        const dur = buffer.duration / pitchRatio; // real-time duration after pitch shift
+
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.playbackRate.value = pitchRatio;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(volume, startTime + CROSSFADE);   // fade in
+        gain.gain.setValueAtTime(volume, startTime + dur - CROSSFADE);      // hold
+        gain.gain.linearRampToValueAtTime(0, startTime + dur);              // fade out
+
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(startTime);
+        src.stop(startTime + dur + 0.05);
+
+        droneNodesRef.current.push({ src, gain });
+        // Keep the list small — remove entries that have already stopped
+        if (droneNodesRef.current.length > 6) droneNodesRef.current.shift();
+
+        // Schedule the NEXT chunk so it starts exactly CROSSFADE seconds before this one ends
+        const nextStart = startTime + dur - CROSSFADE;
+        const msUntilSchedule = Math.max(0, (nextStart - ctx.currentTime - 0.3) * 1000);
+
+        droneTimerRef.current = setTimeout(() => {
+            scheduleDroneChunk(ctx, buffer, pitchRatio, volume, nextStart);
+        }, msUntilSchedule);
+    }, []);
+
+    // pitchOverride lets us pass the NEW pitch directly from a click handler,
+    // bypassing the React stale-closure problem with selectedPitch state.
+    const startTanpura = useCallback(async (pitchOverride?: typeof SHRU_PITCHES[0]) => {
         try {
             const ctx = getCtx();
-            if (ctx.state === 'suspended') ctx.resume();
+            if (ctx.state !== 'running') await ctx.resume();
+
+            const pitch = pitchOverride ?? selectedPitch;
 
             if (tanpuraBufferRef.current) {
-                // ── REAL AUDIO SAMPLE PLAYBACK ──
-                const source = ctx.createBufferSource();
-                source.buffer = tanpuraBufferRef.current;
-                source.loop = true;
-                
-                // Magic: Pitch-shift the C scale file dynamically for ANY selected pitch!
-                // C (Kali 1) is 261.63 Hz.
-                source.playbackRate.value = selectedPitch.freq / 261.63;
-                
-                const gainNode = ctx.createGain();
-                gainNode.gain.setValueAtTime(0, ctx.currentTime);
-                // Real audio doesn't need to be as loud internally as 4 combined oscillators
-                gainNode.gain.linearRampToValueAtTime(tanpuraVolumeRef.current * 0.8, ctx.currentTime + 1.0);
-                
-                source.connect(gainNode);
-                gainNode.connect(ctx.destination);
-                source.start();
-                
-                activeTanpuraNodesRef.current = [{ source, gainNode }];
+                droneActiveRef.current = true;
+                const pitchRatio = pitch.freq / 261.63;
+                const volume = tanpuraVolumeRef.current * 0.85;
+                scheduleDroneChunk(ctx, tanpuraBufferRef.current, pitchRatio, volume, ctx.currentTime);
+                console.log('▶ Tanpura crossfade loop | key:', pitch.label, '| ratio:', pitchRatio.toFixed(3));
             } else {
-                // ── SYNTHESIZER FALLBACK ──
-                const baseFreq = selectedPitch.freq;
+                console.warn('⚠ No audio buffer — falling back to synthesizer');
+                const baseFreq = pitch.freq;
                 const mode = selectedTuningMode;
-
-                const frequencies = [
-                    baseFreq * 0.5,
-                    baseFreq,
-                    baseFreq * mode.mult,
-                    baseFreq * 2.0
-                ];
+                const frequencies = [baseFreq * 0.5, baseFreq, baseFreq * mode.mult, baseFreq * 2.0];
                 const mixVolumes = [1.0, 0.8, 0.75, 0.45];
-
-                const nodes = frequencies.map((freq, idx) => 
-                    startTanpuraNode(ctx, freq, mixVolumes[idx])
-                );
-
+                const nodes = frequencies.map((freq, idx) => startTanpuraNode(ctx, freq, mixVolumes[idx]));
                 activeTanpuraNodesRef.current = nodes;
             }
         } catch (err) {
             console.error('Failed to start Tanpura:', err);
         }
-    }, [selectedPitch, selectedTuningMode, startTanpuraNode]);
+    }, [selectedPitch, selectedTuningMode, startTanpuraNode, scheduleDroneChunk]);
 
     // Handle Tanpura Volume Real-Time Adjustments
     useEffect(() => {
@@ -515,23 +551,8 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
         }
     }, [tanpuraVolume]);
 
-    // Handle Tanpura Play state changes
-    useEffect(() => {
-        if (isTanpuraPlaying) {
-            startTanpura();
-        } else {
-            stopTanpuraNodes();
-        }
-        return () => { stopTanpuraNodes(); };
-    }, [isTanpuraPlaying, startTanpura, stopTanpuraNodes]);
-
-    // Seamless pitch transition
-    useEffect(() => {
-        if (isTanpuraPlaying) {
-            stopTanpuraNodes();
-            startTanpura();
-        }
-    }, [selectedPitch, selectedTuningMode, isTanpuraPlaying, startTanpura, stopTanpuraNodes]);
+    // NOTE: Tanpura is now controlled DIRECTLY from button clicks, not via useEffect.
+    // This avoids React cleanup-cycle races that were silencing the audio.
 
 
     // ── METRONOME AUDIO ENGINES ─────────────────────────────────────────────
@@ -959,7 +980,10 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                     <div className="flex items-center justify-between gap-2">
                         {activeRhythmTab === 'metronome' ? (
                             <button 
-                                onClick={() => setIsMetronomePlaying(!isMetronomePlaying)}
+                                onClick={() => {
+                                    getCtx().resume();
+                                    setIsMetronomePlaying(!isMetronomePlaying);
+                                }}
                                 className={`h-10 px-4 rounded-lg font-bold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
                                     isMetronomePlaying 
                                         ? 'bg-[#d46211]/15 border border-[#d46211]/30 text-[#d46211] hover:bg-[#d46211]/25' 
@@ -1097,7 +1121,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                     {SHRU_PITCHES.map((pitch) => (
                                         <button
                                             key={pitch.label}
-                                            onClick={() => setSelectedPitch(pitch)}
+                                            onClick={async () => {
+                                                setSelectedPitch(pitch);
+                                                // Always start/restart drone on pitch click
+                                                stopTanpuraNodes();
+                                                setIsTanpuraPlaying(true);
+                                                await startTanpura(pitch); // pass pitch directly — avoids stale state
+                                            }}
                                             className={`py-1.5 rounded-lg text-center font-bold text-xs transition-all border ${
                                                 selectedPitch.label === pitch.label 
                                                     ? 'bg-[#d46211] border-[#d46211] text-white' 
@@ -1168,7 +1198,15 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         {/* Play control bottom */}
                         <div className="pt-4 border-t border-white/5 mt-4">
                             <button
-                                onClick={() => setIsTanpuraPlaying(!isTanpuraPlaying)}
+                                onClick={async () => {
+                                    if (isTanpuraPlaying) {
+                                        stopTanpuraNodes();
+                                        setIsTanpuraPlaying(false);
+                                    } else {
+                                        setIsTanpuraPlaying(true);
+                                        await startTanpura();
+                                    }
+                                }}
                                 className={`w-full h-12 rounded-xl font-extrabold text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 ${
                                     isTanpuraPlaying 
                                         ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' 
