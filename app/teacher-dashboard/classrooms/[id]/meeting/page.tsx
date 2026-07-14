@@ -309,19 +309,20 @@ export default function MeetingPage() {
             });
 
             if (endError) {
-                console.error('RPC failed while ending session, clearing live flag directly:', endError);
-
-                const { error: clearLiveError } = await supabaseAuth
-                    .from('classrooms')
-                    .update({
-                        is_live: false,
-                        live_meeting_link: null,
-                        live_session_started_at: null
-                    })
-                    .eq('id', classroomId);
-
-                if (clearLiveError) throw clearLiveError;
+                console.error('RPC failed while ending session:', endError);
             }
+
+            // Always clear the live flag directly to ensure it updates for students
+            const { error: clearLiveError } = await supabaseAuth
+                .from('classrooms')
+                .update({
+                    is_live: false,
+                    live_meeting_link: null,
+                    live_session_started_at: null
+                })
+                .eq('id', classroomId);
+
+            if (clearLiveError) throw clearLiveError;
         } catch (err: any) {
             console.error('Unexpected error ending active session:', err);
             alert(`Failed to end session: ${err.message || 'Unknown error'}`);
