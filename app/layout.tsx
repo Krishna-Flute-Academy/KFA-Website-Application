@@ -43,6 +43,8 @@ export const metadata: Metadata = {
     },
 };
 
+import AutoLogoutProvider from "../src/components/AutoLogoutProvider";
+
 export default function RootLayout({
     children,
 }: Readonly<{
@@ -60,7 +62,9 @@ export default function RootLayout({
             </head>
             <body className={`${inter.className} antialiased font-sans`}>
                 <ToastProvider>
-                    {children}
+                    <AutoLogoutProvider>
+                        {children}
+                    </AutoLogoutProvider>
                 </ToastProvider>
             </body>
         </html>
