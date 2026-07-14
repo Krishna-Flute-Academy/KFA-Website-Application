@@ -94,8 +94,38 @@ export default function TasksTab({
 
     const startRecording = async () => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream);
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('navigator.mediaDevices.getUserMedia is not supported by your browser/device');
+            }
+            
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                } 
+            });
+            
+            // Determine optimal MIME type supported by the browser
+            let mimeType = 'audio/webm';
+            let options = {};
+            if (typeof MediaRecorder !== 'undefined') {
+                if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    mimeType = 'audio/webm';
+                    options = { mimeType };
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    mimeType = 'audio/mp4'; // Standard iOS Safari format
+                    options = { mimeType };
+                } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+                    mimeType = 'audio/ogg';
+                    options = { mimeType };
+                } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+                    mimeType = 'audio/wav';
+                    options = { mimeType };
+                }
+            }
+
+            const mediaRecorder = new MediaRecorder(stream, options);
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
 
@@ -106,7 +136,7 @@ export default function TasksTab({
             };
 
             mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
                 setSubmitAudioBlob(audioBlob);
                 const url = URL.createObjectURL(audioBlob);
                 setAudioUrl(url);
@@ -121,9 +151,9 @@ export default function TasksTab({
             if (audioUrl) URL.revokeObjectURL(audioUrl);
             setAudioUrl(null);
             setSubmitAudioBlob(null);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error accessing microphone:', error);
-            alert('Could not access your microphone. Please check permissions.');
+            alert(error.message || 'Could not access your microphone. Please check permissions.');
         }
     };
 
@@ -156,14 +186,15 @@ export default function TasksTab({
             if (activeFilter === 'submitted') return asg.status === 'submitted';
             if (activeFilter === 'graded') return asg.status === 'reviewed' || asg.status === 'approved';
             
-            return true;
+            // For 'all' filter, exclude completed/approved tasks to keep the task list clean
+            return asg.status !== 'approved';
         });
     }, [assignments, searchQuery, activeFilter]);
 
     // Counts for filter badges
     const counts = useMemo(() => {
         return {
-            all: assignments.length,
+            all: assignments.filter(a => a.status !== 'approved').length,
             pending: assignments.filter(a => a.status === 'pending').length,
             submitted: assignments.filter(a => a.status === 'submitted').length,
             graded: assignments.filter(a => a.status === 'reviewed' || a.status === 'approved').length

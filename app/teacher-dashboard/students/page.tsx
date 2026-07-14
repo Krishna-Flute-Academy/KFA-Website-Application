@@ -163,7 +163,13 @@ export default function StudentDirectory() {
                     : await studentsQuery.eq('teacher_id', userId);
 
                 if (studentsError) {
-                    console.error('Supabase error fetching students:', studentsError);
+                    console.error('Supabase error fetching students:', {
+                        message: studentsError.message,
+                        code: studentsError.code,
+                        details: studentsError.details,
+                        hint: studentsError.hint,
+                        raw: studentsError
+                    });
                 }
 
                 if (studentsData) {
@@ -215,16 +221,19 @@ export default function StudentDirectory() {
                         profile_pic_url,
                         created_at,
                         teacher_id,
-                        phone,
-                        classroom_students(
-                            classrooms(name)
-                        )
+                        phone
                     `)
                     .eq('role', 'student')
                     .is('teacher_id', null);
 
                 if (unassignedError) {
-                    console.error('Supabase error fetching unassigned students:', unassignedError);
+                    console.error('Supabase error fetching unassigned students:', {
+                        message: unassignedError.message,
+                        code: unassignedError.code,
+                        details: unassignedError.details,
+                        hint: unassignedError.hint,
+                        raw: unassignedError
+                    });
                 }
 
                 if (unassignedData) {
@@ -233,7 +242,7 @@ export default function StudentDirectory() {
                         user_id: s.id,
                         name: s.name,
                         student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
-                        batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
+                        batch: 'Unassigned',
                         attendance_pct: 0,
                         profile_pic_url: s.profile_pic_url,
                         status: s.status === 'active' ? 'Active' : 'Inactive',

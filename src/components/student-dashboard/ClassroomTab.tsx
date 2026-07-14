@@ -19,6 +19,7 @@ interface StudentProfile {
 interface ClassroomInfo {
     id: string;
     name: string;
+    type?: string;
     teacher_id?: string;
     teacher_name?: string;
     teacher_email?: string;
@@ -378,47 +379,98 @@ export default function ClassroomTab({
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="space-y-1.5 flex-1 min-w-0">
                         <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest block font-mono">My Classroom</span>
-                        {activeRooms && activeRooms.length > 1 ? (
-                            <div className="relative inline-block text-left mt-1">
-                                <select
-                                    value={classroom?.id || ''}
-                                    onChange={(e) => {
-                                        const selected = activeRooms.find(r => r.id === e.target.value);
-                                        if (selected && setClassroom) setClassroom(selected);
-                                    }}
-                                    className="text-xl md:text-2xl font-black text-slate-900 dark:text-white bg-transparent border-b-2 border-amber-500 pr-8 focus:outline-hidden cursor-pointer"
-                                >
-                                    {activeRooms.map((room) => (
-                                        <option key={room.id} value={room.id} className="text-sm font-semibold text-slate-800 dark:text-white bg-white dark:bg-slate-900">
-                                            {room.name}
-                                        </option>
-                                    ))}
-                                </select>
+                        {!classroom ? (
+                            <div className="py-2">
+                                <h2 className="text-lg md:text-xl font-black text-slate-800 dark:text-white">
+                                    You have not been allocated to any class.
+                                </h2>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                                    Please ask your teacher to allocate you to a classroom.
+                                </p>
+                            </div>
+                        ) : activeRooms && activeRooms.length > 1 ? (
+                            <div className="flex flex-wrap gap-2.5 mt-2 mb-3">
+                                {activeRooms.map((room) => {
+                                    const isSelected = classroom?.id === room.id;
+                                    const isTemporary = room.type === 'temporary' || room.id.includes('temp') || room.name?.toLowerCase().includes('temp');
+                                    return (
+                                        <button
+                                            key={room.id}
+                                            onClick={() => setClassroom?.(room)}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold border transition-all cursor-pointer hover:scale-102 active:scale-98 ${
+                                                isSelected 
+                                                    ? isTemporary
+                                                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 shadow-2xs font-black'
+                                                        : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30 shadow-2xs font-black'
+                                                    : 'bg-slate-50/50 dark:bg-slate-800/30 text-slate-500 dark:text-slate-400 border-slate-200/60 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-700 dark:hover:text-slate-300'
+                                            }`}
+                                        >
+                                            <span className={`w-2 h-2 rounded-full ${isTemporary ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>
+                                            {isTemporary ? '⚡' : '🏫'} {room.name}
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-mono ${
+                                                isSelected
+                                                    ? isTemporary ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' : 'bg-blue-500/20 text-blue-700 dark:text-blue-300'
+                                                    : 'bg-slate-200/50 dark:bg-slate-800 text-slate-500'
+                                            }`}>
+                                                {isTemporary ? 'Temp' : 'Perm'}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         ) : (
                             <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white truncate">
-                                {classroom?.name || 'Classroom Portal'}
+                                {classroom ? (
+                                    <>
+                                        {classroom.type === 'temporary' ? '⚡ ' : '🏫 '}
+                                        {classroom.name}
+                                        <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full font-mono font-black align-middle ${
+                                            classroom.type === 'temporary' 
+                                                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20' 
+                                                : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20'
+                                        }`}>
+                                            {classroom.type === 'temporary' ? 'Temporary' : 'Permanent'}
+                                        </span>
+                                    </>
+                                ) : 'Classroom Portal'}
                             </h2>
                         )}
-                        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
-                            {classroom?.description 
-                                ? classroom.description.replace(/\[delivery_format:(online|offline)\]/g, '').trim() 
-                                : 'Learn and interact with section members and practice flutes together.'}
-                        </p>
+                        {classroom && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
+                                {classroom.description 
+                                    ? classroom.description.replace(/\[delivery_format:(online|offline)\]/g, '').trim() 
+                                    : 'Learn and interact with section members and practice flutes together.'}
+                            </p>
+                        )}
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                        <div className="p-3.5 bg-amber-50/50 dark:bg-slate-850 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-[#ecb613]">
-                                <User className="w-5 h-5 text-[#ecb613]" />
-                            </div>
-                            <div className="text-left">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">Instructor</p>
-                                <h4 className="text-xs font-black text-slate-808 dark:text-white mt-0.5">{classroom?.teacher_name || 'Academy Teacher'}</h4>
-                                <p className="text-[10px] font-medium text-slate-500 truncate mt-0.5">{classroom?.teacher_email}</p>
+                    {classroom ? (
+                        <div className="flex items-center gap-3 shrink-0">
+                            <div className="p-3.5 bg-amber-50/50 dark:bg-slate-850 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-[#ecb613]">
+                                    <User className="w-5 h-5 text-[#ecb613]" />
+                                </div>
+                                <div className="text-left">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">Instructor</p>
+                                    <h4 className="text-xs font-black text-slate-808 dark:text-white mt-0.5">{classroom.teacher_name || 'Academy Teacher'}</h4>
+                                    <p className="text-[10px] font-medium text-slate-500 truncate mt-0.5">{classroom.teacher_email}</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="flex items-center gap-3 shrink-0">
+                            <div className="p-3.5 bg-amber-50/5 dark:bg-slate-850/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 flex items-center gap-3 opacity-60">
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                                    <User className="w-5 h-5" />
+                                </div>
+                                <div className="text-left">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">Instructor</p>
+                                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-0.5">Unassigned</h4>
+                                    <p className="text-[10px] text-slate-400 truncate mt-0.5">Contact support</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex flex-wrap gap-2 border-t border-slate-100 dark:border-slate-800 mt-6 pt-5">
@@ -489,6 +541,8 @@ export default function ClassroomTab({
                                 let cellBgAndBorder = 'border-slate-100 dark:border-slate-805 bg-white dark:bg-slate-900';
                                 if (!cell.isCurrentMonth) {
                                     cellBgAndBorder = 'bg-slate-50/50 dark:bg-slate-950/20 text-slate-400 opacity-40 border-slate-100 dark:border-slate-805';
+                                } else if (cell.makeups.length > 0) {
+                                    cellBgAndBorder = 'border-emerald-500/30 dark:border-emerald-400/20 bg-emerald-500/[0.07] dark:bg-emerald-950/15 shadow-xs ring-1 ring-emerald-500/10';
                                 } else if (hasPendingAssignment) {
                                     cellBgAndBorder = 'border-rose-200 dark:border-rose-900/40 bg-rose-50/10 dark:bg-rose-950/5 shadow-3xs';
                                 } else if (hasCompletedAssignment) {
@@ -508,7 +562,7 @@ export default function ClassroomTab({
                                             <div className="space-y-1">
                                                 {cell.schedules.map((regularClass, sIdx) => (
                                                     <div key={`reg-${sIdx}`} className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 truncate" title={`Weekly Class: ${formatTime12hr(regularClass.start_time.slice(0, 5))}`}>
-                                                        {formatTime12hr(regularClass.start_time.slice(0, 5))} Class
+                                                        🏫 {formatTime12hr(regularClass.start_time.slice(0, 5))} Class
                                                     </div>
                                                 ))}
                                                 {cell.makeups.map((makeupClass, mIdx) => (
@@ -549,7 +603,7 @@ export default function ClassroomTab({
                             <div className="space-y-4">
                                 {/* Today's Classes */}
                                 <div>
-                                    <span className="text-[10px] font-black text-rose-600 dark:text-rose-450 uppercase tracking-widest font-mono">Today's Classes</span>
+                                    <span className="text-xs font-black text-rose-600 dark:text-rose-450 uppercase tracking-widest font-mono">Today's Classes</span>
                                     {todayClasses.length === 0 ? (
                                         <p className="text-xs text-slate-400 italic mt-1.5">No classes scheduled for today.</p>
                                     ) : (
@@ -581,7 +635,7 @@ export default function ClassroomTab({
 
                                 {/* Tomorrow's Classes */}
                                 <div>
-                                    <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest font-mono">Tomorrow's Classes</span>
+                                    <span className="text-xs font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest font-mono">Tomorrow's Classes</span>
                                     {tomorrowClasses.length === 0 ? (
                                         <p className="text-xs text-slate-400 italic mt-1.5">No classes scheduled for tomorrow.</p>
                                     ) : (
@@ -613,7 +667,7 @@ export default function ClassroomTab({
 
                                 {/* Upcoming Classes (Next 7 Days) */}
                                 <div className="border-t border-slate-100 dark:border-slate-800 pt-3.5">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">Upcoming Classes (Next 7 Days)</span>
+                                    <span className="text-xs font-black text-slate-500 uppercase tracking-widest font-mono">Upcoming Classes (Next 7 Days)</span>
                                     {upcomingClassesLater.length === 0 ? (
                                         <p className="text-xs text-slate-400 italic mt-1.5">No other classes scheduled for the next 7 days.</p>
                                     ) : (
@@ -643,7 +697,7 @@ export default function ClassroomTab({
 
                                 {/* Weekly Standard Schedule Reference */}
                                 <div className="border-t border-slate-100 dark:border-slate-800 pt-3.5">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-mono">Weekly Standard Schedule</span>
+                                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest font-mono">Weekly Standard Schedule</span>
                                     {batchSchedules.length === 0 ? (
                                         <p className="text-xs text-slate-400 italic mt-1.5">No standard weekly schedule has been set.</p>
                                     ) : (
@@ -660,7 +714,7 @@ export default function ClassroomTab({
                                 
                                 {/* Upcoming Task Deadlines */}
                                 <div className="border-t border-slate-100 dark:border-slate-800 pt-3.5">
-                                    <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest font-mono">Tasks & Assignments</span>
+                                    <span className="text-xs font-black text-slate-450 uppercase tracking-widest font-mono">Tasks & Assignments</span>
                                     {assignments.filter(asg => asg.due_date && asg.status === 'pending').length === 0 ? (
                                         <p className="text-xs text-slate-400 italic mt-1.5">No pending task deadlines.</p>
                                     ) : (

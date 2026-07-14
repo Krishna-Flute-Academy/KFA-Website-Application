@@ -496,8 +496,8 @@ export default function TaskReviewPage() {
             } else if (activeTab === 'draft') {
                 result = result.filter(s => s.status === 'draft');
             } else if (activeTab === 'reviewed') {
-                // both reviewed (needs revision) and approved tasks are reviewed
-                result = result.filter(s => s.status === 'reviewed' || s.status === 'approved');
+                // only reviewed (needs revision) tasks are reviewed
+                result = result.filter(s => s.status === 'reviewed');
             } else {
                 result = result.filter(s => s.status.toLowerCase() === activeTab);
             }
@@ -1695,7 +1695,7 @@ export default function TaskReviewPage() {
                                     : tab.id === 'assigned'
                                     ? new Set(submissions.filter(s => s.status === 'pending' && s.student_id !== 'draft' && s.student_id !== 'no-students').map(s => s.task_id)).size
                                     : tab.id === 'reviewed'
-                                    ? new Set(submissions.filter(s => s.status === 'reviewed' || s.status === 'approved').map(s => s.task_id)).size
+                                    ? new Set(submissions.filter(s => s.status === 'reviewed').map(s => s.task_id)).size
                                     : new Set(submissions.filter(s => s.status.toLowerCase() === tab.id).map(s => s.task_id)).size;
 
                                 const isActive = activeTab === tab.id;

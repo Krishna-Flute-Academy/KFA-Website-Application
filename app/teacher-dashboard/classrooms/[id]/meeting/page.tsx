@@ -295,19 +295,6 @@ export default function MeetingPage() {
             const late = students.filter(s => s.attendance === 'late').length;
             const excused = students.filter(s => s.attendance === 'excused').length;
 
-            const logRow = {
-                classroom_id: classroomId,
-                session_date: sessionDate,
-                session_type: sessionType || 'online',
-                started_at: new Date(startedAtTime).toISOString(),
-                ended_at: new Date(endedAtTime).toISOString(),
-                duration_seconds: durationSecs,
-                present_count: present,
-                absent_count: absent,
-                late_count: late,
-                excused_count: excused
-            };
-
             const { error: endError } = await supabaseAuth.rpc('end_classroom_session', {
                 p_classroom_id: classroomId,
                 p_session_date: sessionDate,
@@ -321,7 +308,20 @@ export default function MeetingPage() {
                 p_excused_count: excused
             });
 
-            if (endError) throw endError;
+            if (endError) {
+                console.error('RPC failed while ending session, clearing live flag directly:', endError);
+
+                const { error: clearLiveError } = await supabaseAuth
+                    .from('classrooms')
+                    .update({
+                        is_live: false,
+                        live_meeting_link: null,
+                        live_session_started_at: null
+                    })
+                    .eq('id', classroomId);
+
+                if (clearLiveError) throw clearLiveError;
+            }
         } catch (err: any) {
             console.error('Unexpected error ending active session:', err);
             alert(`Failed to end session: ${err.message || 'Unknown error'}`);

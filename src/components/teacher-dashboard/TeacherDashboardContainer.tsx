@@ -811,7 +811,7 @@ export default function TeacherDashboardContainer() {
             setLoading(false);
         };
         init();
-    }, [router]);
+    }, []);
 
     // Secondary data fetches once profile is ready
     useEffect(() => {

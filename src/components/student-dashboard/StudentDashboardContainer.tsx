@@ -393,44 +393,7 @@ export default function StudentDashboardContainer() {
             const csError = csRes.error;
 
             if (csError || !csData || csData.length === 0) {
-                const { data: fallbackData } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status)')
-                    .eq('student_id', userId);
-                
-                if (fallbackData && fallbackData.length > 0) {
-                    csData = fallbackData;
-                } else if (user.teacher_id) {
-                    const { data: directClassrooms } = await supabaseAuth
-                        .from('classrooms')
-                        .select('id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status')
-                        .eq('teacher_id', user.teacher_id);
-                    
-                    if (directClassrooms && directClassrooms.length > 0) {
-                        csData = [{
-                            classroom_id: directClassrooms[0].id,
-                            classrooms: directClassrooms[0]
-                        }];
-                    } else {
-                        const { data: teacherUser } = await supabaseAuth
-                            .from('users')
-                            .select('name, email')
-                            .eq('id', user.teacher_id)
-                            .maybeSingle();
-
-                        csData = [{
-                            classroom_id: 'synthetic-classroom',
-                            classrooms: {
-                                id: 'synthetic-classroom',
-                                name: 'My Assigned Batch',
-                                type: 'permanent',
-                                teacher_id: user.teacher_id,
-                                users: teacherUser,
-                                status: 'active'
-                            }
-                        }];
-                    }
-                }
+                csData = [];
             }
 
             const filteredCsData = (csData || []).filter((row: any) => {
@@ -596,52 +559,53 @@ export default function StudentDashboardContainer() {
                     live_classroom_name: r.is_live ? r.name : null
                 };
             });
-            setActiveRooms(enrichedActiveRooms);
+            const primaryRooms = enrichedActiveRooms.filter(r => r.type !== 'temporary');
+            setActiveRooms(primaryRooms);
 
-            if (cls) {
-                const liveRoom = enrichedActiveRooms.find(r => r.is_live);
-                const primaryRoom = enrichedActiveRooms.find(r => r.id === cls.id) || enrichedActiveRooms[0];
-                const defaultRoom = liveRoom || primaryRoom;
-                
-                if (defaultRoom) {
-                    setClassroom(prev => {
-                        if (prev) {
-                            const stillExists = enrichedActiveRooms.find(r => r.id === prev.id);
-                            if (stillExists) return stillExists;
-                        }
-                        return defaultRoom;
-                    });
-                }
-
-                // Process classmates
-                const classmatesList = classmatesRes.data || [];
-                const formattedClassmates = classroomId === 'synthetic-classroom'
-                    ? classmatesList.map((u: any) => ({
-                        id: u.id,
-                        name: u.name || 'Classmate',
-                        level: u.level || 'Beginner',
-                        profile_pic_url: u.profile_pic_url || null
-                      }))
-                    : classmatesList.map((c: any) => ({
-                        id: c.users?.id || c.student_id,
-                        name: c.users?.name || 'Classmate',
-                        level: c.users?.level || 'Beginner',
-                        profile_pic_url: c.users?.profile_pic_url || null
-                      }));
-                setClassmates(formattedClassmates);
-
-                // Process class notes
-                const notes = notesRes.data || [];
-                const enrichedNotes = notes.map((note: any) => {
-                    const room = activeRooms.find(r => r.id === note.classroom_id);
-                    return {
-                        ...note,
-                        classroom_name: room?.name || 'Classroom',
-                        classroom_status: room?.status || 'Active'
-                    };
+            const liveRoom = primaryRooms.find(r => r.is_live);
+            const primaryRoom = cls ? (primaryRooms.find(r => r.id === cls.id) || primaryRooms[0]) : primaryRooms[0];
+            const defaultRoom = liveRoom || primaryRoom;
+            
+            if (defaultRoom) {
+                setClassroom(prev => {
+                    if (prev) {
+                        const stillExists = primaryRooms.find(r => r.id === prev.id);
+                        if (stillExists) return stillExists;
+                    }
+                    return defaultRoom;
                 });
-                setClassNotes(enrichedNotes);
+            } else {
+                setClassroom(null);
             }
+
+            // Process classmates
+            const classmatesList = classmatesRes.data || [];
+            const formattedClassmates = (cls && classroomId === 'synthetic-classroom')
+                ? classmatesList.map((u: any) => ({
+                    id: u.id,
+                    name: u.name || 'Classmate',
+                    level: u.level || 'Beginner',
+                    profile_pic_url: u.profile_pic_url || null
+                  }))
+                : classmatesList.map((c: any) => ({
+                    id: c.users?.id || c.student_id,
+                    name: c.users?.name || 'Classmate',
+                    level: c.users?.level || 'Beginner',
+                    profile_pic_url: c.users?.profile_pic_url || null
+                  }));
+            setClassmates(formattedClassmates);
+
+            // Process class notes
+            const notes = notesRes.data || [];
+            const enrichedNotes = notes.map((note: any) => {
+                const room = activeRooms.find(r => r.id === note.classroom_id);
+                return {
+                    ...note,
+                    classroom_name: room?.name || 'Classroom',
+                    classroom_status: room?.status || 'Active'
+                };
+            });
+            setClassNotes(enrichedNotes);
 
             // Process assignments enrichment
             const classroomAssignments = caRes.data || [];
@@ -732,7 +696,7 @@ export default function StudentDashboardContainer() {
             setLoading(false);
         };
         init();
-    }, [router]);
+    }, []);
 
     // Check and request default notifications permission
     useEffect(() => {
@@ -1392,17 +1356,31 @@ export default function StudentDashboardContainer() {
                     return;
                 }
 
-                // Upload blob to Supabase storage
-                const fileName = `${profile.id}-${Date.now()}.webm`;
+                // Determine file extension and content type based on the recorded blob's MIME type
+                const mimeType = submitAudioBlob.type || 'audio/webm';
+                let fileExt = 'webm';
+                if (mimeType.includes('mp4')) {
+                    fileExt = 'mp4';
+                } else if (mimeType.includes('mpeg')) {
+                    fileExt = 'mp3';
+                } else if (mimeType.includes('ogg')) {
+                    fileExt = 'ogg';
+                } else if (mimeType.includes('wav')) {
+                    fileExt = 'wav';
+                }
+
+                // Upload blob to Supabase storage in inventory_materials bucket under submissions folder prefix
+                const fileName = `${profile.id}-${Date.now()}.${fileExt}`;
+                const filePath = `submissions/${fileName}`;
                 const { error: uploadError } = await supabaseAuth.storage
-                    .from('submissions')
-                    .upload(fileName, submitAudioBlob, { upsert: true, contentType: 'audio/webm' });
+                    .from('inventory_materials')
+                    .upload(filePath, submitAudioBlob, { contentType: mimeType });
 
                 if (uploadError) throw uploadError;
 
                 const { data } = supabaseAuth.storage
-                    .from('submissions')
-                    .getPublicUrl(fileName);
+                    .from('inventory_materials')
+                    .getPublicUrl(filePath);
 
                 finalSubmissionUrl = data.publicUrl;
             }
@@ -2148,6 +2126,7 @@ export default function StudentDashboardContainer() {
                                 onSendDirectMessage={handleSendDirectMessage}
                                 profile={profile}
                                 admins={admins}
+                                notifications={notifications}
                             />
                         )}
 

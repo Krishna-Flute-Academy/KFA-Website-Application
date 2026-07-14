@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Mail, Loader2, Volume2, Search, MessageSquare, Send, Users, User, ChevronRight, FileAudio, Megaphone, CreditCard, Sparkles } from 'lucide-react';
+import { Mail, Loader2, Volume2, Search, MessageSquare, Send, Users, ChevronRight, FileAudio, Megaphone, CreditCard, Sparkles, Bell, Inbox } from 'lucide-react';
 
 interface Broadcast {
     id: string;
@@ -46,6 +46,7 @@ interface MessagesTabProps {
     onSendDirectMessage: (receiverId: string, text: string) => Promise<void>;
     profile: StudentProfile | null;
     admins?: any[];
+    notifications?: any[];
 }
 
 export default function MessagesTab({
@@ -57,7 +58,8 @@ export default function MessagesTab({
     directMessages,
     onSendDirectMessage,
     profile,
-    admins = []
+    admins = [],
+    notifications = []
 }: MessagesTabProps) {
     // Selection state: can be a category id or a contact object
     const [selectedFeed, setSelectedFeed] = useState<{ type: 'category' | 'chat'; id: string; name: string }>(
@@ -97,6 +99,37 @@ export default function MessagesTab({
     const teacherName = classroom?.teacher_name || 'Academy Instructor';
     const showTeacherInSearch = leftSearch === '' || teacherName.toLowerCase().includes(leftSearch.toLowerCase());
 
+    const messageNotifications = useMemo(() => {
+        return notifications
+            .filter(n => n.type === 'messages')
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }, [notifications]);
+
+    const unreadMessageNotifications = useMemo(() => {
+        return messageNotifications.filter(n => !n.is_read);
+    }, [messageNotifications]);
+
+    const contactDirectory = useMemo(() => {
+        const contacts: Array<{ id: string; name: string }> = [];
+        if (classroom?.teacher_id) contacts.push({ id: classroom.teacher_id, name: teacherName });
+        admins.forEach(admin => contacts.push({ id: admin.id, name: admin.name }));
+        classmates.forEach(mate => contacts.push({ id: mate.id, name: mate.name }));
+        return contacts;
+    }, [admins, classmates, classroom?.teacher_id, teacherName]);
+
+    const getNotificationContact = (notification: any) => {
+        const title = String(notification.title || '').replace(/^New Message:\s*/i, '').trim().toLowerCase();
+        return contactDirectory.find(contact => contact.name.toLowerCase() === title || contact.name.toLowerCase().includes(title) || title.includes(contact.name.toLowerCase()));
+    };
+
+    const getUnreadCountForContact = (contactId: string, contactName: string) => {
+        return unreadMessageNotifications.filter(n => {
+            const contact = getNotificationContact(n);
+            if (contact?.id) return contact.id === contactId;
+            return String(n.title || '').toLowerCase().includes(contactName.toLowerCase());
+        }).length;
+    };
+
     // Filter broadcasts based on right panel search and selected category
     const filteredBroadcasts = useMemo(() => {
         return broadcasts.filter(b => {
@@ -134,6 +167,11 @@ export default function MessagesTab({
         );
     }, [directMessages, selectedFeed, profile]);
 
+    const latestIncomingMessage = useMemo(() => {
+        if (!profile?.id || selectedFeed.type !== 'chat') return null;
+        return [...activeChatThread].reverse().find(m => m.sender_id === selectedFeed.id && m.receiver_id === profile.id) || null;
+    }, [activeChatThread, profile?.id, selectedFeed]);
+
     // Filtered chat messages based on right panel search
     const filteredChatThread = useMemo(() => {
         if (rightSearch.trim() === '') return activeChatThread;
@@ -159,11 +197,20 @@ export default function MessagesTab({
     };
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
+        <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-5 animate-in fade-in duration-300 min-h-[680px]">
             {/* Left Sidebar Pane: Categories & Contacts */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col max-h-[650px] text-left">
-                <h3 className="font-extrabold text-slate-808 dark:text-white text-base mb-1">Message Center</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Select announcement board or a chat contact</p>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col h-[680px] text-left min-w-0">
+                <div className="flex items-start justify-between gap-3 mb-4">
+                    <div>
+                        <h3 className="font-extrabold text-slate-808 dark:text-white text-base mb-1">Message Center</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Announcements and direct chat</p>
+                    </div>
+                    {unreadMessageNotifications.length > 0 && (
+                        <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-amber-500 text-white text-[10px] font-black shadow-sm">
+                            {unreadMessageNotifications.length}
+                        </span>
+                    )}
+                </div>
 
                 {/* Left Search */}
                 <div className="relative mb-5 flex-shrink-0">
@@ -182,7 +229,7 @@ export default function MessagesTab({
                     {/* Categories Group */}
                     <div>
                         <span className="text-[10px] font-black text-slate-400 dark:text-slate-505 uppercase tracking-widest block mb-2 font-mono">Announcements</span>
-                        <div className="space-y-1">
+                        <div className="space-y-1.5">
                             {categories.map((cat) => {
                                 const Icon = cat.icon;
                                 const active = selectedFeed.type === 'category' && selectedFeed.id === cat.id;
@@ -193,13 +240,13 @@ export default function MessagesTab({
                                             setSelectedFeed({ type: 'category', id: cat.id, name: cat.name });
                                             setRightSearch('');
                                         }}
-                                        className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-all text-left cursor-pointer ${
+                                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left cursor-pointer ${
                                             active
                                                 ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
                                                 : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                         }`}
                                     >
-                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
                                             active 
                                                 ? 'bg-[#7C5E3F]/10 border-[#7C5E3F]/20 dark:bg-amber-400/10 dark:border-amber-400/20' 
                                                 : 'bg-slate-50 dark:bg-slate-800 border-slate-150 dark:border-slate-700'
@@ -220,22 +267,24 @@ export default function MessagesTab({
                     {/* Chat Contacts Group */}
                     <div>
                         <span className="text-[10px] font-black text-slate-400 dark:text-slate-505 uppercase tracking-widest block mb-2 font-mono">Direct Messages</span>
-                        <div className="space-y-1">
+                        <div className="space-y-1.5">
                             {/* Teacher Contact */}
-                            {classroom?.teacher_id && showTeacherInSearch && (
+                            {classroom?.teacher_id && showTeacherInSearch && (() => {
+                                const unreadCount = getUnreadCountForContact(classroom.teacher_id!, teacherName);
+                                return (
                                 <button
                                     onClick={() => {
                                         setSelectedFeed({ type: 'chat', id: classroom.teacher_id!, name: teacherName });
                                         setRightSearch('');
                                     }}
-                                    className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all text-left cursor-pointer ${
+                                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
                                         selectedFeed.type === 'chat' && selectedFeed.id === classroom.teacher_id
                                             ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
                                             : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-8.5 h-8.5 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-[#ecb613] shrink-0 font-extrabold">
+                                        <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-[#ecb613] shrink-0 font-extrabold">
                                             {teacherName.charAt(0)}
                                         </div>
                                         <div className="min-w-0 text-left">
@@ -246,9 +295,14 @@ export default function MessagesTab({
                                             <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 truncate">{classroom.teacher_email}</p>
                                         </div>
                                     </div>
-                                    <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    {unreadCount > 0 ? (
+                                        <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[9px] font-black shrink-0">{unreadCount}</span>
+                                    ) : (
+                                        <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                    )}
                                 </button>
-                            )}
+                                );
+                            })()}
 
                              {/* Admin Contacts */}
                              {admins.length > 0 && (
@@ -257,6 +311,7 @@ export default function MessagesTab({
                                          const active = selectedFeed.type === 'chat' && selectedFeed.id === admin.id;
                                          const showAdminInSearch = leftSearch === '' || admin.name.toLowerCase().includes(leftSearch.toLowerCase());
                                          if (!showAdminInSearch) return null;
+                                         const unreadCount = getUnreadCountForContact(admin.id, admin.name);
                                          return (
                                              <button
                                                  key={admin.id}
@@ -264,14 +319,14 @@ export default function MessagesTab({
                                                      setSelectedFeed({ type: 'chat', id: admin.id, name: admin.name });
                                                      setRightSearch('');
                                                  }}
-                                                 className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all text-left cursor-pointer ${
+                                                 className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
                                                      active
                                                          ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
                                                          : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                                  }`}
                                              >
                                                  <div className="flex items-center gap-3 min-w-0">
-                                                     <div className="w-8.5 h-8.5 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-500 shrink-0 font-extrabold text-xs">
+                                                     <div className="w-9 h-9 rounded-lg bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-500 shrink-0 font-extrabold text-xs">
                                                          {admin.name.charAt(0)}
                                                      </div>
                                                      <div className="min-w-0 text-left">
@@ -282,7 +337,11 @@ export default function MessagesTab({
                                                          <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 truncate">{admin.email}</p>
                                                      </div>
                                                  </div>
-                                                 <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                 {unreadCount > 0 ? (
+                                                     <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[9px] font-black shrink-0">{unreadCount}</span>
+                                                 ) : (
+                                                     <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                 )}
                                              </button>
                                          );
                                      })}
@@ -297,6 +356,7 @@ export default function MessagesTab({
                             ) : (
                                 filteredClassmates.map((mate) => {
                                     const active = selectedFeed.type === 'chat' && selectedFeed.id === mate.id;
+                                    const unreadCount = getUnreadCountForContact(mate.id, mate.name);
                                     return (
                                         <button
                                             key={mate.id}
@@ -304,14 +364,14 @@ export default function MessagesTab({
                                                 setSelectedFeed({ type: 'chat', id: mate.id, name: mate.name });
                                                 setRightSearch('');
                                             }}
-                                            className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all text-left cursor-pointer ${
+                                            className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
                                                 active
                                                     ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
                                                     : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                             }`}
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
-                                                <div className="w-8.5 h-8.5 rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-750 font-extrabold text-slate-500 text-xs">
+                                                <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-750 font-extrabold text-slate-500 text-xs">
                                                     {mate.profile_pic_url ? (
                                                         <img src={mate.profile_pic_url} alt={mate.name} className="w-full h-full object-cover" />
                                                     ) : (
@@ -323,7 +383,11 @@ export default function MessagesTab({
                                                     <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 truncate">{mate.level}</p>
                                                 </div>
                                             </div>
-                                            <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                            {unreadCount > 0 ? (
+                                                <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-slate-700 text-white text-[9px] font-black shrink-0">{unreadCount}</span>
+                                            ) : (
+                                                <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                            )}
                                         </button>
                                     );
                                 })
@@ -334,9 +398,9 @@ export default function MessagesTab({
             </div>
 
             {/* Right Panel: Content View Area (Broadcasts list or Chat window) */}
-            <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col h-[650px] text-left">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col h-[680px] text-left min-w-0">
                 {/* Header with Search */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4 mb-4 flex-shrink-0">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4 mb-3 flex-shrink-0">
                     <div className="text-left">
                         <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest block font-mono">
                             {selectedFeed.type === 'category' ? 'Announcement Feed' : 'Direct Conversation'}
@@ -370,10 +434,52 @@ export default function MessagesTab({
                     </div>
                 </div>
 
+                <div className="flex-shrink-0 mb-4">
+                    {unreadMessageNotifications.length > 0 ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/80 dark:bg-amber-950/20 dark:border-amber-900/40 p-3">
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <Bell className="w-4 h-4 text-amber-600 shrink-0" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300">Incoming message alerts</span>
+                                </div>
+                                <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 shrink-0">{unreadMessageNotifications.length} unread</span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {unreadMessageNotifications.slice(0, 4).map((notif) => {
+                                    const contact = getNotificationContact(notif);
+                                    return (
+                                        <button
+                                            key={notif.id}
+                                            type="button"
+                                            onClick={() => {
+                                                if (!contact) return;
+                                                setSelectedFeed({ type: 'chat', id: contact.id, name: contact.name });
+                                                setRightSearch('');
+                                            }}
+                                            className="min-w-0 text-left rounded-lg border border-amber-200/70 bg-white/70 dark:bg-slate-900/60 dark:border-amber-900/40 p-2.5 hover:bg-white dark:hover:bg-slate-900 transition-colors cursor-pointer"
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate">{notif.title}</span>
+                                                <span className="text-[9px] font-bold text-amber-600 shrink-0">{new Date(notif.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">{notif.message}</p>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/20 px-3 py-2.5 flex items-center gap-2">
+                            <Inbox className="w-4 h-4 text-slate-400 shrink-0" />
+                            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">No unread message alerts right now.</span>
+                        </div>
+                    )}
+                </div>
+
                 {/* Main View Area */}
                 {selectedFeed.type === 'category' ? (
                     /* CATEGORY BROADCASTS VIEW */
-                    <div className="flex-1 overflow-y-auto space-y-5 pr-1 custom-scrollbar">
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar min-h-0">
                         {filteredBroadcasts.length === 0 ? (
                             <div className="py-20 border border-dashed border-slate-100 dark:border-slate-800 rounded-2xl text-center bg-slate-50/50 dark:bg-slate-950/10">
                                 <Mail className="w-10 h-10 text-slate-350 mx-auto mb-2 animate-pulse" />
@@ -386,7 +492,7 @@ export default function MessagesTab({
                                 return (
                                     <div 
                                         key={b.id} 
-                                        className={`transition-all p-5 rounded-2xl border text-left flex flex-col gap-3.5 ${
+                                        className={`transition-all p-4 rounded-xl border text-left flex flex-col gap-3 ${
                                             isAdmin 
                                                 ? 'bg-[#FAF5EE]/70 dark:bg-slate-850/40 border-[#7C5E3F]/30 hover:bg-[#FAF5EE]/90 shadow-2xs' 
                                                 : 'bg-slate-50/40 dark:bg-slate-850/20 border-slate-150 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-850/55 shadow-3xs'
@@ -448,10 +554,23 @@ export default function MessagesTab({
                 ) : (
                     /* DIRECT CHAT thread WORKSPACE */
                     <>
+                        {latestIncomingMessage && (
+                            <div className="mb-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/20 p-3 flex items-start gap-2.5 flex-shrink-0">
+                                <MessageSquare className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Latest incoming</span>
+                                        <span className="text-[9px] font-bold text-slate-400">{new Date(latestIncomingMessage.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-700 dark:text-slate-300 mt-1 line-clamp-2 break-words">{latestIncomingMessage.message_text}</p>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Messages Thread Bubbles */}
-                        <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 py-1 custom-scrollbar text-left flex flex-col">
+                        <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 py-1 custom-scrollbar text-left flex flex-col min-h-0">
                             {filteredChatThread.length === 0 ? (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-3">
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-3">
                                     <MessageSquare className="w-8 h-8 text-slate-300 dark:text-slate-705 animate-pulse" />
                                     <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
                                         {rightSearch !== '' ? 'No matching messages found' : 'No message history yet'}
@@ -491,7 +610,7 @@ export default function MessagesTab({
                                     return (
                                         <div 
                                             key={msg.id} 
-                                            className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed ${
+                                            className={`max-w-[78%] p-3.5 rounded-2xl text-xs leading-relaxed break-words ${
                                                 isMe 
                                                     ? 'bg-[#7C5E3F] text-white self-end rounded-br-none shadow-2xs' 
                                                     : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 self-start rounded-bl-none border border-slate-100 dark:border-slate-750'

@@ -31,6 +31,7 @@ interface StudentProfile {
 interface ClassroomInfo {
     id: string;
     name: string;
+    type?: string;
     teacher_id?: string;
     teacher_name?: string;
     teacher_email?: string;
@@ -246,10 +247,16 @@ export default function OverviewTab({
                         {classroom && (
                             <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 text-white w-fit text-left shrink-0">
                                 <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
-                                    <Users className="w-4 h-4 text-amber-350" />
+                                    {classroom.type === 'temporary' ? (
+                                        <span className="text-xs">⚡</span>
+                                    ) : (
+                                        <Users className="w-4 h-4 text-amber-350" />
+                                    )}
                                 </div>
                                 <div>
-                                    <p className="text-[8px] font-bold text-white/60 uppercase tracking-wider leading-none">Active Batch</p>
+                                    <p className="text-[8px] font-bold text-white/60 uppercase tracking-wider leading-none">
+                                        {classroom.type === 'temporary' ? 'Temporary Class' : 'Active Batch'}
+                                    </p>
                                     <p className="text-xs font-black mt-0.5">{classroom.name} · {classroom.teacher_name}</p>
                                 </div>
                             </div>
@@ -294,15 +301,48 @@ export default function OverviewTab({
                 </div>
 
                 {/* Class/Batch Card */}
-                <div className="bg-[#FDFBF7] border border-[#E6E1DA] rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm hover:border-[#7C5E3F]/20 transition-all group relative overflow-hidden">
+                <div className={`bg-[#FDFBF7] dark:bg-slate-900/40 border border-[#E6E1DA] dark:border-slate-800 rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm transition-all group relative overflow-hidden ${
+                    classroom
+                        ? classroom.type === 'temporary'
+                            ? 'hover:border-emerald-500/25'
+                            : 'hover:border-blue-500/25'
+                        : 'hover:border-[#7C5E3F]/20'
+                }`}>
                     <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-orange-500/10 transition-colors"></div>
-                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#E3ECF5] text-[#5383B4] flex items-center justify-center shrink-0">
+                    <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shrink-0 ${
+                        classroom
+                            ? classroom.type === 'temporary'
+                                ? 'bg-emerald-50/80 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400'
+                                : 'bg-[#E3ECF5] text-[#5383B4] dark:bg-blue-950/20 dark:text-blue-400'
+                            : 'bg-[#E3ECF5] text-[#5383B4]'
+                    }`}>
                         <Clock className="w-5.5 h-5.5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                        <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">My Batch</p>
-                        <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] truncate mt-0.5">{classroom?.name || 'Not Enrolled'}</h3>
-                        <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E] mt-0.5">Active Class Session</p>
+                        <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">
+                            {classroom
+                                ? classroom.type === 'temporary'
+                                    ? 'Temporary Class'
+                                    : 'My Batch'
+                                : 'My Batch'
+                            }
+                        </p>
+                        <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] dark:text-white truncate mt-0.5">
+                            {classroom ? (
+                                <>
+                                    {classroom.type === 'temporary' ? '⚡ ' : '🏫 '}
+                                    {classroom.name}
+                                </>
+                            ) : 'Not Enrolled'}
+                        </h3>
+                        <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E] mt-0.5">
+                            {classroom
+                                ? classroom.type === 'temporary'
+                                    ? 'Make-up Session / Override'
+                                    : 'Active Class Session'
+                                : 'No Active Classroom'
+                            }
+                        </p>
                     </div>
                 </div>
 

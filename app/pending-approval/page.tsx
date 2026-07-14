@@ -6,6 +6,16 @@ import { supabaseAuth } from '../../src/lib/supabase-auth';
 import { Clock, LogOut, Music, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
+const isNetworkError = (error: any) => {
+    if (!error) return false;
+    const msg = error.message || String(error);
+    return msg.includes('Failed to fetch') || 
+           msg.includes('Load failed') || 
+           msg.includes('NetworkError') || 
+           msg.includes('connection refused') ||
+           (error.name === 'TypeError' && msg.includes('fetch'));
+};
+
 export default function PendingApprovalPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
@@ -13,30 +23,40 @@ export default function PendingApprovalPage() {
 
     useEffect(() => {
         const checkStatus = async () => {
-            setLoading(true);
-            const { data: { session } } = await supabaseAuth.auth.getSession();
-            if (!session) {
-                router.push('/login');
-                return;
-            }
-
-            setUserEmail(session.user.email || '');
-
-            // Re-fetch role to check if it has been updated
-            const { data: userData } = await supabaseAuth
-                .from('users')
-                .select('role')
-                .eq('id', session.user.id)
-                .maybeSingle();
-
-            if (userData && userData.role && userData.role !== 'pending') {
-                const normalizedRole = userData.role.toLowerCase();
-                if (normalizedRole === 'admin' || normalizedRole === 'teacher') {
-                    router.push('/teacher-dashboard');
-                } else if (normalizedRole === 'student') {
-                    router.push('/student-dashboard');
+            try {
+                const { data: { session } } = await supabaseAuth.auth.getSession();
+                if (!session) {
+                    router.push('/login');
+                    return;
                 }
-            } else {
+
+                setUserEmail(session.user.email || '');
+
+                // Re-fetch role to check if it has been updated
+                const { data: userData, error } = await supabaseAuth
+                    .from('users')
+                    .select('role')
+                    .eq('id', session.user.id)
+                    .maybeSingle();
+
+                if (error) throw error;
+
+                if (userData && userData.role && userData.role !== 'pending') {
+                    const normalizedRole = userData.role.toLowerCase();
+                    if (normalizedRole === 'admin' || normalizedRole === 'teacher') {
+                        router.push('/teacher-dashboard');
+                    } else if (normalizedRole === 'student') {
+                        router.push('/student-dashboard');
+                    }
+                } else {
+                    setLoading(false);
+                }
+            } catch (error: any) {
+                if (isNetworkError(error)) {
+                    console.warn('Network issue checking user approval status (will retry):', error?.message || error);
+                } else {
+                    console.error('Error checking user approval status:', error?.message || error);
+                }
                 setLoading(false);
             }
         };
