@@ -417,11 +417,19 @@ export default function RoleAllocationDashboard() {
                                                         </span>
                                                         <div className="flex gap-2">
                                                             {activeTab === 'students' && (
+<<<<<<< Updated upstream
                                                                 <button onClick={() => openAllocationModal(user)} className="px-3 py-1.5 text-xs font-bold bg-[#ecb613]/10 text-[#b45309] rounded-lg">
                                                                     Assign
                                                                 </button>
                                                             )}
                                                             <button onClick={() => openAllocationModal(user)} className="px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 rounded-lg">
+=======
+                                                                <button onClick={() => setAssignTeacherModalOpen(user)} className="px-3 py-1.5 text-xs font-bold bg-[#ecb613]/10 text-[#b45309] rounded-lg">
+                                                                    Assign
+                                                                </button>
+                                                            )}
+                                                            <button onClick={() => setEditModalOpen(user)} className="px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 rounded-lg">
+>>>>>>> Stashed changes
                                                                 Edit
                                                             </button>
                                                         </div>

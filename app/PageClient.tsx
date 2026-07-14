@@ -192,7 +192,7 @@ export function PageClient() {
     };
 
     const getAuthButtonLabel = () => {
-        return userSession ? 'Dashboard' : 'Login';
+        return 'Login';
     };
 
     const [visibleSections, setVisibleSections] = useState<Record<string, boolean>>({});
