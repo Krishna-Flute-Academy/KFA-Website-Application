@@ -797,6 +797,7 @@ export default function FeesManagementDashboard() {
                                     )}
                                 </div>
 
+                                {/* Table */}
                                 <div className="hidden lg:block overflow-x-auto min-h-[350px]">
                                     <table className="w-full min-w-[1100px] border-collapse text-left">
                                         <thead>

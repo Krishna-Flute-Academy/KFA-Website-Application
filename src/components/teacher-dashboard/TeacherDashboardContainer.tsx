@@ -214,6 +214,25 @@ export default function TeacherDashboardContainer() {
 
     const isAdmin = teacherProfile?.role === 'admin';
 
+    
+    // SWR Cache Saver
+    useEffect(() => {
+        if (!teacherProfile) return;
+        const cacheTimer = setTimeout(() => {
+            try {
+                const cacheData = {
+                    teacherProfile, stats, feesStats, recentSubmissions,
+                    classroomSchedules, temporaryClasses, upcomingClasses,
+                    forgottenClasses, classrooms, unassignedStudents,
+                    pendingLeaves, pendingPayments, dueStudents,
+                    pendingSubmissionsList, teachers
+                };
+                localStorage.setItem(`teacherDashboardCache_${teacherProfile.id}`, JSON.stringify(cacheData));
+            } catch (e) { console.error('Cache save error:', e); }
+        }, 1000);
+        return () => clearTimeout(cacheTimer);
+    }, [teacherProfile, stats, feesStats, recentSubmissions, classroomSchedules, temporaryClasses, upcomingClasses, forgottenClasses, classrooms, unassignedStudents, pendingLeaves, pendingPayments, dueStudents, pendingSubmissionsList, teachers]);
+
     const loadDashboardData = async () => {
         try {
             const { data: { session } } = await supabaseAuth.auth.getSession();
