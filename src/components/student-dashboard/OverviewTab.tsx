@@ -224,7 +224,7 @@ export default function OverviewTab({
             
             {/* Welcome Banner Card */}
             <div 
-                className="bg-cover bg-center rounded-3xl relative p-5 sm:p-8 text-white min-h-[200px] md:min-h-[280px] flex items-center shadow-md overflow-hidden border border-[#E6E1DA] text-left"
+                className="bg-cover bg-center rounded-3xl relative p-4 sm:p-8 text-white min-h-[140px] md:min-h-[280px] flex items-center shadow-md overflow-hidden border border-[#E6E1DA] text-left"
                 style={{ backgroundImage: "url('/flutes_custom.jpg')" }}
             >
                 {/* Overlay to ensure text readability */}
