@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { supabaseAuth } from '../lib/supabase-auth';
 
 // 2 hours in milliseconds
 const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -16,13 +16,13 @@ export default function AutoLogoutProvider({ children }: { children: React.React
     // Check if user is logged in
     useEffect(() => {
         const checkAuth = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await supabaseAuth.auth.getSession();
             setIsAuthenticated(!!session);
         };
         
         checkAuth();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        const { data: { subscription } } = supabaseAuth.auth.onAuthStateChange((event, session) => {
             setIsAuthenticated(!!session);
         });
 
@@ -30,7 +30,7 @@ export default function AutoLogoutProvider({ children }: { children: React.React
     }, []);
 
     const handleLogout = async () => {
-        await supabase.auth.signOut();
+        await supabaseAuth.auth.signOut();
         setIsAuthenticated(false);
         // Optional: clear any local storage caches
         router.push('/login?message=Logged out due to inactivity');

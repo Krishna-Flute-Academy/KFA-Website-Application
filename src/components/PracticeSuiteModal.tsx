@@ -26,8 +26,9 @@ const TUNING_MODES = [
 ];
 
 interface ActiveTanpuraNode {
-    osc1: OscillatorNode;
-    osc2: OscillatorNode;
+    osc1?: OscillatorNode;
+    osc2?: OscillatorNode;
+    source?: AudioBufferSourceNode;
     gainNode: GainNode;
 }
 
@@ -258,6 +259,24 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     const [isTanpuraPlaying, setIsTanpuraPlaying] = useState(false);
     const [tanpuraVolume, setTanpuraVolume] = useState(0.5);
     const activeTanpuraNodesRef = useRef<ActiveTanpuraNode[]>([]);
+    const tanpuraBufferRef = useRef<AudioBuffer | null>(null);
+
+    // Pre-load Tanpura Audio
+    useEffect(() => {
+        const loadTanpura = async () => {
+            try {
+                const response = await fetch('/sounds/tanpura/Tanpura_c.mp3');
+                if (response.ok) {
+                    const arrayBuffer = await response.arrayBuffer();
+                    const ctx = getCtx();
+                    tanpuraBufferRef.current = await ctx.decodeAudioData(arrayBuffer);
+                }
+            } catch (e) {
+                // Silently fallback to synthesizer if not found
+            }
+        };
+        loadTanpura();
+    }, []);
     
     const tanpuraVolumeRef = useRef(tanpuraVolume);
     useEffect(() => { tanpuraVolumeRef.current = tanpuraVolume; }, [tanpuraVolume]);
@@ -410,14 +429,15 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
             try {
                 if (ctx) {
                     node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
-                    node.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+                    node.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
                 }
                 setTimeout(() => {
                     try {
-                        node.osc1.stop();
-                        node.osc2.stop();
+                        if (node.osc1) node.osc1.stop();
+                        if (node.osc2) node.osc2.stop();
+                        if (node.source) node.source.stop();
                     } catch (_) {}
-                }, 400);
+                }, 850);
             } catch (_) {}
         });
         activeTanpuraNodesRef.current = [];
@@ -428,22 +448,45 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
             const ctx = getCtx();
             if (ctx.state === 'suspended') ctx.resume();
 
-            const baseFreq = selectedPitch.freq;
-            const mode = selectedTuningMode;
+            if (tanpuraBufferRef.current) {
+                // ── REAL AUDIO SAMPLE PLAYBACK ──
+                const source = ctx.createBufferSource();
+                source.buffer = tanpuraBufferRef.current;
+                source.loop = true;
+                
+                // Magic: Pitch-shift the C scale file dynamically for ANY selected pitch!
+                // C (Kali 1) is 261.63 Hz.
+                source.playbackRate.value = selectedPitch.freq / 261.63;
+                
+                const gainNode = ctx.createGain();
+                gainNode.gain.setValueAtTime(0, ctx.currentTime);
+                // Real audio doesn't need to be as loud internally as 4 combined oscillators
+                gainNode.gain.linearRampToValueAtTime(tanpuraVolumeRef.current * 0.8, ctx.currentTime + 1.0);
+                
+                source.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                source.start();
+                
+                activeTanpuraNodesRef.current = [{ source, gainNode }];
+            } else {
+                // ── SYNTHESIZER FALLBACK ──
+                const baseFreq = selectedPitch.freq;
+                const mode = selectedTuningMode;
 
-            const frequencies = [
-                baseFreq * 0.5,
-                baseFreq,
-                baseFreq * mode.mult,
-                baseFreq * 2.0
-            ];
-            const mixVolumes = [1.0, 0.8, 0.75, 0.45];
+                const frequencies = [
+                    baseFreq * 0.5,
+                    baseFreq,
+                    baseFreq * mode.mult,
+                    baseFreq * 2.0
+                ];
+                const mixVolumes = [1.0, 0.8, 0.75, 0.45];
 
-            const nodes = frequencies.map((freq, idx) => 
-                startTanpuraNode(ctx, freq, mixVolumes[idx])
-            );
+                const nodes = frequencies.map((freq, idx) => 
+                    startTanpuraNode(ctx, freq, mixVolumes[idx])
+                );
 
-            activeTanpuraNodesRef.current = nodes;
+                activeTanpuraNodesRef.current = nodes;
+            }
         } catch (err) {
             console.error('Failed to start Tanpura:', err);
         }
@@ -453,14 +496,23 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     useEffect(() => {
         const ctx = audioCtxRef.current;
         if (!ctx || activeTanpuraNodesRef.current.length === 0) return;
-        const mixVolumes = [1.0, 0.8, 0.75, 0.45];
-        activeTanpuraNodesRef.current.forEach((node, idx) => {
-            try {
-                const targetGain = tanpuraVolume * mixVolumes[idx] * 0.22;
-                node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
-                node.gainNode.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.1);
-            } catch (_) {}
-        });
+        
+        if (tanpuraBufferRef.current) {
+             const node = activeTanpuraNodesRef.current[0];
+             if (node && node.gainNode) {
+                 node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
+                 node.gainNode.gain.linearRampToValueAtTime(tanpuraVolume * 0.8, ctx.currentTime + 0.1);
+             }
+        } else {
+             const mixVolumes = [1.0, 0.8, 0.75, 0.45];
+             activeTanpuraNodesRef.current.forEach((node, idx) => {
+                 try {
+                     const targetGain = tanpuraVolume * mixVolumes[idx] * 0.22;
+                     node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
+                     node.gainNode.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.1);
+                 } catch (_) {}
+             });
+        }
     }, [tanpuraVolume]);
 
     // Handle Tanpura Play state changes
