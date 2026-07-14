@@ -1895,7 +1895,7 @@ export default function StudentDashboardContainer() {
                                 </button>
                                 
                                 {showNotificationsDropdown && (
-                                    <div className="absolute right-0 mt-8 w-80 bg-[#FAF6F0] rounded-xl border border-[#E6E1DA] shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="absolute -right-24 md:right-0 mt-8 w-[calc(100vw-2rem)] max-w-sm sm:w-80 bg-[#FAF6F0] rounded-xl border border-[#E6E1DA] shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                                         <div className="px-4 py-2 border-b border-[#E6E1DA] flex items-center justify-between">
                                             <span className="font-bold text-sm text-[#3E3A35]">Notifications</span>
                                             {notifications.filter(n => !n.is_read).length > 0 && (

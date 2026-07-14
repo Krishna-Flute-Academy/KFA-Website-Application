@@ -224,20 +224,20 @@ export default function OverviewTab({
             
             {/* Welcome Banner Card */}
             <div 
-                className="bg-cover bg-center rounded-3xl relative p-6 sm:p-8 text-white min-h-[240px] md:min-h-[280px] flex items-center shadow-md overflow-hidden border border-[#E6E1DA] text-left"
+                className="bg-cover bg-center rounded-3xl relative p-5 sm:p-8 text-white min-h-[200px] md:min-h-[280px] flex items-center shadow-md overflow-hidden border border-[#E6E1DA] text-left"
                 style={{ backgroundImage: "url('/flutes_custom.jpg')" }}
             >
                 {/* Overlay to ensure text readability */}
                 <div className="absolute inset-0 bg-gradient-to-r from-[#2B1B0E]/95 via-[#2B1B0E]/75 to-transparent pointer-events-none"></div>
                 
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 w-full">
-                    <div className="space-y-4 max-w-xl">
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 w-full">
+                    <div className="space-y-3 md:space-y-4 max-w-xl">
                         <div>
-                            <span className="bg-[#FAF5EE] text-[#7C5E3F] text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
+                            <span className="bg-[#FAF5EE] text-[#7C5E3F] text-[9px] md:text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-xs">
                                 ★ Flute Academy Student Portal
                             </span>
                         </div>
-                        <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight text-white">
+                        <h1 className="text-2xl sm:text-3xl md:text-5xl font-black tracking-tight leading-tight text-white">
                             Namaste, {profile?.name?.split(' ')[0]}!
                         </h1>
                         <p className="text-sm font-medium text-slate-200 leading-relaxed italic">
