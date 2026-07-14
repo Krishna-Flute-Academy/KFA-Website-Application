@@ -713,8 +713,91 @@ export default function FeesManagementDashboard() {
                                     </div>
                                 </div>
 
-                                {/* Table */}
-                                <div className="overflow-x-auto min-h-[350px]">
+                                {/* Mobile Cards View */}
+                                <div className="block lg:hidden divide-y divide-slate-100 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
+                                    {paginatedStudents.length > 0 ? (
+                                        paginatedStudents.map(student => {
+                                            const status = getStudentStatus(student);
+                                            const rowUrgencyClass = status === 'overdue' 
+                                                ? 'border-l-4 border-l-rose-500 bg-rose-50/10 dark:bg-rose-950/10'
+                                                : status === 'due_classes'
+                                                ? 'border-l-4 border-l-amber-500 bg-amber-50/10 dark:bg-amber-950/10'
+                                                : status === 'pending_verification'
+                                                ? 'border-l-4 border-l-blue-500 bg-blue-50/10 dark:bg-blue-950/10'
+                                                : status === 'setup_required'
+                                                ? 'border-l-4 border-l-slate-300 dark:border-l-slate-600 bg-slate-50 dark:bg-slate-800/30'
+                                                : 'border-l-4 border-l-transparent hover:bg-slate-50/50 dark:hover:bg-slate-800/10';
+                                            return (
+                                                <div key={student.id} className={`p-4 space-y-3 ${rowUrgencyClass}`}>
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="size-10 rounded-full bg-[#ecb613]/10 text-[#ecb613] font-bold flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
+                                                                {student.profile_pic_url ? (
+                                                                    <img src={student.profile_pic_url} alt="" className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <span>{student.name.charAt(0)}</span>
+                                                                )}
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">{student.name}</p>
+                                                                <p className="text-[10px] font-medium text-slate-400 mt-1">{student.batch_name === 'Unassigned' ? 'No Batch' : student.batch_name}</p>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-sm font-black text-slate-800 dark:text-slate-200">
+                                                            ₹{student.fees_amount.toLocaleString('en-IN')}
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                                        <div className="p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                                            <span className="block text-[10px] font-bold text-slate-400 uppercase">Plan</span>
+                                                            <span className="font-semibold text-slate-700 dark:text-slate-300">{student.fees_basis === 'monthly' ? 'Monthly' : 'Class Basis'}</span>
+                                                        </div>
+                                                        <div className="p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                                            <span className="block text-[10px] font-bold text-slate-400 uppercase">Classes Left</span>
+                                                            <span className={`font-black ${
+                                                                student.fees_classes_paid <= 0
+                                                                    ? 'text-rose-600 dark:text-rose-400'
+                                                                    : student.fees_classes_paid === 1
+                                                                        ? 'text-amber-500'
+                                                                        : 'text-slate-700 dark:text-slate-300'
+                                                            }`}>{student.fees_classes_paid}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                        <div className="flex items-center gap-2">
+                                                            {status === 'good' && (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">Active</span>
+                                                            )}
+                                                            {status === 'overdue' && (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700">Overdue</span>
+                                                            )}
+                                                            {status === 'due_classes' && (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700">Classes Expired</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button onClick={() => openHistoryModal(student)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500">
+                                                                <History className="size-4" />
+                                                            </button>
+                                                            {status !== 'setup_required' && (
+                                                                <button onClick={() => openPaymentModal(student)} className="px-3 py-1.5 text-xs font-black bg-[#ecb613] text-white rounded-lg shadow-sm">
+                                                                    Collect ₹
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="p-8 text-center text-slate-400">
+                                            <DollarSign className="size-8 text-slate-300 mx-auto mb-2" />
+                                            <p className="text-sm font-bold">No students found</p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="hidden lg:block overflow-x-auto min-h-[350px]">
                                     <table className="w-full min-w-[1100px] border-collapse text-left">
                                         <thead>
                                             <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/20">

@@ -523,9 +523,9 @@ export default function AttendanceTab({
             {/* Request Excuse Modal */}
             {showExcuseModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-md w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left">
                         {/* Header */}
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850/40">
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850/40 shrink-0">
                             <div>
                                 <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest block">Class Leave Request</span>
                                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-1.5">Inform Absence / Request Excuse</h3>
@@ -543,7 +543,7 @@ export default function AttendanceTab({
                         </div>
                         
                         {/* Form */}
-                        <form onSubmit={handleSubmitExcuse} className="p-6 space-y-4">
+                        <form onSubmit={handleSubmitExcuse} className="p-6 space-y-4 overflow-y-auto flex-1">
                             <p className="text-xs text-slate-500 leading-relaxed">
                                 Informing your teacher and academy admin in advance helps us reschedule classes. Submitting this request logs an <strong>Excused Absence</strong> and makes you eligible for a makeup/alternative slot.
                             </p>

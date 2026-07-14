@@ -359,8 +359,85 @@ export default function RoleAllocationDashboard() {
                                     </div>
                                 </div>
 
+                                {/* Mobile Cards View */}
+                                <div className="block lg:hidden divide-y divide-slate-100 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
+                                    {filteredUsers.length > 0 ? (
+                                        filteredUsers.map(user => {
+                                            const classroomData = user.classroom_students?.[0]?.classrooms;
+                                            const class_name = Array.isArray(classroomData)
+                                                ? (classroomData[0] as any)?.name || 'Not assigned'
+                                                : (classroomData as any)?.name || 'Not assigned';
+                                            const teacherName = teachers.find(t => t.id === user.teacher_id)?.name || 'Not assigned';
+                                            
+                                            return (
+                                                <div key={user.id} className="p-4 space-y-3">
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="size-10 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800">
+                                                                <span>{user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}</span>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">{user.name || 'Unassigned Name'}</p>
+                                                                <p className="text-[10px] text-slate-500 mt-1">{user.email}</p>
+                                                            </div>
+                                                        </div>
+                                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
+                                                            user.role === 'admin'
+                                                                ? 'bg-red-50 text-red-600'
+                                                                : user.role === 'teacher'
+                                                                    ? 'bg-blue-50 text-blue-600'
+                                                                    : user.role === 'student'
+                                                                        ? 'bg-green-50 text-green-700'
+                                                                        : 'bg-slate-100 text-slate-500'
+                                                        }`}>
+                                                            {user.role}
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    {activeTab === 'students' && (
+                                                        <div className="grid grid-cols-2 gap-2 text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                                            <div>
+                                                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Teacher</span>
+                                                                <span className="font-semibold text-slate-700 dark:text-slate-300">{teacherName}</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Batch</span>
+                                                                <span className="font-semibold text-slate-700 dark:text-slate-300">{class_name}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                            user.status === 'active'
+                                                                ? 'bg-emerald-50 text-emerald-700'
+                                                                : 'bg-amber-50 text-amber-700'
+                                                        }`}>
+                                                            {user.status}
+                                                        </span>
+                                                        <div className="flex gap-2">
+                                                            {activeTab === 'students' && (
+                                                                <button onClick={() => setAssignTeacherModalOpen(user)} className="px-3 py-1.5 text-xs font-bold bg-[#ecb613]/10 text-[#b45309] rounded-lg">
+                                                                    Assign
+                                                                </button>
+                                                            )}
+                                                            <button onClick={() => setEditModalOpen(user)} className="px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 rounded-lg">
+                                                                Edit
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="p-8 text-center text-slate-400">
+                                            <p className="text-sm font-bold">No users found</p>
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* Table */}
-                                <div className="overflow-x-auto min-h-[350px]">
+                                <div className="hidden lg:block overflow-x-auto min-h-[350px]">
                                     <table className="w-full border-collapse text-left">
                                         <thead>
                                             <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/20">

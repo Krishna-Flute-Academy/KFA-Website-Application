@@ -145,9 +145,34 @@ export default function StudentDashboardContainer() {
     const notifDropdownRef = useRef<HTMLDivElement>(null);
     const refreshDataRef = useRef<() => Promise<void>>(null as any);
     const classroomIdsRef = useRef<string[]>([]);
+    const audioCtxRef = useRef<any>(null);
     useEffect(() => {
         refreshDataRef.current = refreshData;
     });
+
+    // Mobile Audio Unlock: Create AudioContext on first user interaction so it isn't blocked by mobile browsers
+    useEffect(() => {
+        const unlockAudio = () => {
+            if (!audioCtxRef.current) {
+                const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+                if (AudioContext) {
+                    audioCtxRef.current = new AudioContext();
+                    // Resume state if suspended
+                    if (audioCtxRef.current.state === 'suspended') {
+                        audioCtxRef.current.resume();
+                    }
+                }
+            }
+            window.removeEventListener('touchstart', unlockAudio);
+            window.removeEventListener('click', unlockAudio);
+        };
+        window.addEventListener('touchstart', unlockAudio, { once: true });
+        window.addEventListener('click', unlockAudio, { once: true });
+        return () => {
+            window.removeEventListener('touchstart', unlockAudio);
+            window.removeEventListener('click', unlockAudio);
+        };
+    }, []);
 
     // Curriculum states
     const [courseModules, setCourseModules] = useState<any[]>([]);
@@ -309,6 +334,7 @@ export default function StudentDashboardContainer() {
     };
 
     const refreshData = async () => {
+        refreshDataRef.current = refreshData;
         try {
             const { data: { session } } = await supabaseAuth.auth.getSession();
             if (!session) { router.push('/login'); return; }
@@ -759,9 +785,9 @@ export default function StudentDashboardContainer() {
 
                     // Play a soft flute-like chime sound using the browser's Web Audio API
                     try {
-                        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-                        if (AudioContext) {
-                            const ctx = new AudioContext();
+                        const ctx = audioCtxRef.current;
+                        if (ctx) {
+                            if (ctx.state === 'suspended') ctx.resume();
                             const now = ctx.currentTime;
                             
                             // Fundamental note (pleasant triangle wave)

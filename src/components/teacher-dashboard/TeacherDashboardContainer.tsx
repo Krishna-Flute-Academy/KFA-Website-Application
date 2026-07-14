@@ -1224,15 +1224,16 @@ export default function TeacherDashboardContainer() {
             {showTempModal && (
                 <>
                     <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => { setShowTempModal(false); setStudentSearchQuery(''); }} />
-                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 text-left">
-                        <div className="flex items-center justify-between mb-6">
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 text-left flex flex-col max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between mb-6 shrink-0">
                             <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Add Temporary Class</h3>
                             <button onClick={() => { setShowTempModal(false); setTempSelectedStudents([]); setStudentSearchQuery(''); }} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <X size={18} />
                             </button>
                         </div>
-                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-4">Date: {tempModalDate}</p>
-                        <div className="space-y-4">
+                        <div className="overflow-y-auto flex-1 pr-1 -mr-1">
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-4 shrink-0">Date: {tempModalDate}</p>
+                            <div className="space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">Title</label>
                                 <input
@@ -1332,13 +1333,13 @@ export default function TeacherDashboardContainer() {
                                     )}
                                 </div>
                             </div>
+                            <button
+                                onClick={handleCreateTempClass}
+                                className="mt-6 w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-500/20 text-sm shrink-0"
+                            >
+                                Create Temporary Class
+                            </button>
                         </div>
-                        <button
-                            onClick={handleCreateTempClass}
-                            className="mt-6 w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-500/20 text-sm"
-                        >
-                            Create Temporary Class
-                        </button>
                     </div>
                 </>
             )}
@@ -1347,14 +1348,14 @@ export default function TeacherDashboardContainer() {
             {showNoteModal && (
                 <>
                     <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => setShowNoteModal(false)} />
-                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-[450px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 animate-in fade-in zoom-in duration-200 text-left">
-                        <div className="flex items-center justify-between mb-6">
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-[450px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 animate-in fade-in zoom-in duration-200 text-left flex flex-col max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between mb-6 shrink-0">
                             <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">{noteForm.id ? 'Edit Idea / Note' : 'Add New Idea / Note'}</h3>
                             <button onClick={() => setShowNoteModal(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <X size={18} />
                             </button>
                         </div>
-                        <form onSubmit={handleSaveNote} className="space-y-4">
+                        <form onSubmit={handleSaveNote} className="space-y-4 overflow-y-auto flex-1 pr-1 -mr-1">
                             <div>
                                 <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">Note Title</label>
                                 <input
@@ -1413,7 +1414,7 @@ export default function TeacherDashboardContainer() {
                             <button
                                 type="submit"
                                 disabled={isSavingNote}
-                                className="mt-6 w-full py-3 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-bold rounded-xl transition-all shadow-lg shadow-[#ecb613]/20 text-sm flex items-center justify-center gap-2"
+                                className="mt-6 w-full py-3 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-bold rounded-xl transition-all shadow-lg shadow-[#ecb613]/20 text-sm flex items-center justify-center gap-2 shrink-0"
                             >
                                 {isSavingNote && <Loader2 className="w-4 h-4 animate-spin" />}
                                 {noteForm.id ? 'Update Note' : 'Save Note'}
