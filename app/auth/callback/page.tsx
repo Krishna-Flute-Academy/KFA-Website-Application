@@ -29,11 +29,55 @@ export default function AuthCallbackPage() {
             setUserName(googleName);
 
             // Check if user exists in the public.users table
-            const { data: existingUser } = await supabaseAuth
+            let { data: existingUser } = await supabaseAuth
                 .from('users')
-                .select('role, status, name')
+                .select('id, role, status, name')
                 .eq('id', userId)
                 .maybeSingle();
+
+            // Self-healing merge check for pre-registered teacher or admin profiles
+            const isPendingOrNull = !existingUser || existingUser.role === 'pending' || existingUser.role === 'student';
+            
+            if (isPendingOrNull && googleEmail) {
+                // Look for an existing non-pending, non-student account with this email (case-insensitive)
+                const { data: existingTeacherByEmail } = await supabaseAuth
+                    .from('users')
+                    .select('id, role, status, name, email')
+                    .ilike('email', googleEmail)
+                    .neq('role', 'pending')
+                    .neq('role', 'student')
+                    .maybeSingle();
+
+                if (existingTeacherByEmail) {
+                    console.log('Found pre-registered teacher profile by email:', existingTeacherByEmail);
+                    
+                    // If a duplicate pending user row was created by trigger, delete it to prevent primary key conflicts
+                    if (existingUser && existingUser.id !== existingTeacherByEmail.id) {
+                        await supabaseAuth
+                            .from('users')
+                            .delete()
+                            .eq('id', existingUser.id);
+                    }
+                    
+                    // Link the pre-registered profile to the new Google Auth ID
+                    const { error: updateError } = await supabaseAuth
+                        .from('users')
+                        .update({ id: userId, email: googleEmail })
+                        .eq('id', existingTeacherByEmail.id);
+
+                    if (!updateError) {
+                        console.log('Successfully merged teacher profile!');
+                        existingUser = {
+                            id: userId,
+                            role: existingTeacherByEmail.role,
+                            status: existingTeacherByEmail.status,
+                            name: existingTeacherByEmail.name
+                        };
+                    } else {
+                        console.error('Error merging teacher profile:', updateError);
+                    }
+                }
+            }
 
             if (!existingUser) {
                 // User signed in with Google but has NO account in our system
