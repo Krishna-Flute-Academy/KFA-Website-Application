@@ -4,7 +4,7 @@ import React from 'react';
 import { FileText, Download, Volume2, Music } from 'lucide-react';
 
 interface LibraryTabProps {
-    setPracticeSuiteTab: (tab: 'metronome' | 'drums') => void;
+    setPracticeSuiteTab: (tab: 'metronome' | 'tanpura' | 'drums') => void;
     setShowPracticeSuite: (show: boolean) => void;
 }
 
@@ -61,7 +61,7 @@ export default function LibraryTab({
                         </div>
                         <button 
                             onClick={() => {
-                                setPracticeSuiteTab('metronome');
+                                setPracticeSuiteTab('tanpura');
                                 setShowPracticeSuite(true);
                             }}
                             className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"

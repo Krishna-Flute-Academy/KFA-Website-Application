@@ -224,7 +224,7 @@ export default function StudentDashboardContainer() {
     const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees'>('overview');
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
-    const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'drums'>('metronome');
+    const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums'>('metronome');
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
@@ -411,7 +411,18 @@ export default function StudentDashboardContainer() {
             setCourseChapters(chaptersRes.data || []);
             setCourseLessons(lessonsRes.data || []);
             setStudentProgress(progressRes.data || []);
-            setDirectMessages([...(messagesRes.data || [])].reverse());
+            const rawMessages = messagesRes.data || [];
+            setDirectMessages([...rawMessages].reverse());
+            
+            // Mark incoming messages as delivered when loaded
+            const undeliveredMessages = rawMessages.filter(m => m.receiver_id === userId && (!m.status || m.status === 'sent'));
+            if (undeliveredMessages.length > 0) {
+                supabaseAuth
+                    .from('messages')
+                    .update({ status: 'delivered' })
+                    .in('id', undeliveredMessages.map(m => m.id))
+                    .then();
+            }
             setAdmins(adminsRes.data || []);
 
             // Process classroom mapping fallbacks if empty
@@ -768,55 +779,66 @@ export default function StudentDashboardContainer() {
             .on(
                 'postgres_changes',
                 {
-                    event: 'INSERT',
+                    event: '*',
                     schema: 'public',
                     table: 'notifications',
                     filter: `user_id=eq.${profile.id}`
                 },
                 (payload) => {
                     console.log('Realtime notification payload received:', payload);
-                    const newNotif = payload.new;
-                    setNotifications(prev => [newNotif, ...prev]);
-
-                    // Auto-refresh data if notification is related to fees/payments
-                    if (newNotif.title && (newNotif.title.includes('Fee') || newNotif.title.includes('Payment'))) {
-                        refreshDataRef.current();
-                    }
-
-                    // Play a soft flute-like chime sound using the browser's Web Audio API
-                    try {
-                        const ctx = audioCtxRef.current;
-                        if (ctx) {
-                            if (ctx.state === 'suspended') ctx.resume();
-                            const now = ctx.currentTime;
-                            
-                            // Fundamental note (pleasant triangle wave)
-                            const osc1 = ctx.createOscillator();
-                            osc1.type = 'triangle';
-                            osc1.frequency.setValueAtTime(587.33, now); // D5
-                            osc1.frequency.exponentialRampToValueAtTime(880.00, now + 0.15); // slide up to A5
-                            
-                            const gainNode = ctx.createGain();
-                            gainNode.gain.setValueAtTime(0, now);
-                            gainNode.gain.linearRampToValueAtTime(0.25, now + 0.05); // fade in
-                            gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.65); // fade out
-                            
-                            osc1.connect(gainNode);
-                            gainNode.connect(ctx.destination);
-                            
-                            osc1.start(now);
-                            osc1.stop(now + 0.7);
-                        }
-                    } catch (e) {
-                        console.warn('Web Audio chime playback failed:', e);
-                    }
-
-                    // Show native browser notification if allowed
-                    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-                        new Notification(newNotif.title, {
-                            body: newNotif.message,
-                            icon: '/favicon.png'
+                    if (payload.eventType === 'INSERT') {
+                        const newNotif = payload.new;
+                        setNotifications(prev => {
+                            if (prev.some(n => n.id === newNotif.id)) return prev;
+                            return [newNotif, ...prev];
                         });
+
+                        // Auto-refresh data if notification is related to fees/payments
+                        if (newNotif.title && (newNotif.title.includes('Fee') || newNotif.title.includes('Payment'))) {
+                            refreshDataRef.current();
+                        }
+
+                        // Play a soft flute-like chime sound using the browser's Web Audio API
+                        try {
+                            const ctx = audioCtxRef.current;
+                            if (ctx) {
+                                if (ctx.state === 'suspended') ctx.resume();
+                                const now = ctx.currentTime;
+                                
+                                // Fundamental note (pleasant triangle wave)
+                                const osc1 = ctx.createOscillator();
+                                osc1.type = 'triangle';
+                                osc1.frequency.setValueAtTime(587.33, now); // D5
+                                osc1.frequency.exponentialRampToValueAtTime(880.00, now + 0.15); // slide up to A5
+                                
+                                const gainNode = ctx.createGain();
+                                gainNode.gain.setValueAtTime(0, now);
+                                gainNode.gain.linearRampToValueAtTime(0.25, now + 0.05); // fade in
+                                gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.65); // fade out
+                                
+                                osc1.connect(gainNode);
+                                gainNode.connect(ctx.destination);
+                                
+                                osc1.start(now);
+                                osc1.stop(now + 0.7);
+                            }
+                        } catch (e) {
+                            console.warn('Web Audio chime playback failed:', e);
+                        }
+
+                        // Show native browser notification if allowed
+                        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                            new Notification(newNotif.title, {
+                                body: newNotif.message,
+                                icon: '/favicon.png'
+                            });
+                        }
+                    } else if (payload.eventType === 'UPDATE') {
+                        const updatedNotif = payload.new;
+                        setNotifications(prev => prev.map(n => n.id === updatedNotif.id ? updatedNotif : n));
+                    } else if (payload.eventType === 'DELETE') {
+                        const deletedNotif = payload.old;
+                        setNotifications(prev => prev.filter(n => n.id !== deletedNotif.id));
                     }
                 }
             )
@@ -1159,6 +1181,7 @@ export default function StudentDashboardContainer() {
                 sender_id: profile.id,
                 receiver_id: receiverId,
                 message_text: text.trim(),
+                status: 'sent',
                 created_at: new Date().toISOString()
             };
             const { data, error } = await supabaseAuth
@@ -1168,7 +1191,7 @@ export default function StudentDashboardContainer() {
             
             if (error) throw error;
             if (data) {
-                setDirectMessages(prev => [...prev, data[0]]);
+                setDirectMessages(prev => prev.some(m => m.id === data[0].id) ? prev : [...prev, data[0]]);
                 
                 // Send notification to the recipient of the message
                 try {
@@ -1716,6 +1739,10 @@ export default function StudentDashboardContainer() {
         return broadcasts.filter(b => b.sender?.role === 'admin' && !dismissedAdminBroadcasts.includes(b.id));
     }, [broadcasts, dismissedAdminBroadcasts]);
 
+    const unreadMessageCount = useMemo(() => {
+        return notifications.filter(n => !n.is_read && (n.type === 'messages' || n.type === 'reminder')).length;
+    }, [notifications]);
+
     if (loading) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8fafc]">
@@ -1806,11 +1833,12 @@ export default function StudentDashboardContainer() {
                             { id: 'tasks', label: 'Tasks & Submissions', icon: ClipboardList },
                             { id: 'messages', label: 'Message Center', icon: Mail },
                             { id: 'attendance', label: 'Attendance logs', icon: Calendar },
-                            { id: 'library', label: 'Library & Tools', icon: FileText },
+                            { id: 'library', label: 'Tools', icon: FileText },
                             { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
                         ].map((item) => {
                             const Icon = item.icon;
                             const active = activeTab === item.id;
+                            const hasUnreadMessages = item.id === 'messages' && unreadMessageCount > 0;
                             return (
                                 <button
                                     key={item.id}
@@ -1821,13 +1849,15 @@ export default function StudentDashboardContainer() {
                                     className={`w-full flex items-center gap-3 py-3 transition-all relative ${
                                         active 
                                             ? 'bg-[#FAF5EE] text-[#7C5E3F] font-black border-l-4 border-[#7C5E3F] pl-3.5 pr-4 rounded-r-2xl' 
-                                            : 'text-[#5C5852] hover:bg-[#FAF5EE]/50 hover:text-[#7C5E3F] px-4 rounded-xl'
+                                            : hasUnreadMessages
+                                                ? 'bg-[#FAF5EE]/45 text-[#7C5E3F] font-bold border-l-4 border-amber-400/80 pl-3.5 pr-4 rounded-r-2xl shadow-3xs'
+                                                : 'text-[#5C5852] hover:bg-[#FAF5EE]/50 hover:text-[#7C5E3F] px-4 rounded-xl'
                                     }`}
                                 >
-                                    <Icon className={`w-[22px] h-[22px] shrink-0 ${active ? 'text-[#7C5E3F]' : 'text-slate-400'}`} />
+                                    <Icon className={`w-[22px] h-[22px] shrink-0 ${active ? 'text-[#7C5E3F]' : hasUnreadMessages ? 'text-amber-500' : 'text-slate-400'}`} />
                                     <span className="text-sm font-semibold">{item.label}</span>
                                     {item.id === 'tasks' && assignments.filter(a => a.status === 'pending').length > 0 && (
-                                        <span className="ml-auto w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center animate-in scale-in duration-200">
+                                        <span className="ml-auto w-5 h-5 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center shrink-0 animate-in scale-in duration-200">
                                             {assignments.filter(a => a.status === 'pending').length}
                                         </span>
                                     )}
@@ -1836,15 +1866,10 @@ export default function StudentDashboardContainer() {
                                             Live
                                         </span>
                                     )}
-                                    {item.id === 'messages' && (
-                                        unreadAdminBroadcasts.length > 0 ? (
-                                            <span className="ml-auto flex h-2 w-2 relative shrink-0">
-                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#d49900] opacity-75"></span>
-                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#d49900]"></span>
-                                            </span>
-                                        ) : broadcasts.length > 0 ? (
-                                            <span className="ml-auto w-2 h-2 rounded-full bg-orange-500 shrink-0"></span>
-                                        ) : null
+                                    {item.id === 'messages' && unreadMessageCount > 0 && (
+                                        <span className="ml-auto w-5 h-5 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center shrink-0 animate-in scale-in duration-200">
+                                            {unreadMessageCount}
+                                        </span>
                                     )}
                                 </button>
                             );
@@ -1878,7 +1903,7 @@ export default function StudentDashboardContainer() {
                                 <Music className="w-5 h-5" />
                             </div>
                             <h2 className="text-[#3E3A35] font-extrabold tracking-tight capitalize text-sm md:text-base">
-                                {activeTab === 'library' ? 'Library & Tools' : activeTab === 'tasks' ? 'Tasks & Submissions' : activeTab}
+                                {activeTab === 'library' ? 'Tools' : activeTab === 'tasks' ? 'Tasks & Submissions' : activeTab}
                             </h2>
                         </div>
 
@@ -1890,7 +1915,9 @@ export default function StudentDashboardContainer() {
                                 >
                                     <span className="material-symbols-outlined text-xl text-[#5C5852]">notifications</span>
                                     {notifications.filter(n => !n.is_read).length > 0 && (
-                                        <span className="absolute top-1 right-1 w-2 h-2 bg-[#d49900] rounded-full"></span>
+                                        <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#d49900] text-white text-[9px] font-black leading-none shadow-sm animate-in scale-in duration-200">
+                                            {notifications.filter(n => !n.is_read).length}
+                                        </span>
                                     )}
                                 </button>
                                 

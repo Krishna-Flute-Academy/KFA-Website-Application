@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Mail, Loader2, Volume2, Search, MessageSquare, Send, Users, ChevronRight, FileAudio, Megaphone, CreditCard, Sparkles, Bell, Inbox } from 'lucide-react';
+import { supabaseAuth } from '../../lib/supabase-auth';
+import { Mail, Loader2, Volume2, Search, MessageSquare, Send, Users, ChevronRight, FileAudio, Megaphone, CreditCard, Sparkles, Bell, Inbox, Check, CheckCheck } from 'lucide-react';
 
 interface Broadcast {
     id: string;
@@ -71,6 +72,10 @@ export default function MessagesTab({
     const [chatInput, setChatInput] = useState('');
     const [sendingMsg, setSendingMsg] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const notificationsRef = useRef(notifications);
+    useEffect(() => {
+        notificationsRef.current = notifications;
+    }, [notifications]);
 
     // Scroll to bottom of chat when thread changes or a message is sent
     useEffect(() => {
@@ -78,6 +83,86 @@ export default function MessagesTab({
             chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
     }, [directMessages, selectedFeed]);
+
+    // Mark student incoming messages & corresponding notifications as read when active chat thread is opened
+    useEffect(() => {
+        if (selectedFeed.type === 'chat' && profile?.id) {
+            const timer = setTimeout(async () => {
+                try {
+                    // Mark messages as read
+                    const { error } = await supabaseAuth
+                        .from('messages')
+                        .update({ status: 'read' })
+                        .eq('sender_id', selectedFeed.id)
+                        .eq('receiver_id', profile.id)
+                        .neq('status', 'read');
+                    if (error) throw error;
+
+                    // Mark notifications as read using the ref to avoid dependency resets
+                    const contactNotifs = notificationsRef.current.filter(n => {
+                        if (n.is_read || n.type !== 'messages') return false;
+                        const contact = getNotificationContact(n);
+                        if (contact?.id) return contact.id === selectedFeed.id;
+                        return String(n.title || '').toLowerCase().includes(selectedFeed.name.toLowerCase());
+                    });
+
+                    if (contactNotifs.length > 0) {
+                        const { error: notifError } = await supabaseAuth
+                            .from('notifications')
+                            .update({ is_read: true })
+                            .in('id', contactNotifs.map(n => n.id));
+                        if (notifError) throw notifError;
+                    }
+                } catch (e) {
+                    console.error('Failed to mark student messages & notifications as read:', e);
+                }
+            }, 1000); // 1.0 second delay is plenty and feels responsive
+
+            return () => clearTimeout(timer);
+        }
+    }, [selectedFeed.id, selectedFeed.type, directMessages.length, profile?.id]);
+
+    // Mark category notifications as read when category is opened
+    useEffect(() => {
+        if (selectedFeed.type === 'category' && profile?.id) {
+            const markCategoryNotifsAsRead = async () => {
+                try {
+                    const catBroadcasts = broadcasts.filter(b => {
+                        if (selectedFeed.id === 'announcements') {
+                            return b.channel === 'announcements' || (!b.channel && b.sender?.role === 'admin');
+                        } else if (selectedFeed.id === 'classroom') {
+                            return b.channel === 'classroom' || (!b.channel && b.sender?.role !== 'admin');
+                        } else if (selectedFeed.id === 'custom_groups') {
+                            return b.channel === 'custom_groups';
+                        } else if (selectedFeed.id === 'new_joiners') {
+                            return b.channel === 'new_joiners';
+                        } else if (selectedFeed.id === 'fee_management') {
+                            return b.channel === 'fee_management';
+                        } else if (selectedFeed.id === 'voice') {
+                            return !!b.audio_attachment;
+                        }
+                        return false;
+                    });
+
+                    const matchingNotifs = notificationsRef.current.filter(n => {
+                        if (n.is_read || (n.type !== 'reminder' && n.type !== 'messages')) return false;
+                        return catBroadcasts.some(b => n.title === b.subject || n.message === b.content);
+                    });
+
+                    if (matchingNotifs.length > 0) {
+                        const { error } = await supabaseAuth
+                            .from('notifications')
+                            .update({ is_read: true })
+                            .in('id', matchingNotifs.map(n => n.id));
+                        if (error) throw error;
+                    }
+                } catch (e) {
+                    console.error('Failed to mark category notifications as read:', e);
+                }
+            };
+            markCategoryNotifsAsRead();
+        }
+    }, [selectedFeed.id, selectedFeed.type, broadcasts, profile?.id]);
 
     // Categories list based on Admin Dashboard channels
     const categories = [
@@ -128,6 +213,41 @@ export default function MessagesTab({
             if (contact?.id) return contact.id === contactId;
             return String(n.title || '').toLowerCase().includes(contactName.toLowerCase());
         }).length;
+    };
+
+    const getUnreadCountForCategory = (catId: string) => {
+        const catBroadcasts = broadcasts.filter(b => {
+            if (catId === 'announcements') {
+                return b.channel === 'announcements' || (!b.channel && b.sender?.role === 'admin');
+            } else if (catId === 'classroom') {
+                return b.channel === 'classroom' || (!b.channel && b.sender?.role !== 'admin');
+            } else if (catId === 'custom_groups') {
+                return b.channel === 'custom_groups';
+            } else if (catId === 'new_joiners') {
+                return b.channel === 'new_joiners';
+            } else if (catId === 'fee_management') {
+                return b.channel === 'fee_management';
+            } else if (catId === 'voice') {
+                return !!b.audio_attachment;
+            }
+            return false;
+        });
+
+        return catBroadcasts.filter(b => {
+            return notifications.some(n => 
+                !n.is_read && 
+                (n.type === 'reminder' || n.type === 'messages') &&
+                (n.title === b.subject || n.message === b.content)
+            );
+        }).length;
+    };
+
+    const isBroadcastUnread = (b: any) => {
+        return notifications.some(n => 
+            !n.is_read && 
+            (n.type === 'reminder' || n.type === 'messages') &&
+            (n.title === b.subject || n.message === b.content)
+        );
     };
 
     // Filter broadcasts based on right panel search and selected category
@@ -233,6 +353,8 @@ export default function MessagesTab({
                             {categories.map((cat) => {
                                 const Icon = cat.icon;
                                 const active = selectedFeed.type === 'category' && selectedFeed.id === cat.id;
+                                const unreadCount = getUnreadCountForCategory(cat.id);
+                                const hasUnread = unreadCount > 0;
                                 return (
                                     <button
                                         key={cat.id}
@@ -243,19 +365,30 @@ export default function MessagesTab({
                                         className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left cursor-pointer ${
                                             active
                                                 ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
-                                                : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
+                                                : hasUnread
+                                                    ? 'border-amber-300 bg-amber-50/30 text-[#7C5E3F] dark:border-amber-900/40 dark:bg-amber-950/10'
+                                                    : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                         }`}
                                     >
                                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
                                             active 
                                                 ? 'bg-[#7C5E3F]/10 border-[#7C5E3F]/20 dark:bg-amber-400/10 dark:border-amber-400/20' 
-                                                : 'bg-slate-50 dark:bg-slate-800 border-slate-150 dark:border-slate-700'
+                                                : hasUnread
+                                                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:bg-amber-500/5 dark:border-amber-900/20'
+                                                    : 'bg-slate-50 dark:bg-slate-800 border-slate-150 dark:border-slate-700'
                                         }`}>
                                             <Icon className="w-4.5 h-4.5" />
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <h4 className="font-extrabold text-xs leading-none">{cat.name}</h4>
-                                            <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 truncate">{cat.desc}</p>
+                                            <div className="flex items-center justify-between gap-1">
+                                                <h4 className="font-extrabold text-xs leading-none">{cat.name}</h4>
+                                                {unreadCount > 0 && (
+                                                    <span className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[8px] font-black shrink-0 leading-none">
+                                                        {unreadCount}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-[9px] text-slate-400 dark:text-slate-550 mt-1 truncate">{cat.desc}</p>
                                         </div>
                                         <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                                     </button>
@@ -280,7 +413,9 @@ export default function MessagesTab({
                                     className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
                                         selectedFeed.type === 'chat' && selectedFeed.id === classroom.teacher_id
                                             ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
-                                            : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
+                                            : unreadCount > 0
+                                                ? 'border-amber-300 bg-amber-50/30 text-[#7C5E3F] dark:border-amber-900/40 dark:bg-amber-950/10'
+                                                : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
                                     <div className="flex items-center gap-3 min-w-0">
@@ -322,7 +457,9 @@ export default function MessagesTab({
                                                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
                                                      active
                                                          ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
-                                                         : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
+                                                         : unreadCount > 0
+                                                             ? 'border-amber-300 bg-amber-50/30 text-rose-600 dark:border-amber-900/40 dark:bg-amber-950/10'
+                                                             : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                                  }`}
                                              >
                                                  <div className="flex items-center gap-3 min-w-0">
@@ -367,7 +504,9 @@ export default function MessagesTab({
                                             className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
                                                 active
                                                     ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
-                                                    : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
+                                                    : unreadCount > 0
+                                                        ? 'border-amber-300 bg-amber-50/30 text-[#7C5E3F] dark:border-amber-900/40 dark:bg-amber-950/10'
+                                                        : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                             }`}
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
@@ -489,13 +628,16 @@ export default function MessagesTab({
                         ) : (
                             filteredBroadcasts.map((b) => {
                                 const isAdmin = b.sender?.role === 'admin';
+                                const isUnread = isBroadcastUnread(b);
                                 return (
                                     <div 
                                         key={b.id} 
-                                        className={`transition-all p-4 rounded-xl border text-left flex flex-col gap-3 ${
-                                            isAdmin 
-                                                ? 'bg-[#FAF5EE]/70 dark:bg-slate-850/40 border-[#7C5E3F]/30 hover:bg-[#FAF5EE]/90 shadow-2xs' 
-                                                : 'bg-slate-50/40 dark:bg-slate-850/20 border-slate-150 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-850/55 shadow-3xs'
+                                        className={`transition-all p-4 rounded-xl border text-left flex flex-col gap-3 relative ${
+                                            isUnread
+                                                ? 'bg-amber-50/60 dark:bg-amber-950/10 border-amber-400 dark:border-amber-800 shadow-md ring-2 ring-amber-400/20'
+                                                : isAdmin 
+                                                    ? 'bg-[#FAF5EE]/70 dark:bg-slate-850/40 border-[#7C5E3F]/30 hover:bg-[#FAF5EE]/90 shadow-2xs' 
+                                                    : 'bg-slate-50/40 dark:bg-slate-850/20 border-slate-150 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-850/55 shadow-3xs'
                                         }`}
                                     >
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100/80 dark:border-slate-800 pb-2.5">
@@ -506,6 +648,9 @@ export default function MessagesTab({
                                                         <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-[#7C5E3F] bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">📢 Admin Notice</span>
                                                     ) : (
                                                         <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-amber-700 bg-amber-50 dark:bg-amber-955/25 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">🏫 Teacher Notice</span>
+                                                    )}
+                                                    {isUnread && (
+                                                        <span className="inline-flex items-center gap-1 text-[7.5px] font-black text-white bg-amber-500 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 animate-pulse">New</span>
                                                     )}
                                                 </div>
                                                 <span className="inline-block text-[8px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-widest mt-1 font-mono">
@@ -607,19 +752,36 @@ export default function MessagesTab({
                             ) : (
                                 filteredChatThread.map((msg) => {
                                     const isMe = msg.sender_id === profile?.id;
+                                    const isUnread = !isMe && msg.status !== 'read';
                                     return (
                                         <div 
                                             key={msg.id} 
-                                            className={`max-w-[78%] p-3.5 rounded-2xl text-xs leading-relaxed break-words ${
+                                            className={`max-w-[78%] p-3.5 rounded-2xl text-xs leading-relaxed break-words relative transition-all duration-300 ${
                                                 isMe 
                                                     ? 'bg-[#7C5E3F] text-white self-end rounded-br-none shadow-2xs' 
-                                                    : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 self-start rounded-bl-none border border-slate-100 dark:border-slate-750'
+                                                    : isUnread
+                                                        ? 'bg-amber-50/80 dark:bg-amber-955/20 text-[#7C5E3F] dark:text-amber-300 self-start rounded-bl-none border border-amber-400 dark:border-amber-800 shadow-md ring-2 ring-amber-400/10'
+                                                        : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 self-start rounded-bl-none border border-slate-100 dark:border-slate-750'
                                             }`}
                                         >
                                             <p className="whitespace-pre-wrap text-left select-text">{msg.message_text}</p>
-                                            <span className={`block text-[8px] mt-1.5 text-right font-medium ${isMe ? 'text-amber-50/60' : 'text-slate-400'}`}>
-                                                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
+                                            <div className="flex justify-end items-center gap-1 mt-1">
+                                                {isUnread && (
+                                                    <span className="text-[7.5px] font-black uppercase text-amber-600 dark:text-amber-450 mr-1 animate-pulse">New</span>
+                                                )}
+                                                <span className={`text-[8px] font-medium ${isMe ? 'text-amber-50/60' : 'text-slate-400'}`}>
+                                                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                                {isMe && (
+                                                    msg.status === 'read' ? (
+                                                        <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb] shrink-0" />
+                                                    ) : msg.status === 'delivered' ? (
+                                                        <CheckCheck className="w-3.5 h-3.5 text-[#8696a0] shrink-0" />
+                                                    ) : (
+                                                        <Check className="w-3.5 h-3.5 text-[#8696a0] shrink-0" />
+                                                    )
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })

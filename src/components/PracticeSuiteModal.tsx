@@ -238,9 +238,14 @@ function Ripple({ id }: { id: number }) {
     );
 }
 
-export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'drums' }) {
+export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'tanpura' | 'drums' }) {
     // ── GENERAL STATES ──────────────────────────────────────────────────────
-    const [activeRhythmTab, setActiveRhythmTab] = useState<'metronome' | 'drums'>(defaultTab);
+    const [activeTool, setActiveTool] = useState<'metronome' | 'tanpura' | 'drums'>(() => {
+        if (defaultTab === 'drums') return 'drums';
+        if (defaultTab === 'tanpura') return 'tanpura';
+        return 'metronome';
+    });
+    const activeRhythmTab = activeTool === 'drums' ? 'drums' : 'metronome';
     const [isMinimized, setIsMinimized] = useState(false);
     const [bpm, setBpm] = useState(105);
     
@@ -883,7 +888,9 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                 <div className="flex items-center justify-between pb-2 border-b border-[#d46211]/10">
                     <div className="flex items-center gap-2">
                         <Compass className="w-5 h-5 text-[#d46211]" />
-                        <span className="font-extrabold text-sm tracking-tight">KFA Practice Suite</span>
+                        <span className="font-extrabold text-sm tracking-tight">
+                            {activeTool === 'tanpura' ? 'KFA Tanpura' : activeTool === 'metronome' ? 'KFA Metronome' : 'KFA Drum Beats'}
+                        </span>
                     </div>
                     <div className="flex items-center gap-2">
                         <button 
@@ -895,7 +902,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         </button>
                         <button 
                             onClick={handleClose} 
-                            title="Close Practice Suite"
+                            title="Close"
                             className="p-1.5 rounded-lg border border-white/5 bg-white/5 text-white/50 hover:text-white hover:border-[#d46211]/50 transition-all hover:bg-red-500/10 hover:text-red-400"
                         >
                             <X className="w-4 h-4" />
@@ -904,81 +911,57 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                 </div>
 
                 {/* 1. Tanpura Section */}
-                <div className="flex flex-col gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5">
-                    <div className="flex justify-between items-center">
-                        <span className="text-xs font-black text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
-                            <Music className="w-4 h-4" /> Tanpura
-                        </span>
-                        <span className="text-xs font-bold text-white/55 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md uppercase tracking-wider">{selectedPitch.label}</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                        <button 
-                            onClick={() => setIsTanpuraPlaying(!isTanpuraPlaying)}
-                            className={`h-10 px-4 rounded-lg font-bold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
-                                isTanpuraPlaying 
-                                    ? 'bg-[#d46211]/15 border border-[#d46211]/30 text-[#d46211] hover:bg-[#d46211]/25' 
-                                    : 'bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
-                            }`}
-                        >
-                            {isTanpuraPlaying ? (
-                                <><Square className="w-3.5 h-3.5 fill-[#d46211]" /> Stop</>
-                            ) : (
-                                <><Play className="w-3.5 h-3.5 fill-white/70" /> Play</>
-                            )}
-                        </button>
+                {activeTool === 'tanpura' && (
+                    <div className="flex flex-col gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5">
+                        <div className="flex justify-between items-center">
+                            <span className="text-xs font-black text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
+                                <Music className="w-4 h-4" /> Tanpura
+                            </span>
+                            <span className="text-xs font-bold text-white/55 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md uppercase tracking-wider">{selectedPitch.label}</span>
+                        </div>
                         
-                        <div className="flex-1 flex flex-col gap-1">
-                            <span className="text-xs text-white/70 font-semibold truncate leading-none">{selectedTuningMode.label}</span>
-                            <div className="flex items-center gap-2">
-                                <Volume2 className="w-4 h-4 text-white/40" />
-                                <input 
-                                    type="range" min="0" max="1.0" step="0.05" value={tanpuraVolume}
-                                    onChange={(e) => setTanpuraVolume(parseFloat(e.target.value))}
-                                    className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                />
+                        <div className="flex items-center gap-3">
+                            <button 
+                                onClick={() => setIsTanpuraPlaying(!isTanpuraPlaying)}
+                                className={`h-10 px-4 rounded-lg font-bold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
+                                    isTanpuraPlaying 
+                                        ? 'bg-[#d46211]/15 border border-[#d46211]/30 text-[#d46211] hover:bg-[#d46211]/25' 
+                                        : 'bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
+                                }`}
+                            >
+                                {isTanpuraPlaying ? (
+                                    <><Square className="w-3.5 h-3.5 fill-[#d46211]" /> Stop</>
+                                ) : (
+                                    <><Play className="w-3.5 h-3.5 fill-white/70" /> Play</>
+                                )}
+                            </button>
+                            
+                            <div className="flex-1 flex flex-col gap-1">
+                                <span className="text-xs text-white/70 font-semibold truncate leading-none">{selectedTuningMode.label}</span>
+                                <div className="flex items-center gap-2">
+                                    <Volume2 className="w-4 h-4 text-white/40" />
+                                    <input 
+                                        type="range" min="0" max="1.0" step="0.05" value={tanpuraVolume}
+                                        onChange={(e) => setTanpuraVolume(parseFloat(e.target.value))}
+                                        className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                )}
 
-                {/* 2. Rhythm Station Section */}
-                <div className="flex flex-col gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5">
-                    {/* Tab Selection */}
-                    <div className="flex items-center justify-between pb-1">
-                        <span className="text-xs font-black text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
-                            <Sliders className="w-4 h-4" /> Rhythm Station
-                        </span>
-                        
-                        <div className="flex bg-white/5 p-0.5 rounded-md border border-white/5">
-                            <button 
-                                onClick={() => {
-                                    setActiveRhythmTab('metronome');
-                                    setIsDrumsPlaying(false);
-                                }}
-                                className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider transition-all ${
-                                    activeRhythmTab === 'metronome' ? 'bg-[#d46211] text-white' : 'text-white/40 hover:text-white'
-                                }`}
-                            >
-                                Metronome
-                            </button>
-                            <button 
-                                onClick={() => {
-                                    setActiveRhythmTab('drums');
-                                    setIsMetronomePlaying(false);
-                                }}
-                                className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider transition-all ${
-                                    activeRhythmTab === 'drums' ? 'bg-[#d46211] text-white' : 'text-white/40 hover:text-white'
-                                }`}
-                            >
-                                Drums
-                            </button>
+                {/* 2. Metronome Section */}
+                {activeTool === 'metronome' && (
+                    <div className="flex flex-col gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
+                                <Volume2 className="w-4 h-4" /> Metronome
+                            </span>
+                            <span className="text-xs font-bold text-white/55 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md uppercase tracking-wider">{bpm} BPM</span>
                         </div>
-                    </div>
-
-                    {/* Controls Row */}
-                    <div className="flex items-center justify-between gap-2">
-                        {activeRhythmTab === 'metronome' ? (
+                        
+                        <div className="flex items-center gap-3">
                             <button 
                                 onClick={() => {
                                     getCtx().resume();
@@ -996,7 +979,37 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                     <><Play className="w-3.5 h-3.5 fill-white" /> Play</>
                                 )}
                             </button>
-                        ) : (
+                            
+                            <div className="flex-1 flex flex-col gap-1">
+                                <div className="flex items-center justify-between">
+                                    <button onClick={() => setBpm(b => Math.max(20, Math.min(240, b - 1)))} className="w-6 h-6 rounded-full border border-white/15 text-white/60 hover:bg-white/5 flex items-center justify-center font-bold text-xs">-</button>
+                                    <span className="text-xs font-mono text-white/80 font-bold">{bpm} BPM</span>
+                                    <button onClick={() => setBpm(b => Math.max(20, Math.min(240, b + 1)))} className="w-6 h-6 rounded-full border border-white/15 text-white/60 hover:bg-white/5 flex items-center justify-center font-bold text-xs">+</button>
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <Volume2 className="w-4 h-4 text-white/40" />
+                                    <input 
+                                        type="range" min="0" max="1.0" step="0.05" value={metronomeVolume}
+                                        onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
+                                        className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 3. Drum Beats Section */}
+                {activeTool === 'drums' && (
+                    <div className="flex flex-col gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-sm font-bold">album</span> Drums
+                            </span>
+                            <span className="text-xs font-bold text-white/55 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md uppercase tracking-wider">{selectedDrumsPresetName}</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
                             <button 
                                 onClick={() => setIsDrumsPlaying(!isDrumsPlaying)}
                                 className={`h-10 px-4 rounded-lg font-bold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
@@ -1011,72 +1024,54 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                     <><Play className="w-3.5 h-3.5 fill-white" /> Play</>
                                 )}
                             </button>
-                        )}
-
-                        {/* BPM Adjuster */}
-                        <div className="flex items-center gap-1 border border-white/10 rounded-lg p-0.5 bg-black/40">
-                            <button 
-                                onClick={() => setBpm(b => Math.max(20, Math.min(240, b - 1)))}
-                                className="w-7 h-7 rounded-md hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white font-extrabold text-xs"
-                            >
-                                -
-                            </button>
-                            <div className="w-12 text-center flex flex-col justify-center">
-                                <span className="text-sm font-black tracking-tight leading-none">{bpm}</span>
-                                <span className="text-[8px] text-white/40 uppercase font-bold tracking-widest leading-none mt-0.5">BPM</span>
+                            
+                            <div className="flex-1 flex flex-col gap-1">
+                                <span className="text-xs text-white/70 font-semibold truncate leading-none">{selectedDrumsTimeSig.name} Time Sig</span>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <Volume2 className="w-4 h-4 text-white/40" />
+                                    <input 
+                                        type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
+                                        onChange={(e) => setDrumsVolume(parseFloat(e.target.value))}
+                                        className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                    />
+                                </div>
                             </div>
-                            <button 
-                                onClick={() => setBpm(b => Math.max(20, Math.min(240, b + 1)))}
-                                className="w-7 h-7 rounded-md hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white font-extrabold text-xs"
-                            >
-                                +
-                            </button>
                         </div>
                     </div>
-
-                    {/* Details status line */}
-                    <div className="text-[11px] text-white/40 font-bold flex justify-between items-center px-0.5 mt-1">
-                        {activeRhythmTab === 'metronome' ? (
-                            <span className="truncate max-w-[170px]">{selectedMetronomeSound} • {metronomeBeats} Beats</span>
-                        ) : (
-                            <span className="truncate max-w-[170px]">{selectedDrumsPresetName} ({selectedDrumsTimeSig.name})</span>
-                        )}
-                        {/* Volume Slider for Rhythm */}
-                        <div className="flex items-center gap-1.5 w-28 shrink-0">
-                            <Volume2 className="w-3.5 h-3.5 text-white/30" />
-                            {activeRhythmTab === 'metronome' ? (
-                                <input 
-                                    type="range" min="0" max="1.0" step="0.05" value={metronomeVolume}
-                                    onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
-                                    className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                />
-                            ) : (
-                                <input 
-                                    type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
-                                    onChange={(e) => setDrumsVolume(parseFloat(e.target.value))}
-                                    className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                />
-                            )}
-                        </div>
-                    </div>
-                </div>
+                )}
             </div>
         );
     }
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-lg" onClick={e => e.target === e.currentTarget && handleClose()}>
-            <div className="relative w-full max-w-6xl bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-3xl border border-[#d46211]/25 shadow-2xl overflow-hidden flex flex-col" style={{ height: '90vh' }}>
+            <div className={`relative w-full bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-3xl border border-[#d46211]/25 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${
+                activeTool === 'tanpura' ? 'max-w-md h-auto my-auto' : activeTool === 'metronome' ? 'max-w-2xl h-auto my-auto' : 'max-w-5xl h-auto my-auto'
+            }`}>
                 
                 {/* Header */}
                 <div className="flex items-center justify-between px-8 pt-5 pb-4 border-b border-[#d46211]/10 bg-slate-900/40">
                     <div className="flex items-center gap-3 text-left">
                         <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-[#d46211] border border-[#d46211]/20">
-                            <Compass className="w-5 h-5" />
+                            {activeTool === 'tanpura' ? (
+                                <Music className="w-5 h-5" />
+                            ) : activeTool === 'metronome' ? (
+                                <Volume2 className="w-5 h-5" />
+                            ) : (
+                                <span className="material-symbols-outlined text-xl font-bold">album</span>
+                            )}
                         </div>
                         <div>
-                            <h2 className="text-white font-black text-sm md:text-base tracking-tight">KFA Flute Practice Suite</h2>
-                            <p className="text-[#d46211]/60 text-xs md:text-sm">Continuous Tanpura Drone & synced Rhythm Station Mixer</p>
+                            <h2 className="text-white font-black text-sm md:text-base tracking-tight">
+                                {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : 'Drum Beats Sequencer'}
+                            </h2>
+                            <p className="text-[#d46211]/60 text-xs md:text-sm">
+                                {activeTool === 'tanpura' 
+                                    ? 'Indian classical tuning & shruti drone' 
+                                    : activeTool === 'metronome' 
+                                        ? 'Keep perfect time with speed adjustments' 
+                                        : 'Interactive step sequencer for flute play-along grooves'}
+                            </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1089,7 +1084,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         </button>
                         <button 
                             onClick={handleClose} 
-                            title="Close Practice Suite" 
+                            title="Close" 
                             className="p-2 rounded-xl border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all"
                         >
                             <X className="w-4 h-4" />
@@ -1098,444 +1093,403 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                 </div>
 
                 {/* Dashboard body layout */}
-                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-                    
-                    {/* LEFT PANEL: TANPURA DRONE */}
-                    <div className="lg:w-[350px] shrink-0 border-r border-[#d46211]/10 bg-black/30 p-6 flex flex-col justify-between overflow-y-auto text-left">
-                        <div className="space-y-5">
-                            <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                                <h3 className="text-white font-bold text-sm md:text-base tracking-wide flex items-center gap-1.5">
-                                    <Music className="w-4 h-4 text-[#d46211]" /> 1. Tanpura Drone
-                                </h3>
-                                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                                    isTanpuraPlaying ? 'bg-orange-500/10 border-orange-500/20 text-[#d46211] animate-pulse' : 'bg-white/5 border-white/5 text-white/30'
-                                }`}>
-                                    {isTanpuraPlaying ? 'sounding' : 'idle'}
-                                </span>
-                            </div>
-
-                            {/* Scale/Key Select */}
-                            <div>
-                                <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Scale / Key (Shruti)</span>
-                                <div className="grid grid-cols-4 gap-1">
-                                    {SHRU_PITCHES.map((pitch) => (
-                                        <button
-                                            key={pitch.label}
-                                            onClick={async () => {
-                                                setSelectedPitch(pitch);
-                                                // Always start/restart drone on pitch click
-                                                stopTanpuraNodes();
-                                                setIsTanpuraPlaying(true);
-                                                await startTanpura(pitch); // pass pitch directly — avoids stale state
-                                            }}
-                                            className={`py-1.5 rounded-lg text-center font-bold text-xs transition-all border ${
-                                                selectedPitch.label === pitch.label 
-                                                    ? 'bg-[#d46211] border-[#d46211] text-white' 
-                                                    : 'border-[#d46211]/15 text-[#d46211]/60 hover:border-[#d46211]/30 hover:text-white'
-                                            }`}
-                                        >
-                                            {pitch.label.split(' ')[0]}
-                                        </button>
-                                    ))}
+                <div className="flex-1 flex flex-col overflow-hidden bg-black/10">
+                    {/* ──── VIEW 1: TANPURA DRONE ──── */}
+                    {activeTool === 'tanpura' && (
+                        <div className="w-full bg-black/30 p-6 flex flex-col justify-between overflow-y-auto text-left max-h-[80vh]">
+                            <div className="space-y-5">
+                                {/* Scale/Key Select */}
+                                <div>
+                                    <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Scale / Key (Shruti)</span>
+                                    <div className="grid grid-cols-4 gap-1">
+                                        {SHRU_PITCHES.map((pitch) => (
+                                            <button
+                                                key={pitch.label}
+                                                onClick={async () => {
+                                                    setSelectedPitch(pitch);
+                                                    // Always start/restart drone on pitch click
+                                                    stopTanpuraNodes();
+                                                    setIsTanpuraPlaying(true);
+                                                    await startTanpura(pitch); // pass pitch directly — avoids stale state
+                                                }}
+                                                className={`py-1.5 rounded-lg text-center font-bold text-xs transition-all border ${
+                                                    selectedPitch.label === pitch.label 
+                                                        ? 'bg-[#d46211] border-[#d46211] text-white' 
+                                                        : 'border-[#d46211]/15 text-[#d46211]/60 hover:border-[#d46211]/30 hover:text-white'
+                                                }`}
+                                            >
+                                                {pitch.label.split(' ')[0]}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            {/* Tuning Mode Select */}
-                            <div>
-                                <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Tuning Mode</span>
-                                <div className="grid grid-cols-2 gap-1.5">
-                                    {TUNING_MODES.map((mode) => (
-                                        <button
-                                            key={mode.id}
-                                            onClick={() => setSelectedTuningMode(mode)}
-                                            className={`text-left p-2 rounded-xl border transition-all ${
-                                                selectedTuningMode.id === mode.id 
-                                                    ? 'bg-[#d46211]/10 border-[#d46211] text-white' 
-                                                    : 'border-white/5 text-white/40 hover:border-white/10 hover:text-white/70'
-                                            }`}
-                                        >
-                                            <p className="font-extrabold text-xs text-[#d46211]">{mode.label.split(' ')[2]} Drone</p>
-                                            <p className="text-[10px] text-white/40 mt-0.5 truncate">{mode.desc}</p>
-                                        </button>
-                                    ))}
+                                {/* Tuning Mode Select */}
+                                <div>
+                                    <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Tuning Mode</span>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                        {TUNING_MODES.map((mode) => (
+                                            <button
+                                                key={mode.id}
+                                                onClick={() => setSelectedTuningMode(mode)}
+                                                className={`text-left p-2 rounded-xl border transition-all ${
+                                                    selectedTuningMode.id === mode.id 
+                                                        ? 'bg-[#d46211]/10 border-[#d46211] text-white' 
+                                                        : 'border-white/5 text-white/40 hover:border-white/10 hover:text-white/70'
+                                                }`}
+                                            >
+                                                <p className="font-extrabold text-xs text-[#d46211]">{mode.label.split(' ')[2]} Drone</p>
+                                                <p className="text-[10px] text-white/40 mt-0.5 truncate">{mode.desc}</p>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            {/* 4 Plucking Strings visualizer */}
-                            <div className="bg-black/40 border border-white/5 rounded-2xl p-4 flex justify-around items-stretch h-32 relative overflow-hidden shadow-inner my-2">
-                                {[0, 1, 2, 3].map((idx) => {
-                                    const stringLabel = idx === 0 ? selectedTuningMode.id : idx === 3 ? 'Sa' : 'Sa';
-                                    return (
-                                        <div key={idx} className="flex flex-col items-center justify-between relative w-8">
-                                            <span className={`text-[10px] font-black transition-colors ${isTanpuraPlaying ? 'text-[#d46211] animate-pulse' : 'text-white/20'}`}>
-                                                {stringLabel}
-                                            </span>
-                                            <div className="relative flex-1 flex items-center justify-center w-full my-2">
-                                                <div className={`w-[1.5px] h-full transition-all duration-300 ${
-                                                    isTanpuraPlaying ? 'bg-[#d46211] shadow-[0_0_8px_rgba(212,98,17,0.8)] animate-pulse' : 'bg-white/5'
-                                                }`} />
+                                {/* 4 Plucking Strings visualizer */}
+                                <div className="bg-black/40 border border-white/5 rounded-2xl p-4 flex justify-around items-stretch h-32 relative overflow-hidden shadow-inner my-2">
+                                    {[0, 1, 2, 3].map((idx) => {
+                                        const stringLabel = idx === 0 ? selectedTuningMode.id : idx === 3 ? 'Sa' : 'Sa';
+                                        return (
+                                            <div key={idx} className="flex flex-col items-center justify-between relative w-8">
+                                                <span className={`text-[10px] font-black transition-colors ${isTanpuraPlaying ? 'text-[#d46211] animate-pulse' : 'text-white/20'}`}>
+                                                    {stringLabel}
+                                                </span>
+                                                <div className="relative flex-1 flex items-center justify-center w-full my-2">
+                                                    <div className={`w-[1.5px] h-full transition-all duration-300 ${
+                                                        isTanpuraPlaying ? 'bg-[#d46211] shadow-[0_0_8px_rgba(212,98,17,0.8)] animate-pulse' : 'bg-white/5'
+                                                    }`} />
+                                                </div>
+                                                <div className={`w-2 h-2 rounded-full border transition-all ${isTanpuraPlaying ? 'bg-[#d46211] border-orange-400' : 'bg-black border-white/10'}`} />
                                             </div>
-                                            <div className={`w-2 h-2 rounded-full border transition-all ${isTanpuraPlaying ? 'bg-[#d46211] border-orange-400' : 'bg-black border-white/10'}`} />
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            {/* Volume controls */}
-                            <div className="flex flex-col bg-white/5 border border-white/5 px-4 py-2.5 rounded-xl">
-                                <div className="flex justify-between items-center text-[10px] font-black text-white/40 uppercase tracking-widest mb-1.5">
-                                    <span>Tanpura Volume</span>
-                                    <span className="text-[#d46211] font-mono">{Math.round(tanpuraVolume * 100)}%</span>
+                                        );
+                                    })}
                                 </div>
-                                <input 
-                                    type="range" min="0" max="1.0" step="0.05" value={tanpuraVolume}
-                                    onChange={(e) => setTanpuraVolume(parseFloat(e.target.value))}
-                                    className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                />
+
+                                {/* Volume controls */}
+                                <div className="flex flex-col bg-white/5 border border-white/5 px-4 py-2.5 rounded-xl">
+                                    <div className="flex justify-between items-center text-[10px] font-black text-white/40 uppercase tracking-widest mb-1.5">
+                                        <span>Tanpura Volume</span>
+                                        <span className="text-[#d46211] font-mono">{Math.round(tanpuraVolume * 100)}%</span>
+                                    </div>
+                                    <input 
+                                        type="range" min="0" max="1.0" step="0.05" value={tanpuraVolume}
+                                        onChange={(e) => setTanpuraVolume(parseFloat(e.target.value))}
+                                        className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                    />
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Play control bottom */}
-                        <div className="pt-4 border-t border-white/5 mt-4">
-                            <button
-                                onClick={async () => {
-                                    if (isTanpuraPlaying) {
-                                        stopTanpuraNodes();
-                                        setIsTanpuraPlaying(false);
-                                    } else {
-                                        setIsTanpuraPlaying(true);
-                                        await startTanpura();
-                                    }
-                                }}
-                                className={`w-full h-12 rounded-xl font-extrabold text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 ${
-                                    isTanpuraPlaying 
-                                        ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' 
-                                        : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'
-                                }`}
-                            >
-                                {isTanpuraPlaying ? (
-                                    <><Square className="w-3.5 h-3.5 fill-white" /> Stop Drone</>
-                                ) : (
-                                    <><Play className="w-3.5 h-3.5 fill-white" /> Play Drone</>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* RIGHT PANEL: RHYTHM STATION (METRONOME + DRUMS) */}
-                    <div className="flex-1 flex flex-col overflow-hidden bg-black/10">
-                        {/* Tabs select bar */}
-                        <div className="flex border-b border-[#d46211]/10 bg-slate-900/20 px-6 pt-3">
-                            {[
-                                { id: 'metronome', label: 'Practice Metronome', symbol: '𝄞' },
-                                { id: 'drums', label: 'Drum Beats Sequencer', symbol: 'album' }
-                            ].map(tab => (
+                            {/* Play control bottom */}
+                            <div className="pt-4 border-t border-white/5 mt-4">
                                 <button
-                                    key={tab.id}
-                                    onClick={() => setActiveRhythmTab(tab.id as any)}
-                                    className={`px-5 py-3 font-bold text-sm transition-all flex items-center gap-2 border-b-2 -mb-[2px] ${
-                                        activeRhythmTab === tab.id
-                                            ? 'border-[#d46211] text-[#d46211]'
-                                            : 'border-transparent text-white/40 hover:text-white/70'
+                                    onClick={async () => {
+                                        if (isTanpuraPlaying) {
+                                            stopTanpuraNodes();
+                                            setIsTanpuraPlaying(false);
+                                        } else {
+                                            setIsTanpuraPlaying(true);
+                                            await startTanpura();
+                                        }
+                                    }}
+                                    className={`w-full h-12 rounded-xl font-extrabold text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 ${
+                                        isTanpuraPlaying 
+                                            ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' 
+                                            : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'
                                     }`}
                                 >
-                                    {tab.id === 'drums' ? (
-                                        <span className="material-symbols-outlined text-sm font-bold">album</span>
+                                    {isTanpuraPlaying ? (
+                                        <><Square className="w-3.5 h-3.5 fill-white" /> Stop Drone</>
                                     ) : (
-                                        <span className="text-sm font-bold">{tab.symbol}</span>
+                                        <><Play className="w-3.5 h-3.5 fill-white" /> Play Drone</>
                                     )}
-                                    {tab.label}
                                 </button>
-                            ))}
-                            
-                            {/* Shared BPM tag */}
-                            <div className="ml-auto flex items-center gap-1.5 px-3 py-1 bg-white/5 border border-white/5 rounded-lg mb-2 text-xs font-bold text-white/50">
-                                <span>Tempo:</span>
-                                <span className="text-[#d46211] font-mono">{bpm} BPM</span>
                             </div>
                         </div>
+                    )}
 
-                        {/* Rhythm View body */}
-                        <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between gap-6">
-                            
-                            {/* ──── VIEW 1: METRONOME ──── */}
-                            {activeRhythmTab === 'metronome' && (
-                                <div className="flex-1 flex flex-col lg:flex-row gap-6 animate-in fade-in duration-200">
-                                    
-                                    {/* Left Sub-panel: Tap and Measure */}
-                                    <div className="lg:w-56 flex flex-col gap-5 text-left shrink-0">
-                                        {/* Measure Beats */}
-                                        <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Beats Per Measure</span>
-                                            <div className="flex flex-wrap gap-1">
-                                                {[2,3,4,5,6,7,8].map(n => (
-                                                    <button key={n} onClick={() => { setMetronomeBeats(n); setMetronomeSubdivisions(Array(n).fill(1)); }}
-                                                        className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${metronomeBeats === n ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/25 text-[#d46211]/60 hover:border-[#d46211]/50'}`}>
-                                                        {n}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Sound profile */}
-                                        <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Metronome Sound</span>
-                                            <div className="flex flex-wrap gap-1">
-                                                {METRONOME_SOUNDS.map(s => (
-                                                    <button key={s} onClick={() => setSelectedMetronomeSound(s)}
-                                                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${selectedMetronomeSound === s ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/25 text-[#d46211]/50 hover:text-[#d46211]'}`}>
-                                                         {s}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Tap Tempo */}
-                                        <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Tap Tempo</span>
-                                            <button onClick={handleTapTempo}
-                                                className="w-full h-14 rounded-xl border border-[#d46211]/30 bg-gradient-to-b from-[#2a1a08] to-[#1a0e04] text-[#d46211] font-black text-sm tracking-widest hover:border-[#d46211] hover:shadow-lg hover:shadow-[#d46211]/15 active:scale-95 transition-all">
-                                                TAP TEMPO
-                                            </button>
-                                        </div>
-
-                                        {/* Presets */}
-                                        <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Quick Presets</span>
-                                            <div className="space-y-1">
-                                                {METRONOME_PRESETS.map(p => (
-                                                    <button key={p.name} onClick={() => loadMetronomePreset(p)}
-                                                        className="w-full text-left px-3 py-1.5 border border-white/5 bg-white/5 rounded-xl hover:border-[#d46211]/30 hover:text-white transition-all text-[11px] text-white/50">
-                                                        <span className="font-extrabold text-[#d46211] mr-1">{p.name}</span>({p.bpm} BPM)
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Right Sub-panel: Dial Visualizer */}
-                                    <div className="flex-1 flex flex-col items-center justify-center gap-5">
-                                        <div className="relative w-12 h-12 flex items-center justify-center">
-                                            {metronomeRipples.map(r => <Ripple key={r} id={r} />)}
-                                            <div className="w-3.5 h-3.5 rounded-full bg-[#d46211]/45 border border-[#d46211]/60 shrink-0" />
-                                        </div>
-
-                                        {/* Dial */}
-                                        <div className="relative flex items-center justify-center" style={{ width: 230, height: 230 }}>
-                                            <div className={`absolute inset-0 transition-opacity duration-300 ${isMetronomePlaying ? 'opacity-100' : 'opacity-40'}`}>
-                                                <Mandala angle={mandalaAngle} active={isMetronomePlaying} />
-                                            </div>
-
-                                            <div className={`absolute rounded-full border transition-all duration-300 ${isMetronomePlaying ? 'border-[#d46211]/50 shadow-xl' : 'border-[#d46211]/15'}`}
-                                                style={{ width: 170, height: 170, boxShadow: isMetronomePlaying ? '0 0 30px rgba(212,98,17,0.18)' : 'none' }} />
-
-                                            <div onMouseDown={onKnobDown}
-                                                className="relative cursor-ns-resize select-none flex items-center justify-center rounded-full"
-                                                style={{
-                                                    width: 140, height: 140, zIndex: 10,
-                                                    background: 'conic-gradient(from 0deg, #2a1a08, #3d2510, #2a1a08, #1a0e04, #2a1a08)',
-                                                    boxShadow: '0 8px 32px rgba(0,0,0,0.6), inset 0 2px 8px rgba(255,255,255,0.05), inset 0 -2px 4px rgba(0,0,0,0.4)',
-                                                    border: '2px solid rgba(212,98,17,0.3)',
-                                                }}>
-                                                <div className="absolute" style={{ width: 6, height: 6, top: 10, left: '50%', marginLeft: -3, transformOrigin: '3px 60px', transform: `rotate(${knobDeg}deg)` }}>
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-[#d46211] shadow-lg shadow-[#d46211]/60" />
-                                                </div>
-
-                                                <div className="text-center z-10">
-                                                    <div className="text-white font-black leading-none" style={{ fontSize: 36, fontVariantNumeric: 'tabular-nums', textShadow: '0 0 15px rgba(212,98,17,0.4)' }}>
-                                                        {bpm}
-                                                    </div>
-                                                    <div className="text-[#d46211]/60 text-[10px] font-black tracking-widest uppercase mt-0.5">BPM</div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* BPM controls */}
-                                        <div className="flex items-center gap-3">
-                                            <button onClick={() => setBpm(p => Math.max(20, p - 1))} className="w-8 h-8 rounded-full border border-[#d46211]/30 text-[#d46211] font-bold hover:bg-[#d46211]/10 transition-all text-lg">−</button>
-                                            <div className="text-white/40 text-xs font-bold tracking-widest">DRAG DIAL OR TAP +/-</div>
-                                            <button onClick={() => setBpm(p => Math.min(240, p + 1))} className="w-8 h-8 rounded-full border border-[#d46211]/30 text-[#d46211] font-bold hover:bg-[#d46211]/10 transition-all text-lg">+</button>
-                                        </div>
-
-                                        {/* Metronome Control Panel */}
-                                        <div className="flex items-center gap-4 bg-white/5 border border-white/5 p-3 rounded-2xl w-full max-w-sm">
-                                            <Volume2 className="w-4 h-4 text-[#d46211]" />
-                                            <div className="flex-1 flex flex-col text-left">
-                                                <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1">
-                                                    <span>Metronome Volume</span>
-                                                    <span className="text-[#d46211] font-mono">{Math.round(metronomeVolume * 100)}%</span>
-                                                </div>
-                                                <input 
-                                                    type="range" min="0" max="1.0" step="0.05" value={metronomeVolume}
-                                                    onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
-                                                    className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* ──── VIEW 2: DRUM SEQUENCER ──── */}
-                            {activeRhythmTab === 'drums' && (
-                                <div className="flex-1 flex flex-col gap-5 animate-in fade-in duration-200 text-left">
-                                    
-                                    {/* Top Preset & Signature Bar */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-3 border-b border-white/5">
-                                        {/* Presets */}
-                                        <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-widest block mb-1.5">Preset Groove</span>
-                                            <div className="flex flex-wrap gap-1">
-                                                {DRUM_PRESETS.map(p => (
-                                                    <button key={p.name} onClick={() => loadDrumsPreset(p)}
-                                                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${selectedDrumsPresetName === p.name ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/20 text-[#d46211]/50 hover:text-[#d46211]'}`}>
-                                                        {p.name.split(' ')[0]}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Time Signatures */}
-                                        <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-widest block mb-1.5">Time Signature</span>
-                                            <div className="grid grid-cols-6 gap-1">
-                                                {TIME_SIGNATURES.map(sig => (
-                                                    <button key={sig.name} onClick={() => handleDrumsTimeSigChange(sig)}
-                                                        className={`py-1 rounded-md text-center font-bold text-xs transition-all border ${selectedDrumsTimeSig.name === sig.name ? 'bg-[#d46211] border-[#d46211] text-white' : 'border-white/5 text-white/40 hover:text-white'}`}>
-                                                        {sig.name}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Grouping feel */}
-                                        <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-widest block mb-1.5">Grouping Feel</span>
-                                            <div className="flex gap-1.5">
-                                                {selectedDrumsTimeSig.groupings.map(group => (
-                                                    <button key={group.name} onClick={() => setSelectedDrumsGrouping(group)}
-                                                        className={`flex-1 py-1 rounded-md text-center font-bold text-xs border transition-all ${selectedDrumsGrouping.name === group.name ? 'bg-[#d46211]/10 border-[#d46211] text-white' : 'border-white/5 text-white/30 hover:text-white/50'}`}>
-                                                        {group.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Step Grid Box */}
-                                    <div className="flex-1 flex flex-col justify-center bg-black/40 border border-white/5 rounded-2xl p-4 select-none overflow-x-auto">
-                                        {/* Step Numbers */}
-                                        <div className="flex items-center mb-2.5">
-                                            <div className="w-20 shrink-0"></div>
-                                            <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
-                                                {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
-                                                    const isGroupStart = selectedDrumsGrouping.dividers.includes(stepIdx);
-                                                    return (
-                                                        <React.Fragment key={stepIdx}>
-                                                            {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
-                                                            <div className={`text-[10px] font-black w-full text-center transition-colors ${
-                                                                currentDrumsStep === stepIdx ? 'text-[#d46211]' : stepIdx % selectedDrumsTimeSig.stepsPerBeat === 0 ? 'text-white/60' : 'text-white/20'
-                                                            }`}>
-                                                                {stepIdx + 1}
-                                                            </div>
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Grid Rows */}
-                                        <div className="space-y-2.5">
-                                            {DRUM_TRACK_NAMES.map((trackName, trackIdx) => (
-                                                <div key={trackName} className="flex items-center">
-                                                    <div className="w-20 text-left pr-2 shrink-0">
-                                                        <span className="text-xs font-bold text-white/55">{trackName}</span>
-                                                    </div>
-                                                    <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
-                                                        {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
-                                                            const isActive = drumsGrid[trackIdx][stepIdx];
-                                                            const isCurrent = currentDrumsStep === stepIdx;
-                                                            const isGroupStart = selectedDrumsGrouping.dividers.includes(stepIdx);
-                                                            return (
-                                                                <React.Fragment key={stepIdx}>
-                                                                    {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
-                                                                    <button onClick={() => handleToggleDrumsNode(trackIdx, stepIdx)}
-                                                                        className={`aspect-square w-full rounded-md border transition-all relative ${isActive ? 'bg-[#d46211] border-[#d46211] shadow-[0_0_6px_rgba(212,98,17,0.35)]' : 'bg-white/5 border-white/5 hover:border-white/10'}`}>
-                                                                        {isCurrent && <div className="absolute inset-0 rounded-md border border-amber-400 animate-pulse bg-white/10" />}
-                                                                    </button>
-                                                                </React.Fragment>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
+                    {/* ──── VIEW 2: METRONOME ──── */}
+                    {activeTool === 'metronome' && (
+                        <div className="w-full p-6 flex flex-col justify-between gap-6 overflow-y-auto max-h-[85vh]">
+                            <div className="flex-1 flex flex-col lg:flex-row gap-6 animate-in fade-in duration-200">
+                                
+                                {/* Left Sub-panel: Tap and Measure */}
+                                <div className="lg:w-56 flex flex-col gap-5 text-left shrink-0">
+                                    {/* Measure Beats */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Beats Per Measure</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {[2,3,4,5,6,7,8].map(n => (
+                                                <button key={n} onClick={() => { setMetronomeBeats(n); setMetronomeSubdivisions(Array(n).fill(1)); }}
+                                                    className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${metronomeBeats === n ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/25 text-[#d46211]/60 hover:border-[#d46211]/50'}`}>
+                                                    {n}
+                                                </button>
                                             ))}
                                         </div>
+                                    </div>
 
-                                        {/* Progress playhead bar */}
-                                        <div className="flex items-center mt-3 pt-3 border-t border-white/5">
-                                            <div className="w-20 shrink-0"></div>
-                                            <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
-                                                {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
-                                                    const isGroupStart = selectedDrumsGrouping.dividers.includes(stepIdx);
-                                                    return (
-                                                        <React.Fragment key={stepIdx}>
-                                                            {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
-                                                            <div className={`h-1 rounded-full transition-all w-full ${currentDrumsStep === stepIdx ? 'bg-[#d46211]' : 'bg-white/5'}`} />
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            </div>
+                                    {/* Sound profile */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Metronome Sound</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {METRONOME_SOUNDS.map(s => (
+                                                <button key={s} onClick={() => setSelectedMetronomeSound(s)}
+                                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${selectedMetronomeSound === s ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/25 text-[#d46211]/50 hover:text-[#d46211]'}`}>
+                                                     {s}
+                                                </button>
+                                            ))}
                                         </div>
                                     </div>
 
-                                    {/* Drum Controls (Volume & Clear) */}
-                                    <div className="flex flex-wrap items-center justify-between gap-4">
-                                        <div className="flex items-center gap-4 bg-white/5 border border-white/5 p-3 rounded-2xl flex-1 max-w-sm">
-                                            <Volume2 className="w-4 h-4 text-[#d46211]" />
-                                            <div className="flex-1 flex flex-col text-left">
-                                                <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1">
-                                                    <span>Drums Volume</span>
-                                                    <span className="text-[#d46211] font-mono">{Math.round(drumsVolume * 100)}%</span>
-                                                </div>
-                                                <input 
-                                                    type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
-                                                    onChange={(e) => setDrumsVolume(parseFloat(e.target.value))}
-                                                    className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <button onClick={handleClearGrid}
-                                            className="h-10 px-4 rounded-xl border border-white/5 hover:border-white/15 text-white/50 hover:text-white/80 transition-all flex items-center gap-1.5 text-xs font-bold shrink-0">
-                                            <Trash2 className="w-3.5 h-3.5" /> Clear Grid
+                                    {/* Tap Tempo */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Tap Tempo</span>
+                                        <button onClick={handleTapTempo}
+                                            className="w-full h-14 rounded-xl border border-[#d46211]/30 bg-gradient-to-b from-[#2a1a08] to-[#1a0e04] text-[#d46211] font-black text-sm tracking-widest hover:border-[#d46211] hover:shadow-lg hover:shadow-[#d46211]/15 active:scale-95 transition-all">
+                                            TAP TEMPO
                                         </button>
                                     </div>
-                                </div>
-                            )}
 
-                            {/* ──── SHARED RHYTHM PLAYBAR CONTROL ──── */}
+                                    {/* Presets */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Quick Presets</span>
+                                        <div className="space-y-1">
+                                            {METRONOME_PRESETS.map(p => (
+                                                <button key={p.name} onClick={() => loadMetronomePreset(p)}
+                                                    className="w-full text-left px-3 py-1.5 border border-white/5 bg-white/5 rounded-xl hover:border-[#d46211]/30 hover:text-white transition-all text-[11px] text-white/50">
+                                                    <span className="font-extrabold text-[#d46211] mr-1">{p.name}</span>({p.bpm} BPM)
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right Sub-panel: Dial Visualizer */}
+                                <div className="flex-1 flex flex-col items-center justify-center gap-5">
+                                    <div className="relative w-12 h-12 flex items-center justify-center">
+                                        {metronomeRipples.map(r => <Ripple key={r} id={r} />)}
+                                        <div className="w-3.5 h-3.5 rounded-full bg-[#d46211]/45 border border-[#d46211]/60 shrink-0" />
+                                    </div>
+
+                                    {/* Dial */}
+                                    <div className="relative flex items-center justify-center" style={{ width: 230, height: 230 }}>
+                                        <div className={`absolute inset-0 transition-opacity duration-300 ${isMetronomePlaying ? 'opacity-100' : 'opacity-40'}`}>
+                                            <Mandala angle={mandalaAngle} active={isMetronomePlaying} />
+                                        </div>
+
+                                        <div className={`absolute rounded-full border transition-all duration-300 ${isMetronomePlaying ? 'border-[#d46211]/50 shadow-xl' : 'border-[#d46211]/15'}`}
+                                            style={{ width: 170, height: 170, boxShadow: isMetronomePlaying ? '0 0 30px rgba(212,98,17,0.18)' : 'none' }} />
+
+                                        <div onMouseDown={onKnobDown}
+                                            className="relative cursor-ns-resize select-none flex items-center justify-center rounded-full"
+                                            style={{
+                                                width: 140, height: 140, zIndex: 10,
+                                                background: 'conic-gradient(from 0deg, #2a1a08, #3d2510, #2a1a08, #1a0e04, #2a1a08)',
+                                                boxShadow: '0 8px 32px rgba(0,0,0,0.6), inset 0 2px 8px rgba(255,255,255,0.05), inset 0 -2px 4px rgba(0,0,0,0.4)',
+                                                border: '2px solid rgba(212,98,17,0.3)',
+                                            }}>
+                                            <div className="absolute" style={{ width: 6, height: 6, top: 10, left: '50%', marginLeft: -3, transformOrigin: '3px 60px', transform: `rotate(${knobDeg}deg)` }}>
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[#d46211] shadow-lg shadow-[#d46211]/60" />
+                                            </div>
+
+                                            <div className="text-center z-10">
+                                                <div className="text-white font-black leading-none" style={{ fontSize: 36, fontVariantNumeric: 'tabular-nums', textShadow: '0 0 15px rgba(212,98,17,0.4)' }}>
+                                                    {bpm}
+                                                </div>
+                                                <div className="text-[#d46211]/60 text-[10px] font-black tracking-widest uppercase mt-0.5">BPM</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* BPM controls */}
+                                    <div className="flex items-center gap-3">
+                                        <button onClick={() => setBpm(p => Math.max(20, p - 1))} className="w-8 h-8 rounded-full border border-[#d46211]/30 text-[#d46211] font-bold hover:bg-[#d46211]/10 transition-all text-lg">−</button>
+                                        <div className="text-white/40 text-xs font-bold tracking-widest">DRAG DIAL OR TAP +/-</div>
+                                        <button onClick={() => setBpm(p => Math.min(240, p + 1))} className="w-8 h-8 rounded-full border border-[#d46211]/30 text-[#d46211] font-bold hover:bg-[#d46211]/10 transition-all text-lg">+</button>
+                                    </div>
+
+                                    {/* BPM Volume controller */}
+                                    <div className="flex items-center gap-4 bg-white/5 border border-white/5 p-3 rounded-2xl w-full max-w-sm">
+                                        <Volume2 className="w-4 h-4 text-[#d46211]" />
+                                        <div className="flex-1 flex flex-col text-left">
+                                            <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1">
+                                                <span>Metronome Volume</span>
+                                                <span className="text-[#d46211] font-mono">{Math.round(metronomeVolume * 100)}%</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="0" max="1.0" step="0.05" value={metronomeVolume}
+                                                onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
+                                                className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Metronome Control Play control at bottom */}
                             <div className="pt-4 border-t border-white/5 flex flex-wrap justify-between items-center gap-4">
-                                
-                                {/* Play/Stop button for Metronome or Sequencer */}
-                                {activeRhythmTab === 'metronome' ? (
-                                    <button onClick={() => setIsMetronomePlaying(!isMetronomePlaying)}
-                                        className={`h-12 px-10 rounded-xl font-bold text-sm tracking-wider uppercase transition-all flex items-center gap-2 ${isMetronomePlaying ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'}`}>
-                                        {isMetronomePlaying ? <><Square className="w-3.5 h-3.5 fill-white" /> Stop Metronome</> : <><Play className="w-3.5 h-3.5 fill-white" /> Play Metronome</>}
-                                    </button>
-                                ) : (
-                                    <button onClick={() => setIsDrumsPlaying(!isDrumsPlaying)}
-                                        className={`h-12 px-10 rounded-xl font-bold text-sm tracking-wider uppercase transition-all flex items-center gap-2 ${isDrumsPlaying ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'}`}>
-                                        {isDrumsPlaying ? <><Square className="w-3.5 h-3.5 fill-white" /> Stop Beats</> : <><Play className="w-3.5 h-3.5 fill-white" /> Play Beats</>}
-                                    </button>
-                                )}
+                                <button onClick={() => setIsMetronomePlaying(!isMetronomePlaying)}
+                                    className={`h-12 px-10 rounded-xl font-bold text-sm tracking-wider uppercase transition-all flex items-center gap-2 ${isMetronomePlaying ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'}`}>
+                                    {isMetronomePlaying ? <><Square className="w-3.5 h-3.5 fill-white" /> Stop Metronome</> : <><Play className="w-3.5 h-3.5 fill-white" /> Play Metronome</>}
+                                </button>
 
                                 <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-xl text-xs text-white/40 border border-white/5 text-left">
                                     <HelpCircle className="w-4 h-4 text-[#d46211] shrink-0" />
-                                    <span>Tip: You can play the Tanpura continuous drone and a rhythm (Metronome/Drums) simultaneously for scale practice!</span>
+                                    <span>Tip: Practicing with a metronome develops rhythmic accuracy and timing consistency.</span>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    )}
+
+                    {/* ──── VIEW 3: DRUM SEQUENCER ──── */}
+                    {activeTool === 'drums' && (
+                        <div className="w-full p-6 flex flex-col gap-6 overflow-y-auto max-h-[85vh]">
+                            <div className="flex-1 flex flex-col gap-5 animate-in fade-in duration-200 text-left">
+                                {/* Top Preset & Signature Bar */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-3 border-b border-white/5">
+                                    {/* Presets */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-widest block mb-1.5">Preset Groove</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {DRUM_PRESETS.map(p => (
+                                                <button key={p.name} onClick={() => loadDrumsPreset(p)}
+                                                    className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${selectedDrumsPresetName === p.name ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/20 text-[#d46211]/50 hover:text-[#d46211]'}`}>
+                                                    {p.name.split(' ')[0]}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Time Signatures */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-widest block mb-1.5">Time Signature</span>
+                                        <div className="grid grid-cols-6 gap-1">
+                                            {TIME_SIGNATURES.map(sig => (
+                                                <button key={sig.name} onClick={() => handleDrumsTimeSigChange(sig)}
+                                                    className={`py-1 rounded-md text-center font-bold text-xs transition-all border ${selectedDrumsTimeSig.name === sig.name ? 'bg-[#d46211] border-[#d46211] text-white' : 'border-white/5 text-white/40 hover:text-white'}`}>
+                                                    {sig.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Grouping feel */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-widest block mb-1.5">Grouping Feel</span>
+                                        <div className="flex gap-1.5">
+                                            {selectedDrumsTimeSig.groupings.map(group => (
+                                                <button key={group.name} onClick={() => setSelectedDrumsGrouping(group)}
+                                                    className={`flex-1 py-1 rounded-md text-center font-bold text-xs border transition-all ${selectedDrumsGrouping.name === group.name ? 'bg-[#d46211]/10 border-[#d46211] text-white' : 'border-white/5 text-white/30 hover:text-white/50'}`}>
+                                                    {group.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Step Grid Box */}
+                                <div className="flex-1 flex flex-col justify-center bg-black/40 border border-white/5 rounded-2xl p-4 select-none overflow-x-auto">
+                                    {/* Step Numbers */}
+                                    <div className="flex items-center mb-2.5">
+                                        <div className="w-20 shrink-0"></div>
+                                        <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
+                                            {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
+                                                const isGroupStart = selectedDrumsGrouping.dividers.includes(stepIdx);
+                                                return (
+                                                    <React.Fragment key={stepIdx}>
+                                                        {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
+                                                        <div className={`text-[10px] font-black w-full text-center transition-colors ${
+                                                            currentDrumsStep === stepIdx ? 'text-[#d46211]' : stepIdx % selectedDrumsTimeSig.stepsPerBeat === 0 ? 'text-white/60' : 'text-white/20'
+                                                        }`}>
+                                                            {stepIdx + 1}
+                                                        </div>
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Grid Rows */}
+                                    <div className="space-y-2.5">
+                                        {DRUM_TRACK_NAMES.map((trackName, trackIdx) => (
+                                            <div key={trackName} className="flex items-center">
+                                                <div className="w-20 text-left pr-2 shrink-0">
+                                                    <span className="text-xs font-bold text-white/55">{trackName}</span>
+                                                </div>
+                                                <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
+                                                    {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
+                                                        const isActive = drumsGrid[trackIdx][stepIdx];
+                                                        const isCurrent = currentDrumsStep === stepIdx;
+                                                        const isGroupStart = selectedDrumsGrouping.dividers.includes(stepIdx);
+                                                        return (
+                                                            <React.Fragment key={stepIdx}>
+                                                                {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
+                                                                <button onClick={() => handleToggleDrumsNode(trackIdx, stepIdx)}
+                                                                    className={`aspect-square w-full rounded-md border transition-all relative ${isActive ? 'bg-[#d46211] border-[#d46211] shadow-[0_0_6px_rgba(212,98,17,0.35)]' : 'bg-white/5 border-white/5 hover:border-white/10'}`}>
+                                                                    {isCurrent && <div className="absolute inset-0 rounded-md border border-amber-400 animate-pulse bg-white/10" />}
+                                                                </button>
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Progress playhead bar */}
+                                    <div className="flex items-center mt-3 pt-3 border-t border-white/5">
+                                        <div className="w-20 shrink-0"></div>
+                                        <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
+                                            {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
+                                                const isGroupStart = selectedDrumsGrouping.dividers.includes(stepIdx);
+                                                return (
+                                                    <React.Fragment key={stepIdx}>
+                                                        {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
+                                                        <div className={`h-1 rounded-full transition-all w-full ${currentDrumsStep === stepIdx ? 'bg-[#d46211]' : 'bg-white/5'}`} />
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Drum Controls (Volume & Clear) */}
+                                <div className="flex flex-wrap items-center justify-between gap-4">
+                                    <div className="flex items-center gap-4 bg-white/5 border border-white/5 p-3 rounded-2xl flex-1 max-w-sm">
+                                        <Volume2 className="w-4 h-4 text-[#d46211]" />
+                                        <div className="flex-1 flex flex-col text-left">
+                                            <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1">
+                                                <span>Drums Volume</span>
+                                                <span className="text-[#d46211] font-mono">{Math.round(drumsVolume * 100)}%</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
+                                                onChange={(e) => setDrumsVolume(parseFloat(e.target.value))}
+                                                className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <button onClick={handleClearGrid}
+                                        className="h-10 px-4 rounded-xl border border-white/5 hover:border-white/15 text-white/50 hover:text-white/80 transition-all flex items-center gap-1.5 text-xs font-bold shrink-0">
+                                        <Trash2 className="w-3.5 h-3.5" /> Clear Grid
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Drums Play Control at bottom */}
+                            <div className="pt-4 border-t border-white/5 flex flex-wrap justify-between items-center gap-4">
+                                <button onClick={() => setIsDrumsPlaying(!isDrumsPlaying)}
+                                    className={`h-12 px-10 rounded-xl font-bold text-sm tracking-wider uppercase transition-all flex items-center gap-2 ${isDrumsPlaying ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'}`}>
+                                    {isDrumsPlaying ? <><Square className="w-3.5 h-3.5 fill-white" /> Stop Beats</> : <><Play className="w-3.5 h-3.5 fill-white" /> Play Beats</>}
+                                </button>
+
+                                <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-xl text-xs text-white/40 border border-white/5 text-left">
+                                    <HelpCircle className="w-4 h-4 text-[#d46211] shrink-0" />
+                                    <span>Tip: Double tap grid cells to make beats or select a preset groove.</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

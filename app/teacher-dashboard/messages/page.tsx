@@ -11,7 +11,7 @@ import {
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
     Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe,
-    FolderPlus, Edit, MessageSquare
+    FolderPlus, Edit, MessageSquare, ArrowLeft, Trash2, CheckCheck
 } from 'lucide-react';
 
 interface Broadcast {
@@ -533,6 +533,76 @@ function MessagesDashboardContent() {
         }
     };
 
+    const handleSaveChatTemplate = async (templateName: string) => {
+        if (!templateName.trim() || !chatInput.trim() || !teacherProfile?.id) return;
+        setIsSavingChatTemplate(true);
+        try {
+            const payload = {
+                teacher_id: teacherProfile.id,
+                name: templateName.trim(),
+                subject: '',
+                content: chatInput.trim()
+            };
+
+            let savedItem;
+            if (!dbSetupErrorTemplates) {
+                const { data, error } = await supabaseAuth
+                    .from('message_templates')
+                    .insert([payload])
+                    .select();
+                if (error) throw error;
+                if (data && data[0]) {
+                    savedItem = data[0];
+                }
+            }
+            
+            if (!savedItem) {
+                savedItem = {
+                    id: 'local-' + Date.now(),
+                    ...payload
+                };
+                const localSaved = JSON.parse(localStorage.getItem('kfa_custom_chat_templates') || '[]');
+                localSaved.push(savedItem);
+                localStorage.setItem('kfa_custom_chat_templates', JSON.stringify(localSaved));
+            }
+
+            setChatTemplates(prev => [...prev, savedItem]);
+            showToast('Chat template saved successfully!', 'success');
+            setChatTemplateName('');
+            setShowSaveTemplateForm(false);
+        } catch (err) {
+            console.error('Failed to save chat template:', err);
+            showToast('Failed to save template.', 'error');
+        } finally {
+            setIsSavingChatTemplate(false);
+        }
+    };
+
+    const handleDeleteChatTemplate = async (templateId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            if (!dbSetupErrorTemplates && !templateId.startsWith('local-')) {
+                const { error } = await supabaseAuth
+                    .from('message_templates')
+                    .delete()
+                    .eq('id', templateId);
+                if (error) throw error;
+            }
+            
+            const localSaved = JSON.parse(localStorage.getItem('kfa_custom_chat_templates') || '[]');
+            const updated = localSaved.filter((t: any) => t.id !== templateId);
+            localStorage.setItem('kfa_custom_chat_templates', JSON.stringify(updated));
+
+            setChatTemplates(prev => prev.filter(t => t.id !== templateId));
+            showToast('Chat template deleted successfully.', 'info');
+        } catch (err) {
+            console.error('Failed to delete chat template:', err);
+            showToast('Failed to delete template.', 'error');
+        }
+    };
+
+
+
     // Recipients Modal Selection
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalTab, setModalTab] = useState<'class' | 'student'>('class');
@@ -548,6 +618,37 @@ function MessagesDashboardContent() {
     const [chatInput, setChatInput] = useState('');
     const [sendingDirectMsg, setSendingDirectMsg] = useState(false);
     const [messageType, setMessageType] = useState<'broadcast' | 'normal'>('broadcast');
+    const [chatTemplates, setChatTemplates] = useState<any[]>([]);
+    const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+    const [isSavingChatTemplate, setIsSavingChatTemplate] = useState(false);
+    const [chatTemplateName, setChatTemplateName] = useState('');
+    const [showSaveTemplateForm, setShowSaveTemplateForm] = useState(false);
+    const [studentSearchQuery, setStudentSearchQuery] = useState('');
+
+    const activeChatStudentIdRef = useRef(activeChatStudentId);
+    useEffect(() => {
+        activeChatStudentIdRef.current = activeChatStudentId;
+    }, [activeChatStudentId]);
+
+    const markMessagesAsRead = async (studentId: string) => {
+        if (!teacherProfile?.id) return;
+        try {
+            const { error } = await supabaseAuth
+                .from('messages')
+                .update({ status: 'read' })
+                .eq('sender_id', studentId)
+                .eq('receiver_id', teacherProfile.id);
+            if (error) throw error;
+
+            setDirectMessages(prev => prev.map(m => 
+                (m.sender_id === studentId && m.receiver_id === teacherProfile.id)
+                    ? { ...m, status: 'read' }
+                    : m
+            ));
+        } catch (err) {
+            console.error('Failed to mark messages as read:', err);
+        }
+    };
 
     const teacherChatEndRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -555,6 +656,12 @@ function MessagesDashboardContent() {
             teacherChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
     }, [directMessages, activeChatStudentId, activeChannel]);
+
+    useEffect(() => {
+        if (activeChannel === 'chatbox' && activeChatStudentId) {
+            markMessagesAsRead(activeChatStudentId);
+        }
+    }, [activeChatStudentId, activeChannel, directMessages.length]);
 
     // ── Auth & Data Loading ────────────────────────────────────────────────────
     useEffect(() => {
@@ -727,9 +834,24 @@ function MessagesDashboardContent() {
                         console.warn('[Messages] Message templates table query failed:', tplError.message);
                         if (tplError.code === '42P01' || tplError.code === 'PGRST205' || tplError.message?.includes('schema cache') || tplError.message?.includes('does not exist')) {
                             setDbSetupErrorTemplates(true);
+                            // Fallback custom templates
+                            const localCustom = localStorage.getItem('kfa_custom_chat_templates');
+                            if (localCustom) {
+                                try {
+                                    setChatTemplates(JSON.parse(localCustom));
+                                } catch (e) {
+                                    console.error(e);
+                                }
+                            }
                         }
                     } else {
                         if (tplData && tplData.length > 0) {
+                            // Filter custom chat templates
+                            const customTpls = tplData.filter((t: any) => 
+                                !['announcements', 'classroom', 'custom_groups', 'new_joiners', 'fee_management', 'chatbox'].includes(t.name)
+                            );
+                            setChatTemplates(customTpls);
+
                             setDefaultTemplates(prev => {
                                 const loaded = { ...prev };
                                 tplData.forEach((t: any) => {
@@ -756,7 +878,22 @@ function MessagesDashboardContent() {
                         .select('*')
                         .or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`)
                         .order('created_at', { ascending: true });
-                    setDirectMessages(dbDirectMessages || []);
+                    const rawMessages = dbDirectMessages || [];
+                    setDirectMessages(rawMessages);
+
+                    // Mark incoming messages as delivered when loaded
+                    const undeliveredMessages = rawMessages.filter(m => m.receiver_id === profile.id && (!m.status || m.status === 'sent'));
+                    if (undeliveredMessages.length > 0) {
+                        supabaseAuth
+                            .from('messages')
+                            .update({ status: 'delivered' })
+                            .in('id', undeliveredMessages.map(m => m.id))
+                            .then(() => {
+                                setDirectMessages(prev => prev.map(m => 
+                                    (m.receiver_id === profile.id && (!m.status || m.status === 'sent')) ? { ...m, status: 'delivered' } : m
+                                ));
+                            });
+                    }
                 } catch (dme) {
                     console.warn('Failed to load direct messages:', dme);
                 }
@@ -786,6 +923,37 @@ function MessagesDashboardContent() {
                             if (prev.some(m => m.id === newMsg.id)) return prev;
                             return [...prev, newMsg];
                         });
+
+                        // Handle auto read/delivery receipt status update
+                        if (newMsg.receiver_id === teacherProfile.id) {
+                            const currentChatStudentId = activeChatStudentIdRef.current;
+                            const isChattingWithSender = currentChatStudentId === newMsg.sender_id;
+                            const targetStatus = isChattingWithSender ? 'read' : 'delivered';
+                            
+                            supabaseAuth
+                                .from('messages')
+                                .update({ status: targetStatus })
+                                .eq('id', newMsg.id)
+                                .then(({ error }) => {
+                                    if (!error) {
+                                        setDirectMessages(prev => prev.map(m => 
+                                            m.id === newMsg.id ? { ...m, status: targetStatus } : m
+                                        ));
+                                    }
+                                });
+                        }
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'messages' },
+                (payload) => {
+                    const updatedMsg = payload.new as any;
+                    if (updatedMsg) {
+                        setDirectMessages(prev => prev.map(m => 
+                            m.id === updatedMsg.id ? { ...m, status: updatedMsg.status } : m
+                        ));
                     }
                 }
             )
@@ -828,6 +996,7 @@ function MessagesDashboardContent() {
 
     const chatContacts = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
+        const localQuery = studentSearchQuery.trim().toLowerCase();
         const list = students.map(student => {
             const threadMsgs = directMessages.filter(m => 
                 (m.sender_id === student.id && m.receiver_id === teacherProfile?.id) ||
@@ -842,13 +1011,19 @@ function MessagesDashboardContent() {
             };
         });
 
-        const filtered = query
-            ? list.filter(contact => 
+        let filtered = list;
+        if (query) {
+            filtered = filtered.filter(contact => 
                 contact.name.toLowerCase().includes(query) ||
                 contact.lastMessage.toLowerCase().includes(query) ||
                 contact.threadMessages.some(m => m.message_text.toLowerCase().includes(query))
-              )
-            : list;
+            );
+        }
+        if (localQuery) {
+            filtered = filtered.filter(contact => 
+                contact.name.toLowerCase().includes(localQuery)
+            );
+        }
 
         return filtered.sort((a, b) => {
             if (!a.lastMessageAt && !b.lastMessageAt) return 0;
@@ -856,7 +1031,7 @@ function MessagesDashboardContent() {
             if (!b.lastMessageAt) return -1;
             return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
         });
-    }, [students, directMessages, teacherProfile?.id, searchQuery]);
+    }, [students, directMessages, teacherProfile?.id, searchQuery, studentSearchQuery]);
 
     // ── Save Broadcast Handler ─────────────────────────────────────────────────
     const handleSendBroadcast = async (e: React.FormEvent) => {
@@ -891,6 +1066,7 @@ function MessagesDashboardContent() {
                     sender_id: teacherProfile.id,
                     receiver_id: sid,
                     message_text: content.trim(),
+                    status: 'sent',
                     created_at: new Date().toISOString()
                 }));
 
@@ -902,7 +1078,20 @@ function MessagesDashboardContent() {
                 if (mError) throw mError;
 
                 if (insertedData) {
-                    setDirectMessages(prev => [...prev, ...insertedData]);
+                    setDirectMessages(prev => {
+                        const filtered = insertedData.filter(newM => !prev.some(m => m.id === newM.id));
+                        return [...prev, ...filtered];
+                    });
+
+                    // Insert notifications for each target student
+                    const notificationRows = targetStudentIds.map(sid => ({
+                        user_id: sid,
+                        title: `New Message: ${teacherProfile.name}`,
+                        message: content.trim(),
+                        type: 'messages',
+                        is_read: false
+                    }));
+                    await supabaseAuth.from('notifications').insert(notificationRows);
                 }
 
                 showToast(`Message successfully sent to ${targetStudentIds.length} student(s) chatbox!`, 'success');
@@ -1418,11 +1607,24 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                             
                             {activeChannel === 'chatbox' ? (
                                 /* CHATBOX WORKSPACE */
-                                <div className="grid grid-cols-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-[600px] text-left">
+                                <div className="flex bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-[600px] text-left">
                                     {/* Sub-Left Panel: Chat Contacts */}
-                                    <div className="col-span-12 md:col-span-4 border-r border-slate-100 dark:border-slate-800 flex flex-col h-full">
-                                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
-                                            <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Students</h4>
+                                    <div className={`w-full md:w-80 border-r border-slate-100 dark:border-slate-800 flex flex-col h-full shrink-0 ${activeChatStudentId ? 'hidden md:flex' : 'flex'}`}>
+                                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex-shrink-0 space-y-3">
+                                            <div className="flex justify-between items-center">
+                                                <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Students</h4>
+                                            </div>
+                                            {/* Local Student Search */}
+                                            <div className="relative">
+                                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                <input
+                                                    type="text"
+                                                    value={studentSearchQuery}
+                                                    onChange={(e) => setStudentSearchQuery(e.target.value)}
+                                                    placeholder="Search student by name..."
+                                                    className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500 text-slate-800 dark:text-slate-100"
+                                                />
+                                            </div>
                                         </div>
                                         <div className="flex-1 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-850 custom-scrollbar">
                                             {chatContacts.map(contact => {
@@ -1434,42 +1636,75 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         onClick={() => {
                                                             setActiveChatStudentId(contact.id);
                                                             setChatInput('');
+                                                            setShowTemplateMenu(false);
+                                                            setShowSaveTemplateForm(false);
                                                         }}
-                                                        className={`w-full p-4 flex flex-col gap-1 transition-colors text-left cursor-pointer ${
+                                                        className={`w-full px-5 py-4 flex gap-3 items-center transition-colors text-left cursor-pointer ${
                                                             isActive
-                                                                ? 'bg-slate-50 dark:bg-slate-800/40 text-slate-900 dark:text-white'
+                                                                ? 'bg-teal-50/45 dark:bg-slate-800/40 text-slate-900 dark:text-white font-extrabold'
                                                                 : 'hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
                                                         }`}
                                                     >
-                                                        <div className="flex justify-between items-baseline">
-                                                            <span className="font-extrabold text-xs">{contact.name}</span>
-                                                            {contact.lastMessageAt && (
-                                                                <span className="text-[9px] text-slate-400">
-                                                                    {contact.lastMessageAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                </span>
-                                                            )}
+                                                        {/* Avatar Circle */}
+                                                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs shrink-0 select-none text-slate-600 dark:text-slate-300">
+                                                            {contact.name?.charAt(0) || 'S'}
                                                         </div>
-                                                        <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate block mt-0.5">
-                                                            {contact.lastMessage}
-                                                        </span>
+                                                        <div className="min-w-0 flex-1 flex flex-col">
+                                                            <div className="flex justify-between items-baseline gap-1">
+                                                                <span className="font-extrabold text-xs truncate">{contact.name}</span>
+                                                                {contact.lastMessageAt && (
+                                                                    <span className="text-[9px] text-slate-400 shrink-0 font-medium">
+                                                                        {contact.lastMessageAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate block mt-0.5 font-medium">
+                                                                {contact.lastMessage}
+                                                            </span>
+                                                        </div>
                                                     </button>
                                                 );
                                             })}
                                             {chatContacts.length === 0 && (
-                                                <p className="p-4 text-xs italic text-slate-400 text-center">No students found.</p>
+                                                <p className="p-4 text-xs italic text-slate-400 text-center font-medium">No students found.</p>
                                             )}
                                         </div>
                                     </div>
 
                                     {/* Sub-Right Panel: Message Thread */}
-                                    <div className="col-span-12 md:col-span-8 flex flex-col h-full bg-slate-50/20 dark:bg-slate-950/10">
+                                    <div className={`flex-1 flex flex-col h-full bg-slate-50/20 dark:bg-slate-950/10 ${activeChatStudentId ? 'flex' : 'hidden md:flex'}`}>
                                         {activeChatStudentId ? (
                                             <>
                                                 {/* Chat Header */}
-                                                <div className="px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
-                                                    <span className="font-extrabold text-xs text-slate-800 dark:text-white">
-                                                        Conversation with {students.find(s => s.id === activeChatStudentId)?.name}
-                                                    </span>
+                                                <div className="px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
+                                                    <div className="flex items-center gap-3">
+                                                        {/* Back button for mobile */}
+                                                        <button 
+                                                            onClick={() => {
+                                                                setActiveChatStudentId(null);
+                                                                setShowTemplateMenu(false);
+                                                                setShowSaveTemplateForm(false);
+                                                            }}
+                                                            className="md:hidden p-1.5 text-slate-500 hover:text-slate-700 transition-colors"
+                                                            type="button"
+                                                            title="Back to students list"
+                                                        >
+                                                            <ArrowLeft className="w-4 h-4" />
+                                                        </button>
+                                                        
+                                                        {/* Avatar and Name */}
+                                                        <div className="flex items-center gap-2.5">
+                                                            <div className="w-8 h-8 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-850 dark:text-teal-300 flex items-center justify-center font-bold text-xs select-none">
+                                                                {students.find(s => s.id === activeChatStudentId)?.name?.charAt(0) || 'S'}
+                                                            </div>
+                                                            <div className="flex flex-col">
+                                                                <span className="font-extrabold text-xs text-slate-800 dark:text-white leading-tight">
+                                                                    {students.find(s => s.id === activeChatStudentId)?.name}
+                                                                </span>
+                                                                <span className="text-[9px] text-slate-400 font-semibold leading-none mt-0.5">Student</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
 
                                                 {/* Chat Search Status Banner */}
@@ -1506,20 +1741,116 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                             return (
                                                                 <div
                                                                     key={msg.id}
-                                                                    className={`max-w-[80%] p-3 rounded-2xl text-xs leading-relaxed ${
+                                                                    className={`max-w-[85%] md:max-w-[80%] p-3 rounded-2xl text-xs leading-relaxed ${
                                                                         isMe
                                                                             ? 'bg-[#0e5f59] text-white self-end rounded-tr-none'
                                                                             : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 self-start rounded-tl-none border border-slate-100 dark:border-slate-750'
                                                                     }`}
                                                                 >
-                                                                    <p className="whitespace-pre-wrap select-text">{msg.message_text}</p>
-                                                                    <span className={`block text-[8px] mt-1 text-right ${isMe ? 'text-teal-100/60' : 'text-slate-400'}`}>
-                                                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                    </span>
+                                                                    <p className="whitespace-pre-wrap select-text font-medium">{msg.message_text}</p>
+                                                                    <div className="flex justify-end items-center gap-1 mt-1">
+                                                                        <span className={`text-[8px] ${isMe ? 'text-teal-100/60' : 'text-slate-455'}`}>
+                                                                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                        </span>
+                                                                        {isMe && (
+                                                                            msg.status === 'read' ? (
+                                                                                <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb] shrink-0" />
+                                                                            ) : msg.status === 'delivered' ? (
+                                                                                <CheckCheck className="w-3.5 h-3.5 text-[#8696a0] shrink-0" />
+                                                                            ) : (
+                                                                                <Check className="w-3.5 h-3.5 text-[#8696a0] shrink-0" />
+                                                                            )
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                             );
                                                         })}
                                                     <div ref={teacherChatEndRef} />
+                                                </div>
+
+                                                {/* Chat Templates Popover Menu & Form */}
+                                                <div className="relative bg-white dark:bg-slate-900">
+                                                    {showTemplateMenu && (
+                                                        <div className="absolute bottom-full left-4 mb-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-50 flex flex-col max-h-72 overflow-hidden animate-in slide-in-from-bottom-2 duration-150">
+                                                            {showSaveTemplateForm ? (
+                                                                /* Save Template Form */
+                                                                <div className="p-4 flex flex-col gap-3 text-left">
+                                                                    <span className="text-[10px] font-black text-slate-450 uppercase tracking-wider">Save Current Message as Template</span>
+                                                                    <input 
+                                                                        type="text"
+                                                                        value={chatTemplateName}
+                                                                        onChange={(e) => setChatTemplateName(e.target.value)}
+                                                                        placeholder="Template name (e.g. Lesson Followup)"
+                                                                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500 bg-white dark:bg-slate-955 text-slate-855 dark:text-white"
+                                                                        autoFocus
+                                                                    />
+                                                                    <div className="flex gap-2 justify-end">
+                                                                        <button 
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setShowSaveTemplateForm(false);
+                                                                                setChatTemplateName('');
+                                                                            }}
+                                                                            className="px-3 py-1.5 border border-slate-200 text-slate-500 hover:bg-slate-50 text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                        <button 
+                                                                            type="button"
+                                                                            disabled={isSavingChatTemplate || !chatTemplateName.trim()}
+                                                                            onClick={() => handleSaveChatTemplate(chatTemplateName)}
+                                                                            className="px-3 py-1.5 bg-[#0e5f59] hover:bg-[#0b4e49] text-white text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                                                                        >
+                                                                            {isSavingChatTemplate ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                /* List Templates */
+                                                                <>
+                                                                    <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-shrink-0 bg-slate-50 dark:bg-slate-800">
+                                                                        <span className="text-[10px] font-black text-slate-450 dark:text-slate-500 uppercase tracking-wider">Chat Templates</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={!chatInput.trim()}
+                                                                            onClick={() => setShowSaveTemplateForm(true)}
+                                                                            className="text-[10px] text-[#0e5f59] hover:underline font-extrabold disabled:opacity-40 disabled:no-underline cursor-pointer"
+                                                                        >
+                                                                            + Save Current
+                                                                        </button>
+                                                                    </div>
+                                                                    <div className="flex-1 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-850 custom-scrollbar text-left">
+                                                                        {chatTemplates.map((t) => (
+                                                                            <div
+                                                                                key={t.id}
+                                                                                onClick={() => {
+                                                                                    setChatInput(t.content);
+                                                                                    setShowTemplateMenu(false);
+                                                                                }}
+                                                                                className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer flex justify-between items-start gap-3 transition-colors"
+                                                                            >
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <span className="text-xs font-bold text-slate-855 dark:text-slate-200 block truncate">{t.name}</span>
+                                                                                    <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate block mt-0.5 font-medium">{t.content}</span>
+                                                                                </div>
+                                                                                <button 
+                                                                                    type="button"
+                                                                                    onClick={(e) => handleDeleteChatTemplate(t.id, e)}
+                                                                                    className="text-slate-400 hover:text-red-500 p-1 shrink-0 transition-colors cursor-pointer"
+                                                                                    title="Delete template"
+                                                                                >
+                                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            </div>
+                                                                        ))}
+                                                                        {chatTemplates.length === 0 && (
+                                                                            <p className="p-4 text-xs italic text-slate-400 text-center font-medium">No templates saved yet. Type a message and click here to save it!</p>
+                                                                        )}
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {/* Input Form */}
@@ -1533,6 +1864,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                                 sender_id: teacherProfile.id,
                                                                 receiver_id: activeChatStudentId,
                                                                 message_text: chatInput.trim(),
+                                                                status: 'sent',
                                                                 created_at: new Date().toISOString()
                                                             };
                                                             const { data, error } = await supabaseAuth
@@ -1541,8 +1873,17 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                                 .select();
                                                             if (error) throw error;
                                                             if (data) {
-                                                                setDirectMessages(prev => [...prev, data[0]]);
+                                                                setDirectMessages(prev => prev.some(m => m.id === data[0].id) ? prev : [...prev, data[0]]);
                                                                 setChatInput('');
+
+                                                                // Insert notification for the student
+                                                                await supabaseAuth.from('notifications').insert({
+                                                                    user_id: activeChatStudentId,
+                                                                    title: `New Message: ${teacherProfile.name}`,
+                                                                    message: payload.message_text,
+                                                                    type: 'messages',
+                                                                    is_read: false
+                                                                });
                                                             }
                                                         } catch (err) {
                                                             console.error('Failed to send reply:', err);
@@ -1553,6 +1894,24 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                     }}
                                                     className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex gap-2 items-center flex-shrink-0"
                                                 >
+                                                    {/* Template Selector Trigger */}
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setShowTemplateMenu(!showTemplateMenu);
+                                                            setShowSaveTemplateForm(false);
+                                                            setChatTemplateName('');
+                                                        }}
+                                                        className={`p-2.5 rounded-xl border transition-all shrink-0 cursor-pointer ${
+                                                            showTemplateMenu
+                                                                ? 'border-teal-500 bg-teal-50 text-teal-650 dark:bg-teal-950/20'
+                                                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-450 hover:bg-slate-50'
+                                                        }`}
+                                                        title="Message templates"
+                                                    >
+                                                        <FileText className="w-4 h-4" />
+                                                    </button>
+
                                                     <input
                                                         type="text"
                                                         value={chatInput}
@@ -1570,7 +1929,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                 </form>
                                             </>
                                         ) : (
-                                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-400">
+                                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-400 bg-slate-50/20 dark:bg-slate-955/10">
                                                 <MessageSquare className="w-8 h-8 text-[#ecb613] mb-2 animate-pulse" />
                                                 <p className="text-xs font-bold">Select a student from the left panel to open chat conversation.</p>
                                             </div>
