@@ -129,22 +129,35 @@ export default function AcademyPolicies() {
         },
         {
             id: 'ip',
-            title: 'Academic & IP Protection',
+            title: 'Learning Materials & Copyright',
             icon: Lock,
-            subtitle: 'Protection of curriculum, audio tracks, and learning materials.',
+            subtitle: 'Protecting academy learning materials, recordings, and intellectual property.',
             points: [
                 {
-                    title: 'Proprietary Learning Material',
-                    description: 'All worksheets, notations (Sargam sheets), and custom practice tracks provided in the portal are proprietary materials of Krishna Flute Academy.'
+                    title: 'Learning Materials',
+                    description: 'All study materials provided by Krishna Flute Academy, including notation (Sargam sheets), lesson notes, practice tracks, PDFs, videos, recordings, and portal content, are created exclusively for enrolled students.\n\nThese materials are intended only for your personal learning and remain the intellectual property of the academy.'
                 },
                 {
-                    title: 'No Unauthorized Sharing',
-                    description: 'Sharing sargam notations, class recordings, or proprietary tools outside the academy is strictly prohibited and violates terms of admission.',
+                    title: 'Sharing Academy Content',
+                    description: 'Please do not share any academy resources without prior permission.\n\nThis includes:\n• Lesson notes and Sargam sheets\n• Class recordings\n• Practice audio tracks\n• PDFs and learning materials\n• Portal screenshots or premium content\n\nSharing academy materials with non-enrolled students or on public platforms is strictly prohibited.',
                     isCritical: true
                 },
                 {
-                    title: 'Respecting Intellectual Property',
-                    description: 'Do not upload class instructional videos or custom loops to public platforms (like YouTube, Drive, or Social Media) without written permission.'
+                    title: 'Copyright & Intellectual Property',
+                    description: 'All teaching materials, recordings, exercises, and curriculum developed by Krishna Flute Academy are protected under applicable copyright laws.\n\nStudents may not:\n• Upload academy materials to YouTube, Facebook, Instagram, Google Drive, Telegram, WhatsApp groups, or any other platform.\n• Sell, redistribute, or reproduce academy content.\n• Use academy content for commercial teaching or training without written permission.',
+                    isCritical: true
+                },
+                {
+                    title: 'Recording & Personal Use',
+                    description: 'Students may use academy recordings and learning materials only for personal practice and revision.\n\nThese materials must not be:\n• Shared with others.\n• Edited and redistributed.\n• Used for teaching another student.\n• Uploaded publicly without written approval.'
+                },
+                {
+                    title: 'Student Performance Videos',
+                    description: 'The academy may occasionally feature student performances on its website or social media to celebrate learning achievements.\n\nIf a student or parent prefers not to have their performance shared, they may inform the academy, and their preference will be respected.'
+                },
+                {
+                    title: 'Respect Our Learning Community',
+                    description: 'Krishna Flute Academy invests significant time in creating structured lessons, exercises, and practice resources for every student.\n\nBy respecting these policies, you help us continue providing high-quality music education while protecting the hard work behind our curriculum.'
                 }
             ]
         }
