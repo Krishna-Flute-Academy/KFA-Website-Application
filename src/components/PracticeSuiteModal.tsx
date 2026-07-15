@@ -264,33 +264,22 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     const [isTanpuraPlaying, setIsTanpuraPlaying] = useState(false);
     const [tanpuraVolume, setTanpuraVolume] = useState(0.5);
     const activeTanpuraNodesRef = useRef<ActiveTanpuraNode[]>([]);
-    const tanpuraBufferRef = useRef<AudioBuffer | null>(null);
+    // Store raw bytes from the network — decoding happens lazily on first user tap
+    // so it always runs inside an active AudioContext (required by mobile browsers).
+    const tanpuraRawRef = useRef<ArrayBuffer | null>(null);
+    const tanpuraBufferRef = useRef<AudioBuffer | null>(null); // decoded cache
 
-    // Pre-load Tanpura Audio (decode without creating a persistent AudioContext)
+    // Fetch the file bytes on mount (no AudioContext needed for this)
     useEffect(() => {
-        const loadTanpura = async () => {
-            try {
-                const response = await fetch('/sounds/tanpura/Tanpura_c.mp3');
-                if (response.ok) {
-                    const contentType = response.headers.get('content-type');
-                    if (contentType && contentType.includes('text/html')) {
-                        console.error('Tanpura file not found — server returned HTML instead of audio.');
-                        return;
-                    }
-                    const arrayBuffer = await response.arrayBuffer();
-                    // Use a temporary offline context just for decoding — no autoplay issues
-                    const tempCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                    tanpuraBufferRef.current = await tempCtx.decodeAudioData(arrayBuffer);
-                    await tempCtx.close(); // Immediately close — we only needed it for decoding
-                    console.log('✅ Tanpura audio decoded and ready.');
-                } else {
-                    console.error('❌ Failed to fetch Tanpura file. HTTP Status:', response.status);
-                }
-            } catch (e) {
-                console.error('❌ Error decoding Tanpura audio:', e);
-            }
-        };
-        loadTanpura();
+        fetch('/sounds/tanpura/Tanpura_c.mp3')
+            .then(async (res) => {
+                if (!res.ok) { console.error('❌ Tanpura fetch failed:', res.status); return; }
+                const ct = res.headers.get('content-type') ?? '';
+                if (ct.includes('text/html')) { console.error('❌ Tanpura file not found (got HTML).'); return; }
+                tanpuraRawRef.current = await res.arrayBuffer();
+                console.log('✅ Tanpura bytes fetched — will decode on first tap.');
+            })
+            .catch(e => console.error('❌ Tanpura fetch error:', e));
     }, []);
     
     const tanpuraVolumeRef = useRef(tanpuraVolume);
@@ -509,9 +498,22 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     const startTanpura = useCallback(async (pitchOverride?: typeof SHRU_PITCHES[0]) => {
         try {
             const ctx = getCtx();
+            // Resume FIRST — this is the user-gesture unlock that mobile requires
             if (ctx.state !== 'running') await ctx.resume();
 
             const pitch = pitchOverride ?? selectedPitch;
+
+            // Decode lazily here, inside the running ctx — works on ALL mobile browsers
+            if (!tanpuraBufferRef.current && tanpuraRawRef.current) {
+                try {
+                    // clone the buffer before decoding — decodeAudioData consumes (detaches) it
+                    const clone = tanpuraRawRef.current.slice(0);
+                    tanpuraBufferRef.current = await ctx.decodeAudioData(clone);
+                    console.log('✅ Tanpura decoded on first tap.');
+                } catch (e) {
+                    console.error('❌ Decode failed:', e);
+                }
+            }
 
             if (tanpuraBufferRef.current) {
                 droneActiveRef.current = true;
