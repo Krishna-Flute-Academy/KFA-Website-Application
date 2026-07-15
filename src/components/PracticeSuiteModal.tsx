@@ -202,6 +202,19 @@ const DRUM_PRESETS: DrumPreset[] = [
             [true, false, true, false, true, false, true, false, true, false, true, false, true, false],
             [false, false, false, false, false, false, false, false, false, false, false, false, false, false],
         ]
+    },
+    {
+        name: 'March (2/4)',
+        description: 'Standard 2/4 march/polka groove',
+        steps: 8,
+        timeSigName: '2/4',
+        groupingName: 'Standard',
+        grid: [
+            [true, false, false, false, true, false, false, false],
+            [false, false, true, false, false, false, true, false],
+            [true, false, true, false, true, false, true, false],
+            [false, false, false, false, false, false, false, false],
+        ]
     }
 ];
 
@@ -238,9 +251,10 @@ function Ripple({ id }: { id: number }) {
     );
 }
 
-export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'tanpura' | 'drums' }) {
+export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'tanpura' | 'drums' | 'combosetup' }) {
     // ── GENERAL STATES ──────────────────────────────────────────────────────
-    const [activeTool, setActiveTool] = useState<'metronome' | 'tanpura' | 'drums'>(() => {
+    const [activeTool, setActiveTool] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>(() => {
+        if (defaultTab === 'combosetup') return 'combosetup';
         if (defaultTab === 'drums') return 'drums';
         if (defaultTab === 'tanpura') return 'tanpura';
         return 'metronome';
@@ -306,12 +320,14 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     const metronomeRampStartRef = useRef<{ bpm: number; time: number } | null>(null);
     const metronomeIsDragging = useRef(false);
     const metronomeLastY = useRef(0);
+    const isMetronomePlayingRef = useRef(isMetronomePlaying);
 
     // Sync metronome refs
     useEffect(() => { metronomeBpmRef.current = bpm; }, [bpm]);
     useEffect(() => { metronomeVolumeRef.current = metronomeVolume; }, [metronomeVolume]);
     useEffect(() => { metronomeSoundRef.current = selectedMetronomeSound; }, [selectedMetronomeSound]);
     useEffect(() => { metronomeBeatsRef.current = metronomeBeats; }, [metronomeBeats]);
+    useEffect(() => { isMetronomePlayingRef.current = isMetronomePlaying; }, [isMetronomePlaying]);
 
     // ── DRUMS STATES ────────────────────────────────────────────────────────
     const [isDrumsPlaying, setIsDrumsPlaying] = useState(false);
@@ -340,6 +356,9 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     const drumsGridRef = useRef(drumsGrid);
     const drumsStepsCountRef = useRef(drumsActiveStepsCount);
     const isDrumsPlayingRef = useRef(isDrumsPlaying);
+    const drumsStepsPerBeatRef = useRef(selectedDrumsTimeSig.stepsPerBeat);
+    const metronomeLastTickTimeRef = useRef<number>(0);
+    const drumsLastTickTimeRef = useRef<number>(0);
 
     // Sync drums refs
     useEffect(() => { drumsBpmRef.current = bpm; }, [bpm]);
@@ -347,6 +366,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     useEffect(() => { drumsGridRef.current = drumsGrid; }, [drumsGrid]);
     useEffect(() => { drumsStepsCountRef.current = drumsActiveStepsCount; }, [drumsActiveStepsCount]);
     useEffect(() => { isDrumsPlayingRef.current = isDrumsPlaying; }, [isDrumsPlaying]);
+    useEffect(() => { drumsStepsPerBeatRef.current = selectedDrumsTimeSig.stepsPerBeat; }, [selectedDrumsTimeSig]);
 
     // ── SHARED AUDIO UTILS ──────────────────────────────────────────────────
     const createNoiseBuffer = (ctx: AudioContext, duration: number): AudioBuffer => {
@@ -489,7 +509,8 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
         const msUntilSchedule = Math.max(0, (nextStart - ctx.currentTime - 0.3) * 1000);
 
         droneTimerRef.current = setTimeout(() => {
-            scheduleDroneChunk(ctx, buffer, pitchRatio, volume, nextStart);
+            const freshVolume = tanpuraVolumeRef.current * 0.85;
+            scheduleDroneChunk(ctx, buffer, pitchRatio, freshVolume, nextStart);
         }, msUntilSchedule);
     }, []);
 
@@ -538,23 +559,30 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     // Handle Tanpura Volume Real-Time Adjustments
     useEffect(() => {
         const ctx = audioCtxRef.current;
-        if (!ctx || activeTanpuraNodesRef.current.length === 0) return;
+        if (!ctx) return;
         
-        if (tanpuraBufferRef.current) {
-             const node = activeTanpuraNodesRef.current[0];
-             if (node && node.gainNode) {
-                 node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
-                 node.gainNode.gain.linearRampToValueAtTime(tanpuraVolume * 0.8, ctx.currentTime + 0.1);
-             }
-        } else {
-             const mixVolumes = [1.0, 0.8, 0.75, 0.45];
-             activeTanpuraNodesRef.current.forEach((node, idx) => {
-                 try {
-                     const targetGain = tanpuraVolume * mixVolumes[idx] * 0.22;
-                     node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
-                     node.gainNode.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.1);
-                 } catch (_) {}
-             });
+        const targetVol = tanpuraVolume * 0.85;
+        
+        // 1. Adjust buffer drone nodes if playing
+        if (droneNodesRef.current && droneNodesRef.current.length > 0) {
+            droneNodesRef.current.forEach(node => {
+                try {
+                    node.gain.gain.setValueAtTime(node.gain.gain.value, ctx.currentTime);
+                    node.gain.gain.linearRampToValueAtTime(targetVol, ctx.currentTime + 0.1);
+                } catch (_) {}
+            });
+        }
+        
+        // 2. Adjust synthesizer fallback nodes if playing
+        if (activeTanpuraNodesRef.current && activeTanpuraNodesRef.current.length > 0) {
+            const mixVolumes = [1.0, 0.8, 0.75, 0.45];
+            activeTanpuraNodesRef.current.forEach((node, idx) => {
+                try {
+                    const targetGain = tanpuraVolume * mixVolumes[idx] * 0.22;
+                    node.gainNode.gain.setValueAtTime(node.gainNode.gain.value, ctx.currentTime);
+                    node.gainNode.gain.linearRampToValueAtTime(targetGain, ctx.currentTime + 0.1);
+                } catch (_) {}
+            });
         }
     }, [tanpuraVolume]);
 
@@ -590,6 +618,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     }, []);
 
     const metronomeTick = useCallback(() => {
+        metronomeLastTickTimeRef.current = Date.now();
         const beat = metronomeBeatRef.current;
         const total = metronomeBeatsRef.current;
         playMetronomeTick(beat === 0);
@@ -610,18 +639,27 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     // Handle Metronome Play state changes
     useEffect(() => {
         if (isMetronomePlaying) {
-            // Stop Drums if playing
-            setIsDrumsPlaying(false);
+            if (activeTool !== 'combosetup') {
+                setIsDrumsPlaying(false);
+            }
 
             metronomeBeatRef.current = 0;
             if (isMetronomeRampMode) metronomeRampStartRef.current = { bpm, time: Date.now() };
+            
+            if (activeTool === 'combosetup' && isDrumsPlayingRef.current) {
+                // Perfect Downbeat Sync: reset drums and schedule both simultaneously
+                if (drumsTimerRef.current) clearTimeout(drumsTimerRef.current);
+                drumsStepRef.current = 0;
+                drumsTick();
+            }
+            
             metronomeTick();
         } else {
             if (metronomeTimerRef.current) clearTimeout(metronomeTimerRef.current);
             setCurrentMetronomeBeat(-1);
         }
         return () => { if (metronomeTimerRef.current) clearTimeout(metronomeTimerRef.current); };
-    }, [isMetronomePlaying, metronomeTick]); // eslint-disable-line
+    }, [isMetronomePlaying, metronomeTick, activeTool]); // eslint-disable-line
 
 
     // ── DRUMS AUDIO ENGINES ─────────────────────────────────────────────────
@@ -727,6 +765,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
     const drumsTick = useCallback(() => {
         if (!isDrumsPlayingRef.current) return;
+        drumsLastTickTimeRef.current = Date.now();
 
         const ctx = getCtx();
         if (ctx.state === 'suspended') ctx.resume();
@@ -746,24 +785,33 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
         drumsStepRef.current = (step + 1) % maxSteps;
 
-        const interval = ((60 / drumsBpmRef.current) / 4) * 1000;
+        const interval = ((60 / drumsBpmRef.current) / drumsStepsPerBeatRef.current) * 1000;
         drumsTimerRef.current = setTimeout(drumsTick, interval);
     }, [playDrumKick, playDrumSnare, playDrumHihat, playDrumShaker]);
 
     // Handle Drums Play state changes
     useEffect(() => {
         if (isDrumsPlaying) {
-            // Stop Metronome if playing
-            setIsMetronomePlaying(false);
+            if (activeTool !== 'combosetup') {
+                setIsMetronomePlaying(false);
+            }
 
             drumsStepRef.current = 0;
+            
+            if (activeTool === 'combosetup' && isMetronomePlayingRef.current) {
+                // Perfect Downbeat Sync: reset metronome and schedule both simultaneously
+                if (metronomeTimerRef.current) clearTimeout(metronomeTimerRef.current);
+                metronomeBeatRef.current = 0;
+                metronomeTick();
+            }
+            
             drumsTick();
         } else {
             if (drumsTimerRef.current) clearTimeout(drumsTimerRef.current);
             setCurrentDrumsStep(-1);
         }
         return () => { if (drumsTimerRef.current) clearTimeout(drumsTimerRef.current); };
-    }, [isDrumsPlaying, drumsTick]); // eslint-disable-line
+    }, [isDrumsPlaying, drumsTick, activeTool]); // eslint-disable-line
 
 
     // ── INTERACTIONS ────────────────────────────────────────────────────────
@@ -840,17 +888,23 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
     // Time Sig selection (Drums)
     const handleDrumsTimeSigChange = (sig: TimeSignature) => {
-        setSelectedDrumsTimeSig(sig);
-        setSelectedDrumsGrouping(sig.groupings[0]);
-        setDrumsActiveStepsCount(sig.totalSteps);
-        setSelectedDrumsPresetName('Custom Beat');
-
-        drumsStepRef.current = 0;
-        if (isDrumsPlaying) {
-            if (drumsTimerRef.current) clearTimeout(drumsTimerRef.current);
-            drumsTick();
+        const matchingPreset = DRUM_PRESETS.find(p => p.timeSigName === sig.name);
+        if (matchingPreset) {
+            loadDrumsPreset(matchingPreset);
         } else {
-            setCurrentDrumsStep(-1);
+            setSelectedDrumsTimeSig(sig);
+            setSelectedDrumsGrouping(sig.groupings[0]);
+            setDrumsActiveStepsCount(sig.totalSteps);
+            setSelectedDrumsPresetName('Custom Beat');
+            setDrumsGrid(Array.from({ length: 4 }, () => Array(24).fill(false)));
+
+            drumsStepRef.current = 0;
+            if (isDrumsPlaying) {
+                if (drumsTimerRef.current) clearTimeout(drumsTimerRef.current);
+                drumsTick();
+            } else {
+                setCurrentDrumsStep(-1);
+            }
         }
     };
 
@@ -1028,8 +1082,15 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                             </button>
                             
                             <div className="flex-1 flex flex-col gap-1">
-                                <span className="text-xs text-white/70 font-semibold truncate leading-none">{selectedDrumsTimeSig.name} Time Sig</span>
-                                <div className="flex items-center gap-2 mt-1">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] text-white/50 font-bold uppercase">{selectedDrumsTimeSig.name} Time Sig</span>
+                                    <div className="flex items-center gap-1.5">
+                                        <button onClick={() => setBpm(b => Math.max(20, Math.min(240, b - 1)))} className="w-5 h-5 rounded-full border border-white/15 text-white/60 hover:bg-white/5 flex items-center justify-center font-bold text-xs">-</button>
+                                        <span className="text-[11px] font-mono text-white/80 font-bold">{bpm} BPM</span>
+                                        <button onClick={() => setBpm(b => Math.max(20, Math.min(240, b + 1)))} className="w-5 h-5 rounded-full border border-white/15 text-white/60 hover:bg-white/5 flex items-center justify-center font-bold text-xs">+</button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
                                     <Volume2 className="w-4 h-4 text-white/40" />
                                     <input 
                                         type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
@@ -1048,11 +1109,11 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-lg" onClick={e => e.target === e.currentTarget && handleClose()}>
             <div className={`relative w-full bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-3xl border border-[#d46211]/25 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${
-                activeTool === 'tanpura' ? 'max-w-md h-auto my-auto' : activeTool === 'metronome' ? 'max-w-2xl h-auto my-auto' : 'max-w-5xl h-auto my-auto'
+                activeTool === 'tanpura' ? 'max-w-md h-auto my-auto' : activeTool === 'metronome' ? 'max-w-2xl h-auto my-auto' : activeTool === 'drums' ? 'max-w-5xl h-auto my-auto' : 'max-w-4xl h-auto my-auto'
             }`}>
                 
                 {/* Header */}
-                <div className="flex items-center justify-between px-8 pt-5 pb-4 border-b border-[#d46211]/10 bg-slate-900/40">
+                <div className="flex flex-wrap items-center justify-between gap-4 px-8 pt-5 pb-4 border-b border-[#d46211]/10 bg-slate-900/40">
                     <div className="flex items-center gap-3 text-left">
                         <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-[#d46211] border border-[#d46211]/20">
                             {activeTool === 'tanpura' ? (
@@ -1064,18 +1125,22 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                             )}
                         </div>
                         <div>
-                            <h2 className="text-white font-black text-sm md:text-base tracking-tight">
-                                {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : 'Drum Beats Sequencer'}
+                            <h2 className="text-white font-black text-sm md:text-base tracking-tight animate-in fade-in duration-300">
+                                {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : activeTool === 'drums' ? 'Drum Beats Sequencer' : 'Combo Session Mixer'}
                             </h2>
-                            <p className="text-[#d46211]/60 text-xs md:text-sm">
+                            <p className="text-[#d46211]/60 text-xs md:text-sm animate-in fade-in duration-300">
                                 {activeTool === 'tanpura' 
                                     ? 'Indian classical tuning & shruti drone' 
                                     : activeTool === 'metronome' 
                                         ? 'Keep perfect time with speed adjustments' 
-                                        : 'Interactive step sequencer for flute play-along grooves'}
+                                        : activeTool === 'drums'
+                                            ? 'Interactive step sequencer for flute play-along grooves'
+                                            : 'Club and control multiple practice tools simultaneously'}
                             </p>
                         </div>
                     </div>
+
+
                     <div className="flex items-center gap-2">
                         <button 
                             onClick={() => setIsMinimized(true)} 
@@ -1393,13 +1458,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                     {/* Step Numbers */}
                                     <div className="flex items-center mb-2.5">
                                         <div className="w-20 shrink-0"></div>
-                                        <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
+                                        <div className="flex-1 flex gap-1 justify-start">
                                             {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
                                                 const isGroupStart = selectedDrumsGrouping.dividers.includes(stepIdx);
                                                 return (
                                                     <React.Fragment key={stepIdx}>
                                                         {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
-                                                        <div className={`text-[10px] font-black w-full text-center transition-colors ${
+                                                        <div className={`text-[10px] font-black w-6 sm:w-7 md:w-8 shrink-0 text-center transition-colors ${
                                                             currentDrumsStep === stepIdx ? 'text-[#d46211]' : stepIdx % selectedDrumsTimeSig.stepsPerBeat === 0 ? 'text-white/60' : 'text-white/20'
                                                         }`}>
                                                             {stepIdx + 1}
@@ -1417,7 +1482,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                                 <div className="w-20 text-left pr-2 shrink-0">
                                                     <span className="text-xs font-bold text-white/55">{trackName}</span>
                                                 </div>
-                                                <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
+                                                <div className="flex-1 flex gap-1 justify-start">
                                                     {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
                                                         const isActive = drumsGrid[trackIdx][stepIdx];
                                                         const isCurrent = currentDrumsStep === stepIdx;
@@ -1426,7 +1491,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                                             <React.Fragment key={stepIdx}>
                                                                 {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
                                                                 <button onClick={() => handleToggleDrumsNode(trackIdx, stepIdx)}
-                                                                    className={`aspect-square w-full rounded-md border transition-all relative ${isActive ? 'bg-[#d46211] border-[#d46211] shadow-[0_0_6px_rgba(212,98,17,0.35)]' : 'bg-white/5 border-white/5 hover:border-white/10'}`}>
+                                                                    className={`w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 shrink-0 rounded-md border transition-all relative ${isActive ? 'bg-[#d46211] border-[#d46211] shadow-[0_0_6px_rgba(212,98,17,0.35)]' : 'bg-white/5 border-white/5 hover:border-white/10'}`}>
                                                                     {isCurrent && <div className="absolute inset-0 rounded-md border border-amber-400 animate-pulse bg-white/10" />}
                                                                 </button>
                                                             </React.Fragment>
@@ -1440,13 +1505,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                     {/* Progress playhead bar */}
                                     <div className="flex items-center mt-3 pt-3 border-t border-white/5">
                                         <div className="w-20 shrink-0"></div>
-                                        <div className="flex-1 flex gap-1 justify-between min-w-[280px]">
+                                        <div className="flex-1 flex gap-1 justify-start">
                                             {Array.from({ length: drumsActiveStepsCount }).map((_, stepIdx) => {
                                                 const isGroupStart = selectedDrumsGrouping.dividers.includes(stepIdx);
                                                 return (
                                                     <React.Fragment key={stepIdx}>
                                                         {isGroupStart && <div className="w-2 h-full shrink-0 border-l border-white/20"></div>}
-                                                        <div className={`h-1 rounded-full transition-all w-full ${currentDrumsStep === stepIdx ? 'bg-[#d46211]' : 'bg-white/5'}`} />
+                                                        <div className={`h-1 rounded-full transition-all w-6 sm:w-7 md:w-8 shrink-0 ${currentDrumsStep === stepIdx ? 'bg-[#d46211]' : 'bg-white/5'}`} />
                                                     </React.Fragment>
                                                 );
                                             })}
@@ -1454,20 +1519,43 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                     </div>
                                 </div>
 
-                                {/* Drum Controls (Volume & Clear) */}
+                                {/* Drum Controls (Volume, Tempo & Clear) */}
                                 <div className="flex flex-wrap items-center justify-between gap-4">
-                                    <div className="flex items-center gap-4 bg-white/5 border border-white/5 p-3 rounded-2xl flex-1 max-w-sm">
-                                        <Volume2 className="w-4 h-4 text-[#d46211]" />
-                                        <div className="flex-1 flex flex-col text-left">
-                                            <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1">
-                                                <span>Drums Volume</span>
-                                                <span className="text-[#d46211] font-mono">{Math.round(drumsVolume * 100)}%</span>
+                                    <div className="flex flex-wrap items-center gap-4 flex-1">
+                                        {/* Drums Volume */}
+                                        <div className="flex items-center gap-4 bg-white/5 border border-white/5 p-3 rounded-2xl flex-1 min-w-[200px] max-w-sm">
+                                            <Volume2 className="w-4 h-4 text-[#d46211]" />
+                                            <div className="flex-1 flex flex-col text-left">
+                                                <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1">
+                                                    <span>Drums Volume</span>
+                                                    <span className="text-[#d46211] font-mono">{Math.round(drumsVolume * 100)}%</span>
+                                                </div>
+                                                <input 
+                                                    type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
+                                                    onChange={(e) => setDrumsVolume(parseFloat(e.target.value))}
+                                                    className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                                />
                                             </div>
-                                            <input 
-                                                type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
-                                                onChange={(e) => setDrumsVolume(parseFloat(e.target.value))}
-                                                className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                            />
+                                        </div>
+
+                                        {/* Drums Tempo / BPM */}
+                                        <div className="flex items-center gap-4 bg-white/5 border border-white/5 p-3 rounded-2xl flex-1 min-w-[200px] max-w-sm">
+                                            <Sliders className="w-4 h-4 text-[#d46211]" />
+                                            <div className="flex-1 flex flex-col text-left">
+                                                <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1">
+                                                    <span>Tempo</span>
+                                                    <span className="text-[#d46211] font-mono">{bpm} BPM</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button onClick={() => setBpm(p => Math.max(20, p - 1))} className="w-6 h-6 flex items-center justify-center rounded-full border border-[#d46211]/30 text-[#d46211] font-bold hover:bg-[#d46211]/10 transition-all text-sm">−</button>
+                                                    <input 
+                                                        type="range" min="20" max="240" step="1" value={bpm}
+                                                        onChange={(e) => setBpm(parseInt(e.target.value))}
+                                                        className="flex-1 h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                                    />
+                                                    <button onClick={() => setBpm(p => Math.min(240, p + 1))} className="w-6 h-6 flex items-center justify-center rounded-full border border-[#d46211]/30 text-[#d46211] font-bold hover:bg-[#d46211]/10 transition-all text-sm">+</button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -1488,6 +1576,240 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                 <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-xl text-xs text-white/40 border border-white/5 text-left">
                                     <HelpCircle className="w-4 h-4 text-[#d46211] shrink-0" />
                                     <span>Tip: Double tap grid cells to make beats or select a preset groove.</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ──── VIEW 4: NEW SETUP (COMBO MIXER) ──── */}
+                    {activeTool === 'combosetup' && (
+                        <div className="w-full p-6 flex flex-col gap-6 overflow-y-auto max-h-[85vh] text-left">
+                            {/* Master Control Bar */}
+                            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/5">
+                                <div>
+                                    <h3 className="text-white font-extrabold text-lg tracking-tight">Master Console</h3>
+                                    <p className="text-white/40 text-xs mt-0.5">Control the main tempo and sync of your session.</p>
+                                </div>
+                                {/* BPM controls */}
+                                <div className="flex flex-wrap items-center gap-4 bg-white/5 border border-white/5 px-4 py-2.5 rounded-2xl">
+                                    <div className="text-left">
+                                        <div className="text-[10px] font-bold text-white/50 uppercase tracking-widest leading-none mb-1">Session Tempo</div>
+                                        <div className="text-[#d46211] font-mono font-black text-sm">{bpm} BPM</div>
+                                    </div>
+                                    <div className="h-6 border-l border-white/10" />
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => setBpm(p => Math.max(20, p - 1))} className="w-7 h-7 rounded-full border border-[#d46211]/30 text-[#d46211] font-bold hover:bg-[#d46211]/10 transition-all flex items-center justify-center">−</button>
+                                        <input 
+                                            type="range" min="20" max="240" step="1" value={bpm}
+                                            onChange={(e) => setBpm(parseInt(e.target.value))}
+                                            className="w-32 h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                        />
+                                        <button onClick={() => setBpm(p => Math.min(240, p + 1))} className="w-7 h-7 rounded-full border border-[#d46211]/30 text-[#d46211] font-bold hover:bg-[#d46211]/10 transition-all flex items-center justify-center">+</button>
+                                    </div>
+                                    <button onClick={handleTapTempo}
+                                        className="h-7 px-3 rounded-lg border border-white/10 hover:border-white/20 text-white/70 hover:text-white transition-all text-[10px] font-bold uppercase tracking-wider">
+                                        Tap
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* 3 Columns Panel */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Column 1: Tanpura */}
+                                <div className="bg-white/5 border border-white/5 p-5 rounded-2xl flex flex-col gap-4">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <Music className="w-4 h-4 text-[#d46211]" />
+                                            <span className="font-extrabold text-sm text-white">Tanpura Drone</span>
+                                        </div>
+                                        <span className={`w-2 h-2 rounded-full ${isTanpuraPlaying ? 'bg-green-500 shadow-md shadow-green-500/50' : 'bg-white/15'}`} />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="text-[10px] font-black text-white/40 uppercase tracking-wider block mb-1.5">Scale / Key (Shruti)</label>
+                                        <select 
+                                            value={selectedPitch.label}
+                                            onChange={async (e) => {
+                                                const p = SHRU_PITCHES.find(x => x.label === e.target.value);
+                                                if (p) {
+                                                    setSelectedPitch(p);
+                                                    stopTanpuraNodes();
+                                                    if (isTanpuraPlaying) {
+                                                        await startTanpura(p);
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full bg-black/45 border border-white/10 hover:border-[#d46211]/30 text-white text-xs font-bold rounded-xl p-2.5 outline-none cursor-pointer transition-all"
+                                        >
+                                            {SHRU_PITCHES.map(p => (
+                                                <option key={p.label} value={p.label} className="bg-[#141b22] text-white font-bold">{p.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[10px] font-black text-white/40 uppercase tracking-wider block mb-1.5">Tuning Mode</label>
+                                        <select 
+                                            value={selectedTuningMode.id}
+                                            onChange={(e) => {
+                                                const m = TUNING_MODES.find(x => x.id === e.target.value);
+                                                if (m) setSelectedTuningMode(m);
+                                            }}
+                                            className="w-full bg-black/45 border border-white/10 hover:border-[#d46211]/30 text-white text-xs font-bold rounded-xl p-2.5 outline-none cursor-pointer transition-all"
+                                        >
+                                            {TUNING_MODES.map(m => (
+                                                <option key={m.id} value={m.id} className="bg-[#141b22] text-white font-bold">{m.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="flex flex-col gap-1 mt-1">
+                                        <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest">
+                                            <span>Volume</span>
+                                            <span className="text-[#d46211] font-mono">{Math.round(tanpuraVolume * 100)}%</span>
+                                        </div>
+                                        <input 
+                                            type="range" min="0" max="1.0" step="0.05" value={tanpuraVolume}
+                                            onChange={(e) => setTanpuraVolume(parseFloat(e.target.value))}
+                                            className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                        />
+                                    </div>
+
+                                    <button 
+                                        onClick={async () => {
+                                            if (isTanpuraPlaying) {
+                                                stopTanpuraNodes();
+                                                setIsTanpuraPlaying(false);
+                                            } else {
+                                                setIsTanpuraPlaying(true);
+                                                await startTanpura();
+                                            }
+                                        }}
+                                        className={`w-full h-10 rounded-xl font-extrabold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 mt-auto ${isTanpuraPlaying ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'}`}>
+                                        {isTanpuraPlaying ? <><Square className="w-3 h-3 fill-white" /> Stop Drone</> : <><Play className="w-3 h-3 fill-white" /> Play Drone</>}
+                                    </button>
+                                </div>
+
+                                {/* Column 2: Metronome */}
+                                <div className="bg-white/5 border border-white/5 p-5 rounded-2xl flex flex-col gap-4">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <Volume2 className="w-4 h-4 text-[#d46211]" />
+                                            <span className="font-extrabold text-sm text-white">Metronome</span>
+                                        </div>
+                                        <span className={`w-2 h-2 rounded-full ${isMetronomePlaying ? 'bg-green-500 shadow-md shadow-green-500/50' : 'bg-white/15'}`} />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[10px] font-black text-white/40 uppercase tracking-wider block mb-1.5">Sound Style</label>
+                                        <select 
+                                            value={selectedMetronomeSound}
+                                            onChange={(e) => setSelectedMetronomeSound(e.target.value)}
+                                            className="w-full bg-black/45 border border-white/10 hover:border-[#d46211]/30 text-white text-xs font-bold rounded-xl p-2.5 outline-none cursor-pointer transition-all"
+                                        >
+                                            {METRONOME_SOUNDS.map(s => (
+                                                <option key={s} value={s} className="bg-[#141b22] text-white font-bold">{s}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[10px] font-black text-white/40 uppercase tracking-wider block mb-1.5">Time Signature</label>
+                                        <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold text-white/70 py-2.5 bg-black/35 rounded-xl border border-white/5">
+                                            <div>
+                                                <p className="text-[10px] text-white/30 uppercase tracking-widest mb-0.5">Beats</p>
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                    <button onClick={() => setMetronomeBeats(p => Math.max(1, p - 1))} className="text-[#d46211] font-black text-sm px-1.5 hover:bg-white/5 rounded">-</button>
+                                                    <span className="font-mono text-white">{metronomeBeats}</span>
+                                                    <button onClick={() => setMetronomeBeats(p => Math.min(16, p + 1))} className="text-[#d46211] font-black text-sm px-1.5 hover:bg-white/5 rounded">+</button>
+                                                </div>
+                                            </div>
+                                            <div className="border-l border-white/5">
+                                                <p className="text-[10px] text-white/30 uppercase tracking-widest mb-0.5">Subdiv</p>
+                                                <span className="font-mono text-white/60">Quarter</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-1">
+                                        <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest">
+                                            <span>Volume</span>
+                                            <span className="text-[#d46211] font-mono">{Math.round(metronomeVolume * 100)}%</span>
+                                        </div>
+                                        <input 
+                                            type="range" min="0" max="1.0" step="0.05" value={metronomeVolume}
+                                            onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
+                                            className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                        />
+                                    </div>
+
+                                    <button 
+                                        onClick={() => {
+                                            getCtx().resume();
+                                            setIsMetronomePlaying(!isMetronomePlaying);
+                                        }}
+                                        className={`w-full h-10 rounded-xl font-extrabold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 mt-auto ${isMetronomePlaying ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'}`}>
+                                        {isMetronomePlaying ? <><Square className="w-3 h-3 fill-white" /> Stop Metronome</> : <><Play className="w-3 h-3 fill-white" /> Play Metronome</>}
+                                    </button>
+                                </div>
+
+                                {/* Column 3: Drums */}
+                                <div className="bg-white/5 border border-white/5 p-5 rounded-2xl flex flex-col gap-4">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-base font-bold text-[#d46211]">album</span>
+                                            <span className="font-extrabold text-sm text-white">Drum Beats</span>
+                                        </div>
+                                        <span className={`w-2 h-2 rounded-full ${isDrumsPlaying ? 'bg-green-500 shadow-md shadow-green-500/50' : 'bg-white/15'}`} />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[10px] font-black text-white/40 uppercase tracking-wider block mb-1.5">Preset Groove</label>
+                                        <select 
+                                            value={selectedDrumsPresetName}
+                                            onChange={(e) => {
+                                                const p = DRUM_PRESETS.find(x => x.name === e.target.value);
+                                                if (p) loadDrumsPreset(p);
+                                            }}
+                                            className="w-full bg-black/45 border border-white/10 hover:border-[#d46211]/30 text-white text-xs font-bold rounded-xl p-2.5 outline-none cursor-pointer transition-all"
+                                        >
+                                            {DRUM_PRESETS.map(p => (
+                                                <option key={p.name} value={p.name} className="bg-[#141b22] text-white font-bold">{p.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[10px] font-black text-white/40 uppercase tracking-wider block mb-1.5">Time Signature & Feel</label>
+                                        <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold text-white/70 py-2.5 bg-black/35 rounded-xl border border-white/5">
+                                            <div>
+                                                <p className="text-[10px] text-white/30 uppercase tracking-widest mb-0.5">Signature</p>
+                                                <span className="font-mono text-white">{selectedDrumsTimeSig.name}</span>
+                                            </div>
+                                            <div className="border-l border-white/5">
+                                                <p className="text-[10px] text-white/30 uppercase tracking-widest mb-0.5">Feel</p>
+                                                <span className="font-mono text-white/60 truncate block px-1">{selectedDrumsGrouping.label}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-1">
+                                        <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest">
+                                            <span>Volume</span>
+                                            <span className="text-[#d46211] font-mono">{Math.round(drumsVolume * 100)}%</span>
+                                        </div>
+                                        <input 
+                                            type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
+                                            onChange={(e) => setDrumsVolume(parseFloat(e.target.value))}
+                                            className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                        />
+                                    </div>
+
+                                    <button 
+                                        onClick={() => setIsDrumsPlaying(!isDrumsPlaying)}
+                                        className={`w-full h-10 rounded-xl font-extrabold text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-1.5 mt-auto ${isDrumsPlaying ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15' : 'bg-[#d46211] text-white shadow-md shadow-orange-500/20 hover:bg-[#c05510]'}`}>
+                                        {isDrumsPlaying ? <><Square className="w-3 h-3 fill-white" /> Stop Beats</> : <><Play className="w-3 h-3 fill-white" /> Play Beats</>}
+                                    </button>
                                 </div>
                             </div>
                         </div>

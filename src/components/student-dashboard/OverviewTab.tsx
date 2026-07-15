@@ -92,7 +92,7 @@ interface OverviewTabProps {
     featuredLesson: any | null;
     setSelectedTopic: (topic: any) => void;
     setShowMaterialPopup: (show: boolean) => void;
-    setPracticeSuiteTab: (tab: 'metronome' | 'tanpura' | 'drums') => void;
+    setPracticeSuiteTab: (tab: 'metronome' | 'tanpura' | 'drums' | 'combosetup') => void;
     setShowPracticeSuite: (show: boolean) => void;
     classmates: Classmate[];
 }
