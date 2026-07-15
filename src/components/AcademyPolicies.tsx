@@ -37,21 +37,25 @@ export default function AcademyPolicies() {
             subtitle: 'Guidelines for daily practice and class discipline.',
             points: [
                 {
-                    title: 'The Guru-Shishya Tradition (Parampara)',
-                    description: 'Respect for the teacher, class peers, and the lineage of learning is fundamental. Maintain a quiet, focused environment during classes.'
+                    title: 'Respect the Guru-Shishya Tradition',
+                    description: 'Learning music is a journey of patience, discipline, and respect. Every class is an opportunity to learn—not only from your teacher but also from your fellow students.\n\n• Respect your teacher, classmates, and the learning environment.\n• Stay attentive throughout the class and avoid distractions.\n• Observe how your teacher demonstrates techniques and listen carefully to every instruction.\n• Learn by watching and listening to students who perform better than you.\n• Respect everyone\'s practice time and make the best use of every class.'
                 },
                 {
-                    title: 'Daily Riyaaz (Practice) Commitment',
-                    description: 'Flute playing requires consistent breath support and muscle memory. A minimum of 30-45 minutes of daily practice is highly recommended for steady progress.',
+                    title: 'Daily Riyaz (Practice Commitment)',
+                    description: 'Regular practice is the foundation of musical growth. Even a short daily practice session is more effective than long, irregular sessions.\n\nRecommended Daily Practice:\n• Beginners: 20–30 minutes\n• Intermediate: 30–45 minutes\n• Advanced: 45–60 minutes\n\nConsistency is key to developing finger control, breath support, rhythm, and musical expression.',
                     isCritical: true
                 },
                 {
                     title: 'Class Punctuality',
-                    description: 'Log in or arrive at least 5 minutes before your scheduled class time. Late arrivals disrupt the flow of the session.'
+                    description: 'Please join or arrive at least 5 minutes before your scheduled class.\n\nBeing on time allows you to settle in, prepare your instrument, and ensures the class begins smoothly without disturbing others.'
                 },
                 {
-                    title: 'Instruments & Care',
-                    description: 'Keep your flutes clean, dry, and stored in a protective case. Ensure you have the correct scale flutes requested by your teacher for the current syllabus.'
+                    title: 'Class Preparation',
+                    description: 'To make every class productive, please come prepared.\n\nBefore joining the class:\n• Complete at least 15 minutes of warm-up practice.\n• Keep your flute clean and ready for use.\n• Keep your notebook and practice materials nearby.\n• Ensure your camera, microphone, and internet connection are working properly (for online classes).\n• Join the class a few minutes early so you are ready when the lesson begins.'
+                },
+                {
+                    title: 'Positive Learning Environment',
+                    description: 'Every student has a unique learning pace.\n\n• Do not compare your progress with others.\n• Celebrate your own improvement, no matter how small.\n• Encourage and appreciate fellow students.\n• Stay patient, practice consistently, and enjoy the journey of learning music.\n\nRemember: Progress comes from regular practice, careful observation, and a positive attitude—not from rushing through lessons.'
                 }
             ]
         },
@@ -222,7 +226,7 @@ export default function AcademyPolicies() {
                                             <h4 className={`text-xs font-black tracking-tight ${point.isCritical ? 'text-[#b45309]' : 'text-slate-800'}`}>
                                                 {point.title}
                                             </h4>
-                                            <p className="text-[11px] font-medium leading-relaxed text-slate-500">
+                                            <p className="text-[11px] font-medium leading-relaxed text-slate-500 whitespace-pre-line">
                                                 {point.description}
                                             </p>
                                         </div>
