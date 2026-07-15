@@ -1,4 +1,4 @@
-﻿import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 // Initialize the secondary Supabase client designed ONLY for authentication.
 // You must set these variables in your .env or .env.local file:
@@ -56,8 +56,8 @@ if (typeof window !== 'undefined') {
                     console.warn('KFA Auth: Stale session in getSession, clearing...');
                     localStorage.removeItem('kfa-auth-token');
                     localStorage.removeItem('kfa-user-role');
-                    supabaseAuth.auth.signOut().catch(() => {});
-                    return response;
+                    supabaseAuth.auth.signOut({ scope: 'local' }).catch(() => {});
+                    return { data: { session: null }, error: response.error };
                 }
             }
             _cachedSession = response;
@@ -87,7 +87,8 @@ if (typeof window !== 'undefined') {
                     console.warn('KFA Auth: Stale or invalid session detected in getUser, clearing local auth state...');
                     localStorage.removeItem('kfa-auth-token');
                     localStorage.removeItem('kfa-user-role');
-                    await supabaseAuth.auth.signOut().catch(() => {});
+                    await supabaseAuth.auth.signOut({ scope: 'local' }).catch(() => {});
+                    return { data: { user: null }, error: response.error };
                 }
             }
             return response;
