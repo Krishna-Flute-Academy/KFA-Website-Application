@@ -66,21 +66,30 @@ export default function AcademyPolicies() {
             subtitle: 'Rules for leave requests, scheduling, and attendance tracking.',
             points: [
                 {
-                    title: 'Leave Notice Period',
-                    description: 'If you cannot attend a scheduled class, notify the academy or submit a leave request at least 24 hours in advance.',
+                    title: 'Leave & Excuse Request',
+                    description: 'If you are unable to attend a scheduled class, please submit an Excuse Request or notify the academy at least 24 hours before your class.\n\nProviding advance notice allows us to plan the schedule efficiently and increases the possibility of arranging an alternative class.',
                     isCritical: true
                 },
                 {
-                    title: 'Emergency Leaves',
-                    description: 'Unexpected emergencies or health issues should be reported as early as possible. Excuses submitted post-class will be approved at the instructor\'s discretion.'
+                    title: 'Emergency Leave Policy',
+                    description: 'We understand that medical emergencies, family emergencies, and other unforeseen situations may arise.\n\nIf advance notice is not possible, please submit an Excuse Request as soon as you are able, along with a brief explanation.\n\nEach emergency request will be reviewed individually and approved at the instructor\'s discretion.'
                 },
                 {
-                    title: 'Slot Rescheduling & Make-up Classes',
-                    description: 'Make-up classes are not guaranteed for unexcused absences. Excused leaves with timely notice will be rescheduled subject to slot availability.'
+                    title: 'Alternative Class Policy',
+                    description: 'Alternative classes are provided only for approved (Excused) absences.\n\nPlease note:\n• Alternative classes are scheduled subject to teacher and slot availability.\n• The academy may arrange an Online or Offline class, depending on availability.\n• Alternative classes are not guaranteed.\n• Missed classes without prior notice or unapproved absences are not eligible for rescheduling.'
                 },
                 {
-                    title: 'Consecutive Absences',
-                    description: 'Missing 3 consecutive classes without prior approval or contact will lead to automatic slot suspension, requiring a re-allocation query.'
+                    title: 'Monthly Class Cycle',
+                    description: 'Each billing cycle includes 4 scheduled classes.\n\n• Any approved alternative class must be completed within the same billing cycle.\n• Unused classes cannot be carried forward to the next billing cycle.\n• Classes expire automatically once the billing cycle ends.',
+                    isCritical: true
+                },
+                {
+                    title: 'Billing Cycle & Class Duration',
+                    description: 'Every student has two important dates:\n• Joining Date: Your joining date is recorded when you enroll and never changes.\n• Billing Date: Your billing date determines your monthly learning cycle and may be revised by the academy if required.\n\nExample 1:\n• Joining Date: 1 Jan | Billing Date: 1st\n• Class Cycle: 1 Jan – 31 Jan | Classes: 4\n\nExample 2:\n• Joining Date: 1 Jan | Billing Date changed to 15th\n• Class Cycle: 15 Jan – 14 Feb | Classes: 4\n\nRegardless of your joining date, every billing cycle includes 4 scheduled classes.'
+                },
+                {
+                    title: 'Class Slot Retention',
+                    description: 'Your class slot is reserved exclusively for you.\n\nMissing 3 consecutive scheduled classes without prior communication or an approved excuse may result in your reserved slot being released.\n\nTo continue classes, a new slot will be allocated based on the academy\'s current availability.'
                 }
             ]
         },
