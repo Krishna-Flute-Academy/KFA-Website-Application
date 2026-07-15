@@ -799,11 +799,7 @@ export default function FeesManagementDashboard() {
 
                                 {/* Table */}
                                 <div className="hidden lg:block overflow-x-auto min-h-[350px]">
-<<<<<<< Updated upstream
                                     <table className="w-full min-w-[1100px] border-collapse text-left">
-=======
-                                    <table className="w-full border-collapse text-left">
->>>>>>> Stashed changes
                                         <thead>
                                             <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/20">
                                                 <th className="px-6 py-4 whitespace-nowrap">Student</th>
