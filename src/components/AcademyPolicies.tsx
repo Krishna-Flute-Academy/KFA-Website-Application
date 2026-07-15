@@ -101,20 +101,29 @@ export default function AcademyPolicies() {
             points: [
                 {
                     title: 'Payment Schedule',
-                    description: 'Fees are collected in advance at the start of each billing cycle (monthly or per-class package, depending on your allocation).'
+                    description: 'Fees are charged for one billing cycle (4 classes).\n\n• Each billing cycle includes 4 scheduled classes.\n• Students are expected to complete the payment on or before their billing date.\n• Classes continue according to the academy schedule during the active billing cycle.'
                 },
                 {
-                    title: 'Payment Deadlines & Late Fees',
-                    description: 'Dues must be cleared within the first 7 days of the billing cycle. Payments received after the grace period may incur a late fee.',
+                    title: 'Billing Date',
+                    description: 'Every student has a dedicated Billing Date.\n\n• The billing date determines the start and end of each billing cycle.\n• Your Joining Date remains permanent and cannot be changed.\n• The academy may revise your Billing Date to better align with scheduling requirements.\n• Regardless of the billing date, each billing cycle always includes 4 scheduled classes.\n\nExample:\n• Joining Date: 1 January | Billing Date: 15th\n• Billing Cycle: 15 Jan → 14 Feb\n• Classes Included: 4 Classes'
+                },
+                {
+                    title: 'Payment Deadline',
+                    description: 'Payments should be completed on or before the Billing Date.\n\nIf payment is not received on time:\n• Future classes may be temporarily paused.\n• Your reserved class slot may not be guaranteed until payment is received.\n• Repeated late payments may require rescheduling your regular class slot.',
                     isCritical: true
                 },
                 {
-                    title: 'Non-Refundable Policy',
-                    description: 'Fees paid to the academy are non-refundable and non-transferable under any circumstances.'
+                    title: 'Refund & Transfer Policy',
+                    description: '• Fees once paid are non-refundable.\n• Fees cannot be transferred to another student.\n• Missed classes without an approved Excuse Request are not eligible for refund or adjustment.\n• Expired classes from a completed billing cycle cannot be converted into future credits.',
+                    isCritical: true
                 },
                 {
-                    title: 'Class Extension / Suspension',
-                    description: 'If you wish to suspend classes temporarily (e.g. for vacations longer than 2 weeks), notify the admin team at least 15 days in advance to lock your slot rate.'
+                    title: 'Class Pause / Long Leave',
+                    description: 'If you plan to take a long break due to travel, examinations, work, or personal reasons:\n\n• Please inform the academy at least 15 days in advance.\n• The academy will try its best to reserve your regular slot.\n• Slot reservation cannot be guaranteed for extended breaks and depends on future availability.'
+                },
+                {
+                    title: 'Continued Learning',
+                    description: 'Regular attendance and timely fee payment help us maintain a consistent learning schedule for every student.\n\nOur goal is to provide uninterrupted learning while ensuring fair scheduling for all students.'
                 }
             ]
         },
