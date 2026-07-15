@@ -288,6 +288,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         ...(userRole === 'admin' ? [{ name: 'Fees', icon: 'payments', href: `${basePath}/fees` }] : []),
         { name: 'Messages', icon: 'chat_bubble', href: `${basePath}/messages` },
         ...(userRole === 'admin' ? [{ name: 'Role Allocation', icon: 'manage_accounts', href: `${basePath}/role-allocation` }] : []),
+        { name: 'Academy Policies', icon: 'policy', href: `${basePath}/policies` },
     ];
 
     const handleLogoutWithClear = () => {

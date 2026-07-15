@@ -8,7 +8,7 @@ import {
     Clock, Video, Play, Music, Award, Users, Search, PlayCircle, 
     Send, X, ClipboardList, Info, BarChart2, Plus, Volume2, 
     HelpCircle, ChevronRight, Download, LogOut, Check, Menu,
-    Sparkles, AlertTriangle, CreditCard
+    Sparkles, AlertTriangle, CreditCard, Scroll
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -22,6 +22,7 @@ import AttendanceTab from './AttendanceTab';
 import LibraryTab from './LibraryTab';
 import ClassroomTab from './ClassroomTab';
 import FeesTab from './FeesTab';
+import PoliciesTab from './PoliciesTab';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
 
 // --- Interfaces ---
@@ -221,7 +222,7 @@ export default function StudentDashboardContainer() {
     }, [courseModules, allocatedModuleIds, courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
 
     // UI Navigation state
-    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees' | 'policies'>('overview');
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums'>('metronome');
@@ -1835,6 +1836,7 @@ export default function StudentDashboardContainer() {
                             { id: 'attendance', label: 'Attendance logs', icon: Calendar },
                             { id: 'library', label: 'Tools', icon: FileText },
                             { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
+                            { id: 'policies', label: 'Academy Policies', icon: Scroll },
                         ].map((item) => {
                             const Icon = item.icon;
                             const active = activeTab === item.id;
@@ -2225,6 +2227,10 @@ export default function StudentDashboardContainer() {
                                 payments={payments}
                                 refreshData={refreshData}
                             />
+                        )}
+
+                        {activeTab === 'policies' && (
+                            <PoliciesTab />
                         )}
                     </main>
                 </div>
