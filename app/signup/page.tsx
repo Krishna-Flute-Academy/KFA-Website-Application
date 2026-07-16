@@ -90,7 +90,7 @@ export default function SignupPage() {
                     email: email,
                     phone: phone || null,
                     role: 'pending',
-                    status: 'pending',
+                    status: 'active',
                     join_date: new Date().toISOString().split('T')[0],
                 }], { onConflict: 'id', ignoreDuplicates: true });
 

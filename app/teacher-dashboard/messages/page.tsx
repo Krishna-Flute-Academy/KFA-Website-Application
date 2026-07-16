@@ -699,6 +699,9 @@ function MessagesDashboardContent() {
                 if (!profile) return;
 
                 const isAdmin = profile.role === 'admin';
+                if (!isAdmin) {
+                    setActiveChannel('chatbox');
+                }
 
                 // 2. Pre-fetch Classrooms and Students for recipients modal
                 let roomsQuery = supabaseAuth
@@ -721,31 +724,15 @@ function MessagesDashboardContent() {
                         name: s.name || 'Unknown'
                     }));
                 } else {
-                    // Fetch classroom IDs for this teacher
-                    const { data: teacherRooms } = await supabaseAuth
-                        .from('classrooms')
-                        .select('id')
+                    const { data: studentList } = await supabaseAuth
+                        .from('users')
+                        .select('id, name')
+                        .eq('role', 'student')
                         .eq('teacher_id', profile.id);
-                    const teacherRoomIds = (teacherRooms || []).map(r => r.id);
-                    
-                    if (teacherRoomIds.length > 0) {
-                        const { data: roomStuds } = await supabaseAuth
-                            .from('classroom_students')
-                            .select('student_id')
-                            .in('classroom_id', teacherRoomIds);
-                        const studIds = Array.from(new Set((roomStuds || []).map(rs => rs.student_id)));
-                        
-                        if (studIds.length > 0) {
-                            const { data: studentList } = await supabaseAuth
-                                .from('users')
-                                .select('id, name')
-                                .in('id', studIds);
-                            uniqueStudents = (studentList || []).map((s: any) => ({
-                                id: s.id,
-                                name: s.name || 'Unknown'
-                            }));
-                        }
-                    }
+                    uniqueStudents = (studentList || []).map((s: any) => ({
+                        id: s.id,
+                        name: s.name || 'Unknown'
+                    }));
                 }
                 setStudents(uniqueStudents);
 
@@ -878,7 +865,12 @@ function MessagesDashboardContent() {
                         .select('*')
                         .or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`)
                         .order('created_at', { ascending: true });
-                    const rawMessages = dbDirectMessages || [];
+                    const allowedStudentIds = new Set(uniqueStudents.map(s => s.id));
+                    const rawMessages = (dbDirectMessages || []).filter(m => 
+                        isAdmin || 
+                        allowedStudentIds.has(m.sender_id) || 
+                        allowedStudentIds.has(m.receiver_id)
+                    );
                     setDirectMessages(rawMessages);
 
                     // Mark incoming messages as delivered when loaded
@@ -1511,7 +1503,7 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                         { id: 'new_joiners', label: 'New Joiners', desc: 'Automated workflows', icon: Sparkles, color: 'text-emerald-500 bg-emerald-50' },
                                         { id: 'fee_management', label: 'Fee Management', desc: 'Reminders & Receipts', icon: CreditCard, color: 'text-rose-500 bg-rose-50' },
                                         { id: 'chatbox', label: 'Student Chatbox', desc: 'Normal/Direct Messages', icon: MessageSquare, color: 'text-teal-500 bg-teal-50 dark:bg-teal-950/20' },
-                                    ].map((channel) => {
+                                    ].filter(channel => teacherProfile?.role === 'admin' || channel.id === 'chatbox').map((channel) => {
                                         const isSelected = activeChannel === channel.id;
                                         return (
                                             <button 

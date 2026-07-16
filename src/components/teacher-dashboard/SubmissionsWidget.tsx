@@ -67,23 +67,25 @@ function EmptyState() {
 
 export default function SubmissionsWidget({ recentSubmissions }: SubmissionsWidgetProps) {
     return (
-        <div className="bg-white dark:bg-[#1E3028] border border-[#E2DAC8] dark:border-[#2A3D32] rounded-xl overflow-hidden text-left">
-            {/* Header with teal accent */}
-            <div className="px-5 py-4 border-b border-[#E2DAC8] dark:border-[#2A3D32] flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden text-left">
+            {/* Header with yellow/orange accent */}
+            <div className="px-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-955/10 dark:to-orange-955/5">
                 <div className="flex items-center gap-2.5">
-                    <span className="size-5 rounded-sm bg-[#1B4B43] dark:bg-[#7BC2B0] inline-block" aria-hidden="true" />
+                    <div className="p-1.5 bg-[#ecb613]/10 dark:bg-[#ecb613]/20 rounded-lg text-[#ecb613] flex items-center justify-center shrink-0">
+                        <Music className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </div>
                     <div>
-                        <h3 className="font-display text-base font-bold text-slate-900 dark:text-slate-50">
+                        <h3 className="font-display text-base font-bold text-slate-900 dark:text-white">
                             Recent Submissions
                         </h3>
-                        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        <p className="text-[11px] text-slate-400 dark:text-slate-550 mt-0.5 font-medium">
                             Student recordings awaiting review
                         </p>
                     </div>
                 </div>
                 <Link
                     href="/teacher-dashboard/submissions"
-                    className="text-xs font-semibold text-[#A6741E] dark:text-[#E8C066] hover:underline"
+                    className="text-[10px] sm:text-xs font-bold text-[#ecb613] hover:underline"
                 >
                     View all →
                 </Link>
@@ -94,24 +96,24 @@ export default function SubmissionsWidget({ recentSubmissions }: SubmissionsWidg
             ) : (
                 <>
                     {/* Mobile cards */}
-                    <div className="block sm:hidden divide-y divide-[#E2DAC8] dark:divide-[#2A3D32]">
+                    <div className="block sm:hidden divide-y divide-slate-100 dark:divide-slate-800">
                         {recentSubmissions.map((sub) => (
                             <div key={sub.id} className="p-4 space-y-2.5">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2.5">
                                         <Avatar name={sub.student_name} url={sub.student_profile_pic_url} />
-                                        <span className="text-xs font-semibold text-slate-900 dark:text-slate-50">{sub.student_name}</span>
+                                        <span className="text-xs font-bold text-slate-900 dark:text-white">{sub.student_name}</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400">{sub.submitted_at}</span>
+                                    <span className="text-[10px] text-slate-450 font-medium">{sub.submitted_at}</span>
                                 </div>
                                 <div className="flex items-center justify-between pl-10">
-                                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[180px]">{sub.task_title}</span>
+                                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[180px] font-medium">{sub.task_title}</span>
                                     <StatusBadge status={sub.status} />
                                 </div>
                                 {sub.video_url && (
                                     <div className="pl-10">
                                         <a href={sub.video_url} target="_blank" rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-[#A6741E] dark:text-[#E8C066] hover:underline">
+                                            className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#ecb613] hover:underline">
                                             <Download className="w-3 h-3" /> Download recording
                                         </a>
                                     </div>
@@ -124,30 +126,30 @@ export default function SubmissionsWidget({ recentSubmissions }: SubmissionsWidg
                     <div className="hidden sm:block overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="text-[10px] font-bold text-slate-400 dark:text-slate-500 border-b border-[#E2DAC8] dark:border-[#2A3D32] uppercase tracking-wider bg-[#FAF7F0]/60 dark:bg-[#13211C]/40">
-                                    <th className="px-5 py-3">Student</th>
-                                    <th className="px-5 py-3">Task</th>
-                                    <th className="px-5 py-3">Status</th>
-                                    <th className="px-5 py-3 text-right">Date</th>
+                                <tr className="text-[10px] font-bold text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider bg-slate-50/50 dark:bg-slate-800/20">
+                                    <th className="px-5 py-3.5">Student</th>
+                                    <th className="px-5 py-3.5">Task</th>
+                                    <th className="px-5 py-3.5">Status</th>
+                                    <th className="px-5 py-3.5 text-right">Date</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-[#E2DAC8] dark:divide-[#2A3D32]">
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {recentSubmissions.map((sub) => (
-                                    <tr key={sub.id} className="hover:bg-[#FAF7F0]/60 dark:hover:bg-[#13211C]/30 transition-colors">
+                                    <tr key={sub.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
                                         <td className="px-5 py-3.5">
                                             <div className="flex items-center gap-2.5">
                                                 <Avatar name={sub.student_name} url={sub.student_profile_pic_url} />
-                                                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{sub.student_name}</span>
+                                                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{sub.student_name}</span>
                                             </div>
                                         </td>
-                                        <td className="px-5 py-3.5 text-sm text-slate-500 dark:text-slate-400 max-w-[200px] truncate">{sub.task_title}</td>
+                                        <td className="px-5 py-3.5 text-sm text-slate-500 dark:text-slate-450 max-w-[200px] truncate font-medium">{sub.task_title}</td>
                                         <td className="px-5 py-3.5"><StatusBadge status={sub.status} /></td>
                                         <td className="px-5 py-3.5 text-right">
                                             <div className="flex items-center justify-end gap-3">
-                                                <span className="text-xs text-slate-400">{sub.submitted_at}</span>
+                                                <span className="text-xs text-slate-400 font-medium">{sub.submitted_at}</span>
                                                 {sub.video_url && (
                                                     <a href={sub.video_url} target="_blank" rel="noopener noreferrer"
-                                                        className="p-1.5 rounded-lg text-[#A6741E] dark:text-[#E8C066] hover:bg-[#FBF3E4] dark:hover:bg-[#2B2010] transition-colors"
+                                                        className="p-1.5 rounded-lg text-[#ecb613] hover:bg-[#ecb613]/10 transition-colors"
                                                         aria-label={`Download submission by ${sub.student_name}`}>
                                                         <Download className="w-3.5 h-3.5" />
                                                     </a>

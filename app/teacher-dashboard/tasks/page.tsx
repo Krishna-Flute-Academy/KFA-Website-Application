@@ -171,7 +171,7 @@ export default function TaskReviewPage() {
                 .select(`
                     classroom_id,
                     student_id,
-                    users!student_id(name, profile_pic_url)
+                    users!student_id(name, profile_pic_url, teacher_id)
                 `)
                 .in('classroom_id', classroomIds);
 
@@ -180,7 +180,9 @@ export default function TaskReviewPage() {
                 return;
             }
 
-            const studentsList = enrollments || [];
+            const rawEnrollments = enrollments || [];
+            const filteredEnrollments = rawEnrollments.filter((e: any) => isAdmin || e.users?.teacher_id === userId);
+            const studentsList = filteredEnrollments;
             const studentIds = [...new Set(studentsList.map(e => e.student_id))];
 
             if (studentIds.length === 0) {
@@ -754,17 +756,19 @@ export default function TaskReviewPage() {
             if (studentIds.length > 0) {
                 const { data: usersData } = await supabaseAuth
                     .from('users')
-                    .select('id, name, profile_pic_url')
+                    .select('id, name, profile_pic_url, teacher_id')
                     .in('id', studentIds);
 
                 if (usersData) {
-                    const formatted = usersData.map((item: any) => ({
-                        id: item.id,
-                        name: item.name || 'Unknown Student',
-                        profile_pic_url: item.profile_pic_url || null,
-                        selected: true,
-                        classroom_ids: studentClassroomMap[item.id] || []
-                    }));
+                    const formatted = usersData
+                        .filter((item: any) => isAdmin || item.teacher_id === teacherId)
+                        .map((item: any) => ({
+                            id: item.id,
+                            name: item.name || 'Unknown Student',
+                            profile_pic_url: item.profile_pic_url || null,
+                            selected: true,
+                            classroom_ids: studentClassroomMap[item.id] || []
+                        }));
                     setCreateStudents(formatted);
                 }
             } else {

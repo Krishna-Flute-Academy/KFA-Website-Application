@@ -306,13 +306,13 @@ export default function TeacherDashboardContainer() {
                     .select('id', { count: 'exact', head: true })
                     .eq('role', 'student');
                 studentsCount = count || 0;
-            } else if (classIds.length > 0) {
-                const { data: classroomStudents } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('student_id')
-                    .in('classroom_id', classIds);
-                const uniqueIds = new Set((classroomStudents || []).map(row => row.student_id));
-                studentsCount = uniqueIds.size;
+            } else {
+                const { count } = await supabaseAuth
+                    .from('users')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('role', 'student')
+                    .eq('teacher_id', userId);
+                studentsCount = count || 0;
             }
 
             // Live students count (unique students in live classrooms)
@@ -331,9 +331,13 @@ export default function TeacherDashboardContainer() {
                 if (liveRoomIds.length > 0) {
                     const { data: liveClassStudents } = await supabaseAuth
                         .from('classroom_students')
-                        .select('student_id')
+                        .select('student_id, users!student_id(teacher_id)')
                         .in('classroom_id', liveRoomIds);
-                    const uniqueLiveIds = new Set((liveClassStudents || []).map(row => row.student_id));
+                    const uniqueLiveIds = new Set(
+                        (liveClassStudents || [])
+                            .filter(row => profile.role === 'admin' || (row.users as any)?.teacher_id === userId)
+                            .map(row => row.student_id)
+                    );
                     liveStudentsCount = uniqueLiveIds.size;
                 }
             } catch (err) {
@@ -636,12 +640,16 @@ export default function TeacherDashboardContainer() {
             }
 
             // 7. Load all students listing for temporary assignment modal
-            const { data: studentsList } = await supabaseAuth
+            let studentsListQuery = supabaseAuth
                 .from('users')
                 .select('id, name')
                 .eq('role', 'student')
                 .eq('status', 'active')
                 .order('name', { ascending: true });
+            if (profile.role !== 'admin') {
+                studentsListQuery = studentsListQuery.eq('teacher_id', userId);
+            }
+            const { data: studentsList } = await studentsListQuery;
             setAllStudents(studentsList || []);
 
             // 8. Fetch active students not assigned to any classroom
@@ -1133,9 +1141,9 @@ export default function TeacherDashboardContainer() {
                             isAdmin={isAdmin} 
                         />
 
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            {/* Main Content: Submissions & Announcements */}
-                            <section className="lg:col-span-2 space-y-8 order-2 lg:order-1">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+                            {/* Main Content: Submissions, Announcements, Calendar, Messages */}
+                            <section className="lg:col-span-2 space-y-6 sm:space-y-8 order-2 lg:order-1">
                                 <SubmissionsWidget recentSubmissions={recentSubmissions} />
                                 
                                 <AnnouncementsWidget onAddAnnouncement={() => {}} />
@@ -1147,10 +1155,15 @@ export default function TeacherDashboardContainer() {
                                     setCalendarDate={setCalendarDate}
                                     handleEventClick={handleEventClick}
                                 />
+
+                                <MessagesWidget 
+                                    inquiries={inquiries}
+                                    inquiriesLoading={inquiriesLoading}
+                                />
                             </section>
 
-                            {/* Sidebar Widgets: Today's Classes & Priority Tasks */}
-                            <section className="space-y-8 order-1 lg:order-2">
+                            {/* Sidebar Widgets: Today's Classes, Priority Tasks, Notebook */}
+                            <section className="space-y-6 sm:space-y-8 order-1 lg:order-2">
                                 <ClassesListWidget 
                                     upcomingClasses={upcomingClasses} 
                                     formatTime12hr={formatTime12hr} 
@@ -1165,6 +1178,15 @@ export default function TeacherDashboardContainer() {
                                     pendingPayments={pendingPayments}
                                     dueStudents={dueStudents}
                                     pendingSubmissionsList={pendingSubmissionsList}
+                                />
+
+                                <PersonalNotebookWidget 
+                                    notes={notes}
+                                    classrooms={classrooms}
+                                    notesLoading={notesLoading}
+                                    setNoteForm={setNoteForm}
+                                    setShowNoteModal={setShowNoteModal}
+                                    handleDeleteNote={handleDeleteNote}
                                 />
                             </section>
                         </div>
@@ -1183,19 +1205,21 @@ export default function TeacherDashboardContainer() {
                                 <p className="text-xs text-slate-505 mt-1">{selectedDateEvents.length} class(es) scheduled</p>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button 
-                                    onClick={() => {
-                                        setTempModalDate(selectedDateStr);
-                                        setTempSelectedStudents([]);
-                                        setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '', delivery_format: 'offline' });
-                                        setStudentSearchQuery('');
-                                        setShowTempModal(true);
-                                    }} 
-                                    className="p-2 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-xs font-bold transition-all"
-                                    title="Add Makeup Class"
-                                >
-                                    <Plus size={16} />
-                                </button>
+                                {isAdmin && (
+                                    <button 
+                                        onClick={() => {
+                                            setTempModalDate(selectedDateStr);
+                                            setTempSelectedStudents([]);
+                                            setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '', delivery_format: 'offline' });
+                                            setStudentSearchQuery('');
+                                            setShowTempModal(true);
+                                        }} 
+                                        className="p-2 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-xs font-bold transition-all"
+                                        title="Add Makeup Class"
+                                    >
+                                        <Plus size={16} />
+                                    </button>
+                                )}
                                 <button onClick={() => setSidePanelOpen(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
                                     <X size={18} />
                                 </button>
@@ -1247,18 +1271,20 @@ export default function TeacherDashboardContainer() {
                                 <div className="text-center py-12">
                                     <Calendar size={48} className="mx-auto text-slate-200 mb-4" />
                                     <p className="text-sm font-medium text-slate-550">No classes scheduled for this day.</p>
-                                    <button 
-                                        onClick={() => {
-                                            setTempModalDate(selectedDateStr);
-                                            setTempSelectedStudents([]);
-                                            setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '', delivery_format: 'offline' });
-                                            setStudentSearchQuery('');
-                                            setShowTempModal(true);
-                                        }}
-                                        className="mt-4 text-xs font-bold text-[#ecb613] hover:underline"
-                                    >
-                                        + Schedule a Temporary Class
-                                    </button>
+                                    {isAdmin && (
+                                        <button 
+                                            onClick={() => {
+                                                setTempModalDate(selectedDateStr);
+                                                setTempSelectedStudents([]);
+                                                setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '', delivery_format: 'offline' });
+                                                setStudentSearchQuery('');
+                                                setShowTempModal(true);
+                                            }}
+                                            className="mt-4 text-xs font-bold text-[#ecb613] hover:underline"
+                                        >
+                                            + Schedule a Temporary Class
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>

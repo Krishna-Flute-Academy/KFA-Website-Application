@@ -80,11 +80,30 @@ export default function AuthCallbackPage() {
             }
 
             if (!existingUser) {
-                // User signed in with Google but has NO account in our system
-                // Sign them out and show "no account" message
-                await supabaseAuth.auth.signOut();
-                setStatus('no_account');
-                return;
+                // Self-healing: if the database trigger didn't run, create the profile row now.
+                // This is allowed by RLS policies for authenticated users.
+                const { data: newUser, error: insertError } = await supabaseAuth
+                    .from('users')
+                    .insert([{
+                        id: userId,
+                        name: googleName || googleEmail.split('@')[0] || 'New Student',
+                        email: googleEmail,
+                        phone: session.user.user_metadata?.phone || null,
+                        role: 'pending',
+                        status: 'active',
+                        join_date: new Date().toISOString().split('T')[0]
+                    }])
+                    .select('id, role, status, name')
+                    .maybeSingle();
+
+                if (insertError) {
+                    console.error('Error auto-creating profile in callback:', insertError);
+                    await supabaseAuth.auth.signOut();
+                    setStatus('no_account');
+                    return;
+                } else if (newUser) {
+                    existingUser = newUser;
+                }
             }
 
             // Existing user — redirect based on role

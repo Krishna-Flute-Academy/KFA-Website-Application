@@ -280,7 +280,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
     const menuItems = [
         { name: userRole === 'admin' ? 'Admin-dashboard' : 'Dashboard', icon: 'dashboard', href: basePath },
-        { name: 'Students', icon: 'group', href: `${basePath}/students` },
+        ...(userRole === 'admin' ? [{ name: 'Students', icon: 'group', href: `${basePath}/students` }] : []),
         { name: 'Classrooms', icon: 'meeting_room', href: `${basePath}/classrooms` },
         { name: 'Tasks', icon: 'assignment', href: `${basePath}/tasks` },
         { name: 'Inventory Library', icon: 'inventory_2', href: `${basePath}/inventory` },
@@ -312,13 +312,22 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 fixed md:sticky top-0 left-0 h-screen z-40 transition-transform duration-300 md:translate-x-0
                 ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
             `}>
-            <div className="p-6 flex flex-col justify-center">
-                <h1 className="font-black text-xl leading-tight text-slate-950 dark:text-white select-none">
-                    {userRole === 'admin' ? 'Music Admin' : 'Teacher Portal'}
-                </h1>
-                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5 uppercase tracking-wider select-none">
-                    {userRole === 'admin' ? 'Admin Portal' : 'Instructor View'}
-                </p>
+            <div className="p-6 flex items-center justify-between">
+                <div className="flex flex-col justify-center">
+                    <h1 className="font-black text-xl leading-tight text-slate-950 dark:text-white select-none">
+                        {userRole === 'admin' ? 'Music Admin' : 'Teacher Portal'}
+                    </h1>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5 uppercase tracking-wider select-none">
+                        {userRole === 'admin' ? 'Admin Portal' : 'Instructor View'}
+                    </p>
+                </div>
+                <button 
+                    onClick={() => setIsOpen(false)}
+                    className="md:hidden size-8 flex items-center justify-center rounded-lg text-slate-550 hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors"
+                    aria-label="Close Sidebar"
+                >
+                    <span className="material-symbols-outlined select-none text-xl">close</span>
+                </button>
             </div>
 
             <nav className="flex-1 px-3 space-y-1.5 mt-6 overflow-y-auto">
@@ -386,14 +395,6 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     </div>
                 </div>
 
-                <Link 
-                    className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100/70 dark:hover:bg-slate-800/70 transition-colors" 
-                    href="#"
-                    onClick={() => setIsOpen(false)}
-                >
-                    <span className="material-symbols-outlined">settings</span>
-                    <span className="text-sm font-semibold">Settings</span>
-                </Link>
                 <button
                     onClick={handleLogoutWithClear}
                     className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"

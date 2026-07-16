@@ -876,18 +876,20 @@ export default function ClassroomsPage() {
                                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md'
                                             }`}>
                                                 <div className="flex items-center gap-3 sm:gap-4">
-                                                    <input 
-                                                        type="checkbox"
-                                                        checked={selectedIds.includes(room.id)}
-                                                        onChange={(e) => {
-                                                            if (e.target.checked) {
-                                                                setSelectedIds(prev => [...prev, room.id]);
-                                                            } else {
-                                                                setSelectedIds(prev => prev.filter(id => id !== room.id));
-                                                            }
-                                                        }}
-                                                        className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 mr-1 sm:mr-2"
-                                                    />
+                                                    {teacherProfile?.role === 'admin' && (
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={selectedIds.includes(room.id)}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setSelectedIds(prev => [...prev, room.id]);
+                                                                } else {
+                                                                    setSelectedIds(prev => prev.filter(id => id !== room.id));
+                                                                }
+                                                            }}
+                                                            className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 mr-1 sm:mr-2"
+                                                        />
+                                                    )}
                                                     <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl ${isDisabled ? 'bg-slate-200/50 dark:bg-slate-800 text-slate-400 dark:text-slate-550' : styleConfig.bg} flex items-center justify-center ${isDisabled ? '' : styleConfig.text} shrink-0`}>
                                                         <IconComponent className="size-5 sm:size-6" />
                                                     </div>
@@ -961,14 +963,16 @@ export default function ClassroomsPage() {
                                                             </button>
                                                         </Link>
                                                     )}
-                                                    <button
-                                                        onClick={() => handleDeleteClassroom(room)}
-                                                        disabled={isDeletingId === room.id}
-                                                        className="p-2 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                        title="Delete class"
-                                                    >
-                                                        <Trash2 className="size-4" />
-                                                    </button>
+                                                    {teacherProfile?.role === 'admin' && (
+                                                        <button
+                                                            onClick={() => handleDeleteClassroom(room)}
+                                                            disabled={isDeletingId === room.id}
+                                                            className="p-2 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            title="Delete class"
+                                                        >
+                                                            <Trash2 className="size-4" />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
@@ -1051,18 +1055,20 @@ export default function ClassroomsPage() {
                                             }`}>
                                                 <div className="flex items-center justify-between gap-2">
                                                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                                        <input 
-                                                            type="checkbox"
-                                                            checked={selectedIds.includes(room.id)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) {
-                                                                    setSelectedIds(prev => [...prev, room.id]);
-                                                                } else {
-                                                                    setSelectedIds(prev => prev.filter(id => id !== room.id));
-                                                                }
-                                                            }}
-                                                            className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 shrink-0"
-                                                        />
+                                                        {teacherProfile?.role === 'admin' && (
+                                                            <input 
+                                                                type="checkbox"
+                                                                checked={selectedIds.includes(room.id)}
+                                                                onChange={(e) => {
+                                                                    if (e.target.checked) {
+                                                                        setSelectedIds(prev => [...prev, room.id]);
+                                                                    } else {
+                                                                        setSelectedIds(prev => prev.filter(id => id !== room.id));
+                                                                    }
+                                                                }}
+                                                                className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4 shrink-0"
+                                                            />
+                                                        )}
                                                         <div className="min-w-0 flex-1">
                                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                                 <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`} className="font-bold text-sm text-slate-900 dark:text-white hover:text-[#ecb613] transition-colors truncate block max-w-[150px] sm:max-w-none">
@@ -1129,14 +1135,16 @@ export default function ClassroomsPage() {
                                                                 </button>
                                                             </Link>
                                                         )}
-                                                        <button
-                                                            onClick={() => handleDeleteClassroom(room)}
-                                                            disabled={isDeletingId === room.id}
-                                                            className="p-1 border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-md disabled:opacity-50"
-                                                            title="Delete class"
-                                                        >
-                                                            <Trash2 className="size-3.5" />
-                                                        </button>
+                                                        {teacherProfile?.role === 'admin' && (
+                                                            <button
+                                                                onClick={() => handleDeleteClassroom(room)}
+                                                                disabled={isDeletingId === room.id}
+                                                                className="p-1 border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-md disabled:opacity-50"
+                                                                title="Delete class"
+                                                            >
+                                                                <Trash2 className="size-3.5" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1151,18 +1159,20 @@ export default function ClassroomsPage() {
                                         <thead>
                                             <tr className="bg-slate-100/50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
                                                 <th className="px-6 py-4 w-12 text-center">
-                                                    <input 
-                                                        type="checkbox"
-                                                        checked={displayedClassrooms.length > 0 && selectedIds.length === displayedClassrooms.length}
-                                                        onChange={(e) => {
-                                                            if (e.target.checked) {
-                                                                setSelectedIds(displayedClassrooms.map(c => c.id));
-                                                            } else {
-                                                                setSelectedIds([]);
-                                                            }
-                                                        }}
-                                                        className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
-                                                    />
+                                                    {teacherProfile?.role === 'admin' && (
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={displayedClassrooms.length > 0 && selectedIds.length === displayedClassrooms.length}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setSelectedIds(displayedClassrooms.map(c => c.id));
+                                                                } else {
+                                                                    setSelectedIds([]);
+                                                                }
+                                                            }}
+                                                            className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
+                                                        />
+                                                    )}
                                                 </th>
                                                 <th className="px-6 py-4 text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Class Name</th>
                                                 <th className="px-6 py-4 text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Enrollment</th>
@@ -1202,18 +1212,20 @@ export default function ClassroomsPage() {
                                                             : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 even:bg-slate-50/30 dark:even:bg-slate-800/20'
                                                     }`}>
                                                         <td className="px-6 py-6 w-12 text-center">
-                                                            <input 
-                                                                type="checkbox"
-                                                                checked={selectedIds.includes(room.id)}
-                                                                onChange={(e) => {
-                                                                    if (e.target.checked) {
-                                                                        setSelectedIds(prev => [...prev, room.id]);
-                                                                    } else {
-                                                                        setSelectedIds(prev => prev.filter(id => id !== room.id));
-                                                                    }
-                                                                }}
-                                                                className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
-                                                            />
+                                                            {teacherProfile?.role === 'admin' && (
+                                                                <input 
+                                                                    type="checkbox"
+                                                                    checked={selectedIds.includes(room.id)}
+                                                                    onChange={(e) => {
+                                                                        if (e.target.checked) {
+                                                                            setSelectedIds(prev => [...prev, room.id]);
+                                                                        } else {
+                                                                            setSelectedIds(prev => prev.filter(id => id !== room.id));
+                                                                        }
+                                                                    }}
+                                                                    className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]/50 cursor-pointer size-4"
+                                                                />
+                                                            )}
                                                         </td>
                                                         <td className="px-6 py-6">
                                                             <div className="flex items-center gap-4">
@@ -1358,14 +1370,16 @@ export default function ClassroomsPage() {
                                                                         </button>
                                                                     </Link>
                                                                 )}
-                                                                <button
-                                                                    onClick={() => handleDeleteClassroom(room)}
-                                                                    disabled={isDeletingId === room.id}
-                                                                    className="p-2 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed animate-in fade-in"
-                                                                    title="Delete class"
-                                                                >
-                                                                    <Trash2 className="size-4" />
-                                                                </button>
+                                                                {teacherProfile?.role === 'admin' && (
+                                                                    <button
+                                                                        onClick={() => handleDeleteClassroom(room)}
+                                                                        disabled={isDeletingId === room.id}
+                                                                        className="p-2 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed animate-in fade-in"
+                                                                        title="Delete class"
+                                                                    >
+                                                                        <Trash2 className="size-4" />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -1478,7 +1492,7 @@ export default function ClassroomsPage() {
                     )}
                 </div>
                 {/* Floating bulk actions bar */}
-                {selectedIds.length > 0 && (
+                {selectedIds.length > 0 && teacherProfile?.role === 'admin' && (
                     <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[250] bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-2xl px-6 py-4 rounded-full flex items-center gap-6 animate-in fade-in slide-in-from-bottom-6 duration-300 backdrop-blur-md">
                         <span className="text-sm font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                             <span className="text-[#ecb613] font-black mr-1">{selectedIds.length}</span> classes selected

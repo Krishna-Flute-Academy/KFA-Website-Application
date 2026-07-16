@@ -137,17 +137,21 @@ export default function TeacherHeader({
                         </Link>
                     )}
                     <h2 className="text-base md:text-lg font-bold tracking-tight text-slate-800 dark:text-white shrink-0 truncate max-w-[120px] sm:max-w-none">{title}</h2>
-                    <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 md:mx-2 shrink-0"></div>
-                    <div className="relative group max-w-xs sm:max-w-md w-full">
-                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-[#ecb613] select-none">search</span>
-                        <input
-                            className="bg-slate-100 dark:bg-slate-800 border-none rounded-lg pl-10 pr-4 py-1.5 text-xs sm:text-sm w-full focus:ring-2 focus:ring-[#ecb613]/20 transition-all outline-none text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500"
-                            placeholder={placeholder}
-                            type="text"
-                            value={searchQuery ?? ''}
-                            onChange={(e) => onSearchChange?.(e.target.value)}
-                        />
-                    </div>
+                    {onSearchChange && (
+                        <>
+                            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 md:mx-2 shrink-0"></div>
+                            <div className="relative group max-w-xs sm:max-w-md w-full">
+                                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-[#ecb613] select-none">search</span>
+                                <input
+                                    className="bg-slate-100 dark:bg-slate-800 border-none rounded-lg pl-10 pr-4 py-1.5 text-xs sm:text-sm w-full focus:ring-2 focus:ring-[#ecb613]/20 transition-all outline-none text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500"
+                                    placeholder={placeholder}
+                                    type="text"
+                                    value={searchQuery ?? ''}
+                                    onChange={(e) => onSearchChange(e.target.value)}
+                                />
+                            </div>
+                        </>
+                    )}
                 </div>
                 <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-2 sm:ml-4">
 
@@ -223,13 +227,6 @@ export default function TeacherHeader({
                             </div>
                         )}
                     </div>
-
-                    {/* Settings Button */}
-                    {showSettings && (
-                        <button className="size-9 sm:size-10 flex items-center justify-center rounded-lg text-slate-600 dark:text-slate-400 hover:bg-[#ecb613]/10 hover:text-[#ecb613] transition-colors" aria-label="Settings">
-                            <span className="material-symbols-outlined text-xl sm:text-2xl">settings</span>
-                        </button>
-                    )}
 
                     {/* Help/About button if not showing avatar */}
                     {!showAvatar && (

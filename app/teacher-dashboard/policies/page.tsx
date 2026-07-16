@@ -69,7 +69,7 @@ export default function TeacherPoliciesPage() {
                 ) : (
                     <div className="flex-1 overflow-y-auto p-6 md:p-8">
                         <div className="max-w-6xl mx-auto">
-                            <AcademyPolicies />
+                            <AcademyPolicies isAdmin={teacherProfile?.role === 'admin'} />
                         </div>
                     </div>
                 )}

@@ -459,41 +459,47 @@ export default function AttendancePage() {
                 if (!isTemporary) {
                     const { data: permanentStudents } = await supabaseAuth
                         .from('classroom_students')
-                        .select('student_id, users!student_id(name, profile_pic_url)')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
                         .eq('classroom_id', batchId);
                     
-                    const permRoster = (permanentStudents || []).map((row: any) => ({
-                        id: row.student_id,
-                        name: row.users?.name || 'Unknown Student',
-                        profile_pic_url: row.users?.profile_pic_url
-                    }));
+                    const permRoster = (permanentStudents || [])
+                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile?.id)
+                        .map((row: any) => ({
+                            id: row.student_id,
+                            name: row.users?.name || 'Unknown Student',
+                            profile_pic_url: row.users?.profile_pic_url
+                        }));
 
                     // Fetch temporary session override (makeup) students for this date
                     const { data: overrideStudents } = await supabaseAuth
                         .from('session_student_overrides')
-                        .select('student_id, users!student_id(name, profile_pic_url)')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
                         .eq('target_classroom_id', batchId)
                         .eq('override_date', selectedDate);
 
-                    const tempRoster = (overrideStudents || []).map((row: any) => ({
-                        id: row.student_id,
-                        name: `${row.users?.name || 'Unknown Student'} (Makeup)`,
-                        profile_pic_url: row.users?.profile_pic_url
-                    }));
+                    const tempRoster = (overrideStudents || [])
+                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile?.id)
+                        .map((row: any) => ({
+                            id: row.student_id,
+                            name: `${row.users?.name || 'Unknown Student'} (Makeup)`,
+                            profile_pic_url: row.users?.profile_pic_url
+                        }));
 
                     roster = [...permRoster, ...tempRoster];
                 } else {
                     const { data: tempStudents } = await supabaseAuth
                         .from('session_student_overrides')
-                        .select('student_id, users!student_id(name, profile_pic_url)')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
                         .eq('target_classroom_id', batchId)
                         .eq('override_date', selectedDate);
                     
-                    roster = (tempStudents || []).map((row: any) => ({
-                        id: row.student_id,
-                        name: row.users?.name || 'Unknown Student',
-                        profile_pic_url: row.users?.profile_pic_url
-                    }));
+                    roster = (tempStudents || [])
+                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile?.id)
+                        .map((row: any) => ({
+                            id: row.student_id,
+                            name: row.users?.name || 'Unknown Student',
+                            profile_pic_url: row.users?.profile_pic_url
+                        }));
                 }
 
                 setBatchStudentsMap(prev => ({ ...prev, [batchId]: roster }));
@@ -535,13 +541,16 @@ export default function AttendancePage() {
                     reason,
                     status,
                     created_at,
-                    users!student_id(name, email, profile_pic_url),
+                    users!student_id(name, email, profile_pic_url, teacher_id),
                     classrooms!classroom_id(name)
                 `)
                 .in('classroom_id', roomIds)
                 .order('created_at', { ascending: false });
             if (error) throw error;
-            setLeaveRequests(leaves || []);
+            
+            const isAdmin = teacherProfile?.role === 'admin';
+            const filteredLeaves = (leaves || []).filter((l: any) => isAdmin || l.users?.teacher_id === teacherProfile?.id);
+            setLeaveRequests(filteredLeaves);
         } catch (err) {
             console.error('Error fetching leave requests:', err);
         } finally {

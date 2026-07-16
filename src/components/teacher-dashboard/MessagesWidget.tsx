@@ -28,7 +28,7 @@ export default function MessagesWidget({
     inquiriesLoading
 }: MessagesWidgetProps) {
     return (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-[480px] text-left">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-auto max-h-[380px] md:h-[480px] text-left">
             <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-orange-50/10 dark:from-amber-955/10 dark:to-orange-955/5">
                 <div className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-[#ecb613]" />
@@ -39,12 +39,12 @@ export default function MessagesWidget({
             
             <div className="p-3 sm:p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-slate-900/10">
                 {inquiriesLoading ? (
-                    <div className="flex flex-col items-center justify-center h-full space-y-2">
+                    <div className="flex flex-col items-center justify-center py-10 md:h-full space-y-2">
                         <Loader2 className="w-6 h-6 animate-spin text-[#ecb613]" />
                         <p className="text-xs text-slate-400">Loading student messages...</p>
                     </div>
                 ) : inquiries.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                    <div className="flex flex-col items-center justify-center py-10 md:h-full text-center p-4">
                         <MessageSquare className="w-8 h-8 text-slate-300 mb-2 animate-pulse" />
                         <p className="text-sm font-semibold text-slate-500">No student messages</p>
                         <p className="text-xs text-slate-400 max-w-[240px] mt-1 leading-relaxed">

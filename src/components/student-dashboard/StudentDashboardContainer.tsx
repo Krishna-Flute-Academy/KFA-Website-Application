@@ -1980,12 +1980,6 @@ export default function StudentDashboardContainer() {
                                     </div>
                                 )}
                             </div>
-                            <button onClick={() => {
-                                setPracticeSuiteTab('metronome');
-                                setShowPracticeSuite(true);
-                            }} className="p-1.5 hover:bg-[#FAF5EE] rounded-full transition-colors">
-                                <span className="material-symbols-outlined text-xl">settings</span>
-                            </button>
 
                             <div className="h-6 w-[1px] bg-[#E6E1DA] hidden sm:block"></div>
 
