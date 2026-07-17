@@ -81,9 +81,10 @@ export default function SignupPage() {
         setLoading(false);
         setSubmitted(true);
 
-        // Redirect to pending approval page after a short moment
+        // Redirect to login so user can sign in — login page will then route them
+        // to pending-approval if role is still 'pending', or their dashboard if approved.
         setTimeout(() => {
-            router.push('/pending-approval');
+            router.push('/login?registered=1');
         }, 2500);
     };
 

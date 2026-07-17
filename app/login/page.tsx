@@ -11,6 +11,7 @@ function LoginContent() {
     const searchParams = useSearchParams();
     const loginType = searchParams.get('type') || 'student';
     const isTeacher = loginType === 'teacher';
+    const justRegistered = searchParams.get('registered') === '1';
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -139,6 +140,17 @@ function LoginContent() {
                             </h2>
                             <p className="text-slate-600 dark:text-slate-400">Sign in to access your musical journey.</p>
                         </div>
+
+                        {/* Registration success banner */}
+                        {justRegistered && (
+                            <div className="mb-4 p-3 bg-green-50 border border-green-300 text-green-700 text-sm rounded-lg flex items-start gap-2">
+                                <span className="text-lg leading-none">✅</span>
+                                <div>
+                                    <p className="font-semibold">Account created successfully!</p>
+                                    <p className="text-xs mt-0.5 text-green-600">Sign in below. If your account is still pending admin approval, you will be informed after login.</p>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Error Banner */}
                         {error && (

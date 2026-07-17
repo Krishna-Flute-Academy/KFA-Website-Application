@@ -80,6 +80,9 @@ export default function StudentDirectory() {
     const [bulkEnrollResult, setBulkEnrollResult] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Pending signup requests (users who signed up but not yet assigned a role)
+    const [pendingUsers, setPendingUsers] = useState<{ id: string; name: string; email: string; phone?: string; created_at: string }[]>([]);
+
     const ITEMS_PER_PAGE = 10;
 
     useEffect(() => {
@@ -254,6 +257,15 @@ export default function StudentDirectory() {
                     setUnassignedStudents(formattedUnassigned);
                 }
 
+                // 6. Fetch pending signup requests (role = 'pending')
+                const { data: pendingData } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, email, phone, created_at')
+                    .eq('role', 'pending')
+                    .order('created_at', { ascending: false });
+
+                if (pendingData) setPendingUsers(pendingData);
+
                 // Real-time subscription to listen for new student signups instantly!
                 channel = supabaseAuth
                     .channel('realtime-unassigned-students')
@@ -275,6 +287,24 @@ export default function StudentDirectory() {
                                     created_at: newStudent.created_at || new Date().toISOString(),
                                     phone: newStudent.phone || 'No Phone'
                                 }, ...prev]);
+                            }
+                        }
+                    )
+                    .subscribe();
+
+                // Real-time: new pending signup requests
+                supabaseAuth
+                    .channel('realtime-pending-users')
+                    .on(
+                        'postgres_changes',
+                        { event: '*', schema: 'public', table: 'users' },
+                        (payload) => {
+                            const u = payload.new as any;
+                            if (payload.eventType === 'INSERT' && u?.role === 'pending') {
+                                setPendingUsers(prev => [{ id: u.id, name: u.name, email: u.email, phone: u.phone, created_at: u.created_at || new Date().toISOString() }, ...prev]);
+                            } else if (payload.eventType === 'UPDATE' && u?.role !== 'pending') {
+                                // Remove from list once admin assigns a role
+                                setPendingUsers(prev => prev.filter(p => p.id !== u.id));
                             }
                         }
                     )
@@ -1171,6 +1201,62 @@ export default function StudentDirectory() {
                                         </Link>
                                     )}
                                 </div>
+
+                                {/* ── Pending Signup Requests Banner ────────────────── */}
+                                {pendingUsers.length > 0 && (
+                                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 overflow-hidden">
+                                        <div className="flex items-center justify-between px-4 py-3 bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700">
+                                            <div className="flex items-center gap-2">
+                                                <span className="relative flex h-2.5 w-2.5">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                                                </span>
+                                                <span className="font-bold text-sm text-amber-800 dark:text-amber-300">
+                                                    {pendingUsers.length} New Registration Request{pendingUsers.length !== 1 ? 's' : ''} Awaiting Approval
+                                                </span>
+                                            </div>
+                                            <Link
+                                                href="/teacher-dashboard/role-allocation"
+                                                className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline flex items-center gap-1"
+                                            >
+                                                Go to Role Allocation →
+                                            </Link>
+                                        </div>
+                                        <div className="divide-y divide-amber-100 dark:divide-amber-900/30">
+                                            {pendingUsers.slice(0, 5).map(u => (
+                                                <div key={u.id} className="flex items-center justify-between px-4 py-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-9 h-9 rounded-full bg-amber-200 dark:bg-amber-800 flex items-center justify-center text-amber-800 dark:text-amber-200 font-bold text-sm">
+                                                            {u.name?.charAt(0)?.toUpperCase() || '?'}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-semibold text-sm text-slate-800 dark:text-slate-200">{u.name}</p>
+                                                            <p className="text-xs text-slate-500">{u.email}{u.phone ? ` · ${u.phone}` : ''}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs text-slate-400">
+                                                            {new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                                        </span>
+                                                        <Link
+                                                            href="/teacher-dashboard/role-allocation"
+                                                            className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg font-semibold transition-colors"
+                                                        >
+                                                            Assign Role
+                                                        </Link>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {pendingUsers.length > 5 && (
+                                                <div className="px-4 py-2 text-center">
+                                                    <Link href="/teacher-dashboard/role-allocation" className="text-xs text-amber-700 dark:text-amber-400 font-semibold hover:underline">
+                                                        View all {pendingUsers.length} pending requests →
+                                                    </Link>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Bulk action bar — shown when students are selected */}
                                 {selectedIds.size > 0 && (
