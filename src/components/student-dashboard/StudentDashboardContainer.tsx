@@ -221,11 +221,21 @@ export default function StudentDashboardContainer() {
         );
     }, [courseModules, allocatedModuleIds, courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
 
-    // UI Navigation state
     const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees' | 'policies'>('overview');
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>('metronome');
+
+    // Defer rendering of non-active tabs to prevent main-thread blocking on initial load
+    const [renderBackgroundTabs, setRenderBackgroundTabs] = useState(false);
+    useEffect(() => {
+        if (!loading) {
+            const timer = setTimeout(() => {
+                setRenderBackgroundTabs(true);
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [loading]);
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
@@ -2153,12 +2163,15 @@ export default function StudentDashboardContainer() {
                                 courseChapters={courseChapters}
                                 courseModules={courseModules}
                                 attendance={attendance}
+                                onSendMessage={handleSendDirectMessage}
                             />
                         </div>
+                        )}
 
-                        <div style={{ display: activeTab === 'classroom' ? 'block' : 'none' }}>
-                            <ClassroomTab 
-                                classroom={classroom}
+                        {(renderBackgroundTabs || activeTab === 'classroom') && (
+                            <div style={{ display: activeTab === 'classroom' ? 'block' : 'none' }}>
+                                <ClassroomTab 
+                                    classroom={classroom}
                                 activeRooms={activeRooms}
                                 setClassroom={setClassroom}
                                 classmates={classmates}
@@ -2173,13 +2186,15 @@ export default function StudentDashboardContainer() {
                                 classroomMessages={classroomMessages.filter(message => message.classroom_id === classroom?.id)}
                                 isSendingClassroomMessage={isSendingClassroomMessage}
                                 onSendClassroomMessage={handleSendClassroomMessage}
-                                onSelectAssignment={handleSelectAssignmentFromOtherTab}
+                                onSelectAssignment={setSelectedAssignment}
                             />
                         </div>
+                        )}
 
-                        <div style={{ display: activeTab === 'curriculum' ? 'block' : 'none' }}>
-                            <CurriculumTab 
-                                classroom={classroom}
+                        {(renderBackgroundTabs || activeTab === 'curriculum') && (
+                            <div style={{ display: activeTab === 'curriculum' ? 'block' : 'none' }}>
+                                <CurriculumTab 
+                                    classroom={classroom}
                                 courseModules={allocatedModules}
                                 courseChapters={allocatedChapters}
                                 courseLessons={allocatedLessons}
@@ -2198,10 +2213,12 @@ export default function StudentDashboardContainer() {
                                 classmates={classmates}
                             />
                         </div>
+                        )}
 
-                        <div style={{ display: activeTab === 'tasks' ? 'block' : 'none' }}>
-                            <TasksTab 
-                                assignments={assignments}
+                        {(renderBackgroundTabs || activeTab === 'tasks') && (
+                            <div style={{ display: activeTab === 'tasks' ? 'block' : 'none' }}>
+                                <TasksTab 
+                                    assignments={assignments}
                                 selectedAssignment={selectedAssignment}
                                 setSelectedAssignment={setSelectedAssignment}
                                 submitVideoUrl={submitVideoUrl}
@@ -2214,10 +2231,12 @@ export default function StudentDashboardContainer() {
                                 handleSubmitTask={handleSubmitTask}
                             />
                         </div>
+                        )}
 
-                        <div style={{ display: activeTab === 'messages' ? 'block' : 'none' }}>
-                            <MessagesTab 
-                                broadcasts={broadcasts}
+                        {(renderBackgroundTabs || activeTab === 'messages') && (
+                            <div style={{ display: activeTab === 'messages' ? 'block' : 'none' }}>
+                                <MessagesTab 
+                                    broadcasts={broadcasts}
                                 playVoiceNote={playVoiceNote}
                                 playingAudioId={playingAudioId}
                                 classroom={classroom}
@@ -2229,10 +2248,13 @@ export default function StudentDashboardContainer() {
                                 notifications={notifications}
                             />
                         </div>
+                        )}
 
-                        <div style={{ display: activeTab === 'attendance' ? 'block' : 'none' }}>
-                            <AttendanceTab 
-                                attendanceStats={attendanceStats}
+                        {(renderBackgroundTabs || activeTab === 'attendance') && (
+                            <div style={{ display: activeTab === 'attendance' ? 'block' : 'none' }}>
+                                <AttendanceTab 
+                                    profile={profile}
+                                    attendanceStats={attendanceStats}
                                 mergedLogs={mergedLogs}
                                 showExcuseModal={showExcuseModal}
                                 setShowExcuseModal={setShowExcuseModal}
@@ -2244,15 +2266,19 @@ export default function StudentDashboardContainer() {
                                 handleSubmitExcuse={handleSubmitExcuse}
                             />
                         </div>
+                        )}
 
-                        <div style={{ display: activeTab === 'library' ? 'block' : 'none' }}>
-                            <LibraryTab 
-                                setPracticeSuiteTab={setPracticeSuiteTab}
-                                setShowPracticeSuite={setShowPracticeSuite}
+                        {(renderBackgroundTabs || activeTab === 'library') && (
+                            <div style={{ display: activeTab === 'library' ? 'block' : 'none' }}>
+                                <LibraryTab 
+                                    profile={profile}
+                                    setPracticeSuiteTab={setPracticeSuiteTab}
+                                    setShowPracticeSuite={setShowPracticeSuite}
                             />
                         </div>
+                        )}
 
-                        {profile && (
+                        {profile && (renderBackgroundTabs || activeTab === 'fees') && (
                             <div style={{ display: activeTab === 'fees' ? 'block' : 'none' }}>
                                 <FeesTab 
                                     profile={profile}
@@ -2262,9 +2288,11 @@ export default function StudentDashboardContainer() {
                             </div>
                         )}
 
-                        <div style={{ display: activeTab === 'policies' ? 'block' : 'none' }}>
-                            <PoliciesTab />
-                        </div>
+                        {(renderBackgroundTabs || activeTab === 'policies') && (
+                            <div style={{ display: activeTab === 'policies' ? 'block' : 'none' }}>
+                                <AcademyPolicies />
+                            </div>
+                        )}
                     </main>
                 </div>
             </div>

@@ -44,8 +44,24 @@ if (typeof window !== 'undefined') {
             return _activeSessionPromise;
         }
 
-        _activeSessionPromise = rawGetSession().then((response: any) => {
+        const sessionPromise = rawGetSession();
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 3000));
+
+        _activeSessionPromise = Promise.race([sessionPromise, timeoutPromise]).then((response: any) => {
             _activeSessionPromise = null;
+            if (response === 'TIMEOUT') {
+                console.warn('KFA Auth: getSession timed out (possible lock contention). Reading from localStorage fallback.');
+                if (typeof window !== 'undefined') {
+                    const stored = localStorage.getItem('kfa-auth-token');
+                    if (stored) {
+                        try {
+                            const parsed = JSON.parse(stored);
+                            return { data: { session: parsed }, error: null };
+                        } catch(e) {}
+                    }
+                }
+                return { data: { session: null }, error: new Error('Session lock timeout') };
+            }
             if (response.error) {
                 const errMsg = response.error.message || '';
                 if (
