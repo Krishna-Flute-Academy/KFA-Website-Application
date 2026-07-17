@@ -630,10 +630,7 @@ export default function OverviewTab({
                                 Consistency is more vital than length. 15 minutes of attentive, focused daily practice produces far greater progress than 2 hours of rushed practice once a week.
                             </p>
                             <button 
-                                onClick={() => {
-                                    setPracticeSuiteTab('metronome');
-                                    setShowPracticeSuite(true);
-                                }}
+                                onClick={() => setActiveTab('library')}
                                 className="w-full py-3 bg-white hover:bg-slate-50 text-[#7C5E3F] text-xs font-black rounded-xl transition-all shadow-xs text-center"
                             >
                                 Start Practice Room Now

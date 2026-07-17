@@ -920,8 +920,33 @@ export default function StudentDashboardContainer() {
                         (newMsg && (newMsg.sender_id === userId || newMsg.receiver_id === userId)) ||
                         (oldMsg && (oldMsg.sender_id === userId || oldMsg.receiver_id === userId));
                     console.log('Realtime message payload received:', payload, 'Is relevant:', isRelevant);
-                    if (isRelevant && refreshDataRef.current) {
-                        refreshDataRef.current();
+                    if (isRelevant) {
+                        if (payload.eventType === 'INSERT' && newMsg) {
+                            setDirectMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
+                            
+                            // Auto-mark as delivered if student is the receiver
+                            if (newMsg.receiver_id === userId) {
+                                supabaseAuth
+                                    .from('messages')
+                                    .update({ status: 'delivered' })
+                                    .eq('id', newMsg.id)
+                                    .then(({ error }) => {
+                                        if (!error) {
+                                            setDirectMessages(prev => prev.map(m => 
+                                                m.id === newMsg.id ? { ...m, status: 'delivered' } : m
+                                            ));
+                                        }
+                                    });
+                            }
+                        } else if (payload.eventType === 'UPDATE' && newMsg) {
+                            setDirectMessages(prev => prev.map(m => m.id === newMsg.id ? { ...m, ...newMsg } : m));
+                        } else if (payload.eventType === 'DELETE' && oldMsg) {
+                            setDirectMessages(prev => prev.filter(m => m.id !== oldMsg.id));
+                        } else {
+                            setTimeout(() => {
+                                if (refreshDataRef.current) refreshDataRef.current();
+                            }, 500);
+                        }
                     }
                 }
             )
@@ -936,7 +961,9 @@ export default function StudentDashboardContainer() {
                     const isRelevant = targetClassroomId && classroomIdsRef.current.includes(targetClassroomId);
                     console.log('Realtime classroom message payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
-                        refreshDataRef.current();
+                        setTimeout(() => {
+                            if (refreshDataRef.current) refreshDataRef.current();
+                        }, 500);
                     }
                 }
             )
@@ -946,7 +973,11 @@ export default function StudentDashboardContainer() {
                 { event: '*', schema: 'public', table: 'broadcasts' },
                 (payload) => {
                     console.log('Realtime broadcast payload received:', payload);
-                    if (refreshDataRef.current) refreshDataRef.current();
+                    if (refreshDataRef.current) {
+                        setTimeout(() => {
+                            if (refreshDataRef.current) refreshDataRef.current();
+                        }, 500);
+                    }
                 }
             )
             // Listen to class notes
@@ -2097,7 +2128,7 @@ export default function StudentDashboardContainer() {
                             </div>
                         )}
 
-                        {activeTab === 'overview' && (
+                        <div style={{ display: activeTab === 'overview' ? 'block' : 'none' }}>
                             <OverviewTab 
                                 profile={profile}
                                 payments={payments}
@@ -2117,9 +2148,9 @@ export default function StudentDashboardContainer() {
                                 setShowPracticeSuite={setShowPracticeSuite}
                                 classmates={classmates}
                             />
-                        )}
+                        </div>
 
-                        {activeTab === 'classroom' && (
+                        <div style={{ display: activeTab === 'classroom' ? 'block' : 'none' }}>
                             <ClassroomTab 
                                 classroom={classroom}
                                 activeRooms={activeRooms}
@@ -2138,9 +2169,9 @@ export default function StudentDashboardContainer() {
                                 onSendClassroomMessage={handleSendClassroomMessage}
                                 onSelectAssignment={handleSelectAssignmentFromOtherTab}
                             />
-                        )}
+                        </div>
 
-                        {activeTab === 'curriculum' && (
+                        <div style={{ display: activeTab === 'curriculum' ? 'block' : 'none' }}>
                             <CurriculumTab 
                                 classroom={classroom}
                                 courseModules={allocatedModules}
@@ -2160,9 +2191,9 @@ export default function StudentDashboardContainer() {
                                 setShowMaterialPopup={setShowMaterialPopup}
                                 classmates={classmates}
                             />
-                        )}
+                        </div>
 
-                        {activeTab === 'tasks' && (
+                        <div style={{ display: activeTab === 'tasks' ? 'block' : 'none' }}>
                             <TasksTab 
                                 assignments={assignments}
                                 selectedAssignment={selectedAssignment}
@@ -2176,9 +2207,9 @@ export default function StudentDashboardContainer() {
                                 isSubmittingTask={isSubmittingTask}
                                 handleSubmitTask={handleSubmitTask}
                             />
-                        )}
+                        </div>
 
-                        {activeTab === 'messages' && (
+                        <div style={{ display: activeTab === 'messages' ? 'block' : 'none' }}>
                             <MessagesTab 
                                 broadcasts={broadcasts}
                                 playVoiceNote={playVoiceNote}
@@ -2191,9 +2222,9 @@ export default function StudentDashboardContainer() {
                                 admins={admins}
                                 notifications={notifications}
                             />
-                        )}
+                        </div>
 
-                        {activeTab === 'attendance' && (
+                        <div style={{ display: activeTab === 'attendance' ? 'block' : 'none' }}>
                             <AttendanceTab 
                                 attendanceStats={attendanceStats}
                                 mergedLogs={mergedLogs}
@@ -2206,26 +2237,28 @@ export default function StudentDashboardContainer() {
                                 isSubmittingExcuse={isSubmittingExcuse}
                                 handleSubmitExcuse={handleSubmitExcuse}
                             />
-                        )}
+                        </div>
 
-                        {activeTab === 'library' && (
+                        <div style={{ display: activeTab === 'library' ? 'block' : 'none' }}>
                             <LibraryTab 
                                 setPracticeSuiteTab={setPracticeSuiteTab}
                                 setShowPracticeSuite={setShowPracticeSuite}
                             />
+                        </div>
+
+                        {profile && (
+                            <div style={{ display: activeTab === 'fees' ? 'block' : 'none' }}>
+                                <FeesTab 
+                                    profile={profile}
+                                    payments={payments}
+                                    refreshData={refreshData}
+                                />
+                            </div>
                         )}
 
-                        {activeTab === 'fees' && profile && (
-                            <FeesTab 
-                                profile={profile}
-                                payments={payments}
-                                refreshData={refreshData}
-                            />
-                        )}
-
-                        {activeTab === 'policies' && (
+                        <div style={{ display: activeTab === 'policies' ? 'block' : 'none' }}>
                             <PoliciesTab />
-                        )}
+                        </div>
                     </main>
                 </div>
             </div>
