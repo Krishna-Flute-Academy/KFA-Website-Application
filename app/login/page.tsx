@@ -194,7 +194,7 @@ function LoginContent() {
                                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email Address</label>
                                 <input
                                     id="email-input"
-                                    className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
+                                    className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-base sm:text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
                                     placeholder="name@example.com"
                                     type="email"
                                     value={email}
@@ -209,7 +209,7 @@ function LoginContent() {
                                 <div className="relative">
                                     <input
                                         id="password-input"
-                                        className="w-full h-12 px-4 pr-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
+                                        className="w-full h-12 px-4 pr-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-base sm:text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
                                         placeholder="Enter your password"
                                         type={showPassword ? 'text' : 'password'}
                                         autoComplete="current-password"
