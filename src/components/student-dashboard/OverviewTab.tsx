@@ -1,10 +1,10 @@
 'use client';
 
 import React from 'react';
-import { 
-    Users, PlayCircle, BookOpen, Clock, Award, Calendar, 
+import {
+    Users, PlayCircle, BookOpen, Clock, Award, Calendar,
     ClipboardList, HelpCircle, CheckCircle, ChevronRight, X, Play, Music, Info, FileText, Video,
-    AlertTriangle, AlertCircle
+    AlertTriangle, AlertCircle, TrendingUp
 } from 'lucide-react';
 
 import { getStudentFeeStatus } from '../../lib/fee-utils';
@@ -95,6 +95,12 @@ interface OverviewTabProps {
     setPracticeSuiteTab: (tab: 'metronome' | 'tanpura' | 'drums' | 'combosetup') => void;
     setShowPracticeSuite: (show: boolean) => void;
     classmates: Classmate[];
+    studentAllocations: any[];
+    studentProgress: any[];
+    courseLessons: any[];
+    courseChapters: any[];
+    courseModules: any[];
+    attendance: any[];
 }
 
 /**
@@ -117,15 +123,105 @@ export default function OverviewTab({
     setShowMaterialPopup,
     setPracticeSuiteTab,
     setShowPracticeSuite,
-    classmates
+    classmates,
+    studentAllocations,
+    studentProgress,
+    courseLessons,
+    courseChapters,
+    courseModules,
+    attendance
 }: OverviewTabProps) {
     const dashboardBroadcasts = React.useMemo(() => {
-        return broadcasts.filter(b => 
-            b.channel === 'announcements' || 
-            b.channel === 'fee_management' || 
+        return broadcasts.filter(b =>
+            b.channel === 'announcements' ||
+            b.channel === 'fee_management' ||
             (!b.channel && b.sender?.role === 'admin')
         );
     }, [broadcasts]);
+
+    const proficiencyProgress = React.useMemo(() => {
+        const allocatedModuleIds = new Set(studentAllocations.map(a => a.module_id).filter(Boolean));
+        const allocatedChapterIds = new Set([
+            ...studentAllocations.map(a => a.chapter_id).filter(Boolean),
+            ...courseChapters.filter(c => allocatedModuleIds.has(c.module_id)).map(c => c.id)
+        ]);
+        const allocatedLessonIds = new Set([
+            ...studentAllocations.map(a => a.lesson_id).filter(Boolean),
+            ...courseLessons.filter(l => allocatedChapterIds.has(l.chapter_id)).map(l => l.id),
+            ...studentProgress.map(p => p.lesson_id)
+        ]);
+        const allocatedLessonsList = courseLessons.filter(l => allocatedLessonIds.has(l.id));
+
+        if (allocatedLessonsList.length === 0) return 0;
+        const completedCount = allocatedLessonsList.filter(lesson => {
+            const prog = studentProgress.find(p => p.lesson_id === lesson.id);
+            return prog && prog.status === 'completed';
+        }).length;
+        return Math.round((completedCount / allocatedLessonsList.length) * 100);
+    }, [studentAllocations, courseLessons, courseChapters, studentProgress]);
+
+    const taskSubmissionRate = React.useMemo(() => {
+        const currentLevel = profile?.level || 'Level 1';
+        const studentTasks = assignments.filter(asg => {
+            let asgLevel = null;
+            if (asg.proficiency_level) {
+                asgLevel = asg.proficiency_level;
+            } else {
+                const mod = courseModules.find(m => m.title?.toLowerCase() === currentLevel.toLowerCase());
+                asgLevel = mod?.title;
+            }
+            if (asgLevel) {
+                return asgLevel.toLowerCase() === currentLevel.toLowerCase();
+            }
+            return true;
+        });
+
+        if (studentTasks.length === 0) return null;
+        const submittedCount = studentTasks.filter(asg =>
+            asg.status === 'submitted' || asg.status === 'reviewed' || asg.status === 'approved'
+        ).length;
+        return Math.round((submittedCount / studentTasks.length) * 100);
+    }, [assignments, profile, courseModules]);
+
+    const attendanceRate = React.useMemo(() => {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+
+        const currentMonthAttendance = attendance.filter(att => {
+            if (!att.date) return false;
+            const d = new Date(att.date);
+            return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+        });
+
+        if (currentMonthAttendance.length === 0) {
+            const allTimePresent = attendance.filter(att =>
+                att.status === 'present' || att.status === 'late'
+            ).length;
+            return attendance.length > 0 ? Math.round((allTimePresent / attendance.length) * 100) : null;
+        }
+
+        const joinedCount = currentMonthAttendance.filter(att =>
+            att.status === 'present' || att.status === 'late'
+        ).length;
+        return Math.round((joinedCount / currentMonthAttendance.length) * 100);
+    }, [attendance]);
+
+    const avgScore = React.useMemo(() => {
+        const graded = assignments.filter(asg => asg.score !== null && asg.score !== undefined);
+        if (graded.length === 0) return null;
+        const sum = graded.reduce((acc, curr) => acc + (curr.score || 0), 0);
+        return parseFloat((sum / graded.length).toFixed(1));
+    }, [assignments]);
+
+    const overallProgress = React.useMemo(() => {
+        const calcValues = [proficiencyProgress];
+        if (taskSubmissionRate !== null) calcValues.push(taskSubmissionRate);
+        if (attendanceRate !== null) calcValues.push(attendanceRate);
+        if (avgScore !== null) calcValues.push(avgScore * 10);
+        
+        return Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
+    }, [proficiencyProgress, taskSubmissionRate, attendanceRate, avgScore]);
 
     return (
         <div className="space-y-8 animate-in fade-in duration-300">
@@ -149,13 +245,13 @@ export default function OverviewTab({
                         </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                        <button 
+                        <button
                             onClick={() => setActiveTab('messages')}
                             className="text-[10px] font-black text-[#7C5E3F] hover:text-[#5c442c] transition-colors"
                         >
                             Read
                         </button>
-                        <button 
+                        <button
                             onClick={() => handleDismissAdminBroadcast(unreadAdminBroadcasts[0].id)}
                             className="text-[#9A958E] hover:text-[#7C5E3F] transition-colors p-1"
                             aria-label="Dismiss Alert"
@@ -165,7 +261,7 @@ export default function OverviewTab({
                     </div>
                 </div>
             )}
-            
+
             {/* Pending Tasks Alert Banner */}
             {assignments.filter(a => a.status === 'pending').length > 0 && (
                 <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl py-2.5 px-4 text-left flex items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300">
@@ -177,7 +273,7 @@ export default function OverviewTab({
                             You have <strong className="text-slate-900">{assignments.filter(a => a.status === 'pending').length} pending tasks</strong> that require submission.
                         </p>
                     </div>
-                    <button 
+                    <button
                         onClick={() => setActiveTab('tasks')}
                         className="text-[10px] bg-[#7C5E3F] hover:bg-[#654d33] text-white font-black px-3.5 py-1.5 rounded-lg transition-all active:scale-95 shadow-xs shrink-0 uppercase tracking-wider"
                     >
@@ -185,7 +281,7 @@ export default function OverviewTab({
                     </button>
                 </div>
             )}
-            
+
             {/* Live Class Notification & Join Banner */}
             {classroom?.is_live && (
                 <div className="bg-gradient-to-r from-red-600 via-[#d49900] to-amber-500 rounded-3xl p-6 sm:p-7 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-6 animate-in zoom-in-95 duration-300 border border-red-500/20 text-left">
@@ -209,7 +305,7 @@ export default function OverviewTab({
                         </div>
                     </div>
                     {classroom.live_meeting_link && (
-                        <a 
+                        <a
                             href={classroom.live_meeting_link}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -221,14 +317,14 @@ export default function OverviewTab({
                     )}
                 </div>
             )}
-            
-            <div 
+
+            <div
                 className="bg-cover bg-center rounded-3xl relative p-4 sm:p-8 text-white min-h-[140px] md:min-h-[280px] flex items-center shadow-md overflow-hidden border border-[#E6E1DA] text-left"
                 style={{ backgroundImage: "url('/flutes_custom.jpg')" }}
             >
                 {/* Overlay to ensure text readability */}
                 <div className="absolute inset-0 bg-gradient-to-b md:bg-gradient-to-r from-[#2B1B0E]/95 via-[#2B1B0E]/85 to-[#2B1B0E]/60 pointer-events-none"></div>
-                
+
                 <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6 w-full">
                     <div className="space-y-2.5 md:space-y-4 max-w-xl">
                         <div>
@@ -242,7 +338,7 @@ export default function OverviewTab({
                         <p className="text-[11px] sm:text-xs md:text-sm font-medium text-slate-200/90 leading-relaxed italic">
                             "Daily Practice Tip: Blow gently with a relaxed embouchure. Focus on a clear sound, warm breath support, and precise finger placement."
                         </p>
-                        
+
                         {classroom && (
                             <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md rounded-xl p-1.5 md:p-2.5 border border-white/10 text-white w-fit text-left shrink-0 mt-1 md:mt-2">
                                 <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
@@ -261,9 +357,9 @@ export default function OverviewTab({
                             </div>
                         )}
                     </div>
-                    
+
                     <div className="shrink-0 flex flex-row md:flex-col gap-2.5 w-full md:w-auto mt-2 md:mt-0">
-                        <button 
+                        <button
                             onClick={() => {
                                 setPracticeSuiteTab('metronome');
                                 setShowPracticeSuite(true);
@@ -273,7 +369,7 @@ export default function OverviewTab({
                             <PlayCircle className="w-4 h-4 shrink-0" />
                             <span><span className="hidden sm:inline">Start </span>Practice Room</span>
                         </button>
-                        <button 
+                        <button
                             onClick={() => setActiveTab('curriculum')}
                             className="flex-1 md:flex-initial px-4 py-3 bg-white/10 hover:bg-white/15 text-white border border-[#faf6f0]/15 font-extrabold text-[10px] sm:text-xs rounded-full backdrop-blur-md transition-all flex items-center justify-center gap-1.5 active:scale-98"
                         >
@@ -300,21 +396,19 @@ export default function OverviewTab({
                 </div>
 
                 {/* Class/Batch Card */}
-                <div className={`bg-[#FDFBF7] dark:bg-slate-900/40 border border-[#E6E1DA] dark:border-slate-800 rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm transition-all group relative overflow-hidden ${
-                    classroom
-                        ? classroom.type === 'temporary'
-                            ? 'hover:border-emerald-500/25'
-                            : 'hover:border-blue-500/25'
-                        : 'hover:border-[#7C5E3F]/20'
-                }`}>
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-orange-500/10 transition-colors"></div>
-                    <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shrink-0 ${
-                        classroom
-                            ? classroom.type === 'temporary'
-                                ? 'bg-emerald-50/80 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400'
-                                : 'bg-[#E3ECF5] text-[#5383B4] dark:bg-blue-950/20 dark:text-blue-400'
-                            : 'bg-[#E3ECF5] text-[#5383B4]'
+                <div className={`bg-[#FDFBF7] dark:bg-slate-900/40 border border-[#E6E1DA] dark:border-slate-800 rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm transition-all group relative overflow-hidden ${classroom
+                    ? classroom.type === 'temporary'
+                        ? 'hover:border-emerald-500/25'
+                        : 'hover:border-blue-500/25'
+                    : 'hover:border-[#7C5E3F]/20'
                     }`}>
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-orange-500/10 transition-colors"></div>
+                    <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shrink-0 ${classroom
+                        ? classroom.type === 'temporary'
+                            ? 'bg-emerald-50/80 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400'
+                            : 'bg-[#E3ECF5] text-[#5383B4] dark:bg-blue-950/20 dark:text-blue-400'
+                        : 'bg-[#E3ECF5] text-[#5383B4]'
+                        }`}>
                         <Clock className="w-5.5 h-5.5" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -348,31 +442,31 @@ export default function OverviewTab({
                 {/* Attendance Percentage */}
                 <div className="bg-[#FDFBF7] border border-[#E6E1DA] rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm hover:border-[#7C5E3F]/20 transition-all group relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-emerald-500/10 transition-colors"></div>
-                    
+
                     {attendancePct !== null ? (
                         <div className="relative w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shrink-0">
                             {/* Circular Progress Ring */}
                             <svg className="w-full h-full transform -rotate-90">
                                 {/* Background Circle */}
-                                <circle 
-                                    cx="50%" 
-                                    cy="50%" 
-                                    r="40%" 
-                                    strokeWidth="8%" 
-                                    stroke="#f1f5f9" 
-                                    fill="transparent" 
+                                <circle
+                                    cx="50%"
+                                    cy="50%"
+                                    r="40%"
+                                    strokeWidth="8%"
+                                    stroke="#f1f5f9"
+                                    fill="transparent"
                                 />
                                 {/* Progress Circle */}
-                                <circle 
-                                    cx="50%" 
-                                    cy="50%" 
-                                    r="40%" 
-                                    strokeWidth="8%" 
-                                    stroke="url(#emeraldGradient)" 
+                                <circle
+                                    cx="50%"
+                                    cy="50%"
+                                    r="40%"
+                                    strokeWidth="8%"
+                                    stroke="url(#emeraldGradient)"
                                     strokeDasharray={`${2 * Math.PI * 40}`}
                                     strokeDashoffset={`${2 * Math.PI * 40 * (1 - attendancePct / 100)}`}
                                     strokeLinecap="round"
-                                    fill="transparent" 
+                                    fill="transparent"
                                 />
                                 <defs>
                                     <linearGradient id="emeraldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -388,7 +482,7 @@ export default function OverviewTab({
                             <Calendar className="w-5.5 h-5.5" />
                         </div>
                     )}
-                    
+
                     <div className="min-w-0 flex-1">
                         <p className="text-[9px] sm:text-[10px] font-extrabold text-[#9A958E] uppercase tracking-widest">Attendance</p>
                         <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] mt-0.5">{attendancePct !== null ? `${attendancePct}%` : '—'}</h3>
@@ -410,6 +504,137 @@ export default function OverviewTab({
                 </div>
             </div>
 
+            {/* My Academic Standing & Progress */}
+            <div className="bg-white border border-[#E6E1DA] rounded-3xl p-6 sm:p-7 shadow-xs text-left animate-in fade-in duration-300">
+                <div className="flex flex-col md:flex-row gap-6 md:gap-8 items-stretch">
+                            {/* Left: Overall Progress Circular Ring */}
+                            <div className="flex flex-col items-center justify-center md:border-r border-slate-150 md:pr-8 shrink-0">
+                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Overall Standing</h3>
+                                <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center">
+                                    <svg className="w-full h-full transform -rotate-90">
+                                        <circle
+                                            cx="50%"
+                                            cy="50%"
+                                            r="40%"
+                                            strokeWidth="8%"
+                                            stroke="#f1f5f9"
+                                            fill="transparent"
+                                        />
+                                        <circle
+                                            cx="50%"
+                                            cy="50%"
+                                            r="40%"
+                                            strokeWidth="8%"
+                                            stroke="url(#overallProgressGradientLeftColumn)"
+                                            strokeDasharray={`${2 * Math.PI * 40}`}
+                                            strokeDashoffset={`${2 * Math.PI * 40 * (1 - overallProgress / 100)}`}
+                                            strokeLinecap="round"
+                                            fill="transparent"
+                                        />
+                                        <defs>
+                                            <linearGradient id="overallProgressGradientLeftColumn" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                <stop offset="0%" stopColor="#7C5E3F" />
+                                                <stop offset="100%" stopColor="#d49900" />
+                                            </linearGradient>
+                                        </defs>
+                                    </svg>
+                                    <div className="absolute flex flex-col items-center justify-center">
+                                        <span className="text-xl sm:text-2xl font-black text-[#7C5E3F]">{overallProgress}%</span>
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">Progress</span>
+                                    </div>
+                                </div>
+
+                                {/* Standing Status Badge */}
+                                <div className="mt-4 flex items-center gap-1.5">
+                                    {(taskSubmissionRate === null && attendanceRate === null && avgScore === null) || overallProgress >= 80 ? (
+                                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-250/30 text-[10px] font-extrabold select-none">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                            Consistent
+                                        </span>
+                                    ) : overallProgress >= 65 ? (
+                                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-250/30 text-[10px] font-extrabold select-none">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                            Improving
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-250/30 text-[10px] font-extrabold select-none">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                                            Attention Needed
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Right: Component Evaluation Grid */}
+                            <div className="flex-1 flex flex-col justify-between space-y-3">
+                                <div>
+                                    <h4 className="font-black text-[#3E3A35] text-sm">Academic Performance Breakdown</h4>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                        Your overall progress is calculated as the average of these 4 parameters.
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {/* 1. Proficiency Progress */}
+                                    <div className="p-3 rounded-xl bg-slate-50/50 border border-slate-100 flex flex-col justify-between">
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-extrabold text-slate-655 flex items-center gap-1.5">
+                                                <BookOpen className="w-3.5 h-3.5 text-[#7C5E3F] shrink-0" />
+                                                Proficiency Progress
+                                            </span>
+                                            <span className="font-black text-[#7C5E3F]">{proficiencyProgress}%</span>
+                                        </div>
+                                        <div className="w-full bg-slate-200 h-1.5 rounded-full mt-2 overflow-hidden">
+                                            <div className="bg-[#7C5E3F] h-full rounded-full transition-all duration-500" style={{ width: `${proficiencyProgress}%` }} />
+                                        </div>
+                                    </div>
+
+                                    {/* 2. Task Submission */}
+                                    <div className="p-3 rounded-xl bg-slate-50/50 border border-slate-100 flex flex-col justify-between">
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-bold text-slate-655 flex items-center gap-1.5">
+                                                <ClipboardList className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                                Task Submission Rate
+                                            </span>
+                                            <span className="font-black text-amber-600">{taskSubmissionRate ?? 0}%</span>
+                                        </div>
+                                        <div className="w-full bg-slate-200 h-1.5 rounded-full mt-2 overflow-hidden">
+                                            <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${taskSubmissionRate ?? 0}%` }} />
+                                        </div>
+                                    </div>
+
+                                    {/* 3. Attendance Rate */}
+                                    <div className="p-3 rounded-xl bg-slate-50/50 border border-slate-100 flex flex-col justify-between">
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-bold text-slate-655 flex items-center gap-1.5">
+                                                <Calendar className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                                Monthly Attendance
+                                            </span>
+                                            <span className="font-black text-emerald-600">{attendanceRate ?? 0}%</span>
+                                        </div>
+                                        <div className="w-full bg-slate-200 h-1.5 rounded-full mt-2 overflow-hidden">
+                                            <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${attendanceRate ?? 0}%` }} />
+                                        </div>
+                                    </div>
+
+                                    {/* 4. Average Score */}
+                                    <div className="p-3 rounded-xl bg-slate-50/50 border border-slate-100 flex flex-col justify-between">
+                                        <div className="flex justify-between items-center text-[10px]">
+                                            <span className="font-bold text-slate-655 flex items-center gap-1.5">
+                                                <Award className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                                Average Score
+                                            </span>
+                                            <span className="font-black text-blue-600">{(avgScore ?? 0) * 10}% ({(avgScore ?? 0)}/10)</span>
+                                        </div>
+                                        <div className="w-full bg-slate-200 h-1.5 rounded-full mt-2 overflow-hidden">
+                                            <div className="bg-blue-500 h-full rounded-full transition-all duration-500" style={{ width: `${(avgScore ?? 0) * 10}%` }} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
             {/* Core Dashboard split sections */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left column: Weekly Curriculum & Recent Submissions */}
@@ -426,8 +651,8 @@ export default function OverviewTab({
                                     <p className="text-[10px] text-slate-500 mt-0.5">Focus: Mastering the bansuri key scales & alankars</p>
                                 </div>
                             </div>
-                            <button 
-                                onClick={() => setActiveTab('curriculum')} 
+                            <button
+                                onClick={() => setActiveTab('curriculum')}
                                 className="text-xs font-bold text-[#7C5E3F] hover:text-[#5c442c] transition-colors flex items-center gap-0.5"
                             >
                                 View Full Syllabus <ChevronRight className="w-3.5 h-3.5" />
@@ -437,7 +662,7 @@ export default function OverviewTab({
                         <div className="p-6">
                             {featuredLesson ? (
                                 <div className="space-y-4">
-                                    <div 
+                                    <div
                                         onClick={() => {
                                             const url = featuredLesson.material_url || featuredLesson.link_url;
                                             if (url) {
@@ -457,7 +682,7 @@ export default function OverviewTab({
                                                 </h4>
                                             </div>
                                             <p className="text-xs text-[#5C5852] line-clamp-2 leading-relaxed">{stripHtml(featuredLesson.description) || 'Practice your finger coordination and mouth alignment on your bansuri to perfect your sound projection.'}</p>
-                                            
+
                                             <div className="flex items-center gap-2 pt-1 flex-wrap">
                                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#7C5E3F] bg-[#FAF5EE] px-2.5 py-1 rounded-full">
                                                     <Clock className="w-3 h-3 text-[#7C5E3F]" /> {featuredLesson.duration || '20 Mins'}
@@ -468,10 +693,10 @@ export default function OverviewTab({
                                             </div>
                                         </div>
                                         <div className="shrink-0 w-full sm:w-auto relative group">
-                                            <img 
-                                                src="/flutes_custom.jpg" 
-                                                alt="Active lesson spotlight" 
-                                                className="object-cover rounded-2xl w-full sm:w-36 h-24 border border-[#E6E1DA]" 
+                                            <img
+                                                src="/flutes_custom.jpg"
+                                                alt="Active lesson spotlight"
+                                                className="object-cover rounded-2xl w-full sm:w-36 h-24 border border-[#E6E1DA]"
                                             />
                                             <div className="absolute inset-0 bg-black/10 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <Play className="w-8 h-8 text-white fill-white" />
@@ -523,8 +748,8 @@ export default function OverviewTab({
                                 </div>
                                 <h3 className="font-black text-[#3E3A35] text-sm md:text-base">Recent Submissions & Feedback</h3>
                             </div>
-                            <button 
-                                onClick={() => setActiveTab('tasks')} 
+                            <button
+                                onClick={() => setActiveTab('tasks')}
                                 className="text-xs font-bold text-[#7C5E3F] hover:text-[#5c442c] transition-colors"
                             >
                                 View Tasks
@@ -557,9 +782,8 @@ export default function OverviewTab({
                                                 </div>
 
                                                 <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
-                                                        isReviewed ? 'bg-emerald-500/10 text-emerald-700' : 'bg-amber-500/10 text-amber-700'
-                                                    }`}>
+                                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${isReviewed ? 'bg-emerald-500/10 text-emerald-700' : 'bg-amber-500/10 text-amber-700'
+                                                        }`}>
                                                         {asg.status}
                                                     </span>
                                                     {isReviewed && asg.score !== null && (
@@ -586,7 +810,7 @@ export default function OverviewTab({
                                 <span className="material-symbols-outlined text-lg text-amber-500 shrink-0">campaign</span>
                                 Notice Board
                             </h3>
-                            <button 
+                            <button
                                 onClick={() => setActiveTab('messages')}
                                 className="text-[10px] font-bold text-[#7C5E3F] hover:underline"
                             >
@@ -615,6 +839,7 @@ export default function OverviewTab({
                         </div>
                     </div>
 
+
                     {/* Quick Practice Tips */}
                     <div className="bg-[#7C5E3F] rounded-3xl p-6 text-white text-left relative overflow-hidden shadow-md">
                         <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-xl pointer-events-none"></div>
@@ -629,7 +854,7 @@ export default function OverviewTab({
                             <p className="text-xs text-slate-200 leading-relaxed font-semibold">
                                 Consistency is more vital than length. 15 minutes of attentive, focused daily practice produces far greater progress than 2 hours of rushed practice once a week.
                             </p>
-                            <button 
+                            <button
                                 onClick={() => {
                                     setPracticeSuiteTab('metronome');
                                     setShowPracticeSuite(true);

@@ -18,6 +18,7 @@ interface EnrolledStudent {
     mock_score: number;
     mock_progress: number;
     mock_attendance: number;
+    mock_submission: number;
     mock_milestone: string;
     mock_status: 'Consistent' | 'Improving' | 'At Risk';
     level?: string;
@@ -55,6 +56,16 @@ interface OverviewTabProps {
     announcementSearchQuery: string;
     setAnnouncementSearchQuery: (val: string) => void;
     filteredAnnouncements: any[];
+    
+    // New Props
+    classroomInventoryAllocations: any[];
+    courseModules: any[];
+    courseChapters: any[];
+    courseLessons: any[];
+    classroomAttendance: any[];
+    classroomAssignmentsStudents: any[];
+    assignments: any[];
+    studentProgress: any[];
 }
 
 export default function OverviewTab({
@@ -87,8 +98,129 @@ export default function OverviewTab({
     formatLocalDate,
     announcementSearchQuery,
     setAnnouncementSearchQuery,
-    filteredAnnouncements
+    filteredAnnouncements,
+    
+    // New Destructuring
+    classroomInventoryAllocations,
+    courseModules,
+    courseChapters,
+    courseLessons,
+    classroomAttendance,
+    classroomAssignmentsStudents,
+    assignments,
+    studentProgress
 }: OverviewTabProps) {
+    const getAssignmentLevel = (assignment: any) => {
+        if (!assignment.inventory_ref_type || !assignment.inventory_ref_id) return null;
+        
+        let moduleId = '';
+        if (assignment.inventory_ref_type === 'module') {
+            moduleId = assignment.inventory_ref_id;
+        } else if (assignment.inventory_ref_type === 'chapter') {
+            const chap = courseChapters.find(c => c.id === assignment.inventory_ref_id);
+            if (chap) moduleId = chap.module_id;
+        } else if (assignment.inventory_ref_type === 'lesson') {
+            const lesson = courseLessons.find(l => l.id === assignment.inventory_ref_id);
+            const chap = lesson ? courseChapters.find(c => c.id === lesson.chapter_id) : null;
+            if (chap) moduleId = chap.module_id;
+        }
+        
+        if (moduleId) {
+            const mod = courseModules.find(m => m.id === moduleId);
+            return mod ? mod.title : null;
+        }
+        
+        return null;
+    };
+
+
+    const getStudentSubmissionRate = (studentId: string, studentLevel: string, defaultMockVal: number) => {
+        const classAssignments = assignments.filter(asg => asg.classroom_id === classroomId);
+        
+        const studentTasks = classAssignments.filter(asg => {
+            const isAssigned = asg.target_type === 'all' || 
+                (asg.assignment_students && asg.assignment_students.some(s => s.student_id === studentId));
+                
+            if (!isAssigned) return false;
+            
+            let mapRow = null;
+            if (asg.assignment_students) {
+                mapRow = asg.assignment_students.find(s => s.student_id === studentId);
+            }
+            
+            if (mapRow && mapRow.proficiency_level) {
+                return mapRow.proficiency_level.toLowerCase() === studentLevel.toLowerCase();
+            }
+            
+            const asgLevel = getAssignmentLevel(asg);
+            if (asgLevel) {
+                return asgLevel.toLowerCase() === studentLevel.toLowerCase();
+            }
+            
+            return true;
+        });
+        
+        if (studentTasks.length === 0) return null;
+        
+        let submittedCount = 0;
+        studentTasks.forEach(asg => {
+            const mapping = classroomAssignmentsStudents.find(cas => 
+                cas.student_id === studentId && cas.assignment_id === asg.id
+            );
+            if (mapping && (mapping.status === 'submitted' || mapping.status === 'reviewed' || mapping.status === 'approved')) {
+                submittedCount++;
+            }
+        });
+        
+        return Math.round((submittedCount / studentTasks.length) * 100);
+    };
+
+    const getStudentAttendanceRate = (studentId: string, defaultMockVal: number) => {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        
+        const currentMonthAttendance = classroomAttendance.filter(att => {
+            if (!att.date) return false;
+            const d = new Date(att.date);
+            return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+        });
+        
+        if (currentMonthAttendance.length === 0) {
+            const allTimeUniqueDates = new Set(classroomAttendance.map(att => att.date)).size;
+            if (allTimeUniqueDates > 0) {
+                const allTimePresent = classroomAttendance.filter(att => 
+                    att.student_id === studentId && (att.status === 'present' || att.status === 'late')
+                ).length;
+                return Math.round((allTimePresent / allTimeUniqueDates) * 100);
+            }
+            return null;
+        }
+        
+        const uniqueDates = new Set(currentMonthAttendance.map(att => att.date));
+        const totalScheduled = uniqueDates.size;
+        
+        const joinedCount = currentMonthAttendance.filter(att => 
+            att.student_id === studentId && (att.status === 'present' || att.status === 'late')
+        ).length;
+        
+        return totalScheduled > 0 ? Math.round((joinedCount / totalScheduled) * 100) : null;
+    };
+
+    const getStudentAvgScore = (studentId: string, defaultMockVal: number) => {
+        const studentAssignments = classroomAssignmentsStudents.filter(cas => 
+            cas.student_id === studentId && cas.score !== null && cas.score !== undefined
+        );
+        
+        if (studentAssignments.length === 0) return null;
+        
+        const sum = studentAssignments.reduce((acc, curr) => acc + curr.score, 0);
+        return parseFloat((sum / studentAssignments.length).toFixed(1));
+    };
+
+    // Need studentProgress reference for getStudentProficiencyProgress
+    // Passed directly as prop from page.tsx
+
     const getStatusColor = (status: string) => {
         if (status === 'Consistent') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
         if (status === 'Improving') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
@@ -267,7 +399,25 @@ export default function OverviewTab({
                                         )}
                                     </div>
                                     {(() => {
-                                        const realProgress = getRealStudentProgress(student.student_id, student.mock_progress);
+                                        const realProgress = getRealStudentProgress(student.student_id, 0);
+                                        const submission = getStudentSubmissionRate(student.student_id, student.level || 'Level 1', student.mock_submission);
+                                        const attendance = getStudentAttendanceRate(student.student_id, student.mock_attendance);
+                                        const score = getStudentAvgScore(student.student_id, student.mock_score);
+                                        
+                                        const calcValues = [realProgress];
+                                        if (submission !== null) calcValues.push(submission);
+                                        if (attendance !== null) calcValues.push(attendance);
+                                        if (score !== null) calcValues.push(score * 10);
+                                        
+                                        const cumulativeAverage = Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
+                                        
+                                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'At Risk';
+                                        if (submission === null && attendance === null && score === null) {
+                                            calculatedStatus = 'Consistent';
+                                        } else {
+                                            if (cumulativeAverage >= 80) calculatedStatus = 'Consistent';
+                                            else if (cumulativeAverage >= 65) calculatedStatus = 'Improving';
+                                        }
                                         return (
                                             <>
                                                 <div className="flex-1 min-w-0">
@@ -279,13 +429,13 @@ export default function OverviewTab({
                                                     </div>
                                                     <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
                                                         <div className={`h-full transition-all duration-500 ${
-                                                            realProgress >= 80 
+                                                            calculatedStatus === 'Consistent' 
                                                                 ? 'bg-emerald-500' 
-                                                                : (realProgress >= 40 ? 'bg-[#ecb613]' : 'bg-rose-500')
-                                                        }`} style={{ width: `${realProgress}%` }}></div>
+                                                                : (calculatedStatus === 'Improving' ? 'bg-[#ecb613]' : 'bg-rose-500')
+                                                        }`} style={{ width: `${cumulativeAverage}%` }}></div>
                                                     </div>
                                                 </div>
-                                                <span className="text-xs font-bold text-slate-400 w-8 text-right shrink-0">{realProgress}%</span>
+                                                <span className="text-xs font-bold text-slate-400 w-8 text-right shrink-0">{cumulativeAverage}%</span>
                                             </>
                                         );
                                     })()}
@@ -319,65 +469,102 @@ export default function OverviewTab({
                                     <tr>
                                         <th className="px-6 py-4">Student Name</th>
                                         <th className="px-6 py-4">Status</th>
-                                        <th className="px-6 py-4">Avg. Score</th>
+                                        <th className="px-6 py-4">Proficiency Progress</th>
+                                        <th className="px-6 py-4">Task Submission</th>
                                         <th className="px-6 py-4">Attendance</th>
+                                        <th className="px-6 py-4">Avg. Score</th>
                                         <th className="px-6 py-4">Joined Date</th>
                                         <th className="px-6 py-4 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {paginatedStudents.map(student => (
-                                        <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-600 shrink-0">
-                                                        {student.profile_pic_url ? (
-                                                            <img alt={student.name} className="w-full h-full object-cover" src={student.profile_pic_url} loading="lazy" />
-                                                        ) : (
-                                                            <span className="text-xs font-bold text-slate-505 dark:text-slate-400">{student.name.charAt(0)}</span>
-                                                        )}
+                                    {paginatedStudents.map(student => {
+                                        const realProgress = getRealStudentProgress(student.student_id, 0);
+                                        const submission = getStudentSubmissionRate(student.student_id, student.level || 'Level 1', student.mock_submission);
+                                        const attendance = getStudentAttendanceRate(student.student_id, student.mock_attendance);
+                                        const score = getStudentAvgScore(student.student_id, student.mock_score);
+                                        
+                                        const calcValues = [realProgress];
+                                        if (submission !== null) calcValues.push(submission);
+                                        if (attendance !== null) calcValues.push(attendance);
+                                        if (score !== null) calcValues.push(score * 10);
+                                        
+                                        const cumulativeAverage = Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
+                                        
+                                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'At Risk';
+                                        if (submission === null && attendance === null && score === null) {
+                                            calculatedStatus = 'Consistent';
+                                        } else {
+                                            if (cumulativeAverage >= 80) calculatedStatus = 'Consistent';
+                                            else if (cumulativeAverage >= 65) calculatedStatus = 'Improving';
+                                        }
+
+                                        return (
+                                            <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-600 shrink-0">
+                                                            {student.profile_pic_url ? (
+                                                                <img alt={student.name} className="w-full h-full object-cover" src={student.profile_pic_url} loading="lazy" />
+                                                            ) : (
+                                                                <span className="text-xs font-bold text-slate-505 dark:text-slate-400">{student.name.charAt(0)}</span>
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <Link href={`/teacher-dashboard/students/${student.student_id}`} className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</Link>
+                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">ID: {student.student_id.substring(0, 8)}</p>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <Link href={`/teacher-dashboard/students/${student.student_id}`} className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</Link>
-                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">ID: {student.student_id.substring(0, 8)}</p>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full uppercase tracking-wide inline-block border ${getStatusColor(calculatedStatus)} border-transparent dark:border-current/20`}>
+                                                        {calculatedStatus}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="w-24">
+                                                        <div className="flex justify-between mb-1">
+                                                            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{realProgress}%</span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1 flex overflow-hidden">
+                                                            <div className="h-1 rounded-full bg-[#ecb613]" style={{ width: `${realProgress}%` }}></div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full uppercase tracking-wide inline-block border ${getStatusColor(student.mock_status)} border-transparent dark:border-current/20`}>
-                                                    {student.mock_status}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-sm font-bold text-slate-900 dark:text-white">{student.mock_score.toFixed(1)}</span>
-                                                    <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 text-sm font-bold text-slate-600 dark:text-slate-300">
-                                                {student.mock_attendance}%
-                                            </td>
-                                            <td className="px-6 py-4 text-xs font-semibold text-slate-505 dark:text-slate-400">
-                                                {new Date(student.joined_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <button
-                                                    onClick={() => handleRemoveStudent(student)}
-                                                    disabled={removingStudentId === student.id}
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
-                                                    title="Remove from this classroom"
-                                                >
-                                                    {removingStudentId === student.id
-                                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                        : <Trash2 className="w-3.5 h-3.5" />}
-                                                    Remove
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm font-bold text-slate-600 dark:text-slate-300">
+                                                    {submission ?? 0}%
+                                                </td>
+                                                <td className="px-6 py-4 text-sm font-bold text-slate-600 dark:text-slate-300">
+                                                    {attendance ?? 0}%
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-sm font-bold text-slate-900 dark:text-white">{(score ?? 0).toFixed(1)}</span>
+                                                        <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-xs font-semibold text-slate-505 dark:text-slate-400">
+                                                    {new Date(student.joined_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <button
+                                                        onClick={() => handleRemoveStudent(student)}
+                                                        disabled={removingStudentId === student.id}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50 cursor-pointer"
+                                                        title="Remove from this classroom"
+                                                    >
+                                                        {removingStudentId === student.id
+                                                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                            : <Trash2 className="w-3.5 h-3.5" />}
+                                                        Remove
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                     {paginatedStudents.length === 0 && (
                                         <tr>
-                                            <td colSpan={6} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
+                                            <td colSpan={8} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
                                                 <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-3">No students enrolled yet.</p>
                                                 <button
                                                     onClick={openDirectoryModal}

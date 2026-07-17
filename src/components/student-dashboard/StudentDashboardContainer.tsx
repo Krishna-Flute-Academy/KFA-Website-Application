@@ -2116,6 +2116,12 @@ export default function StudentDashboardContainer() {
                                 setPracticeSuiteTab={setPracticeSuiteTab}
                                 setShowPracticeSuite={setShowPracticeSuite}
                                 classmates={classmates}
+                                studentAllocations={studentAllocations}
+                                studentProgress={studentProgress}
+                                courseLessons={courseLessons}
+                                courseChapters={courseChapters}
+                                courseModules={courseModules}
+                                attendance={attendance}
                             />
                         )}
 

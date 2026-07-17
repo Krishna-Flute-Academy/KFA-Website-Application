@@ -56,6 +56,7 @@ interface EnrolledStudent {
     mock_score: number;
     mock_progress: number;
     mock_attendance: number;
+    mock_submission: number;
     mock_milestone: string;
     mock_status: 'Consistent' | 'Improving' | 'At Risk';
     level?: string;
@@ -448,6 +449,8 @@ export default function ClassroomDashboardPage({
     // ── Assignments ───────────────────────────────────────────────────────────
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [classroomInventoryAllocations, setClassroomInventoryAllocations] = useState<any[]>([]);
+    const [classroomAttendance, setClassroomAttendance] = useState<any[]>([]);
+    const [classroomAssignmentsStudents, setClassroomAssignmentsStudents] = useState<any[]>([]);
     const [assignmentsLoading, setAssignmentsLoading] = useState(false);
     const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
     const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'all_students' | 'individual'>('all');
@@ -701,6 +704,15 @@ export default function ClassroomDashboardPage({
         matchingOverrides.forEach(o => {
             if (!list.some(s => s.student_id === o.student_id)) {
                 const level = o.users?.level || 'Level 1';
+                const mock_score = 8.0;
+                const mock_progress = 75;
+                const mock_attendance = 90;
+                const mock_submission = 85;
+                const avg = Math.round((mock_progress + mock_submission + mock_attendance + (mock_score * 10)) / 4);
+                let mock_status: 'Consistent' | 'Improving' | 'At Risk' = 'At Risk';
+                if (avg >= 80) mock_status = 'Consistent';
+                else if (avg >= 65) mock_status = 'Improving';
+
                 list.push({
                     id: `override-${o.id}`,
                     student_id: o.student_id,
@@ -708,11 +720,12 @@ export default function ClassroomDashboardPage({
                     profile_pic_url: o.users?.profile_pic_url || null,
                     level: level,
                     joined_at: o.override_date,
-                    mock_score: 8.0,
-                    mock_progress: 75,
-                    mock_attendance: 90,
+                    mock_score,
+                    mock_progress,
+                    mock_attendance,
+                    mock_submission,
                     mock_milestone: 'Makeup Session',
-                    mock_status: 'Consistent',
+                    mock_status,
                     is_makeup: true
                 });
             }
@@ -878,6 +891,17 @@ export default function ClassroomDashboardPage({
                         ? (rawLevel.charAt(0).toUpperCase() + rawLevel.slice(1))
                         : (rawLevel.charAt(0).toUpperCase() + rawLevel.slice(1));
 
+                    const mock_score = 6 + ((seed % 40) / 10);
+                    const mock_progress = 50 + (seed % 50);
+                    const mock_attendance = 70 + (seed % 30);
+                    const mock_submission = 65 + (seed % 30);
+                    
+                    const scorePct = mock_score * 10;
+                    const avg = Math.round((mock_progress + mock_submission + mock_attendance + scorePct) / 4);
+                    let mock_status: 'Consistent' | 'Improving' | 'At Risk' = 'At Risk';
+                    if (avg >= 80) mock_status = 'Consistent';
+                    else if (avg >= 65) mock_status = 'Improving';
+
                     return {
                         id: r.id,
                         student_id: r.student_id,
@@ -885,11 +909,12 @@ export default function ClassroomDashboardPage({
                         profile_pic_url: r.users?.profile_pic_url || null,
                         level: formattedLevel,
                         joined_at: r.joined_at,
-                        mock_score: 6 + ((seed % 40) / 10),
-                        mock_progress: 50 + (seed % 50),
-                        mock_attendance: 70 + (seed % 30),
+                        mock_score,
+                        mock_progress,
+                        mock_attendance,
+                        mock_submission,
                         mock_milestone: milestoneOptions[seed % milestoneOptions.length],
-                        mock_status: idx % 3 === 0 ? 'Consistent' : (idx % 2 === 0 ? 'Improving' : 'At Risk') as any
+                        mock_status
                     };
                 });
                 setStudents(formattedRoster);
@@ -1015,6 +1040,38 @@ export default function ClassroomDashboardPage({
                             }
                         } catch (ce) {
                             console.warn('Could not fetch classroom_inventory_allocation:', ce);
+                        }
+                    })(),
+
+                    // Fetch all attendance records for this classroom
+                    (async () => {
+                        try {
+                            const { data, error } = await supabaseAuth
+                                .from('attendance')
+                                .select('*')
+                                .eq('classroom_id', classroomId);
+                            if (!error) {
+                                setClassroomAttendance(data || []);
+                            }
+                        } catch (e) {
+                            console.warn('Could not fetch classroom attendance logs:', e);
+                        }
+                    })(),
+
+                    // Fetch all assignment student mappings for the enrolled students
+                    (async () => {
+                        try {
+                            if (studentIds.length > 0) {
+                                const { data, error } = await supabaseAuth
+                                    .from('assignment_students')
+                                    .select('*')
+                                    .in('student_id', studentIds);
+                                if (!error) {
+                                    setClassroomAssignmentsStudents(data || []);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Could not fetch assignment_students:', e);
                         }
                     })()
                 ];
@@ -1611,17 +1668,29 @@ export default function ClassroomDashboardPage({
                 .filter(ds => selectedToAdd.has(ds.id))
                 .map((ds, idx) => {
                     const seed = parseInt(ds.id.substring(0, 8), 16) || idx;
+                    const mock_score = 6 + ((seed % 40) / 10);
+                    const mock_progress = 50 + (seed % 50);
+                    const mock_attendance = 70 + (seed % 30);
+                    const mock_submission = 65 + (seed % 30);
+                    
+                    const scorePct = mock_score * 10;
+                    const avg = Math.round((mock_progress + mock_submission + mock_attendance + scorePct) / 4);
+                    let mock_status: 'Consistent' | 'Improving' | 'At Risk' = 'At Risk';
+                    if (avg >= 80) mock_status = 'Consistent';
+                    else if (avg >= 65) mock_status = 'Improving';
+
                     return {
                         id: `temp-${ds.id}`,
                         student_id: ds.id,
                         name: ds.name,
                         profile_pic_url: ds.profile_pic_url,
                         joined_at: classroom?.class_date || new Date().toISOString(),
-                        mock_score: 6 + ((seed % 40) / 10),
-                        mock_progress: 50 + (seed % 50),
-                        mock_attendance: 70 + (seed % 30),
+                        mock_score,
+                        mock_progress,
+                        mock_attendance,
+                        mock_submission,
                         mock_milestone: milestoneOptions[seed % milestoneOptions.length],
-                        mock_status: idx % 3 === 0 ? 'Consistent' : (idx % 2 === 0 ? 'Improving' : 'At Risk') as any,
+                        mock_status,
                     };
                 });
 
@@ -3708,6 +3777,14 @@ export default function ClassroomDashboardPage({
                             DAY_NAMES={DAY_NAMES}
                             formatTime12hr={formatTime12hr}
                             formatLocalDate={formatLocalDate}
+                            classroomInventoryAllocations={classroomInventoryAllocations}
+                            courseModules={courseModules}
+                            courseChapters={courseChapters}
+                            courseLessons={courseLessons}
+                            classroomAttendance={classroomAttendance}
+                            classroomAssignmentsStudents={classroomAssignmentsStudents}
+                            assignments={assignments}
+                            studentProgress={studentProgress}
                             announcementSearchQuery={announcementSearchQuery}
                             setAnnouncementSearchQuery={setAnnouncementSearchQuery}
                             filteredAnnouncements={filteredAnnouncements}
@@ -3770,6 +3847,14 @@ export default function ClassroomDashboardPage({
                             handleDeleteOverride={handleDeleteOverride}
                             isDeletingOverrideId={isDeletingOverrideId}
                             avgAttendance={parseFloat(avgAttendance)}
+                            classroomInventoryAllocations={classroomInventoryAllocations}
+                            courseModules={courseModules}
+                            courseChapters={courseChapters}
+                            courseLessons={courseLessons}
+                            classroomAttendance={classroomAttendance}
+                            classroomAssignmentsStudents={classroomAssignmentsStudents}
+                            assignments={assignments}
+                            studentProgress={studentProgress}
                         />
                     )}
 

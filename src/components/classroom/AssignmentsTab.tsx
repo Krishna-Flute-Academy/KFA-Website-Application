@@ -18,6 +18,7 @@ interface Student {
     mock_status: string;
     mock_score: number;
     mock_attendance: number;
+    mock_submission: number;
     joined_at: string;
     mock_milestone?: string;
     is_makeup?: boolean;

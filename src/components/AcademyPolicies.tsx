@@ -14,7 +14,8 @@ import {
     Plus,
     Trash2,
     Loader2,
-    X
+    X,
+    TrendingUp
 } from 'lucide-react';
 import { supabaseAuth } from '../lib/supabase-auth';
 
@@ -38,6 +39,7 @@ const getIconById = (id: string) => {
         case 'attendance': return Calendar;
         case 'fees': return CreditCard;
         case 'ip': return Lock;
+        case 'progress': return TrendingUp;
         default: return Scroll;
     }
 };
@@ -173,6 +175,43 @@ const getDefaultSections = (): PolicySection[] => [
                 description: 'Krishna Flute Academy invests significant time in creating structured lessons, exercises, and practice resources for every student.\n\nBy respecting these policies, you help us continue providing high-quality music education while protecting the hard work behind our curriculum.'
             }
         ]
+    },
+    {
+        id: 'progress',
+        title: 'Student Progress & Evaluation',
+        icon: TrendingUp,
+        subtitle: 'Guidelines on how progress, task submissions, attendance, and grades are evaluated.',
+        points: [
+            {
+                title: 'Overview of Evaluation Metrics',
+                description: 'A student\'s overall progress is the simple average of four key areas:\n\n1. Proficiency Progress: How much of the assigned syllabus is completed.\n2. Task Submission: The percentage of homework tasks submitted.\n3. Attendance Rate: The percentage of scheduled classes attended.\n4. Average Score: The average grade received on reviewed assignments.\n\nTo find the overall progress, we add these four scores together and divide by 4.'
+            },
+            {
+                title: 'Proficiency Level Progress',
+                description: 'This shows how many lessons a student has completed out of the total lessons assigned to them.\n\nExample: If a student has 10 lessons allocated in their syllabus chapters and completes 5, their proficiency progress is 50%.',
+                isCritical: true
+            },
+            {
+                title: 'Task Submission Rate',
+                description: 'Calculates the percentage of assigned homework submitted at the student\'s current learning level.\n\nExample: If 4 tasks are assigned and the student submits 3, the submission rate is 75%.\n\n*Note: This rate automatically resets to 0% whenever a student moves to the next proficiency level.*',
+                isCritical: true
+            },
+            {
+                title: 'Monthly Attendance Rate',
+                description: 'This is the percentage of scheduled classes the student attended in the current month.\n\nExample: If 4 classes are held in the month and the student attends 3, their attendance rate is 75%. If no classes are held in the current month, it falls back to their all-time attendance average.',
+                isCritical: true
+            },
+            {
+                title: 'Average Academic Score',
+                description: 'The average grade of all homework assignments reviewed and marked by the teacher.\n\nExample: If a student receives scores of 8, 9, and 7 on three assignments, their average score is 8 out of 10 (which counts as 80% towards the average).',
+                isCritical: true
+            },
+            {
+                title: 'Academic Standing (Consistency Status)',
+                description: 'The overall average determines the student\'s status:\n\n• Consistent (Green): Average of 80% or above. Indicates excellent regular practice and attendance.\n• Improving (Amber): Average between 65% and 79%. Indicates steady progress.\n• At Risk (Red): Average below 65%. Indicates a need to review practice time or attendance.',
+                isCritical: true
+            }
+        ]
     }
 ];
 
@@ -247,7 +286,42 @@ export default function AcademyPolicies({ isAdmin: isAdminProp }: { isAdmin?: bo
                     console.warn('Error loading policies from Supabase, loading fallback cache:', error);
                     loadLocalPolicies();
                 } else if (data && data.length > 0) {
-                    const mapped = data.map(item => ({
+                    const progressDefault = getDefaultSections().find(s => s.id === 'progress');
+                    const dbProgress = data.find(item => item.id === 'progress');
+                    
+                    const needsUpdate = !dbProgress || 
+                        dbProgress.points.some((p: any) => p.description.includes('$$') || p.description.includes('\\frac'));
+                        
+                    let finalData = [...data];
+                    if (needsUpdate && progressDefault) {
+                        try {
+                            await supabaseAuth.from('academy_policies').upsert({
+                                id: progressDefault.id,
+                                title: progressDefault.title,
+                                subtitle: progressDefault.subtitle,
+                                points: progressDefault.points,
+                                updated_at: new Date().toISOString()
+                            });
+                            
+                            if (dbProgress) {
+                                finalData = finalData.map(item => 
+                                    item.id === 'progress' 
+                                        ? { ...item, points: progressDefault.points, subtitle: progressDefault.subtitle }
+                                        : item
+                                );
+                            } else {
+                                finalData.push({
+                                    id: progressDefault.id,
+                                    title: progressDefault.title,
+                                    subtitle: progressDefault.subtitle,
+                                    points: progressDefault.points
+                                });
+                            }
+                        } catch (e) {
+                            console.warn('Failed to upsert simplified progress policy:', e);
+                        }
+                    }
+                    const mapped = finalData.map(item => ({
                         id: item.id,
                         title: item.title,
                         subtitle: item.subtitle,
