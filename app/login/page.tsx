@@ -111,17 +111,17 @@ function LoginContent() {
                         style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDFmuriD7E2DUGbyVFwITHGKIHWjQsGPWNTIyYLdmRb7XrSsfuyFsJaRn6oZO59IBYHxfEUF1Ca5AP9Jq5rK_M9GQij4KlQzZdrK5to3Nouq28eTavAuLAOab0xHI8xgyF6aUYa5HB6g78CmYJMVHuTtxkmwRQzbiTE6iYB_jd-RlAR2Qktfc_Hnz_B_RoSIbTKZN7EpETTp7xVoJfF2n47da9vdTH7zHUFDbqh0pHPiEqVpra3_8dj_EQa4WsmV-6gaPuUMLwWVynN")' }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#211911]/70 via-transparent to-transparent" />
-                    <div className="absolute bottom-12 left-12 right-12 text-white">
-                        <h1 className="text-4xl font-bold leading-tight mb-4">Master the Divine Art</h1>
-                        <p className="text-lg opacity-90 max-w-md">
+                    <div className="absolute bottom-12 left-10 right-10 text-white">
+                        <h1 className="text-3xl font-bold leading-tight mb-3">Master the Divine Art</h1>
+                        <p className="text-base opacity-90 max-w-sm">
                             Join thousands of students learning the traditional Indian flute from the masters of the Krishna Flute Academy.
                         </p>
                     </div>
                 </div>
 
                 {/* ── Right: Login Form ─────────────────────────────────── */}
-                <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 sm:px-16 lg:px-24 xl:px-32 bg-[#f8f7f6] dark:bg-[#211911] overflow-y-auto">
-                    <div className="max-w-[420px] w-full mx-auto py-12">
+                <div className="w-full lg:w-1/2 flex flex-col justify-center px-6 sm:px-12 lg:px-16 xl:px-24 bg-[#f8f7f6] dark:bg-[#211911] overflow-y-auto">
+                    <div className="max-w-[380px] w-full mx-auto py-10">
 
                         {/* Logo */}
                         <div className="mb-8 flex flex-col items-center lg:items-start">
@@ -135,10 +135,10 @@ function LoginContent() {
                                     Krishna Flute Academy
                                 </span>
                             </Link>
-                            <h2 className="text-3xl font-bold mb-1">
+                            <h2 className="text-2xl font-bold mb-1">
                                 {isTeacher ? 'Teacher Login' : 'Welcome back'}
                             </h2>
-                            <p className="text-slate-600 dark:text-slate-400">Sign in to access your musical journey.</p>
+                            <p className="text-slate-600 dark:text-slate-400 text-sm">Sign in to access your musical journey.</p>
                         </div>
 
                         {/* Registration success banner */}
@@ -164,7 +164,7 @@ function LoginContent() {
                             id="google-signin-btn"
                             onClick={handleGoogleSignIn}
                             disabled={googleLoading || loading}
-                            className="w-full h-12 flex items-center justify-center gap-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-300 transition-all shadow-sm font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="w-full h-11 flex items-center justify-center gap-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-300 transition-all shadow-sm font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             {googleLoading ? (
                                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -194,7 +194,7 @@ function LoginContent() {
                                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Email Address</label>
                                 <input
                                     id="email-input"
-                                    className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
+                                    className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-base sm:text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
                                     placeholder="name@example.com"
                                     type="email"
                                     value={email}
@@ -209,7 +209,7 @@ function LoginContent() {
                                 <div className="relative">
                                     <input
                                         id="password-input"
-                                        className="w-full h-12 px-4 pr-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
+                                        className="w-full h-11 px-4 pr-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-base sm:text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-[#a15912] focus:border-transparent outline-none transition-all"
                                         placeholder="Enter your password"
                                         type={showPassword ? 'text' : 'password'}
                                         autoComplete="current-password"
@@ -242,7 +242,7 @@ function LoginContent() {
                             <button
                                 id="email-signin-btn"
                                 disabled={loading || googleLoading}
-                                className="w-full h-12 bg-[#a15912] text-white font-bold rounded-xl shadow-lg shadow-[#a15912]/20 hover:bg-[#8a4b0f] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="w-full h-11 bg-[#a15912] text-white font-bold rounded-xl shadow-lg shadow-[#a15912]/20 hover:bg-[#8a4b0f] transition-all flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 <span>{loading ? 'Signing In...' : 'Sign In with Email'}</span>
                                 {loading

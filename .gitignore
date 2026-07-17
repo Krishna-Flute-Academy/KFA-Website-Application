@@ -41,3 +41,8 @@ test_upsert.cjs
 
 # macOS metadata files
 **/._*
+
+# next-pwa generated files (regenerated fresh on every build — do NOT commit these)
+public/sw.js
+public/workbox-*.js
+public/swe-worker-*.js

@@ -444,9 +444,9 @@ export default function AcademyPolicies({ isAdmin: isAdminProp }: { isAdmin?: bo
             </div>
 
             {/* Main Tabs and Content layout */}
-            <div className="flex flex-col lg:flex-row gap-6 items-stretch">
-                {/* Left Side: Navigation Links */}
-                <div className="lg:w-64 shrink-0 flex flex-row lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0 scrollbar-none text-left">
+            <div className="flex flex-col gap-6">
+                {/* Top: Navigation Links */}
+                <div className="flex flex-row overflow-x-auto sm:flex-wrap gap-3 pb-2 sm:pb-0 scrollbar-none text-left">
                     {sectionsList.map((section) => {
                         const Icon = section.icon;
                         const active = section.id === activeSection;
@@ -454,21 +454,21 @@ export default function AcademyPolicies({ isAdmin: isAdminProp }: { isAdmin?: bo
                             <button
                                 key={section.id}
                                 onClick={() => setActiveSection(section.id)}
-                                className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all text-xs md:text-sm font-bold border shrink-0 lg:w-full select-none ${
+                                className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl transition-all text-xs md:text-sm font-bold border shrink-0 select-none ${
                                     active 
                                         ? 'bg-[#FAF5EE] border-[#7C5E3F]/30 text-[#7C5E3F] shadow-xs' 
-                                        : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50/80 hover:text-slate-800'
+                                        : 'bg-white border-slate-150 text-slate-600 hover:bg-slate-50/80 hover:text-slate-800'
                                 }`}
                             >
-                                <Icon className={`w-5 h-5 shrink-0 ${active ? 'text-[#7C5E3F]' : 'text-slate-400'}`} />
-                                <span className="truncate">{section.title}</span>
+                                <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-[#7C5E3F]' : 'text-slate-400'}`} />
+                                <span className="whitespace-nowrap">{section.title}</span>
                             </button>
                         );
                     })}
                 </div>
 
-                {/* Right Side: Policy Details Card */}
-                <div className="flex-1 bg-white border border-slate-150 rounded-3xl p-6 md:p-8 flex flex-col justify-between shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-300 text-left">
+                {/* Bottom: Policy Details Card */}
+                <div className="bg-white border border-slate-150 rounded-3xl p-6 md:p-8 flex flex-col justify-between shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-300 text-left">
                     {activeData && (
                         <div className="space-y-6">
                             {/* Section Title & Edit trigger */}
@@ -500,11 +500,11 @@ export default function AcademyPolicies({ isAdmin: isAdminProp }: { isAdmin?: bo
                             </div>
 
                             {/* Policy Points */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="columns-1 md:columns-2 gap-4 space-y-4">
                                 {activeData.points.map((point, index) => (
                                     <div 
                                         key={index} 
-                                        className={`p-4 rounded-2xl border transition-all duration-200 hover:shadow-xs text-left ${
+                                        className={`break-inside-avoid inline-block w-full p-4 rounded-2xl border transition-all duration-200 hover:shadow-xs text-left ${
                                             point.isCritical 
                                                 ? 'bg-amber-50/30 border-amber-250/50 hover:bg-amber-50/50' 
                                                 : 'bg-slate-50/30 border-slate-100 hover:bg-slate-50/60'

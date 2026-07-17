@@ -2,8 +2,9 @@ import withPWAInit from "@ducanh2912/next-pwa";
 
 const withPWA = withPWAInit({
     dest: "public",
-    cacheOnFrontEndNav: true,
-    aggressiveFrontEndNavCaching: true,
+    // Disabled aggressive caching to ensure real-time data and dashboard updates always show fresh content
+    cacheOnFrontEndNav: false,
+    aggressiveFrontEndNavCaching: false,
     reloadOnOnline: true,
     swcMinify: true,
     disable: process.env.NODE_ENV === "development",
