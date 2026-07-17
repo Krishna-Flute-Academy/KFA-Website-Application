@@ -23,9 +23,9 @@ import LibraryTab from './LibraryTab';
 import ClassroomTab from './ClassroomTab';
 import FeesTab from './FeesTab';
 import PoliciesTab from './PoliciesTab';
+import AcademyPolicies from '../AcademyPolicies';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
 
-// --- Interfaces ---
 interface StudentProfile {
     id: string;
     name: string;
@@ -2138,7 +2138,8 @@ export default function StudentDashboardContainer() {
                             </div>
                         )}
 
-                        <div style={{ display: activeTab === 'overview' ? 'block' : 'none' }}>
+                        {(renderBackgroundTabs || activeTab === 'overview') && (
+                            <div style={{ display: activeTab === 'overview' ? 'block' : 'none' }}>
                             <OverviewTab 
                                 profile={profile}
                                 payments={payments}
@@ -2163,7 +2164,7 @@ export default function StudentDashboardContainer() {
                                 courseChapters={courseChapters}
                                 courseModules={courseModules}
                                 attendance={attendance}
-                                onSendMessage={handleSendDirectMessage}
+                                
                             />
                         </div>
                         )}
@@ -2253,7 +2254,6 @@ export default function StudentDashboardContainer() {
                         {(renderBackgroundTabs || activeTab === 'attendance') && (
                             <div style={{ display: activeTab === 'attendance' ? 'block' : 'none' }}>
                                 <AttendanceTab 
-                                    profile={profile}
                                     attendanceStats={attendanceStats}
                                 mergedLogs={mergedLogs}
                                 showExcuseModal={showExcuseModal}
@@ -2271,7 +2271,6 @@ export default function StudentDashboardContainer() {
                         {(renderBackgroundTabs || activeTab === 'library') && (
                             <div style={{ display: activeTab === 'library' ? 'block' : 'none' }}>
                                 <LibraryTab 
-                                    profile={profile}
                                     setPracticeSuiteTab={setPracticeSuiteTab}
                                     setShowPracticeSuite={setShowPracticeSuite}
                             />
