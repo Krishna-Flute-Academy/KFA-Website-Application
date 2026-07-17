@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { supabaseAuth } from '../../src/lib/supabase-auth';
 
 export default function SignupPage() {
@@ -79,13 +79,31 @@ export default function SignupPage() {
         }
 
         setLoading(false);
-        setSubmitted(true);
 
-        // Redirect to login so user can sign in — login page will then route them
-        // to pending-approval if role is still 'pending', or their dashboard if approved.
-        setTimeout(() => {
-            router.push('/login?registered=1');
-        }, 2500);
+        if (data.session) {
+            // Email confirmation is OFF — session available immediately, insert DB row now
+            const { error: dbError } = await supabaseAuth
+                .from('users')
+                .upsert([{
+                    id: data.user!.id,
+                    name: name,
+                    email: email,
+                    phone: phone || null,
+                    role: 'pending',
+                    status: 'active',
+                    join_date: new Date().toISOString().split('T')[0],
+                }], { onConflict: 'id', ignoreDuplicates: true });
+
+            if (dbError) console.error('DB insert error after signup:', dbError);
+
+            // Redirect to login so they can sign in
+            setSubmitted(true);
+            setTimeout(() => router.push('/login?registered=1'), 2500);
+        } else {
+            // Email confirmation is ON — user must click the link in their inbox.
+            // The auth callback (/auth/callback) will insert the DB row using user_metadata.
+            setSubmitted(true); // shows the 'check your email' screen
+        }
     };
 
     return (
@@ -124,18 +142,23 @@ export default function SignupPage() {
                             <p className="text-slate-600 dark:text-slate-400 text-sm">Fill in your details and submit. An admin will review and approve your account.</p>
                         </div>
 
-                        {/* Success State */}
+                        {/* Success / Email Check State */}
                         {submitted ? (
                             <div className="flex flex-col items-center text-center gap-4 py-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-                                    <CheckCircle2 className="w-9 h-9 text-green-600 dark:text-green-400" />
+                                <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-9 h-9 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                    </svg>
                                 </div>
-                                <h4 className="text-xl font-bold text-slate-900 dark:text-slate-100">Application Submitted!</h4>
+                                <h4 className="text-xl font-bold text-slate-900 dark:text-slate-100">Check your email!</h4>
                                 <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-                                    Your account has been created. An admin will review your details and assign your role shortly.
+                                    We sent a confirmation link to <strong className="text-slate-800 dark:text-slate-200">{email}</strong>.
+                                    Click the link to verify your address, then come back to sign in.
                                 </p>
-                                <p className="text-xs text-slate-400">Redirecting you to the waiting room…</p>
-                                <Loader2 className="w-5 h-5 animate-spin text-[#a15912]" />
+                                <p className="text-xs text-slate-400">After verifying, your account will be reviewed by an admin before you can access the portal.</p>
+                                <Link href="/login" className="mt-2 text-sm font-bold text-[#a15912] hover:underline">
+                                    Go to Sign In →
+                                </Link>
                             </div>
                         ) : (
                             <form className="space-y-4 animate-in fade-in duration-300" onSubmit={handleSignup}>
