@@ -446,28 +446,30 @@ export default function OverviewTab({
                     {attendancePct !== null ? (
                         <div className="relative w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center shrink-0">
                             {/* Circular Progress Ring */}
-                            <svg className="w-full h-full transform -rotate-90">
+                            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                                 {/* Background Circle */}
                                 <circle
-                                    cx="50%"
-                                    cy="50%"
-                                    r="40%"
-                                    strokeWidth="8%"
+                                    cx="50"
+                                    cy="50"
+                                    r="40"
+                                    strokeWidth="8"
                                     stroke="#f1f5f9"
                                     fill="transparent"
                                 />
                                 {/* Progress Circle */}
-                                <circle
-                                    cx="50%"
-                                    cy="50%"
-                                    r="40%"
-                                    strokeWidth="8%"
-                                    stroke="url(#emeraldGradient)"
-                                    strokeDasharray={`${2 * Math.PI * 40}`}
-                                    strokeDashoffset={`${2 * Math.PI * 40 * (1 - attendancePct / 100)}`}
-                                    strokeLinecap="round"
-                                    fill="transparent"
-                                />
+                                {attendancePct > 0 && (
+                                    <circle
+                                        cx="50"
+                                        cy="50"
+                                        r="40"
+                                        strokeWidth="8"
+                                        stroke="url(#emeraldGradient)"
+                                        strokeDasharray={`${2 * Math.PI * 40}`}
+                                        strokeDashoffset={`${2 * Math.PI * 40 * (1 - attendancePct / 100)}`}
+                                        strokeLinecap="round"
+                                        fill="transparent"
+                                    />
+                                )}
                                 <defs>
                                     <linearGradient id="emeraldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
                                         <stop offset="0%" stopColor="#10b981" />
@@ -511,26 +513,28 @@ export default function OverviewTab({
                             <div className="flex flex-col items-center justify-center md:border-r border-slate-150 md:pr-8 shrink-0">
                                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Overall Standing</h3>
                                 <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center">
-                                    <svg className="w-full h-full transform -rotate-90">
+                                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                                         <circle
-                                            cx="50%"
-                                            cy="50%"
-                                            r="40%"
-                                            strokeWidth="8%"
+                                            cx="50"
+                                            cy="50"
+                                            r="40"
+                                            strokeWidth="8"
                                             stroke="#f1f5f9"
                                             fill="transparent"
                                         />
-                                        <circle
-                                            cx="50%"
-                                            cy="50%"
-                                            r="40%"
-                                            strokeWidth="8%"
-                                            stroke="url(#overallProgressGradientLeftColumn)"
-                                            strokeDasharray={`${2 * Math.PI * 40}`}
-                                            strokeDashoffset={`${2 * Math.PI * 40 * (1 - overallProgress / 100)}`}
-                                            strokeLinecap="round"
-                                            fill="transparent"
-                                        />
+                                        {overallProgress > 0 && (
+                                            <circle
+                                                cx="50"
+                                                cy="50"
+                                                r="40"
+                                                strokeWidth="8"
+                                                stroke="url(#overallProgressGradientLeftColumn)"
+                                                strokeDasharray={`${2 * Math.PI * 40}`}
+                                                strokeDashoffset={`${2 * Math.PI * 40 * (1 - overallProgress / 100)}`}
+                                                strokeLinecap="round"
+                                                fill="transparent"
+                                            />
+                                        )}
                                         <defs>
                                             <linearGradient id="overallProgressGradientLeftColumn" x1="0%" y1="0%" x2="100%" y2="100%">
                                                 <stop offset="0%" stopColor="#7C5E3F" />

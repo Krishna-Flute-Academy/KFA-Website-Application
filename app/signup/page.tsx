@@ -125,9 +125,8 @@ export default function SignupPage() {
                 {/* Right Side: Form */}
                 <div className="w-full lg:w-1/2 flex flex-col justify-center px-6 sm:px-12 lg:px-16 xl:px-24 bg-[#f8f7f6] dark:bg-[#211911] py-10 lg:py-0 overflow-y-auto">
                     <div className="max-w-[380px] w-full mx-auto">
-
                         {/* Header */}
-                        <div className="mb-8 flex flex-col items-center lg:items-start">
+                        <div className="mb-8 flex flex-col items-center lg:items-start w-full">
                             <div className="flex items-center gap-3 mb-6">
                                 <Link href="/" className="flex items-center gap-3 group">
                                     <div className="w-10 h-10 bg-[#a15912] rounded-lg flex items-center justify-center text-white group-hover:bg-[#8a4b0f] transition-colors">
@@ -138,33 +137,47 @@ export default function SignupPage() {
                                     <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 group-hover:text-[#a15912] transition-colors">Krishna Flute Academy</h2>
                                 </Link>
                             </div>
-                            <h3 className="text-2xl font-bold mb-2">Create Account</h3>
-                            <p className="text-slate-600 dark:text-slate-400 text-sm">Fill in your details and submit. An admin will review and approve your account.</p>
+                            {!submitted && (
+                                <>
+                                    <h3 className="text-2xl font-bold mb-2">Create Account</h3>
+                                    <p className="text-slate-650 dark:text-slate-400 text-sm">Fill in your details and submit. An admin will review and approve your account.</p>
+                                </>
+                            )}
                         </div>
 
                         {/* Success / Email Check State */}
                         {submitted ? (
-                            <div className="flex flex-col items-center text-center gap-4 py-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="flex flex-col items-center text-center gap-5 py-6 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
                                 <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="w-9 h-9 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                     </svg>
                                 </div>
-                                <h4 className="text-xl font-bold text-slate-900 dark:text-slate-100">Check your email!</h4>
-                                <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-                                    We sent a confirmation link to <strong className="text-slate-800 dark:text-slate-200">{email}</strong>.
+                                <h4 className="text-2xl font-black text-slate-900 dark:text-slate-100">Check your email!</h4>
+                                <p className="text-slate-650 dark:text-slate-450 text-sm leading-relaxed max-w-sm">
+                                    We sent a confirmation link to <strong className="text-slate-900 dark:text-white font-semibold">{email}</strong>.
                                     Click the link to verify your address, then come back to sign in.
                                 </p>
-                                <p className="text-xs text-slate-400">After verifying, your account will be reviewed by an admin before you can access the portal.</p>
-                                <Link href="/login" className="mt-2 text-sm font-bold text-[#a15912] hover:underline">
-                                    Go to Sign In →
+                                
+                                {/* Admin Review Highlight Card */}
+                                <div className="w-full p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-2xl text-left flex items-start gap-3 mt-2 shadow-sm">
+                                    <span className="text-lg mt-0.5">⏳</span>
+                                    <div>
+                                        <h5 className="font-bold text-amber-900 dark:text-amber-300 text-xs uppercase tracking-wider mb-1">Admin Approval Required</h5>
+                                        <p className="text-slate-700 dark:text-slate-350 text-xs leading-relaxed">
+                                            After you verify your email address, an administrator must review and approve your account details before you will be allowed to log in.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <Link href="/login" className="mt-4 text-sm font-bold text-[#a15912] hover:underline flex items-center gap-1.5 hover:gap-2 transition-all">
+                                    Go to Sign In <ArrowRight className="w-4 h-4" />
                                 </Link>
                             </div>
                         ) : (
-                            <form className="space-y-4 animate-in fade-in duration-300" onSubmit={handleSignup}>
-
+                            <form className="space-y-4 w-full animate-in fade-in duration-300" onSubmit={handleSignup}>
                                 {error && (
-                                    <div className="p-3 bg-red-100 border border-red-400 text-red-700 text-sm rounded-lg">
+                                    <div className="p-3 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg">
                                         {error}
                                     </div>
                                 )}
