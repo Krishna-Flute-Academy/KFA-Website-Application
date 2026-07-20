@@ -2987,32 +2987,12 @@ export default function ClassroomDashboardPage({
         let allocateLessons = false;
 
         if (type === 'module') {
-            const depth = prompt(
-                `Allocate Level "${title}"\nChoose allocation option:\n1. Allocate only the Level\n2. Allocate the Level and all Chapters under it\n3. Allocate the Level, all Chapters, and all Topics under it\n\nEnter 1, 2, or 3:`,
-                "3"
-            );
-            if (depth === null) return;
-            if (depth === "2") {
-                allocateChapters = true;
-            } else if (depth === "3") {
-                allocateChapters = true;
-                allocateLessons = true;
-            } else if (depth !== "1") {
-                alert("Invalid choice. Allocation cancelled.");
-                return;
-            }
+            // Allocating from Level (module) automatically allocates all chapters and lessons under it.
+            allocateChapters = true;
+            allocateLessons = true;
         } else if (type === 'chapter') {
-            const depth = prompt(
-                `Allocate Chapter "${title}"\nChoose allocation option:\n1. Allocate only the Chapter\n2. Allocate the Chapter and all Topics under it\n\nEnter 1 or 2:`,
-                "2"
-            );
-            if (depth === null) return;
-            if (depth === "2") {
-                allocateLessons = true;
-            } else if (depth !== "1") {
-                alert("Invalid choice. Allocation cancelled.");
-                return;
-            }
+            // Allocating from Chapter automatically allocates all topics/lessons inside it.
+            allocateLessons = true;
         }
 
         setImportingItemId(id);
