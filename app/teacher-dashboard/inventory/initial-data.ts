@@ -599,42 +599,45 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         id: 'c04e0100-1111-2222-3333-444444444444',
         chapter_id: 'e1f2a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b',
         title: 'Rhythm Practice Patterns',
-        description: 'Using 4/4 rhythm with metronome.',
+        description: '<p>This topic introduces students to rhythm-based practice using a 4/4 time signature and a metronome. These exercises improve timing, finger coordination, breath control, and note clarity while building a strong rhythmic foundation.</p><p><strong>Practice Patterns:</strong></p><ul class="list-disc pl-5 space-y-1"><li>1234</li><li>1234 – 4321</li><li>21 Pattern</li><li>123 Pattern</li></ul>',
         lesson_number: 1,
         material_type: 'video',
         duration: 'VIDEO • 11:30',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
-            'Practice patterns:',
-            '1. 1234',
-            '2. 1234 – 4321',
-            '3. 21 pattern',
-            '4. 123 pattern',
-            'These improve:',
-            '* finger control',
-            '* rhythm',
-            '* note clarity'
+            'Understand the importance of practicing with a metronome.',
+            'Practice all rhythm patterns in 4/4 time.',
+            'Maintain steady tempo throughout the exercise.',
+            'Develop finger coordination and note clarity.',
+            'Play each pattern without breaking the rhythm.',
+            'Increase speed only after achieving accuracy.'
         ]
     },
     {
         id: 'c04e0200-1111-2222-3333-444444444444',
         chapter_id: 'e1f2a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b',
         title: 'Pyramid Practice',
-        description: 'Master smooth transitions between registers using the pyramid structure.',
+        description: '<p>The Pyramid exercise gradually increases and decreases the number of notes played in a sequence. It develops finger agility, memory, breath control, and smooth note transitions.</p><p><strong>Practice:</strong></p><div class="font-mono bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 p-3 rounded-xl inline-block my-1 font-semibold leading-relaxed">S<br/>S R S<br/>S R G R S<br/>S R G M G R S</div>',
         lesson_number: 2,
         material_type: 'pdf',
         file_size: '0.9MB',
         duration: 'PDF • 0.9MB',
         is_introductory: false,
         is_very_important: false,
-        bullet_points: []
+        bullet_points: [
+            'Understand the concept of Pyramid Practice.',
+            'Play each level smoothly without hesitation.',
+            'Maintain even rhythm and tone quality.',
+            'Develop finger speed with clean transitions.',
+            'Practice ascending and descending patterns accurately.'
+        ]
     },
     {
         id: 'c04e0300-1111-2222-3333-444444444444',
         chapter_id: 'e1f2a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b',
-        title: 'More Alankar / Palta Practice',
-        description: 'Practice these 12 patterns to build note clarity and speed.',
+        title: 'Advanced Alankar / Palta Practice (Part 1)',
+        description: '<p>This topic introduces longer Alankars and Paltas to improve finger movement, note accuracy, and fluency across the flute.</p><p><strong>Practice Patterns:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>P.D.N.S SN.D.P. | D.N.SR RSN.D. | N.SRG GRSN. | SRGm mGRS | Reverse (mGRS SRGm)</li><li>P.D.N.S RSN.D. | D.N.SR GRSN. | N.SRG mGRS | Reverse</li><li>P.D.N. | D.N.S | N.S R | S R G | R G m | (3/4 Rhythm)</li></ul>',
         lesson_number: 3,
         material_type: 'pdf',
         file_size: '1.6MB',
@@ -642,48 +645,104 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
-            'P.D.N.S SN.D.P. | D.N.SR RSN.D. | N.SRG GRSN. | SRGm mGRS | - Reverse ( mGRS SRGm )',
-            'P.D.N.S RSN.D. | D.N.SR GRSN. | NSRG mGRS | - Reverse',
-            'P.D.N. |D.N.S|N. S R| S R G | R G m | - ( It will be 3/4 rhythm)',
-            'P.D.N.S | D.N.SR | N.SRG | SRGm | - Reverse',
-            'P.D.N. P.D.N. P.D. | D.N.S D.N.S D.N. | N.SR N.SR N.S | SRG SRG SR | RGm RGm RG',
-            'D.P N.D. SN. RS GR mG - Reverse ( Gm, RG, SR N.S, D.N., P.D.)',
-            'P.N. D.S NR SG Rm ( SKIPPING ONE NOTE)',
-            'N.D.P, SN.D., RSN., GRS, mGR, - Reverse',
-            'P.D. P.D. P.D. P.D. | D.N. D.N. D.N. D.N. N.S N.S N.S N.S - CONTINUTE TO SUDHA MA',
-            'P.D.N.S P.D.N.S P.D.N.S P.D.N.S | D.N.SR D.N.SR D.N.SR D.N.SR | N.SRG N.SRG N.SRG N.SRG | SRGm SRGm SRGm SRGm',
-            'P.D. P.D. P.D.N. | D.N. D.N. D.N.S | N.S N.S N.SR | SR SR SRG | RG RG RGm',
-            'SN.D.P.| RSN.D. |GRSN. |mGRS | - REVERSE'
+            'Practice each Palta slowly with correct fingering.',
+            'Maintain equal note duration.',
+            'Play reverse patterns accurately.',
+            'Develop smooth finger transitions.',
+            'Use a metronome throughout practice.'
         ]
     },
     {
         id: 'c04e0400-1111-2222-3333-444444444444',
         chapter_id: 'e1f2a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b',
-        title: 'Composition',
-        description: 'First short musical composition combining rhythm intervals and pauses in lower octave.',
+        title: 'Advanced Alankar / Palta Practice (Part 2)',
+        description: '<p>These exercises strengthen pattern recognition, rhythmic accuracy, and fluency in playing continuous note combinations.</p><p><strong>Practice Patterns:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>P.D.N.S | D.N.SR | N.SRG | SRGm | Reverse</li><li>P.D.N. P.D.N. P.D. | D.N.S D.N.S D.N. | N.SR N.SR N.S | SRG SRG SR | RGm RGm RG</li><li>D.P N.D. SN. RS GR mG | Reverse (Gm, RG, SR, N.S, D.N., P.D.)</li></ul>',
         lesson_number: 4,
-        material_type: 'video',
-        duration: 'VIDEO • 09:15',
+        material_type: 'pdf',
+        file_size: '1.2MB',
+        duration: 'PDF • 1.2MB',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
-            '1. D.N.D. | S - - |'
+            'Play continuous patterns without stopping.',
+            'Maintain rhythm throughout the exercise.',
+            'Improve finger independence.',
+            'Practice reverse exercises confidently.',
+            'Develop consistent breath support.'
         ]
     },
     {
         id: 'c04e0500-1111-2222-3333-444444444444',
         chapter_id: 'e1f2a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b',
-        title: 'Songs',
-        description: 'Learn to play three famous songs on the bamboo bansuri.',
+        title: 'Advanced Alankar / Palta Practice (Part 3)',
+        description: '<p>These exercises introduce skipping notes and repetitive rhythmic patterns to increase finger flexibility and improve melodic understanding.</p><p><strong>Practice Patterns:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>P.N. D.S NR SG Rm (Skipping One Note)</li><li>N.D.P | SN.D | RSN | GRS | mGR | Reverse</li><li>P.D. P.D. P.D. P.D. | D.N. D.N. D.N. D.N. | N.S N.S N.S N.S (Continue to Shuddha Ma)</li></ul>',
         lesson_number: 5,
+        material_type: 'pdf',
+        file_size: '1.2MB',
+        duration: 'PDF • 1.2MB',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Practice skip-note exercises accurately.',
+            'Maintain finger precision during larger jumps.',
+            'Play repetitive exercises evenly.',
+            'Develop confidence in note positioning.',
+            'Improve hand coordination.'
+        ]
+    },
+    {
+        id: 'c04e0600-1111-2222-3333-444444444444',
+        chapter_id: 'e1f2a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b',
+        title: 'Advanced Alankar / Palta Practice (Part 4)',
+        description: '<p>This topic focuses on continuous higher-speed patterns and repetitive note groups to improve endurance and finger speed.</p><p><strong>Practice Patterns:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>P.D.N.S ×4 | D.N.SR ×4 | N.SRG ×4 | SRGm ×4</li><li>P.D. P.D. P.D.N. | D.N. D.N. D.N.S | N.S N.S N.SR | SR SR SRG | RG RG RGm</li><li>SN.D.P | RSN.D | GRSN | mGRS | Reverse</li></ul>',
+        lesson_number: 6,
+        material_type: 'pdf',
+        file_size: '1.3MB',
+        duration: 'PDF • 1.3MB',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Maintain steady tempo during long exercises.',
+            'Develop endurance for continuous playing.',
+            'Play repeated note groups evenly.',
+            'Maintain clear tone at higher speed.',
+            'Perform reverse exercises confidently.'
+        ]
+    },
+    {
+        id: 'c04e0700-1111-2222-3333-444444444444',
+        chapter_id: 'e1f2a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b',
+        title: 'Beginner Composition',
+        description: '<p>Students learn a simple composition using the techniques developed in previous exercises. The focus is on expression, timing, and smooth note transitions.</p><p><strong>Composition:</strong></p><div class="font-mono bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 p-3 rounded-xl inline-block my-1 font-semibold leading-relaxed">D.N.D. | S — — |</div>',
+        lesson_number: 7,
+        material_type: 'video',
+        duration: 'VIDEO • 09:15',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Play the composition with correct rhythm.',
+            'Maintain smooth note transitions.',
+            'Use proper breath control.',
+            'Play with a clear and pleasant tone.',
+            'Perform the composition confidently.'
+        ]
+    },
+    {
+        id: 'c04e0800-1111-2222-3333-444444444444',
+        chapter_id: 'e1f2a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b',
+        title: 'Beginner Songs',
+        description: '<p>Students apply their rhythm, fingering, and breath control skills by learning simple and familiar melodies.</p><p><strong>Songs:</strong></p><ul class="list-disc pl-5 space-y-1"><li>Bella Ciao</li><li>Dilwale Dulhania Le Janege (DDLJ Theme)</li><li>Achyutam Keshavam</li></ul>',
+        lesson_number: 8,
         material_type: 'video',
         duration: 'VIDEO • 15:45',
         is_introductory: false,
         is_very_important: true,
         bullet_points: [
-            '1. Bella ciao',
-            '2. DDLJ',
-            '3. Achyutam Keshavam'
+            'Play each song with correct notes.',
+            'Maintain steady rhythm throughout the song.',
+            'Use proper breath control.',
+            'Play with expression and musicality.',
+            'Perform the complete song confidently without major mistakes.'
         ]
     }
 ];
