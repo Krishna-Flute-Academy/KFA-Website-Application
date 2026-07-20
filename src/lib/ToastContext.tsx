@@ -210,7 +210,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Global Custom Notification Modal Popup */}
-            {false && activePopup && (
+            {activePopup && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-300">
                     <div className="relative max-w-md w-full bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-blue-500/20 flex flex-col items-center text-center overflow-hidden animate-in zoom-in-95 duration-300">
                         {/* Decorative glowing background shapes */}

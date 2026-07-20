@@ -245,28 +245,84 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
     }, [teacherProfile?.id]);
 
+    // Fetch active session from classrooms table and subscribe to realtime updates
     useEffect(() => {
-        const checkSession = () => {
-            const sessionStr = localStorage.getItem('active_class_session');
-            if (sessionStr) {
-                try {
-                    const session = JSON.parse(sessionStr);
-                    setActiveSession(session);
-                    const elapsed = Math.floor((Date.now() - session.startedAt) / 1000);
-                    setSecondsElapsed(elapsed > 0 ? elapsed : 0);
-                } catch (e) {
-                    console.error(e);
+        if (!teacherProfile?.id) return;
+
+        const checkActiveSessionInDB = async () => {
+            try {
+                let query = supabaseAuth
+                    .from('classrooms')
+                    .select('id, name, is_live, live_meeting_link, live_session_started_at')
+                    .eq('is_live', true);
+
+                if (userRole !== 'admin') {
+                    query = query.eq('teacher_id', teacherProfile.id);
+                }
+
+                const { data: liveRooms, error } = await query
+                    .order('live_session_started_at', { ascending: false })
+                    .limit(1);
+
+                if (error) throw error;
+
+                if (liveRooms && liveRooms.length > 0) {
+                    const room = liveRooms[0];
+                    const startedTime = room.live_session_started_at ? new Date(room.live_session_started_at).getTime() : Date.now();
+                    const sessionDateStr = room.live_session_started_at 
+                        ? new Date(room.live_session_started_at).toISOString().split('T')[0]
+                        : new Date().toISOString().split('T')[0];
+
+                    setActiveSession({
+                        classroomId: room.id,
+                        classroomName: room.name,
+                        sessionType: room.live_meeting_link ? 'online' : 'offline',
+                        sessionDate: sessionDateStr,
+                        startedAt: startedTime
+                    });
+                } else {
                     setActiveSession(null);
                 }
-            } else {
-                setActiveSession(null);
+            } catch (err) {
+                console.error('Error fetching active session from DB:', err);
             }
         };
 
-        checkSession();
-        const interval = setInterval(checkSession, 1000);
+        checkActiveSessionInDB();
+
+        // Realtime subscription to classrooms table to detect start/end of sessions
+        const classroomsChannel = supabaseAuth
+            .channel('sidebar-active-classrooms')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'classrooms' },
+                () => {
+                    checkActiveSessionInDB();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(classroomsChannel);
+        };
+    }, [teacherProfile?.id, userRole]);
+
+    // Timer effect for the active session widget
+    useEffect(() => {
+        if (!activeSession) {
+            setSecondsElapsed(0);
+            return;
+        }
+
+        const updateTimer = () => {
+            const elapsed = Math.floor((Date.now() - activeSession.startedAt) / 1000);
+            setSecondsElapsed(elapsed > 0 ? elapsed : 0);
+        };
+
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [activeSession]);
 
     const isMeetingPage = pathname?.endsWith('/meeting');
     const basePath = userRole === 'admin' ? '/admin-dashboard' : '/teacher-dashboard';
@@ -458,10 +514,55 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 {/* Direct action triggers */}
                 <div className="flex gap-2 mt-1">
                     <button
-                        onClick={() => {
+                        onClick={async () => {
                             if (confirm('Are you sure you want to end this active class session?')) {
-                                localStorage.removeItem('active_class_session');
-                                window.location.reload();
+                                try {
+                                    const startedAtTime = activeSession.startedAt;
+                                    const endedAtTime = Date.now();
+                                    const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
+                                    
+                                    // 1. Fetch attendance counts to log correctly
+                                    const { data: attData } = await supabaseAuth
+                                        .from('attendance')
+                                        .select('status')
+                                        .eq('classroom_id', activeSession.classroomId)
+                                        .eq('date', activeSession.sessionDate);
+                                    
+                                    const present = attData?.filter(a => a.status === 'present').length || 0;
+                                    const absent = attData?.filter(a => a.status === 'absent').length || 0;
+                                    const late = attData?.filter(a => a.status === 'late').length || 0;
+                                    const excused = attData?.filter(a => a.status === 'excused').length || 0;
+                                    
+                                    // 2. Call RPC to end classroom session transactionally and log history
+                                    await supabaseAuth.rpc('end_classroom_session', {
+                                        p_classroom_id: activeSession.classroomId,
+                                        p_session_date: activeSession.sessionDate,
+                                        p_session_type: activeSession.sessionType,
+                                        p_started_at: new Date(startedAtTime).toISOString(),
+                                        p_ended_at: new Date(endedAtTime).toISOString(),
+                                        p_duration_seconds: durationSecs,
+                                        p_present_count: present,
+                                        p_absent_count: absent,
+                                        p_late_count: late,
+                                        p_excused_count: excused
+                                    });
+
+                                    // 3. Clear classrooms live state
+                                    await supabaseAuth
+                                        .from('classrooms')
+                                        .update({
+                                            is_live: false,
+                                            live_meeting_link: null,
+                                            live_session_started_at: null
+                                        })
+                                        .eq('id', activeSession.classroomId);
+
+                                    localStorage.removeItem('active_class_session');
+                                    window.location.reload();
+                                } catch (err) {
+                                    console.error('Error ending class session from sidebar:', err);
+                                    alert('Failed to end classroom session. Please try again.');
+                                }
                             }
                         }}
                         className="flex-1 py-2 border border-rose-200 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-950/20 text-rose-600 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95"

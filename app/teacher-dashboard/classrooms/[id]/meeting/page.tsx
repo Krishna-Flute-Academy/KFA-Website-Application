@@ -58,7 +58,10 @@ export default function MeetingPage() {
                 setTeacherProfile(profile);
 
                 const { data: classroom } = await supabaseAuth
-                    .from('classrooms').select('name, type').eq('id', classroomId).single();
+                    .from('classrooms')
+                    .select('name, type, is_live, live_meeting_link, live_session_started_at')
+                    .eq('id', classroomId)
+                    .single();
                 
                 let roster: any[] = [];
                 if (classroom) {
@@ -92,6 +95,35 @@ export default function MeetingPage() {
                         }));
 
                         roster = [...permList, ...overrideList];
+                    }
+
+                    // Auto-restore step 3 if this classroom is already live in the database
+                    if (classroom.is_live && classroom.live_session_started_at) {
+                        setSessionType(classroom.live_meeting_link ? 'online' : 'offline');
+                        
+                        const liveDate = new Date(classroom.live_session_started_at);
+                        const year = liveDate.getFullYear();
+                        const month = String(liveDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(liveDate.getDate()).padStart(2, '0');
+                        const activeDateStr = `${year}-${month}-${day}`;
+                        setSessionDate(activeDateStr);
+                        
+                        if (classroom.live_meeting_link) {
+                            setMeetingLink(classroom.live_meeting_link);
+                        }
+                        
+                        const elapsed = Math.floor((Date.now() - new Date(classroom.live_session_started_at).getTime()) / 1000);
+                        setSecondsElapsed(elapsed > 0 ? elapsed : 0);
+                        setStep(3);
+
+                        // Populate local storage for backup consistency
+                        localStorage.setItem('active_class_session', JSON.stringify({
+                            classroomId,
+                            classroomName: classroom.name,
+                            sessionType: classroom.live_meeting_link ? 'online' : 'offline',
+                            sessionDate: activeDateStr,
+                            startedAt: new Date(classroom.live_session_started_at).getTime()
+                        }));
                     }
                 }
 

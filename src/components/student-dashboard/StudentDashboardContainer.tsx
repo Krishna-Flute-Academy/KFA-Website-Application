@@ -2039,7 +2039,41 @@ export default function StudentDashboardContainer() {
                     </header>
 
                     {/* Main Content Area */}
-                    <main className="flex-1 p-3 sm:p-6 md:p-8 w-full max-w-[1400px]">                        {/* Fee Notification Banner */}
+                    <main className="flex-1 p-3 sm:p-6 md:p-8 w-full max-w-[1400px]">
+                        {/* Live Class Notification & Join Banner (Global for non-overview tabs) */}
+                        {activeTab !== 'overview' && classroom?.is_live && (
+                            <div className="mb-6 bg-gradient-to-r from-red-600 via-[#d49900] to-amber-500 rounded-2xl p-4 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300 border border-red-500/20 text-left">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center shrink-0 animate-pulse">
+                                        <span className="material-symbols-outlined text-xl animate-bounce">video_call</span>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[8px] font-black uppercase tracking-wider bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse font-mono">● Live</span>
+                                            {classroom.live_classroom_name && (
+                                                <span className="text-xs font-black truncate max-w-[120px] sm:max-w-xs">{classroom.live_classroom_name}</span>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] text-white/90 leading-tight font-medium mt-0.5">
+                                            Your instructor has started an active classroom session. Join now!
+                                        </p>
+                                    </div>
+                                </div>
+                                {classroom.live_meeting_link && (
+                                    <a
+                                        href={classroom.live_meeting_link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-4 py-2 bg-white text-red-600 hover:text-red-700 hover:bg-slate-50 transition-all font-black rounded-xl text-[10px] shadow-sm flex items-center justify-center gap-1.5 shrink-0 font-sans uppercase tracking-wider cursor-pointer"
+                                    >
+                                        <PlayCircle className="w-3.5 h-3.5 text-red-600" />
+                                        Join Class
+                                    </a>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Fee Notification Banner */}
                         {feeStatus && activeTab !== 'fees' && profile && (
                             <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                 {(() => {

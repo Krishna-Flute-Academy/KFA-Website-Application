@@ -63,6 +63,9 @@ interface Classroom {
     status: string;
     type?: 'permanent' | 'temporary';
     classroom_id?: string | null;
+    is_live?: boolean;
+    live_meeting_link?: string | null;
+    live_session_started_at?: string | null;
 }
 
 
@@ -85,6 +88,12 @@ export default function ClassroomsPage() {
 
     useEffect(() => {
         const checkActiveSession = () => {
+            const liveRoom = classrooms.find(c => c.is_live);
+            if (liveRoom) {
+                setActiveSession({ classroomId: liveRoom.id });
+                return;
+            }
+
             if (typeof window !== 'undefined') {
                 const sessionStr = localStorage.getItem('active_class_session');
                 if (sessionStr) {
@@ -102,7 +111,7 @@ export default function ClassroomsPage() {
         checkActiveSession();
         const interval = setInterval(checkActiveSession, 2000);
         return () => clearInterval(interval);
-    }, []);
+    }, [classrooms]);
 
     const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
