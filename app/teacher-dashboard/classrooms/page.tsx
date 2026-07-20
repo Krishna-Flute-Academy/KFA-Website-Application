@@ -79,7 +79,7 @@ export default function ClassroomsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [rawSchedules, setRawSchedules] = useState<any[]>([]);
     const [activeSession, setActiveSession] = useState<{ classroomId: string } | null>(null);
-    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'archived'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
     const [formatFilter, setFormatFilter] = useState<'all' | 'online' | 'offline'>('all');
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
@@ -397,11 +397,11 @@ export default function ClassroomsPage() {
         } else {
             filteredPerm = filteredPerm.filter(room => {
                 const status = (room.status || 'active').toLowerCase();
-                return status === statusFilter;
+                return statusFilter === 'active' ? (status === 'active') : (status === 'inactive' || status === 'archived');
             });
             filteredTemp = filteredTemp.filter(room => {
                 const status = (room.status || 'active').toLowerCase();
-                return status === statusFilter;
+                return statusFilter === 'active' ? (status === 'active') : (status === 'inactive' || status === 'archived');
             });
         }
 
@@ -496,7 +496,7 @@ export default function ClassroomsPage() {
         } else {
             filtered = filtered.filter(room => {
                 const status = (room.status || 'active').toLowerCase();
-                return status === statusFilter;
+                return statusFilter === 'active' ? (status === 'active') : (status === 'inactive' || status === 'archived');
             });
         }
 
@@ -567,7 +567,7 @@ export default function ClassroomsPage() {
         // If status filter is explicitly selected, override the tab default partitioning
         displayedClassrooms = displayedClassrooms.filter(room => {
             const status = (room.status || 'active').toLowerCase();
-            return status === statusFilter;
+            return statusFilter === 'active' ? (status === 'active') : (status === 'inactive' || status === 'archived');
         });
     }
 
@@ -614,7 +614,19 @@ export default function ClassroomsPage() {
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                         <div>
                             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">Classroom Management</h1>
-                            <p className="text-slate-500 dark:text-slate-400 font-medium">Manage your active music sessions, schedules, and student enrollment.</p>
+                            <p className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-2">
+                                {activeView === 'today' 
+                                    ? "Showing today's scheduled classes and sessions." 
+                                    : "Manage your active music sessions, schedules, and student enrollment."}
+                                {activeView !== 'today' && (
+                                    <button 
+                                        onClick={() => setActiveView('today')}
+                                        className="text-xs font-bold text-[#ecb613] hover:underline bg-transparent border-0 cursor-pointer ml-1"
+                                    >
+                                        Show Today's Classes
+                                    </button>
+                                )}
+                            </p>
                         </div>
                         {teacherProfile?.role === 'admin' && (
                             <div className="flex items-center gap-3">
@@ -633,12 +645,6 @@ export default function ClassroomsPage() {
                         <div className="flex flex-wrap items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 w-full md:w-auto gap-1">
                             {viewMode === 'list' ? (
                                 <>
-                                    <button 
-                                        onClick={() => setActiveView('today')}
-                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'today' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
-                                    >
-                                        Today's Classes
-                                    </button>
                                     <button 
                                         onClick={() => setActiveView('permanent')}
                                         className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'permanent' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
@@ -721,14 +727,14 @@ export default function ClassroomsPage() {
                                             <div>
                                                 <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5 px-1">Status</label>
                                                 <div className="grid grid-cols-2 gap-1.5">
-                                                    {(['all', 'active', 'inactive', 'archived'] as const).map(s => (
+                                                    {(['all', 'active', 'inactive'] as const).map(s => (
                                                         <button
                                                             key={s}
                                                             onClick={() => setStatusFilter(s)}
                                                             className={`px-2.5 py-1.5 text-xs font-bold rounded-lg border text-center uppercase tracking-wider transition-all cursor-pointer ${
                                                                 statusFilter === s
                                                                     ? 'bg-[#ecb613] text-slate-900 border-transparent shadow-sm'
-                                                                    : 'bg-slate-50 dark:bg-slate-805 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                                                    : 'bg-slate-50 dark:bg-slate-855 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
                                                             }`}
                                                         >
                                                             {s}
