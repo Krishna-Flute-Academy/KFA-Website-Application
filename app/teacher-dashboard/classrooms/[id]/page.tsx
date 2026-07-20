@@ -2379,7 +2379,7 @@ export default function ClassroomDashboardPage({
                         a => a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lesson.id
                     );
 
-                    const isLessonAllocated = !!modAlloc || !!chapAlloc || !!lessonAlloc;
+                    const isLessonAllocated = !!lessonAlloc;
 
                     if (isLessonAllocated && filterLesson(lesson.id)) {
                         const isLessonMatch = query ? (
@@ -2400,7 +2400,7 @@ export default function ClassroomDashboardPage({
                     }
                 });
 
-                const isChapterVisible = !!modAlloc || !!chapAlloc || lessonNodes.length > 0;
+                const isChapterVisible = !!chapAlloc || lessonNodes.length > 0;
 
                 if (isChapterVisible && (!query || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
                     chapterNodes.push({
