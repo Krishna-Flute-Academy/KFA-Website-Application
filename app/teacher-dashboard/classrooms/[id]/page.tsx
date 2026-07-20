@@ -2375,24 +2375,28 @@ export default function ClassroomDashboardPage({
                         a => a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lesson.id
                     );
 
-                    const isLessonMatch = query ? (
-                        lesson.title.toLowerCase().includes(query) ||
-                        (lesson.description || '').toLowerCase().includes(query) ||
-                        `topic ${lesson.lesson_number}`.includes(query)
-                    ) : false;
+                    const isLessonAllocated = !!lessonAlloc;
 
-                    const matchesSearch = !query || isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch;
+                    if (isLessonAllocated) {
+                        const isLessonMatch = query ? (
+                            lesson.title.toLowerCase().includes(query) ||
+                            (lesson.description || '').toLowerCase().includes(query) ||
+                            `topic ${lesson.lesson_number}`.includes(query)
+                        ) : false;
 
-                    if (matchesSearch) {
-                        lessonNodes.push({
-                            ...lesson,
-                            allocationId: lessonAlloc ? lessonAlloc.id : null,
-                            isExplicit: !!lessonAlloc
-                        });
+                        const matchesSearch = !query || isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch;
+
+                        if (matchesSearch) {
+                            lessonNodes.push({
+                                ...lesson,
+                                allocationId: lessonAlloc ? lessonAlloc.id : null,
+                                isExplicit: !!lessonAlloc
+                            });
+                        }
                     }
                 });
 
-                const isChapterVisible = true;
+                const isChapterVisible = !!chapAlloc || lessonNodes.length > 0;
 
                 if (isChapterVisible && (!query || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
                     chapterNodes.push({
@@ -2404,7 +2408,7 @@ export default function ClassroomDashboardPage({
                 }
             });
 
-            const isModuleVisible = true;
+            const isModuleVisible = !!modAlloc || chapterNodes.length > 0;
 
             if (isModuleVisible && (!query || isCategoryMatch || isModuleMatch || chapterNodes.length > 0)) {
                 if (!categoriesMap[categoryName]) {
