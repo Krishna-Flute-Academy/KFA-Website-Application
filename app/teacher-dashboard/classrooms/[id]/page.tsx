@@ -3059,14 +3059,74 @@ export default function ClassroomDashboardPage({
 
     const handleDeallocateItem = async (id: string) => {
         if (!window.confirm('Deallocate this item from the classroom?')) return;
+        
+        const targetAlloc = classroomInventoryAllocations.find(a => a.id === id);
+        if (!targetAlloc) return;
+
         setDeletingAssignmentId(id);
         try {
+            const idsToDelete: string[] = [id];
+            
+            let targetStudentIds: string[] = [];
+            if (curriculumTab === 'classwide') {
+                targetStudentIds = students.map(s => s.student_id);
+            } else if (selectedStudentForCurriculum) {
+                targetStudentIds = [selectedStudentForCurriculum.student_id];
+            } else {
+                targetStudentIds = [targetAlloc.allocated_to_student_id];
+            }
+
+            const targetRefId = targetAlloc.module_id || targetAlloc.chapter_id || targetAlloc.lesson_id;
+            const targetRefType = targetAlloc.module_id ? 'module' : (targetAlloc.chapter_id ? 'chapter' : 'lesson');
+
+            if (targetRefType === 'module') {
+                const chapters = courseChapters.filter(c => c.module_id === targetRefId);
+                const chapterIds = chapters.map(c => c.id);
+                const lessons = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
+                const lessonIds = lessons.map(l => l.id);
+
+                classroomInventoryAllocations.forEach(a => {
+                    if (targetStudentIds.includes(a.allocated_to_student_id)) {
+                        if (a.module_id === targetRefId) {
+                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                        } else if (a.chapter_id && chapterIds.includes(a.chapter_id)) {
+                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                        } else if (a.lesson_id && lessonIds.includes(a.lesson_id)) {
+                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                        }
+                    }
+                });
+            } else if (targetRefType === 'chapter') {
+                const lessons = courseLessons.filter(l => l.chapter_id === targetRefId);
+                const lessonIds = lessons.map(l => l.id);
+
+                classroomInventoryAllocations.forEach(a => {
+                    if (targetStudentIds.includes(a.allocated_to_student_id)) {
+                        if (a.chapter_id === targetRefId) {
+                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                        } else if (a.lesson_id && lessonIds.includes(a.lesson_id)) {
+                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                        }
+                    }
+                });
+            } else {
+                // Lesson
+                classroomInventoryAllocations.forEach(a => {
+                    if (targetStudentIds.includes(a.allocated_to_student_id)) {
+                        if (a.lesson_id === targetRefId) {
+                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                        }
+                    }
+                });
+            }
+
             const { error } = await supabaseAuth
                 .from('classroom_inventory_allocation')
                 .delete()
-                .eq('id', id);
+                .in('id', idsToDelete);
             if (error) throw error;
-            setClassroomInventoryAllocations(prev => prev.filter(a => a.id !== id));
+            
+            setClassroomInventoryAllocations(prev => prev.filter(a => !idsToDelete.includes(a.id)));
         } catch (err) {
             console.error('Error deallocating item:', err);
             alert('Failed to deallocate item.');
