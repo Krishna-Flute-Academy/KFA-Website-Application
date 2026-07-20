@@ -3058,16 +3058,6 @@ export default function ClassroomDashboardPage({
         setDeletingAssignmentId(id);
         try {
             const idsToDelete: string[] = [id];
-            
-            let targetStudentIds: string[] = [];
-            if (curriculumTab === 'classwide') {
-                targetStudentIds = students.map(s => s.student_id);
-            } else if (selectedStudentForCurriculum) {
-                targetStudentIds = [selectedStudentForCurriculum.student_id];
-            } else {
-                targetStudentIds = [targetAlloc.allocated_to_student_id];
-            }
-
             const targetRefId = targetAlloc.module_id || targetAlloc.chapter_id || targetAlloc.lesson_id;
             const targetRefType = targetAlloc.module_id ? 'module' : (targetAlloc.chapter_id ? 'chapter' : 'lesson');
 
@@ -3078,14 +3068,16 @@ export default function ClassroomDashboardPage({
                 const lessonIds = lessons.map(l => l.id);
 
                 classroomInventoryAllocations.forEach(a => {
-                    if (targetStudentIds.includes(a.allocated_to_student_id)) {
-                        if (a.module_id === targetRefId) {
-                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                        } else if (a.chapter_id && chapterIds.includes(a.chapter_id)) {
-                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                        } else if (a.lesson_id && lessonIds.includes(a.lesson_id)) {
-                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                        }
+                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                        if (a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
+                    }
+
+                    if (a.module_id === targetRefId) {
+                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                    } else if (a.chapter_id && chapterIds.includes(a.chapter_id)) {
+                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                    } else if (a.lesson_id && lessonIds.includes(a.lesson_id)) {
+                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
                     }
                 });
             } else if (targetRefType === 'chapter') {
@@ -3093,21 +3085,25 @@ export default function ClassroomDashboardPage({
                 const lessonIds = lessons.map(l => l.id);
 
                 classroomInventoryAllocations.forEach(a => {
-                    if (targetStudentIds.includes(a.allocated_to_student_id)) {
-                        if (a.chapter_id === targetRefId) {
-                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                        } else if (a.lesson_id && lessonIds.includes(a.lesson_id)) {
-                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                        }
+                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                        if (a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
+                    }
+
+                    if (a.chapter_id === targetRefId) {
+                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                    } else if (a.lesson_id && lessonIds.includes(a.lesson_id)) {
+                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
                     }
                 });
             } else {
                 // Lesson
                 classroomInventoryAllocations.forEach(a => {
-                    if (targetStudentIds.includes(a.allocated_to_student_id)) {
-                        if (a.lesson_id === targetRefId) {
-                            if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                        }
+                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                        if (a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
+                    }
+
+                    if (a.lesson_id === targetRefId) {
+                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
                     }
                 });
             }
