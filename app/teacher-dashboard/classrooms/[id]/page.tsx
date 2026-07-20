@@ -2372,7 +2372,9 @@ export default function ClassroomDashboardPage({
 
                 chapLessons.forEach(lesson => {
                     const lessonAlloc = allocatedInventoryItems.find(
-                        a => a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lesson.id
+                        a => a.inventory_ref_type === 'lesson' &&
+                             a.inventory_ref_id === lesson.id &&
+                             !a.id.toString().startsWith('implicit-')
                     );
 
                     const isLessonAllocated = !!lessonAlloc;
@@ -4279,7 +4281,9 @@ export default function ClassroomDashboardPage({
                                                         const isExpanded = !!expandedInventoryModules[mod.id];
                                                         const modChapters = courseChapters.filter(c => c.module_id === mod.id);
                                                         const isImporting = importingItemId === mod.id;
-                                                        const isAllocated = classroomInventoryAllocations.some(a => a.module_id === mod.id && !a.allocated_to_student_id);
+                                                        const isAllocated = curriculumTab === 'individual' && selectedStudentForCurriculum
+                                                            ? classroomInventoryAllocations.some(a => a.module_id === mod.id && a.allocated_to_student_id === selectedStudentForCurriculum.student_id)
+                                                            : classroomInventoryAllocations.some(a => a.module_id === mod.id);
 
                                                         return (
                                                             <div key={mod.id} className="rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden bg-slate-50/[0.2] dark:bg-slate-900/10">
@@ -4338,7 +4342,9 @@ export default function ClassroomDashboardPage({
                                                                         ) : (
                                                                             modChapters.map(chap => {
                                                                                 const isChapImporting = importingItemId === chap.id;
-                                                                                const isChapAllocated = classroomInventoryAllocations.some(a => a.chapter_id === chap.id && !a.allocated_to_student_id);
+                                                                                const isChapAllocated = curriculumTab === 'individual' && selectedStudentForCurriculum
+                                                                                    ? classroomInventoryAllocations.some(a => a.chapter_id === chap.id && a.allocated_to_student_id === selectedStudentForCurriculum.student_id)
+                                                                                    : classroomInventoryAllocations.some(a => a.chapter_id === chap.id);
                                                                                 const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
 
                                                                                 return (
@@ -4373,7 +4379,9 @@ export default function ClassroomDashboardPage({
                                                                                             <div className="pl-3 border-l border-slate-200 dark:border-slate-800 space-y-2 mt-2">
                                                                                                 {chapLessons.map(lesson => {
                                                                                                     const isLessonImporting = importingItemId === lesson.id;
-                                                                                                    const isLessonAllocated = classroomInventoryAllocations.some(a => a.lesson_id === lesson.id && !a.allocated_to_student_id);
+                                                                                                    const isLessonAllocated = curriculumTab === 'individual' && selectedStudentForCurriculum
+                                                                                                        ? classroomInventoryAllocations.some(a => a.lesson_id === lesson.id && a.allocated_to_student_id === selectedStudentForCurriculum.student_id)
+                                                                                                        : classroomInventoryAllocations.some(a => a.lesson_id === lesson.id);
 
                                                                                                     return (
                                                                                                         <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
