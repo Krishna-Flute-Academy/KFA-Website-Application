@@ -32,6 +32,7 @@ interface Classroom {
     id: string;
     name: string;
     teacher_id: string;
+    status?: string;
 }
 
 export default function RoleAllocationDashboard() {
@@ -108,7 +109,7 @@ export default function RoleAllocationDashboard() {
             // 4. Fetch All Classrooms
             const { data: classroomsData } = await supabaseAuth
                 .from('classrooms')
-                .select('id, name, teacher_id');
+                .select('id, name, teacher_id, status');
             
             if (classroomsData) {
                 setClassrooms(classroomsData as Classroom[]);
@@ -136,8 +137,9 @@ export default function RoleAllocationDashboard() {
     }, [usersList]);
 
     const filteredClassrooms = React.useMemo(() => {
-        if (!selectedTeacherId) return classrooms;
-        return classrooms.filter(c => c.teacher_id === selectedTeacherId);
+        const activeRooms = classrooms.filter(c => c.status === 'active');
+        if (!selectedTeacherId) return activeRooms;
+        return activeRooms.filter(c => c.teacher_id === selectedTeacherId);
     }, [classrooms, selectedTeacherId]);
 
     const filteredUsers = React.useMemo(() => {
