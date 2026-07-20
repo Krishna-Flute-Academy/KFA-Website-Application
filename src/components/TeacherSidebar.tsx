@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { supabaseAuth } from '../lib/supabase-auth';
+import { supabase } from '../lib/supabase';
 
 interface TeacherSidebarProps {
     teacherProfile: { id?: string; name: string; email: string; role?: string } | null;
@@ -19,6 +20,11 @@ const isNetworkError = (error: any) => {
            msg.includes('connection refused') ||
            (error.name === 'TypeError' && msg.includes('fetch'));
 };
+
+// Cache storage usage at the module level to persist across client-side page transitions
+let cachedStorageUsed: number | null = null;
+let cachedStorageTime = 0;
+const STORAGE_CACHE_DURATION = 60 * 1000; // 1 minute
 
 export default function TeacherSidebar({ teacherProfile, handleLogout }: TeacherSidebarProps) {
     const pathname = usePathname();
@@ -37,6 +43,11 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     const [unreadTasksCount, setUnreadTasksCount] = useState(0);
     const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
     const [isOpen, setIsOpen] = useState(false);
+
+    // Storage Status States
+    const [storageUsed, setStorageUsed] = useState<number | null>(null);
+    const [isFetchingStorage, setIsFetchingStorage] = useState<boolean>(true);
+    const storageLimit = 2 * 1024 * 1024 * 1024; // 2 GB
 
     useEffect(() => {
         const handleToggle = () => setIsOpen(prev => !prev);
@@ -62,6 +73,88 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
     const userRole = teacherProfile?.role?.toLowerCase() || 
                      (pathname?.startsWith('/admin-dashboard') ? 'admin' : localRole);
+
+    useEffect(() => {
+        const fetchStorageStatus = async () => {
+            const now = Date.now();
+            if (cachedStorageUsed !== null && (now - cachedStorageTime) < STORAGE_CACHE_DURATION) {
+                setStorageUsed(cachedStorageUsed);
+                setIsFetchingStorage(false);
+                return;
+            }
+
+            try {
+                let totalBytes = 0;
+
+                // 1. Fetch from Main Supabase
+                try {
+                    const { data: blogFiles } = await supabase.storage.from('blog_images').list('', { limit: 1000, recursive: true } as any);
+                    if (blogFiles) {
+                        blogFiles.forEach(f => {
+                            totalBytes += f.metadata?.size || 0;
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Error fetching Main Supabase blog_images storage:', e);
+                }
+
+                try {
+                    const { data: galleryFiles } = await supabase.storage.from('gallery').list('', { limit: 1000, recursive: true } as any);
+                    if (galleryFiles) {
+                        galleryFiles.forEach(f => {
+                            totalBytes += f.metadata?.size || 0;
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Error fetching Main Supabase gallery storage:', e);
+                }
+
+                // 2. Fetch from Auth Supabase
+                try {
+                    const { data: classNotesFiles } = await supabaseAuth.storage.from('class_notes').list('', { limit: 1000, recursive: true } as any);
+                    if (classNotesFiles) {
+                        classNotesFiles.forEach(f => {
+                            totalBytes += f.metadata?.size || 0;
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Error fetching Auth Supabase class_notes storage:', e);
+                }
+
+                try {
+                    const { data: inventoryFiles } = await supabaseAuth.storage.from('inventory_materials').list('', { limit: 1000, recursive: true } as any);
+                    if (inventoryFiles) {
+                        inventoryFiles.forEach(f => {
+                            totalBytes += f.metadata?.size || 0;
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Error fetching Auth Supabase inventory_materials storage:', e);
+                }
+
+                cachedStorageUsed = totalBytes;
+                cachedStorageTime = now;
+                setStorageUsed(totalBytes);
+            } catch (error) {
+                console.error('Failed to calculate storage size:', error);
+            } finally {
+                setIsFetchingStorage(false);
+            }
+        };
+
+        fetchStorageStatus();
+    }, []);
+
+    const formatStorageSize = (bytes: number) => {
+        const mb = bytes / (1024 * 1024);
+        if (mb < 1000) {
+            return `${mb.toFixed(1)} MB`;
+        }
+        const gb = mb / 1024;
+        return `${gb.toFixed(2)} GB`;
+    };
+
+    const storagePercentage = storageUsed !== null ? Math.min((storageUsed / storageLimit) * 100, 100) : 0;
 
     useEffect(() => {
         if (userRole !== 'admin') return;
@@ -344,6 +437,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         ...(userRole === 'admin' ? [{ name: 'Fees', icon: 'payments', href: `${basePath}/fees` }] : []),
         { name: 'Messages', icon: 'chat_bubble', href: `${basePath}/messages` },
         ...(userRole === 'admin' ? [{ name: 'Role Allocation', icon: 'manage_accounts', href: `${basePath}/role-allocation` }] : []),
+        ...(userRole === 'admin' ? [{ name: 'Login Sessions', icon: 'history', href: `${basePath}/sessions` }] : []),
         { name: 'Academy Policies', icon: 'policy', href: `${basePath}/policies` },
     ];
 
@@ -442,12 +536,22 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 <div className="px-4 py-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-xs">
                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-[#d97706]">
                         <span>Storage Status</span>
+                        {isFetchingStorage && (
+                            <span className="animate-pulse text-slate-400">Updating...</span>
+                        )}
                     </div>
                     <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden border border-transparent dark:border-slate-800">
-                        <div className="bg-[#d97706] h-2 rounded-full" style={{ width: '65%' }}></div>
+                        <div 
+                            className="bg-[#d97706] h-2 rounded-full transition-all duration-500 ease-out" 
+                            style={{ width: `${storagePercentage}%` }}
+                        ></div>
                     </div>
                     <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-none">
-                        6.5 GB of 10 GB used
+                        {isFetchingStorage && storageUsed === null ? (
+                            'Calculating...'
+                        ) : (
+                            `${formatStorageSize(storageUsed || 0)} of ${formatStorageSize(storageLimit)} used`
+                        )}
                     </div>
                 </div>
 

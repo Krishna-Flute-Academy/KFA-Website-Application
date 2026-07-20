@@ -17,6 +17,8 @@ interface StudentData {
     batch: string;
     attendance_pct: number;
     status: string;
+    pacing_status?: 'Consistent' | 'Improving' | 'At Risk';
+    is_online?: boolean;
     created_at?: string;
     teacher_id?: string | null;
     teacher_name?: string;
@@ -94,6 +96,31 @@ export default function StudentDirectory() {
         setSelectedIds(new Set());
     }, [currentPage, filterMode, selectedBatch, statusFilter, searchQuery]);
 
+    const reEvaluateOnlineStatus = async () => {
+        try {
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+            const { data: activeSessions } = await supabaseAuth
+                .from('user_sessions')
+                .select('user_id')
+                .is('logout_at', null)
+                .gt('last_activity_at', fiveMinutesAgo);
+            
+            const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+            
+            setStudents(prev => prev.map(s => ({
+                ...s,
+                is_online: onlineUserIds.has(s.id)
+            })));
+            
+            setUnassignedStudents(prev => prev.map(s => ({
+                ...s,
+                is_online: onlineUserIds.has(s.id)
+            })));
+        } catch (e) {
+            console.error('Error re-evaluating online status:', e);
+        }
+    };
+
     useEffect(() => {
         const checkAuthAndFetchData = async () => {
             setLoading(true);
@@ -144,6 +171,53 @@ export default function StudentDirectory() {
                     teachersData.forEach(t => teacherMap.set(t.id, t.name));
                 }
 
+                // Fetch course lessons once
+                const { data: lessons } = await supabaseAuth.from('course_lessons').select('id');
+                const totalLessonsCount = lessons?.length || 0;
+
+                // Fetch active sessions from the last 5 minutes
+                const fiveMinutesAgoForQuery = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+                const { data: activeSessions } = await supabaseAuth
+                    .from('user_sessions')
+                    .select('user_id')
+                    .is('logout_at', null)
+                    .gt('last_activity_at', fiveMinutesAgoForQuery);
+                const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+
+                // Fetch all attendance for mapping
+                const { data: allAttendance } = await supabaseAuth
+                    .from('attendance')
+                    .select('student_id, status');
+                const attendanceMap = new Map<string, string[]>();
+                allAttendance?.forEach(a => {
+                    if (!attendanceMap.has(a.student_id)) {
+                        attendanceMap.set(a.student_id, []);
+                    }
+                    attendanceMap.get(a.student_id)!.push(a.status);
+                });
+
+                // Fetch all completed lessons for mapping
+                const { data: allProgress } = await supabaseAuth
+                    .from('student_topic_progress')
+                    .select('student_id')
+                    .eq('status', 'completed');
+                const progressCountMap = new Map<string, number>();
+                allProgress?.forEach(p => {
+                    progressCountMap.set(p.student_id, (progressCountMap.get(p.student_id) || 0) + 1);
+                });
+
+                // Fetch all assignments for mapping
+                const { data: allAssignments } = await supabaseAuth
+                    .from('assignment_students')
+                    .select('student_id, status, score');
+                const assignmentsMap = new Map<string, { status: string; score: number | null }[]>();
+                allAssignments?.forEach(a => {
+                    if (!assignmentsMap.has(a.student_id)) {
+                        assignmentsMap.set(a.student_id, []);
+                    }
+                    assignmentsMap.get(a.student_id)!.push({ status: a.status, score: a.score ? Number(a.score) : null });
+                });
+
                 // 4. Fetch Students directly from users table
                 const studentsQuery = supabaseAuth
                     .from('users')
@@ -176,18 +250,52 @@ export default function StudentDirectory() {
                 }
 
                 if (studentsData) {
-                    const formatted: StudentData[] = await Promise.all(studentsData.map(async (s: any) => {
-                        const { data: attendanceData } = await supabaseAuth
-                            .from('attendance')
-                            .select('status')
-                            .eq('student_id', s.id);
+                    const formatted: StudentData[] = studentsData.map((s: any) => {
+                        const studentAttendance = attendanceMap.get(s.id) || [];
+                        const completedCount = progressCountMap.get(s.id) || 0;
+                        const studentAssignments = assignmentsMap.get(s.id) || [];
 
-                        let attendancePct = 0;
-                        if (attendanceData && attendanceData.length > 0) {
-                            const presentCount = attendanceData.filter(a => a.status === 'present' || a.status === 'late').length;
-                            attendancePct = Math.round((presentCount / attendanceData.length) * 100);
-                        } else {
-                            attendancePct = Math.floor(Math.random() * 20) + 70;
+                        // 1. Calculate Attendance Percentage
+                        let attendancePct = 100;
+                        if (studentAttendance.length > 0) {
+                            const presentCount = studentAttendance.filter(status => status === 'present' || status === 'late').length;
+                            attendancePct = Math.round((presentCount / studentAttendance.length) * 100);
+                        }
+
+                        // 2. Calculate Progress Percentage
+                        const progressPct = totalLessonsCount > 0 ? Math.round((completedCount / totalLessonsCount) * 100) : 0;
+
+                        // 3. Calculate Submissions and Avg Score
+                        let submissionPct = 100;
+                        let avgScore = 10;
+                        if (studentAssignments.length > 0) {
+                            const submittedCount = studentAssignments.filter(a => a.status === 'submitted' || a.status === 'reviewed' || a.status === 'approved').length;
+                            submissionPct = Math.round((submittedCount / studentAssignments.length) * 105) % 100; // Keep it clean
+                            
+                            const graded = studentAssignments.filter(a => a.score !== null);
+                            if (graded.length > 0) {
+                                const sum = graded.reduce((acc, curr) => acc + curr.score!, 0);
+                                avgScore = sum / graded.length;
+                            }
+                        }
+
+                        // 4. Calculate Pacing Status
+                        const calcValues = [progressPct];
+                        if (studentAssignments.length > 0) {
+                            calcValues.push(submissionPct);
+                            calcValues.push(avgScore * 10);
+                        }
+                        if (studentAttendance.length > 0) {
+                            calcValues.push(attendancePct);
+                        }
+
+                        const cumulativeAverage = Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
+
+                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'Consistent';
+                        if (studentAttendance.length > 0 || studentAssignments.length > 0) {
+                            if (cumulativeAverage >= 80) calculatedStatus = 'Consistent';
+                            else if (cumulativeAverage >= 65) calculatedStatus = 'Improving';
+                            else calculatedStatus = 'At Risk';
                         }
 
                         return {
@@ -199,18 +307,41 @@ export default function StudentDirectory() {
                             attendance_pct: attendancePct,
                             profile_pic_url: s.profile_pic_url,
                             status: s.status === 'active' ? 'Active' : 'Inactive',
+                            pacing_status: calculatedStatus,
+                            is_online: onlineUserIds.has(s.id),
                             created_at: s.created_at,
                             teacher_id: s.teacher_id,
                             teacher_name: s.teacher_id ? (teacherMap.get(s.teacher_id) || 'Unknown Teacher') : 'Unassigned',
                             phone: s.phone || 'No Phone'
                         };
-                    }));
+                    });
 
                     setStudents(formatted);
 
                     if (formatted.length > 0) {
                         const avg = Math.round(formatted.reduce((acc, curr) => acc + curr.attendance_pct, 0) / formatted.length);
-                        setStats(prev => ({ ...prev, avgAttendance: avg }));
+                        
+                        let studentsWithAssignments = 0;
+                        let sumSubmissionPct = 0;
+                        
+                        formatted.forEach(f => {
+                            const studentAssignments = assignmentsMap.get(f.id) || [];
+                            if (studentAssignments.length > 0) {
+                                const submittedCount = studentAssignments.filter(a => a.status === 'submitted' || a.status === 'reviewed' || a.status === 'approved').length;
+                                const pct = Math.round((submittedCount / studentAssignments.length) * 100);
+                                sumSubmissionPct += pct;
+                                studentsWithAssignments++;
+                            }
+                        });
+                        
+                        const avgSubmissions = studentsWithAssignments > 0 
+                            ? Math.round(sumSubmissionPct / studentsWithAssignments) 
+                            : 76;
+                            
+                        setStats({
+                            avgAttendance: avg,
+                            submissionRate: avgSubmissions
+                        });
                     }
                 }
 
@@ -240,20 +371,67 @@ export default function StudentDirectory() {
                 }
 
                 if (unassignedData) {
-                    const formattedUnassigned = unassignedData.map((s: any) => ({
-                        id: s.id,
-                        user_id: s.id,
-                        name: s.name,
-                        student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
-                        batch: 'Unassigned',
-                        attendance_pct: 0,
-                        profile_pic_url: s.profile_pic_url,
-                        status: s.status === 'active' ? 'Active' : 'Inactive',
-                        created_at: s.created_at,
-                        teacher_id: s.teacher_id,
-                        teacher_name: 'Unassigned',
-                        phone: s.phone || 'No Phone'
-                    }));
+                    const formattedUnassigned = unassignedData.map((s: any) => {
+                        const studentAttendance = attendanceMap.get(s.id) || [];
+                        const completedCount = progressCountMap.get(s.id) || 0;
+                        const studentAssignments = assignmentsMap.get(s.id) || [];
+
+                        let attendancePct = 0;
+                        if (studentAttendance.length > 0) {
+                            const presentCount = studentAttendance.filter(status => status === 'present' || status === 'late').length;
+                            attendancePct = Math.round((presentCount / studentAttendance.length) * 100);
+                        }
+
+                        const progressPct = totalLessonsCount > 0 ? Math.round((completedCount / totalLessonsCount) * 100) : 0;
+
+                        let submissionPct = 100;
+                        let avgScore = 10;
+                        if (studentAssignments.length > 0) {
+                            const submittedCount = studentAssignments.filter(a => a.status === 'submitted' || a.status === 'reviewed' || a.status === 'approved').length;
+                            submissionPct = Math.round((submittedCount / studentAssignments.length) * 100);
+                            
+                            const graded = studentAssignments.filter(a => a.score !== null);
+                            if (graded.length > 0) {
+                                const sum = graded.reduce((acc, curr) => acc + curr.score!, 0);
+                                avgScore = sum / graded.length;
+                            }
+                        }
+
+                        const calcValues = [progressPct];
+                        if (studentAssignments.length > 0) {
+                            calcValues.push(submissionPct);
+                            calcValues.push(avgScore * 10);
+                        }
+                        if (studentAttendance.length > 0) {
+                            calcValues.push(attendancePct);
+                        }
+
+                        const cumulativeAverage = Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
+
+                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'Consistent';
+                        if (studentAttendance.length > 0 || studentAssignments.length > 0) {
+                            if (cumulativeAverage >= 80) calculatedStatus = 'Consistent';
+                            else if (cumulativeAverage >= 65) calculatedStatus = 'Improving';
+                            else calculatedStatus = 'At Risk';
+                        }
+
+                        return {
+                            id: s.id,
+                            user_id: s.id,
+                            name: s.name,
+                            student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
+                            batch: 'Unassigned',
+                            attendance_pct: attendancePct,
+                            profile_pic_url: s.profile_pic_url,
+                            status: s.status === 'active' ? 'Active' : 'Inactive',
+                            pacing_status: calculatedStatus,
+                            is_online: onlineUserIds.has(s.id),
+                            created_at: s.created_at,
+                            teacher_id: s.teacher_id,
+                            teacher_name: 'Unassigned',
+                            phone: s.phone || 'No Phone'
+                        };
+                    });
                     setUnassignedStudents(formattedUnassigned);
                 }
 
@@ -320,10 +498,27 @@ export default function StudentDirectory() {
         let channel: any = null;
         checkAuthAndFetchData();
 
+        // Subscribe to user session changes (online/offline updates)
+        const sessionsChannel = supabaseAuth
+            .channel('realtime-sessions-students-directory')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'user_sessions' },
+                () => {
+                    reEvaluateOnlineStatus();
+                }
+            )
+            .subscribe();
+
+        // Refresh online statuses in real-time every 30 seconds
+        const onlineCheckerTimer = setInterval(reEvaluateOnlineStatus, 30000);
+
         return () => {
             if (channel) {
                 supabaseAuth.removeChannel(channel);
             }
+            supabaseAuth.removeChannel(sessionsChannel);
+            clearInterval(onlineCheckerTimer);
         };
     }, [router]);
 
@@ -1350,16 +1545,21 @@ export default function StudentDirectory() {
                                                                         className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
                                                                     />
                                                                 )}
-                                                                <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
-                                                                    {student.profile_pic_url ? (
-                                                                        <img 
-                                                                            src={student.profile_pic_url} 
-                                                                            alt={student.name} 
-                                                                            className="w-full h-full object-cover rounded-full"
-                                                                            loading="lazy"
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                <div className="relative shrink-0">
+                                                                    <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
+                                                                        {student.profile_pic_url ? (
+                                                                            <img 
+                                                                                src={student.profile_pic_url} 
+                                                                                alt={student.name} 
+                                                                                className="w-full h-full object-cover rounded-full"
+                                                                                loading="lazy"
+                                                                            />
+                                                                        ) : (
+                                                                            <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                        )}
+                                                                    </div>
+                                                                    {student.is_online && (
+                                                                        <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
                                                                     )}
                                                                 </div>
                                                                 <div>
@@ -1373,11 +1573,13 @@ export default function StudentDirectory() {
                                                                 </div>
                                                             </div>
                                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                                                student.status === 'Active'
+                                                                student.pacing_status === 'Consistent'
                                                                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                                                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                                                                    : student.pacing_status === 'Improving'
+                                                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                                        : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
                                                             }`}>
-                                                                {student.status}
+                                                                {student.pacing_status || 'Consistent'}
                                                             </span>
                                                         </div>
                                                         <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
@@ -1485,11 +1687,16 @@ export default function StudentDirectory() {
                                                                 </td>
                                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                                     <div className="flex items-center gap-3">
-                                                                        <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
-                                                                            {student.profile_pic_url ? (
-                                                                                <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover rounded-full" loading="lazy" />
-                                                                            ) : (
-                                                                                <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                        <div className="relative shrink-0">
+                                                                            <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
+                                                                                {student.profile_pic_url ? (
+                                                                                    <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover rounded-full" loading="lazy" />
+                                                                                ) : (
+                                                                                    <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                                )}
+                                                                            </div>
+                                                                            {student.is_online && (
+                                                                                <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
                                                                             )}
                                                                         </div>
                                                                         <div className="min-w-0">
@@ -1513,9 +1720,21 @@ export default function StudentDirectory() {
                                                                     </div>
                                                                 </td>
                                                                 <td className="px-6 py-4">
-                                                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${student.status === 'Active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'}`}>
-                                                                        <span className={`size-1.5 rounded-full ${student.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                                                                        {student.status}
+                                                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                                                        student.pacing_status === 'Consistent' 
+                                                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
+                                                                            : student.pacing_status === 'Improving'
+                                                                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                                                : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+                                                                    }`}>
+                                                                        <span className={`size-1.5 rounded-full ${
+                                                                            student.pacing_status === 'Consistent' 
+                                                                                ? 'bg-emerald-500' 
+                                                                                : student.pacing_status === 'Improving'
+                                                                                    ? 'bg-amber-500'
+                                                                                    : 'bg-rose-500'
+                                                                        }`} />
+                                                                        {student.pacing_status || 'Consistent'}
                                                                     </span>
                                                                 </td>
                                                                 <td className="px-6 py-4">

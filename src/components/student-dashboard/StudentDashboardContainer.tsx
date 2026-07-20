@@ -761,6 +761,11 @@ export default function StudentDashboardContainer() {
 
     // Register and update Web Push Service Worker on mount
     useEffect(() => {
+        if (process.env.NODE_ENV === 'development') {
+            console.log('[Web Push] Service Worker registration skipped in development mode');
+            return;
+        }
+
         if (profile?.id && typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window) {
             const initSW = async () => {
                 try {

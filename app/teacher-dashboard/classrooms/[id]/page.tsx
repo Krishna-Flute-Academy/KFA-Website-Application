@@ -61,6 +61,7 @@ interface EnrolledStudent {
     mock_status: 'Consistent' | 'Improving' | 'At Risk';
     level?: string;
     is_makeup?: boolean;
+    is_online?: boolean;
 }
 
 interface DirectoryStudent {
@@ -742,6 +743,50 @@ export default function ClassroomDashboardPage({
         setCurrentPage(1);
     }, [activeTab]);
 
+    const reEvaluateOnlineStatus = async () => {
+        try {
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+            const { data: activeSessions } = await supabaseAuth
+                .from('user_sessions')
+                .select('user_id')
+                .is('logout_at', null)
+                .gt('last_activity_at', fiveMinutesAgo);
+            
+            const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+            
+            setStudents(prev => prev.map(s => ({
+                ...s,
+                is_online: onlineUserIds.has(s.student_id)
+            })));
+        } catch (e) {
+            console.error('Error re-evaluating online status in classroom:', e);
+        }
+    };
+
+    useEffect(() => {
+        if (!classroomId) return;
+        
+        reEvaluateOnlineStatus();
+
+        const sessionsChannel = supabaseAuth
+            .channel(`classroom-sessions-${classroomId}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'user_sessions' },
+                () => {
+                    reEvaluateOnlineStatus();
+                }
+            )
+            .subscribe();
+
+        const timer = setInterval(reEvaluateOnlineStatus, 30000);
+
+        return () => {
+            supabaseAuth.removeChannel(sessionsChannel);
+            clearInterval(timer);
+        };
+    }, [classroomId]);
+
     useEffect(() => {
         const fetchData = async () => {
             if (!classroomId) return;
@@ -775,6 +820,15 @@ export default function ClassroomDashboardPage({
                 if (profile.role !== 'admin' && roomData.teacher_id !== profile.id) {
                     throw new Error('Unauthorized classroom access');
                 }
+
+                // Fetch active sessions from the last 5 minutes
+                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+                const { data: activeSessions } = await supabaseAuth
+                    .from('user_sessions')
+                    .select('user_id')
+                    .is('logout_at', null)
+                    .gt('last_activity_at', fiveMinutesAgo);
+                const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
 
                 // 3. Run Core Queries in Parallel (Phase 2)
                 const promises: any[] = [
@@ -914,7 +968,8 @@ export default function ClassroomDashboardPage({
                         mock_attendance,
                         mock_submission,
                         mock_milestone: milestoneOptions[seed % milestoneOptions.length],
-                        mock_status
+                        mock_status,
+                        is_online: onlineUserIds.has(r.student_id)
                     };
                 });
                 setStudents(formattedRoster);

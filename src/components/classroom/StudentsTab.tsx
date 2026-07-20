@@ -21,6 +21,7 @@ interface Student {
     joined_at: string;
     mock_milestone?: string;
     is_makeup?: boolean;
+    is_online?: boolean;
 }
 
 interface StudentsTabProps {
@@ -273,11 +274,16 @@ export default function StudentsTab({
                                     <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-850 transition-colors group">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden border border-slate-200 dark:border-slate-600 flex items-center justify-center shrink-0">
-                                                    {student.profile_pic_url ? (
-                                                        <img alt={student.name} className="w-full h-full object-cover" src={student.profile_pic_url} loading="lazy" />
-                                                    ) : (
-                                                        <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{student.name.charAt(0)}</span>
+                                                <div className="relative shrink-0 select-none">
+                                                    <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden border border-slate-200 dark:border-slate-600 flex items-center justify-center">
+                                                        {student.profile_pic_url ? (
+                                                            <img alt={student.name} className="w-full h-full object-cover" src={student.profile_pic_url} loading="lazy" />
+                                                        ) : (
+                                                            <span className="text-sm font-bold text-slate-500 dark:text-slate-400">{student.name.charAt(0)}</span>
+                                                        )}
+                                                    </div>
+                                                    {student.is_online && (
+                                                        <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
                                                     )}
                                                 </div>
                                                 <div>

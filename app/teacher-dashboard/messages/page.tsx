@@ -713,25 +713,37 @@ function MessagesDashboardContent() {
                 const { data: rooms } = await roomsQuery;
                 setClassrooms(rooms || []);
 
+                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+                const { data: activeSessions } = await supabaseAuth
+                    .from('user_sessions')
+                    .select('user_id')
+                    .is('logout_at', null)
+                    .gt('last_activity_at', fiveMinutesAgo);
+                const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+
                 let uniqueStudents: any[] = [];
                 if (isAdmin) {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
-                        .select('id, name')
+                        .select('id, name, profile_pic_url')
                         .eq('role', 'student');
                     uniqueStudents = (studentList || []).map((s: any) => ({
                         id: s.id,
-                        name: s.name || 'Unknown'
+                        name: s.name || 'Unknown',
+                        profile_pic_url: s.profile_pic_url || null,
+                        is_online: onlineUserIds.has(s.id)
                     }));
                 } else {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
-                        .select('id, name')
+                        .select('id, name, profile_pic_url')
                         .eq('role', 'student')
                         .eq('teacher_id', profile.id);
                     uniqueStudents = (studentList || []).map((s: any) => ({
                         id: s.id,
-                        name: s.name || 'Unknown'
+                        name: s.name || 'Unknown',
+                        profile_pic_url: s.profile_pic_url || null,
+                        is_online: onlineUserIds.has(s.id)
                     }));
                 }
                 setStudents(uniqueStudents);
@@ -952,6 +964,50 @@ function MessagesDashboardContent() {
             .subscribe();
         return () => {
             supabaseAuth.removeChannel(channel);
+        };
+    }, [teacherProfile?.id]);
+
+    const reEvaluateOnlineStatus = async () => {
+        try {
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+            const { data: activeSessions } = await supabaseAuth
+                .from('user_sessions')
+                .select('user_id')
+                .is('logout_at', null)
+                .gt('last_activity_at', fiveMinutesAgo);
+            
+            const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+            
+            setStudents(prev => prev.map(s => ({
+                ...s,
+                is_online: onlineUserIds.has(s.id)
+            })));
+        } catch (e) {
+            console.error('Error re-evaluating online status in messages:', e);
+        }
+    };
+
+    useEffect(() => {
+        if (!teacherProfile?.id) return;
+        
+        reEvaluateOnlineStatus();
+
+        const sessionsChannel = supabaseAuth
+            .channel('realtime-sessions-messages-directory')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'user_sessions' },
+                () => {
+                    reEvaluateOnlineStatus();
+                }
+            )
+            .subscribe();
+
+        const timer = setInterval(reEvaluateOnlineStatus, 30000);
+
+        return () => {
+            supabaseAuth.removeChannel(sessionsChannel);
+            clearInterval(timer);
         };
     }, [teacherProfile?.id]);
 
@@ -1638,8 +1694,22 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         }`}
                                                     >
                                                         {/* Avatar Circle */}
-                                                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs shrink-0 select-none text-slate-600 dark:text-slate-300">
-                                                            {contact.name?.charAt(0) || 'S'}
+                                                        <div className="relative shrink-0 select-none">
+                                                            {contact.profile_pic_url ? (
+                                                                <img 
+                                                                    src={contact.profile_pic_url} 
+                                                                    alt={contact.name} 
+                                                                    className="w-8 h-8 rounded-full object-cover" 
+                                                                    loading="lazy" 
+                                                                />
+                                                            ) : (
+                                                                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-600 dark:text-slate-300">
+                                                                    {contact.name?.charAt(0) || 'S'}
+                                                                </div>
+                                                            )}
+                                                            {contact.is_online && (
+                                                                <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
+                                                            )}
                                                         </div>
                                                         <div className="min-w-0 flex-1 flex flex-col">
                                                             <div className="flex justify-between items-baseline gap-1">
@@ -1686,8 +1756,21 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                         
                                                         {/* Avatar and Name */}
                                                         <div className="flex items-center gap-2.5">
-                                                            <div className="w-8 h-8 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-850 dark:text-teal-300 flex items-center justify-center font-bold text-xs select-none">
-                                                                {students.find(s => s.id === activeChatStudentId)?.name?.charAt(0) || 'S'}
+                                                            <div className="relative shrink-0 select-none">
+                                                                {students.find(s => s.id === activeChatStudentId)?.profile_pic_url ? (
+                                                                    <img 
+                                                                        src={students.find(s => s.id === activeChatStudentId)?.profile_pic_url} 
+                                                                        alt={students.find(s => s.id === activeChatStudentId)?.name} 
+                                                                        className="w-8 h-8 rounded-full object-cover" 
+                                                                    />
+                                                                ) : (
+                                                                    <div className="w-8 h-8 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-850 dark:text-teal-300 flex items-center justify-center font-bold text-xs select-none">
+                                                                        {students.find(s => s.id === activeChatStudentId)?.name?.charAt(0) || 'S'}
+                                                                    </div>
+                                                                )}
+                                                                {students.find(s => s.id === activeChatStudentId)?.is_online && (
+                                                                    <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
+                                                                )}
                                                             </div>
                                                             <div className="flex flex-col">
                                                                 <span className="font-extrabold text-xs text-slate-800 dark:text-white leading-tight">
