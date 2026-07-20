@@ -2344,10 +2344,6 @@ export default function ClassroomDashboardPage({
             return { categoryName, categoryOrder };
         };
 
-        const filterLesson = (lessonId: string) => {
-            return true;
-        };
-
         courseModules.forEach(mod => {
             const modAlloc = allocatedInventoryItems.find(
                 a => a.inventory_ref_type === 'module' && a.inventory_ref_id === mod.id
@@ -2379,28 +2375,24 @@ export default function ClassroomDashboardPage({
                         a => a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lesson.id
                     );
 
-                    const isLessonAllocated = !!lessonAlloc;
+                    const isLessonMatch = query ? (
+                        lesson.title.toLowerCase().includes(query) ||
+                        (lesson.description || '').toLowerCase().includes(query) ||
+                        `topic ${lesson.lesson_number}`.includes(query)
+                    ) : false;
 
-                    if (isLessonAllocated && filterLesson(lesson.id)) {
-                        const isLessonMatch = query ? (
-                            lesson.title.toLowerCase().includes(query) ||
-                            (lesson.description || '').toLowerCase().includes(query) ||
-                            `topic ${lesson.lesson_number}`.includes(query)
-                        ) : false;
+                    const matchesSearch = !query || isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch;
 
-                        const matchesSearch = !query || isCategoryMatch || isModuleMatch || isChapterMatch || isLessonMatch;
-
-                        if (matchesSearch) {
-                            lessonNodes.push({
-                                ...lesson,
-                                allocationId: lessonAlloc ? lessonAlloc.id : null,
-                                isExplicit: !!lessonAlloc
-                            });
-                        }
+                    if (matchesSearch) {
+                        lessonNodes.push({
+                            ...lesson,
+                            allocationId: lessonAlloc ? lessonAlloc.id : null,
+                            isExplicit: !!lessonAlloc
+                        });
                     }
                 });
 
-                const isChapterVisible = !!chapAlloc || lessonNodes.length > 0;
+                const isChapterVisible = true;
 
                 if (isChapterVisible && (!query || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
                     chapterNodes.push({
@@ -2412,7 +2404,7 @@ export default function ClassroomDashboardPage({
                 }
             });
 
-            const isModuleVisible = !!modAlloc || chapterNodes.length > 0;
+            const isModuleVisible = true;
 
             if (isModuleVisible && (!query || isCategoryMatch || isModuleMatch || chapterNodes.length > 0)) {
                 if (!categoriesMap[categoryName]) {
