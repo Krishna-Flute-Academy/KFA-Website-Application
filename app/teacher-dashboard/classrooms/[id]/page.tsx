@@ -3198,9 +3198,15 @@ export default function ClassroomDashboardPage({
     const totalPages = Math.ceil(students.length / PAGE_SIZE);
     const paginatedStudents = students.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-    const avgAttendance = students.length > 0
-        ? (students.reduce((acc, curr) => acc + curr.mock_attendance, 0) / students.length).toFixed(1)
-        : '0.0';
+    const avgAttendance = useMemo(() => {
+        if (!classroomAttendance || classroomAttendance.length === 0) {
+            return '100.0';
+        }
+        const presentOrLateCount = classroomAttendance.filter(
+            att => att.status === 'present' || att.status === 'late'
+        ).length;
+        return ((presentOrLateCount / classroomAttendance.length) * 100).toFixed(1);
+    }, [classroomAttendance]);
 
     const filteredDirectory = useMemo(() => {
         if (!directorySearch.trim()) return directoryStudents;
