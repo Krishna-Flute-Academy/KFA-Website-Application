@@ -24,6 +24,7 @@ import ClassroomTab from './ClassroomTab';
 import FeesTab from './FeesTab';
 import PoliciesTab from './PoliciesTab';
 import AcademyPolicies from '../AcademyPolicies';
+import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
 
 interface StudentProfile {
@@ -2342,8 +2343,11 @@ export default function StudentDashboardContainer() {
                     onClick={() => setShowMaterialPopup(false)}
                 >
                     <div 
-                        className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-5xl w-full h-[80vh] md:h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left"
+                        className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-5xl w-full h-[80vh] md:h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left select-none"
                         onClick={(e) => e.stopPropagation()}
+                        onCopy={(e) => e.preventDefault()}
+                        onCut={(e) => e.preventDefault()}
+                        onContextMenu={(e) => e.preventDefault()}
                     >
                         {/* Header */}
                         <div className="p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850/40">
@@ -2354,7 +2358,7 @@ export default function StudentDashboardContainer() {
                                 </h3>
                             </div>
                             <div className="flex items-center gap-3">
-                                {(selectedTopic.material_url || selectedTopic.link_url) && (
+                                {false && (selectedTopic.material_url || selectedTopic.link_url) && (
                                     <a
                                         href={selectedTopic.material_url || selectedTopic.link_url}
                                         target="_blank"
@@ -2377,6 +2381,8 @@ export default function StudentDashboardContainer() {
                         {/* Content Viewer */}
                         <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center overflow-hidden relative">
                             {(() => {
+                                return <SecureCurriculumMaterial url={selectedTopic.material_url || selectedTopic.link_url} title={selectedTopic.title} materialType={selectedTopic.material_type} viewerName={profile?.name} viewerEmail={profile?.email} getYouTubeEmbedUrl={getYouTubeEmbedUrl} />;
+                                /* Legacy renderer retained temporarily for data-shape compatibility. */
                                 const url = selectedTopic.material_url || selectedTopic.link_url;
                                 if (!url) {
                                     return (

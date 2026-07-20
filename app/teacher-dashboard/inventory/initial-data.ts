@@ -141,8 +141,8 @@ export const INITIAL_CHAPTERS: CourseChapter[] = [
         description: 'Actual Pa & Advanced Lower Registers\n• 4/4 Rhythm Practice Patterns\n• Octave Transition Pyramid Practice\n• 12 More Alankar & Palta compositions\n• 3/4 Rhythm & D.N.D | S - - Composition\n• Bella Ciao, DDLJ, and Achyutam Keshavam songs', 
         chapter_number: 4 
     },
-    { id: 'f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c', module_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 5 - Strong Note Control', description: '3 Essential topics • Breath control and tone stability', chapter_number: 5 },
-    { id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', module_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 6 - Completing Middle Octave', description: '5 Essential topics • Alankars and first songs', chapter_number: 6 },
+    { id: '2dfa3c70-1072-42be-9c0a-423b63948161', module_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Actual Pa (Madhya Saptak)', description: '6 essential topics covering Actual Pa fingering, long notes, transitions, composition, and rhythm practice.', chapter_number: 5 },
+    { id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', module_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Completing the Middle Octave', description: '7 essential topics covering Dha, Ni, Upper Sa, the complete Madhya Saptak, Alankars, and song practice.', chapter_number: 6 },
     
     // Level 2 Chapters
     { id: 'd48691c0-a49a-4b0c-a1a5-e56ba0386994', module_id: 'a2b3c4d5-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 1 - Elementary Scales', description: '4 Essential topics • Scale structures', chapter_number: 1 },
@@ -744,6 +744,128 @@ export const INITIAL_LESSONS: CourseLesson[] = [
             'Play with expression and musicality.',
             'Perform the complete song confidently without major mistakes.'
         ]
+    },
+    // Level 1, Chapter 5 — Actual Pa (Madhya Saptak)
+    {
+        id: 'c05e0100-1111-2222-3333-444444444444',
+        chapter_id: '2dfa3c70-1072-42be-9c0a-423b63948161',
+        title: 'Introduction to the Actual Pa',
+        description: '<p>Students learn the <strong>Actual Pa (Madhya Saptak)</strong> and understand how it differs from the <strong>Lower Pa (Mandra Saptak)</strong>. The focus is on correct fingering, proper hole coverage, balanced blowing, and producing a stable, clear tone.</p><p><strong>Concepts:</strong></p><ul class="list-disc pl-5 space-y-1"><li><strong>P. (Lower Pa)</strong> – Mandra Saptak</li><li><strong>Pa</strong> – Madhya Saptak</li></ul>',
+        lesson_number: 1,
+        material_type: 'note',
+        is_introductory: true,
+        is_very_important: true,
+        bullet_points: ['Understand the difference between Lower Pa and Actual Pa.', 'Learn the correct finger position for Actual Pa.', 'Cover all finger holes properly.', 'Maintain balanced blowing while playing Pa.', 'Produce a clear and stable Pa note.']
+    },
+    {
+        id: 'c05e0200-1111-2222-3333-444444444444',
+        chapter_id: '2dfa3c70-1072-42be-9c0a-423b63948161',
+        title: 'Long Note Practice on Pa',
+        description: '<p>This exercise develops breath control, tone stability, and consistency by sustaining the Pa note for different durations.</p><p><strong>Practice:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>Pa (Hold for 4 beats)</li><li>Pa (Hold for 8 beats)</li></ul>',
+        lesson_number: 2,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: true,
+        bullet_points: ['Play Pa with a clear tone.', 'Hold Pa steadily for 4 beats.', 'Hold Pa steadily for 8 beats.', 'Maintain consistent breath pressure.', 'Avoid fluctuations in pitch and volume.']
+    },
+    {
+        id: 'c05e0300-1111-2222-3333-444444444444',
+        chapter_id: '2dfa3c70-1072-42be-9c0a-423b63948161',
+        title: 'Ma to Pa Transition',
+        description: '<p>This is the first transition involving the Actual Pa. Students learn smooth finger movement while maintaining continuous airflow and tone quality.</p><p><strong>Practice:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>Ma → Pa</li><li>Pa → Ma</li><li>Ma Pa Ma Pa</li><li>Ma Pa Ma Pa</li></ul>',
+        lesson_number: 3,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: true,
+        bullet_points: ['Transition smoothly between Ma and Pa.', 'Lift only the required finger.', 'Avoid unnecessary finger movement.', 'Maintain continuous airflow.', 'Prevent sound breaks during transitions.']
+    },
+    {
+        id: 'c05e0400-1111-2222-3333-444444444444',
+        chapter_id: '2dfa3c70-1072-42be-9c0a-423b63948161',
+        title: 'Other Transitions to Pa',
+        description: '<p>Students practice ascending and descending note sequences that include Pa. These exercises improve finger coordination, note accuracy, and melodic flow.</p><p><strong>Ascending:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>Ga → Ma → Pa</li><li>Re → Ga → Ma → Pa</li><li>Sa → Re → Ga → Ma → Pa</li></ul><p><strong>Descending:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>Pa → Ma → Ga → Re → Sa</li></ul>',
+        lesson_number: 4,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: ['Play ascending transitions smoothly.', 'Play descending transitions smoothly.', 'Maintain equal timing between notes.', 'Develop finger coordination.', 'Produce clear notes throughout the exercise.']
+    },
+    {
+        id: 'c05e0500-1111-2222-3333-444444444444',
+        chapter_id: '2dfa3c70-1072-42be-9c0a-423b63948161',
+        title: 'Simple Composition',
+        description: '<p>Students apply the newly learned Pa note by playing a simple melodic composition with proper rhythm and expression.</p><p><strong>Composition:</strong></p><div class="font-mono">G M P | P M G</div><p><strong>Practice:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>Ga Ma Pa | Pa Ma Ga</li><li>Ga Ma Pa | Ma Ga</li></ul>',
+        lesson_number: 5,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: ['Play the composition with correct notes.', 'Maintain steady rhythm.', 'Use proper breath control.', 'Play with smooth note transitions.', 'Perform confidently with a metronome.']
+    },
+    {
+        id: 'c05e0600-1111-2222-3333-444444444444',
+        chapter_id: '2dfa3c70-1072-42be-9c0a-423b63948161',
+        title: 'Rhythm Practice with Pa',
+        description: '<p>These rhythm exercises strengthen timing, coordination, and fluency while incorporating the newly learned Pa note.</p><p><strong>Practice Patterns:</strong></p><ul class="list-disc pl-5 space-y-1 font-mono"><li>Pattern 1: Ga Ma Pa Pa</li><li>Pattern 2: Ga Ma Pa | Pa Ma Ga</li><li>Pattern 3: Sa Re Ga Ma | Ga Ma Pa</li></ul>',
+        lesson_number: 6,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: ['Practice all rhythm patterns with a metronome.', 'Maintain a steady 4/4 rhythm.', 'Play each note clearly.', 'Develop finger speed and coordination.', 'Increase tempo only after achieving accuracy.']
+    },
+    // Level 1, Chapter 6 — Completing the Middle Octave
+    {
+        id: 'c06e0100-1111-2222-3333-444444444444', chapter_id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d',
+        title: 'Introduction to Completing the Middle Octave',
+        description: `<h3>Overview</h3><p>In this topic, students complete the <strong>Madhya Saptak (Middle Octave)</strong> by learning the remaining three notes: <strong>Dha, Ni, and Upper Sa (Sa')</strong>. These notes complete the full octave and prepare students for more advanced Alankars and songs.</p><h4>Concepts</h4><p><strong>Students already know:</strong></p><ul><li>Sa</li><li>Re</li><li>Ga</li><li>Ma</li><li>Pa</li></ul><p><strong>New notes to learn:</strong></p><ul><li>Dha</li><li>Ni</li><li>Sa' (Upper Sa)</li></ul>`,
+        lesson_number: 1, material_type: 'note', is_introductory: true, is_very_important: true,
+        bullet_points: ['Understand the concept of the Middle Octave.', 'Identify Dha, Ni, and Upper Sa.', 'Understand the difference between Lower, Middle, and Upper Octaves.', 'Recognize the complete Madhya Saptak.']
+    },
+    {
+        id: 'c06e0200-1111-2222-3333-444444444444', chapter_id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', title: 'Learning Dha',
+        description: `<h3>Overview</h3><p>Students learn the correct fingering and blowing technique for Dha while producing a clear and stable sound.</p><h4>Practice</h4><pre>Dha Dha Dha Dha
+
+Pa Dha Pa Dha</pre>`,
+        lesson_number: 2, material_type: 'note', is_introductory: false, is_very_important: true,
+        bullet_points: ['Learn the correct finger position for Dha.', 'Cover all required holes properly.', 'Maintain balanced blowing.', 'Produce a clear Dha note.', 'Transition smoothly between Pa and Dha.']
+    },
+    {
+        id: 'c06e0300-1111-2222-3333-444444444444', chapter_id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', title: 'Learning Ni',
+        description: `<h3>Overview</h3><p>Students learn the Ni note with correct fingering and controlled airflow while avoiding air leakage.</p><h4>Practice</h4><pre>Ni Ni Ni Ni
+
+Dha Ni Dha Ni</pre>`,
+        lesson_number: 3, material_type: 'note', is_introductory: false, is_very_important: true,
+        bullet_points: ['Learn the correct finger position for Ni.', 'Avoid air leakage while playing.', 'Maintain a stable tone.', 'Transition smoothly between Dha and Ni.', 'Play Ni with consistent breath control.']
+    },
+    {
+        id: 'c06e0400-1111-2222-3333-444444444444', chapter_id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', title: `Learning Upper Sa (Sa')`,
+        description: `<h3>Overview</h3><p>Students learn to play the Upper Sa using slightly stronger yet controlled blowing while maintaining good tone quality.</p><h4>Practice</h4><pre>Ni Sa' Ni Sa'</pre>`,
+        lesson_number: 4, material_type: 'note', is_introductory: false, is_very_important: true,
+        bullet_points: ['Learn the correct fingering for Upper Sa.', 'Use controlled breath pressure.', 'Avoid overblowing.', 'Produce a clear and stable Upper Sa.', 'Transition smoothly between Ni and Upper Sa.']
+    },
+    {
+        id: 'c06e0500-1111-2222-3333-444444444444', chapter_id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', title: 'Full Middle Octave Practice',
+        description: `<h3>Overview</h3><p>Students now practice the complete Middle Octave in both ascending (Arohan) and descending (Avarohan) order with a steady rhythm.</p><h4>Practice</h4><p><strong>Ascending (Arohan)</strong></p><pre>Sa Re Ga Ma Pa Dha Ni Sa'</pre><p><strong>Descending (Avarohan)</strong></p><pre>Sa' Ni Dha Pa Ma Ga Re Sa</pre>`,
+        lesson_number: 5, material_type: 'note', is_introductory: false, is_very_important: true,
+        bullet_points: ['Play the complete ascending scale.', 'Play the complete descending scale.', 'Maintain even rhythm throughout.', 'Use a metronome while practicing.', 'Produce clear notes across the entire octave.']
+    },
+    {
+        id: 'c06e0600-1111-2222-3333-444444444444', chapter_id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', title: 'Alankar Practice',
+        description: `<h3>Overview</h3><p>These Alankars strengthen finger coordination, note clarity, rhythm, and fluency across the complete Middle Octave.</p><h4>Practice Patterns</h4><pre>1. P.D.N.S SN.D.P. | D.N.SR RSN.D. | N.SRG GRSN. | SRGm mGRS | RGmP PmGR | GmPD DPmG | mPDN NDPm | PDNS' S'NDP</pre><pre>2. P.D.N.S RSN.D. | D.N.SR GRSN. | N.SRG mGRS | SRGm PmGR | RGmP DPmG | GmPD NDPm | mPDN S'NDP
+   S'NDP mPDN | NDPm GmPD | DPmG RGmP | PmGR SRGm | mGRS N.SRG | GRSN. D.N.SR | RSN.D. P.D.N.S</pre><pre>3. P.D.N. | D.N.S | N.S R | S R G | R G m | G m P | m P D | P D N | D N S'</pre><pre>4. P.D.N.S | D.N.SR | N.SRG | SRGm | RGmP | GmPD | mPDN | PDNS' | S'NDP | NDPm | DPmG | PmGR | mGRS | GRSN. | RSN.D. | SN.D.P.</pre><pre>5. D.P | N.D. | SN. | RS | GR | mG | Pm | DP | ND | S'N |
+   NS' | DN | PD | mP | Gm | RG | SR | N.S | D.N. | P.D.</pre><pre>6. P.N. | D.S | NR | SG | Rm | GP | mD | PN | DS' |
+   S'D | NP | Dm | PG | mR | GS | RN | SD. | N.P.</pre><pre>7. N.D.P | SN.D. | RSN. | GRS | mGR | PmG | DPm | NDP | S'ND</pre><pre>8. SN.D.P. | RSN.D. | GRSN. | mGRS | PmGR | DPmG | NDPm | S'NDP |
+   PDNS' | mPDN | GmPD | RGmP | SRGm | N.SRG | D.N.SR | P.D.N.S</pre><pre>9. S'R'G' S'R'G' S'R' | S'R'G'm' G'R'S' |
+   NS'R' NS'R' NS' | NSR'G' R'S'N</pre><pre>10. P. | P.D.P. | P.D.N.P. | P.D.N.SP. | P.D.N.SRP. | Continue the same pattern...</pre><pre>11. SRGmP | RGmPD | GmPDN | mPDNS' |
+    S'NDPm | NDPmG | DPmGR | PmGRS</pre><pre>12. S _ _ _ | SN. D.P. _ _ | R _ _ _ | RS N.D. _ _</pre>`,
+        lesson_number: 6, material_type: 'note', is_introductory: false, is_very_important: true,
+        bullet_points: ['Practice all Alankars slowly.', 'Maintain equal timing between notes.', 'Play both ascending and descending patterns accurately.', 'Use a metronome throughout practice.', 'Develop finger coordination and note clarity.', 'Increase speed only after achieving accuracy.']
+    },
+    {
+        id: 'c06e0700-1111-2222-3333-444444444444', chapter_id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', title: 'Song Practice',
+        description: `<h3>Overview</h3><p>Students apply the complete Middle Octave by learning simple songs and musical phrases. This helps connect technical practice with musical expression.</p><h4>Practice</h4><pre>Sa Re Ga Ma | Ga Re Sa
+
+Ga Ma Pa Dha | Pa Ma Ga</pre>`,
+        lesson_number: 7, material_type: 'note', is_introductory: false, is_very_important: false,
+        bullet_points: ['Play simple melodies using the complete octave.', 'Maintain correct rhythm.', 'Use proper breath control.', 'Play with smooth note transitions.', 'Perform songs confidently with a metronome.']
     }
 ];
-

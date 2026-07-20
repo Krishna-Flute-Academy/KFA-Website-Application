@@ -33,8 +33,7 @@ import {
     Calendar,
     ArrowLeft,
     ArrowRight,
-    ArrowUp,
-    ArrowDown,
+    GripVertical,
     CloudLightning,
     CloudRain,
     RefreshCw,
@@ -61,6 +60,9 @@ const stripHtml = (html: string) => {
     return html.replace(/<[^>]*>?/gm, '');
 };
 
+const cleanChapterTitle = (title: string) =>
+    (title || '').replace(/^\s*Chapter\s*[-:]?\s*\d+\s*[-:]?\s*/i, '').trim();
+
 export default function InventoryLibrary() {
     const router = useRouter();
     
@@ -79,6 +81,9 @@ export default function InventoryLibrary() {
     const [currentView, setCurrentView] = useState<'landing' | 'dashboard'>('landing');
     const [selectedModuleId, setSelectedModuleId] = useState<string>('a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d');
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+    const [draggedChapterId, setDraggedChapterId] = useState<string | null>(null);
+    const [dragOverChapterId, setDragOverChapterId] = useState<string | null>(null);
+    const [isSavingSequence, setIsSavingSequence] = useState(false);
     
     // DB Mode Status
     const [isUsingFallback, setIsUsingFallback] = useState(false);
@@ -190,8 +195,16 @@ export default function InventoryLibrary() {
 
         if (dbModules && dbModules.length > 0) {
             setModules(dbModules);
-            setChapters(dbChapters || []);
+            const cleanedChapters = (dbChapters || []).map(chapter => ({ ...chapter, title: cleanChapterTitle(chapter.title) }));
+            setChapters(cleanedChapters);
             setLessons(dbLessons || []);
+
+            const titlesToClean = (dbChapters || []).filter(chapter => cleanChapterTitle(chapter.title) !== chapter.title);
+            if (titlesToClean.length > 0) {
+                await Promise.all(titlesToClean.map(chapter =>
+                    supabaseAuth.from('course_chapters').update({ title: cleanChapterTitle(chapter.title) }).eq('id', chapter.id)
+                ));
+            }
             
             // Auto expand the first chapter of active module by default
             if (dbChapters && dbChapters.length > 0) {
@@ -355,73 +368,43 @@ export default function InventoryLibrary() {
         }));
     };
 
-    // Move Chapter (Up/Down) for Reordering
-    const moveChapter = async (chapterId: string, direction: 'up' | 'down') => {
-        const targetChap = chapters.find(c => c.id === chapterId);
-        if (!targetChap) return;
+    const reorderChapter = async (sourceId: string, targetId: string) => {
+        if (sourceId === targetId || isSavingSequence) return;
+        const source = chapters.find(chapter => chapter.id === sourceId);
+        const target = chapters.find(chapter => chapter.id === targetId);
+        if (!source || !target || source.module_id !== target.module_id) return;
 
-        const modChaps = getModuleChapters(targetChap.module_id);
-        const idx = modChaps.findIndex(c => c.id === chapterId);
-        if (idx === -1) return;
+        const previousChapters = chapters;
+        const ordered = getModuleChapters(source.module_id);
+        const sourceIndex = ordered.findIndex(chapter => chapter.id === sourceId);
+        const targetIndex = ordered.findIndex(chapter => chapter.id === targetId);
+        const [moved] = ordered.splice(sourceIndex, 1);
+        ordered.splice(targetIndex, 0, moved);
+        const sequenced = ordered.map((chapter, index) => ({ ...chapter, title: cleanChapterTitle(chapter.title), chapter_number: index + 1 }));
+        const sequenceById = new Map(sequenced.map(chapter => [chapter.id, chapter]));
+        const optimisticChapters = chapters.map(chapter => sequenceById.get(chapter.id) || chapter);
 
-        let swapChap: CourseChapter | undefined;
-        if (direction === 'up' && idx > 0) {
-            swapChap = modChaps[idx - 1];
-        } else if (direction === 'down' && idx < modChaps.length - 1) {
-            swapChap = modChaps[idx + 1];
-        }
-
-        if (!swapChap) return;
-
-        setLoading(true);
-        const numA = targetChap.chapter_number;
-        const numB = swapChap.chapter_number;
-
-        // Auto-adjust titles if they contain "Chapter X - " prefix
-        const adjustTitleChapterNumber = (title: string, newNumber: number): string => {
-            const regex = /^Chapter\s+\d+\s*[-:]\s*/i;
-            if (regex.test(title)) {
-                return title.replace(regex, `Chapter ${newNumber} - `);
+        setChapters(optimisticChapters);
+        setIsSavingSequence(true);
+        try {
+            if (isUsingFallback) {
+                persistLocalData(modules, optimisticChapters, lessons);
+                return;
             }
-            return title;
-        };
-
-        const titleA = adjustTitleChapterNumber(targetChap.title, numB);
-        const titleB = adjustTitleChapterNumber(swapChap.title, numA);
-
-        if (isUsingFallback) {
-            const updatedChaps = chapters.map(c => {
-                if (c.id === targetChap.id) return { ...c, chapter_number: numB, title: titleA };
-                if (c.id === swapChap!.id) return { ...c, chapter_number: numA, title: titleB };
-                return c;
-            });
-            persistLocalData(modules, updatedChaps, lessons);
-            setLoading(false);
-        } else {
-            try {
-                // Use a temporary negative value to avoid unique constraint (module_id, chapter_number) violations
-                await supabaseAuth
-                    .from('course_chapters')
-                    .update({ chapter_number: -numA, title: titleA })
-                    .eq('id', targetChap.id);
-                
-                await supabaseAuth
-                    .from('course_chapters')
-                    .update({ chapter_number: numA, title: titleB })
-                    .eq('id', swapChap.id);
-                
-                await supabaseAuth
-                    .from('course_chapters')
-                    .update({ chapter_number: numB })
-                    .eq('id', targetChap.id);
-
-                await loadDatabaseData();
-            } catch (err) {
-                console.error('Error swapping chapters:', err);
-                alert('Failed to reorder chapters in database.');
-            } finally {
-                setLoading(false);
+            for (let index = 0; index < sequenced.length; index++) {
+                const { error } = await supabaseAuth.from('course_chapters').update({ chapter_number: -100000 - index }).eq('id', sequenced[index].id);
+                if (error) throw error;
             }
+            for (const chapter of sequenced) {
+                const { error } = await supabaseAuth.from('course_chapters').update({ chapter_number: chapter.chapter_number, title: chapter.title }).eq('id', chapter.id);
+                if (error) throw error;
+            }
+        } catch (err) {
+            setChapters(previousChapters);
+            console.error('Error sequencing chapters:', err);
+            alert('The chapter order could not be saved. The previous order has been restored.');
+        } finally {
+            setIsSavingSequence(false);
         }
     };
 
@@ -432,18 +415,22 @@ export default function InventoryLibrary() {
         if (chapter) {
             setEditingItem(chapter);
             setChapterForm({
-                title: chapter.title,
+                title: cleanChapterTitle(chapter.title),
                 description: chapter.description || '',
                 chapter_number: chapter.chapter_number,
                 module_id: chapter.module_id
             });
         } else {
             setEditingItem(null);
-            const numChaps = getModuleChapters(selectedModuleId).length;
+            const moduleChapters = getModuleChapters(selectedModuleId);
+            const nextChapterNumber = moduleChapters.reduce(
+                (highest, chapter) => Math.max(highest, Number(chapter.chapter_number) || 0),
+                0
+            ) + 1;
             setChapterForm({
                 title: '',
                 description: '',
-                chapter_number: numChaps + 1,
+                chapter_number: nextChapterNumber,
                 module_id: selectedModuleId
             });
         }
@@ -453,17 +440,19 @@ export default function InventoryLibrary() {
     // Save Chapter updates/creates to database or fallback
     const saveChapter = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!chapterForm.title || !chapterForm.module_id) return;
+        const cleanedTitle = cleanChapterTitle(chapterForm.title);
+        if (!cleanedTitle || !chapterForm.module_id) return;
 
         setLoading(true);
         if (isUsingFallback) {
             let updatedChaps = [...chapters];
             if (editingItem) {
-                updatedChaps = updatedChaps.map(c => c.id === editingItem.id ? { ...c, ...chapterForm } : c);
+                updatedChaps = updatedChaps.map(c => c.id === editingItem.id ? { ...c, ...chapterForm, title: cleanedTitle } : c);
             } else {
                 const newChap: CourseChapter = {
                     id: 'chap_' + Math.random().toString(36).substring(7),
-                    ...chapterForm
+                    ...chapterForm,
+                    title: cleanedTitle
                 };
                 updatedChaps.push(newChap);
                 setExpandedChapters(prev => ({ ...prev, [newChap.id]: true }));
@@ -474,33 +463,36 @@ export default function InventoryLibrary() {
         } else {
             try {
                 if (editingItem) {
-                    await supabaseAuth
+                    const { error } = await supabaseAuth
                         .from('course_chapters')
                         .update({
-                            title: chapterForm.title,
+                            title: cleanedTitle,
                             description: chapterForm.description,
                             chapter_number: chapterForm.chapter_number,
                             module_id: chapterForm.module_id
                         })
                         .eq('id', editingItem.id);
+                    if (error) throw error;
                 } else {
                     const newId = crypto.randomUUID();
-                    await supabaseAuth
+                    const { error } = await supabaseAuth
                         .from('course_chapters')
                         .insert([{
                             id: newId,
-                            title: chapterForm.title,
+                            title: cleanedTitle,
                             description: chapterForm.description,
                             chapter_number: chapterForm.chapter_number,
                             module_id: chapterForm.module_id
                         }]);
+                    if (error) throw error;
                     setExpandedChapters(prev => ({ ...prev, [newId]: true }));
                 }
                 await loadDatabaseData();
                 setActiveModal(null);
             } catch (err) {
-                console.error(err);
-                alert('Database update failed.');
+                console.error('Chapter save failed:', err);
+                const message = err instanceof Error ? err.message : 'Unknown database error';
+                alert(`Chapter could not be saved: ${message}`);
             } finally {
                 setLoading(false);
             }
@@ -512,19 +504,35 @@ export default function InventoryLibrary() {
         e.stopPropagation();
         if (!confirm('Are you sure you want to delete this chapter? All its learning materials will be deleted.')) return;
 
+        const deletedChapter = chapters.find(chapter => chapter.id === id);
+        if (!deletedChapter) return;
+        const remainingModuleChapters = getModuleChapters(deletedChapter.module_id)
+            .filter(chapter => chapter.id !== id)
+            .map((chapter, index) => ({ ...chapter, chapter_number: index + 1 }));
+
         setLoading(true);
         if (isUsingFallback) {
-            const updatedChaps = chapters.filter(c => c.id !== id);
+            const sequenceById = new Map(remainingModuleChapters.map(chapter => [chapter.id, chapter]));
+            const updatedChaps = chapters.filter(c => c.id !== id).map(chapter => sequenceById.get(chapter.id) || chapter);
             const updatedLessons = lessons.filter(l => l.chapter_id !== id);
             persistLocalData(modules, updatedChaps, updatedLessons);
             setLoading(false);
         } else {
             try {
-                await supabaseAuth.from('course_chapters').delete().eq('id', id);
+                const { error: deleteError } = await supabaseAuth.from('course_chapters').delete().eq('id', id);
+                if (deleteError) throw deleteError;
+                for (let index = 0; index < remainingModuleChapters.length; index++) {
+                    const { error } = await supabaseAuth.from('course_chapters').update({ chapter_number: -100000 - index }).eq('id', remainingModuleChapters[index].id);
+                    if (error) throw error;
+                }
+                for (const chapter of remainingModuleChapters) {
+                    const { error } = await supabaseAuth.from('course_chapters').update({ chapter_number: chapter.chapter_number }).eq('id', chapter.id);
+                    if (error) throw error;
+                }
                 await loadDatabaseData();
             } catch (err) {
-                console.error(err);
-                alert('Delete failed.');
+                console.error('Chapter delete or resequence failed:', err);
+                alert('Chapter could not be deleted or renumbered.');
             } finally {
                 setLoading(false);
             }
@@ -1249,7 +1257,7 @@ export default function InventoryLibrary() {
                                 {sortedCategories.map((category) => (
                                     <div key={category} className="space-y-4 text-left">
                                         <div className="flex items-center justify-between select-none border-b border-slate-200 dark:border-slate-800 pb-2">
-                                            <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2">
                                                 <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
                                                 <h2 className="font-extrabold text-xs md:text-sm tracking-wider uppercase text-slate-700 dark:text-slate-300">{category}</h2>
                                                 <button
@@ -1391,6 +1399,7 @@ export default function InventoryLibrary() {
                                         <div className="flex items-center gap-2">
                                             <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
                                             <h2 className="font-extrabold text-xs tracking-wider uppercase text-slate-700 dark:text-slate-300">Collapsible Chapter curriculum</h2>
+                                            {isSavingSequence && <span className="text-[9px] font-bold text-amber-600 animate-pulse">Saving order…</span>}
                                         </div>
                                         <button 
                                             onClick={() => openChapterModal()}
@@ -1416,7 +1425,10 @@ export default function InventoryLibrary() {
                                                 return (
                                                     <div 
                                                         key={chap.id}
-                                                        className="rounded-3xl border border-slate-200/85 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:border-slate-300 dark:hover:border-slate-750 transition-all duration-300"
+                                                        onDragOver={(event) => { event.preventDefault(); if (draggedChapterId && draggedChapterId !== chap.id) setDragOverChapterId(chap.id); }}
+                                                        onDragLeave={() => setDragOverChapterId(current => current === chap.id ? null : current)}
+                                                        onDrop={(event) => { event.preventDefault(); if (draggedChapterId) void reorderChapter(draggedChapterId, chap.id); setDraggedChapterId(null); setDragOverChapterId(null); }}
+                                                        className={`rounded-3xl border bg-white dark:bg-slate-900 overflow-hidden shadow-xs transition-all duration-200 ${dragOverChapterId === chap.id ? 'border-amber-500 ring-2 ring-amber-500/25 translate-y-1' : 'border-slate-200/85 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-750'} ${draggedChapterId === chap.id ? 'opacity-50' : ''}`}
                                                     >
                                                         {/* Chapter Accordion Header bar */}
                                                         <div 
@@ -1424,6 +1436,16 @@ export default function InventoryLibrary() {
                                                             className="px-6 py-5 bg-slate-50/50 dark:bg-slate-950/20 hover:bg-slate-50 dark:hover:bg-slate-950/30 flex items-center justify-between gap-4 cursor-pointer select-none transition-all"
                                                         >
                                                             <div className="flex items-center gap-4 text-left">
+                                                                <div
+                                                                    draggable={!isSavingSequence}
+                                                                    onDragStart={(event) => { event.stopPropagation(); setDraggedChapterId(chap.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', chap.id); }}
+                                                                    onDragEnd={() => { setDraggedChapterId(null); setDragOverChapterId(null); }}
+                                                                    onClick={(event) => event.stopPropagation()}
+                                                                    className="-mr-2 cursor-grab active:cursor-grabbing rounded-lg p-2 text-slate-400 hover:bg-amber-500/10 hover:text-amber-600"
+                                                                    title="Drag to change chapter sequence"
+                                                                >
+                                                                    <GripVertical className="size-5" />
+                                                                </div>
                                                                 <div className="w-10 h-10 rounded-xl bg-[#ecb613]/10 border border-[#ecb613]/25 flex items-center justify-center shrink-0">
                                                                     <span className="font-extrabold text-xs font-mono text-[#d97706] dark:text-[#ecb613]">Ch{chap.chapter_number}</span>
                                                                 </div>
@@ -1440,22 +1462,6 @@ export default function InventoryLibrary() {
                                                             {/* Chapter Actions and chevron */}
                                                             <div className="flex items-center gap-4 shrink-0">
                                                                 <div className="flex items-center gap-1">
-                                                                    <button 
-                                                                        onClick={(e) => { e.stopPropagation(); moveChapter(chap.id, 'up'); }}
-                                                                        disabled={idx === 0}
-                                                                        className="p-2 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-[#ecb613] disabled:opacity-30 disabled:hover:text-slate-400 transition-all"
-                                                                        title="Move Chapter Up"
-                                                                    >
-                                                                        <ArrowUp className="size-4" />
-                                                                    </button>
-                                                                    <button 
-                                                                        onClick={(e) => { e.stopPropagation(); moveChapter(chap.id, 'down'); }}
-                                                                        disabled={idx === moduleChapters.length - 1}
-                                                                        className="p-2 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-[#ecb613] disabled:opacity-30 disabled:hover:text-slate-400 transition-all"
-                                                                        title="Move Chapter Down"
-                                                                    >
-                                                                        <ArrowDown className="size-4" />
-                                                                    </button>
                                                                     <button 
                                                                         onClick={(e) => openChapterModal(chap, e)}
                                                                         className="p-2 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-[#ecb613] transition-all"
@@ -1879,17 +1885,29 @@ export default function InventoryLibrary() {
                             
                             <form onSubmit={saveChapter} className="flex-1 overflow-y-auto space-y-4 text-left pr-1.5 min-h-0">
                                 <div className="space-y-1.5">
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                                        Chapter Title / Headline
-                                    </label>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Chapter Title</label>
                                     <input 
                                         type="text" 
                                         required
                                         className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
-                                        placeholder="e.g. Chapter 1 - Introduction to Flute"
+                                        placeholder="e.g. Introduction to Flute"
                                         value={chapterForm.title}
                                         onChange={e => setChapterForm(prev => ({ ...prev, title: e.target.value }))}
                                     />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Chapter Sequence</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        required
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-[#ecb613] outline-none text-xs font-semibold"
+                                        value={chapterForm.chapter_number}
+                                        onChange={e => setChapterForm(prev => ({ ...prev, chapter_number: Math.max(1, Number(e.target.value) || 1) }))}
+                                    />
+                                    <p className="text-[10px] text-slate-400">This controls the chapter's position. Moving chapters will update this number automatically.</p>
                                 </div>
 
                                 <div className="space-y-1.5">

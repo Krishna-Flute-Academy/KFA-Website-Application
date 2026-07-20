@@ -16,6 +16,7 @@ import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { CourseCategory, INITIAL_CATEGORIES, INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
 import { sendClassroomNotification } from '../../../../src/lib/notifications';
+import SecureCurriculumMaterial from '../../../../src/components/SecureCurriculumMaterial';
 
 // Tab components
 import OverviewTab from '../../../../src/components/classroom/OverviewTab';
@@ -4225,7 +4226,7 @@ export default function ClassroomDashboardPage({
 
                     return (
                         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-                            <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl text-slate-800 dark:text-slate-100 overflow-hidden animate-in zoom-in-95 duration-300">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl text-slate-800 dark:text-slate-100 overflow-hidden animate-in zoom-in-95 duration-300 select-none" onCopy={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()} onContextMenu={(event) => event.preventDefault()}>
                                 <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex-shrink-0">
                                     <div className="flex items-center gap-3 text-left">
                                         <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
@@ -4287,7 +4288,9 @@ export default function ClassroomDashboardPage({
                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">3. View Attachments & Material Player</h4>
                                         {hasMaterial ? (
                                             <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center relative shadow-inner">
-                                                {isVideo ? (
+                                                {true ? (
+                                                    <SecureCurriculumMaterial url={selectedTopic.material_url} title={selectedTopic.title} materialType={selectedTopic.material_type} viewerName={teacherProfile?.name} viewerEmail={teacherProfile?.email} />
+                                                ) : isVideo ? (
                                                     <video src={selectedTopic.material_url} controls className="w-full h-full object-contain" autoPlay />
                                                 ) : isAudio ? (
                                                     <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950/40 h-full">

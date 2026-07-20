@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+import { createClient } from '@supabase/supabase-js';
+
+const env = Object.fromEntries(fs.readFileSync('.env', 'utf8').split(/\r?\n/).filter(line => line && !line.startsWith('#')).map(line => { const i = line.indexOf('='); return [line.slice(0, i), line.slice(i + 1).replace(/^['"]|['"]$/g, '')]; }));
+const supabase = createClient(env.NEXT_PUBLIC_AUTH_SUPABASE_URL, env.NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY);
+const chapterId = 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d';
+const seedSource = fs.readFileSync('app/teacher-dashboard/inventory/initial-data.ts', 'utf8');
+const lessonsStart = seedSource.indexOf('export const INITIAL_LESSONS');
+const lessonsLiteral = seedSource.slice(lessonsStart, seedSource.lastIndexOf('];') + 1).replace(/^export const INITIAL_LESSONS:\s*CourseLesson\[\]\s*=\s*/, '');
+const INITIAL_LESSONS = Function(`"use strict"; return (${lessonsLiteral})`)();
+const chapterGoals = `<p><strong>Chapter Completion Goals:</strong></p><ul><li>Play the complete Middle Octave (Sa to Sa').</li><li>Perform ascending and descending scales confidently.</li><li>Play Alankars across the full octave.</li><li>Transition smoothly between all notes.</li><li>Perform simple songs using the complete Middle Octave.</li><li>Develop better rhythm, finger coordination, and musical expression.</li></ul>`;
+const { error: chapterError } = await supabase.from('course_chapters').update({ title: 'Completing the Middle Octave', description: chapterGoals, chapter_number: 6 }).eq('id', chapterId);
+if (chapterError) throw chapterError;
+const topics = INITIAL_LESSONS.filter(topic => topic.chapter_id === chapterId);
+const { error: topicsError } = await supabase.from('course_lessons').upsert(topics, { onConflict: 'id' });
+if (topicsError) throw topicsError;
+const { data, error } = await supabase.from('course_lessons').select('lesson_number,title').eq('chapter_id', chapterId).order('lesson_number');
+if (error) throw error;
+console.log(`Updated Chapter 6 with ${data.length} topics:`);
+for (const topic of data) console.log(`${topic.lesson_number}. ${topic.title}`);

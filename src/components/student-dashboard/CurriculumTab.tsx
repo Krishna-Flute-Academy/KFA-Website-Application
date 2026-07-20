@@ -107,7 +107,7 @@ export default function CurriculumTab({
     }, [courseModules, filteredChapters]);
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-300">
+        <div className="space-y-8 animate-in fade-in duration-300 select-none" onCopy={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()} onContextMenu={(event) => event.preventDefault()}>
             {/* Classroom Header Summary */}
             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs flex flex-col md:flex-row justify-between gap-6">
                 <div className="space-y-2 max-w-xl text-left">
@@ -403,14 +403,13 @@ export default function CurriculumTab({
                                             ) : null}
 
                                             {selectedTopic.link_url ? (
-                                                <a
-                                                    href={selectedTopic.link_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowMaterialPopup(true)}
                                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-750 transition-colors text-center"
                                                 >
-                                                    <ExternalLink className="w-4 h-4 text-slate-500" /> Reference Link
-                                                </a>
+                                                    <BookOpen className="w-4 h-4 text-slate-500" /> Open Protected Reference
+                                                </button>
                                             ) : null}
 
                                             {!selectedTopic.material_url && !selectedTopic.link_url && (
