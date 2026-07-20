@@ -33,6 +33,8 @@ import {
     Calendar,
     ArrowLeft,
     ArrowRight,
+    ArrowUp,
+    ArrowDown,
     CloudLightning,
     CloudRain,
     RefreshCw,
@@ -351,6 +353,76 @@ export default function InventoryLibrary() {
             ...prev,
             [chapterId]: !prev[chapterId]
         }));
+    };
+
+    // Move Chapter (Up/Down) for Reordering
+    const moveChapter = async (chapterId: string, direction: 'up' | 'down') => {
+        const targetChap = chapters.find(c => c.id === chapterId);
+        if (!targetChap) return;
+
+        const modChaps = getModuleChapters(targetChap.module_id);
+        const idx = modChaps.findIndex(c => c.id === chapterId);
+        if (idx === -1) return;
+
+        let swapChap: CourseChapter | undefined;
+        if (direction === 'up' && idx > 0) {
+            swapChap = modChaps[idx - 1];
+        } else if (direction === 'down' && idx < modChaps.length - 1) {
+            swapChap = modChaps[idx + 1];
+        }
+
+        if (!swapChap) return;
+
+        setLoading(true);
+        const numA = targetChap.chapter_number;
+        const numB = swapChap.chapter_number;
+
+        // Auto-adjust titles if they contain "Chapter X - " prefix
+        const adjustTitleChapterNumber = (title: string, newNumber: number): string => {
+            const regex = /^Chapter\s+\d+\s*[-:]\s*/i;
+            if (regex.test(title)) {
+                return title.replace(regex, `Chapter ${newNumber} - `);
+            }
+            return title;
+        };
+
+        const titleA = adjustTitleChapterNumber(targetChap.title, numB);
+        const titleB = adjustTitleChapterNumber(swapChap.title, numA);
+
+        if (isUsingFallback) {
+            const updatedChaps = chapters.map(c => {
+                if (c.id === targetChap.id) return { ...c, chapter_number: numB, title: titleA };
+                if (c.id === swapChap!.id) return { ...c, chapter_number: numA, title: titleB };
+                return c;
+            });
+            persistLocalData(modules, updatedChaps, lessons);
+            setLoading(false);
+        } else {
+            try {
+                // Use a temporary negative value to avoid unique constraint (module_id, chapter_number) violations
+                await supabaseAuth
+                    .from('course_chapters')
+                    .update({ chapter_number: -numA, title: titleA })
+                    .eq('id', targetChap.id);
+                
+                await supabaseAuth
+                    .from('course_chapters')
+                    .update({ chapter_number: numA, title: titleB })
+                    .eq('id', swapChap.id);
+                
+                await supabaseAuth
+                    .from('course_chapters')
+                    .update({ chapter_number: numB })
+                    .eq('id', targetChap.id);
+
+                await loadDatabaseData();
+            } catch (err) {
+                console.error('Error swapping chapters:', err);
+                alert('Failed to reorder chapters in database.');
+            } finally {
+                setLoading(false);
+            }
+        }
     };
 
     // Open Chapter Edit Modal (populates correctly on edit click)
@@ -1337,7 +1409,7 @@ export default function InventoryLibrary() {
                                                 <p className="text-xs font-semibold">No chapters found for this Level.</p>
                                             </div>
                                         ) : (
-                                            moduleChapters.map(chap => {
+                                            moduleChapters.map((chap, idx) => {
                                                 const expanded = !!expandedChapters[chap.id];
                                                 const chapLessons = getChapterLessons(chap.id);
                                                 
@@ -1364,10 +1436,26 @@ export default function InventoryLibrary() {
                                                                     </h3>
                                                                 </div>
                                                             </div>
-
+ 
                                                             {/* Chapter Actions and chevron */}
                                                             <div className="flex items-center gap-4 shrink-0">
                                                                 <div className="flex items-center gap-1">
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); moveChapter(chap.id, 'up'); }}
+                                                                        disabled={idx === 0}
+                                                                        className="p-2 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-[#ecb613] disabled:opacity-30 disabled:hover:text-slate-400 transition-all"
+                                                                        title="Move Chapter Up"
+                                                                    >
+                                                                        <ArrowUp className="size-4" />
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={(e) => { e.stopPropagation(); moveChapter(chap.id, 'down'); }}
+                                                                        disabled={idx === moduleChapters.length - 1}
+                                                                        className="p-2 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-[#ecb613] disabled:opacity-30 disabled:hover:text-slate-400 transition-all"
+                                                                        title="Move Chapter Down"
+                                                                    >
+                                                                        <ArrowDown className="size-4" />
+                                                                    </button>
                                                                     <button 
                                                                         onClick={(e) => openChapterModal(chap, e)}
                                                                         className="p-2 hover:bg-slate-150 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-[#ecb613] transition-all"
