@@ -2228,14 +2228,43 @@ export default function ClassroomDashboardPage({
 
         if (selectedStudentForCurriculum) {
             const studentId = selectedStudentForCurriculum.student_id;
+            
+            // Find all lessons explicitly allocated to this student
+            const allocatedLessons = new Set<string>();
+            classroomInventoryAllocations.forEach(a => {
+                if (a.allocated_to_student_id && a.allocated_to_student_id !== studentId) return;
+                
+                if (a.lesson_id) {
+                    allocatedLessons.add(a.lesson_id);
+                } else if (a.chapter_id) {
+                    const lessons = courseLessons.filter(l => l.chapter_id === a.chapter_id);
+                    lessons.forEach(l => allocatedLessons.add(l.id));
+                } else if (a.module_id) {
+                    const chapters = courseChapters.filter(c => c.module_id === a.module_id);
+                    const chapterIds = chapters.map(c => c.id);
+                    const lessons = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
+                    lessons.forEach(l => allocatedLessons.add(l.id));
+                }
+            });
+
+            // Map progress status
+            const progressMap = new Map<string, string>();
             studentProgress.forEach(p => {
                 if (p.student_id === studentId) {
-                    if (p.status === 'completed') {
-                        completed.add(p.lesson_id);
-                        unlocked.add(p.lesson_id);
-                    } else if (p.status === 'unlocked') {
-                        unlocked.add(p.lesson_id);
-                    }
+                    progressMap.set(p.lesson_id, p.status);
+                }
+            });
+
+            allocatedLessons.forEach(lessonId => {
+                const status = progressMap.get(lessonId);
+                if (status === 'completed') {
+                    completed.add(lessonId);
+                    unlocked.add(lessonId);
+                } else if (status === 'locked') {
+                    // locked, do not add to unlocked
+                } else {
+                    // status is 'unlocked' or undefined (not in progress table, so default to unlocked/in-progress)
+                    unlocked.add(lessonId);
                 }
             });
         }
@@ -2244,7 +2273,7 @@ export default function ClassroomDashboardPage({
             completedLessons: completed,
             unlockedLessons: unlocked
         };
-    }, [selectedStudentForCurriculum, studentProgress]);
+    }, [selectedStudentForCurriculum, studentProgress, classroomInventoryAllocations, courseChapters, courseLessons]);
 
     const getLessonPacingStatus = useCallback((lessonId: string) => {
         let isCompleted = false;
@@ -2319,6 +2348,61 @@ export default function ClassroomDashboardPage({
             isCompleted: isCompletedLabel
         };
     }, [curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress, getClassSummary]);
+
+    const getIsLocked = useCallback((itemType: 'level' | 'chapter' | 'topic', itemId: string): boolean => {
+        if (curriculumTab === 'individual') {
+            if (!selectedStudentForCurriculum) return false;
+            const studentId = selectedStudentForCurriculum.student_id;
+            
+            if (itemType === 'topic') {
+                const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === itemId);
+                return prog ? prog.status === 'locked' : false;
+            } else if (itemType === 'chapter') {
+                const lessons = courseLessons.filter(l => l.chapter_id === itemId);
+                if (lessons.length === 0) return false;
+                return lessons.every(l => {
+                    const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === l.id);
+                    return prog ? prog.status === 'locked' : false;
+                });
+            } else {
+                const chapters = courseChapters.filter(c => c.module_id === itemId);
+                const chapterIds = chapters.map(c => c.id);
+                const lessons = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
+                if (lessons.length === 0) return false;
+                return lessons.every(l => {
+                    const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === l.id);
+                    return prog ? prog.status === 'locked' : false;
+                });
+            }
+        } else {
+            // Classwide: locked if all active students have all lessons locked
+            const activeStudentIds = [
+                ...students.map(s => s.student_id),
+                ...sessionOverrides.map(o => o.student_id)
+            ];
+            if (activeStudentIds.length === 0) return false;
+            
+            let lessonsToCheck: string[] = [];
+            if (itemType === 'topic') {
+                lessonsToCheck = [itemId];
+            } else if (itemType === 'chapter') {
+                lessonsToCheck = courseLessons.filter(l => l.chapter_id === itemId).map(l => l.id);
+            } else {
+                const chapters = courseChapters.filter(c => c.module_id === itemId);
+                const chapterIds = chapters.map(c => c.id);
+                lessonsToCheck = courseLessons.filter(l => chapterIds.includes(l.chapter_id)).map(l => l.id);
+            }
+            
+            if (lessonsToCheck.length === 0) return false;
+            
+            return lessonsToCheck.every(lessonId => {
+                return activeStudentIds.every(studentId => {
+                    const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
+                    return prog ? prog.status === 'locked' : false;
+                });
+            });
+        }
+    }, [curriculumTab, selectedStudentForCurriculum, studentProgress, courseLessons, courseChapters, students, sessionOverrides]);
 
     const visibleCurriculum = useMemo(() => {
         const categoriesMap: Record<string, {
@@ -3864,6 +3948,7 @@ export default function ClassroomDashboardPage({
                             handleUpdatePacingState={handleUpdatePacingState}
                             getClassSummary={getClassSummary}
                             getStudentStatuses={getStudentStatuses}
+                            getIsLocked={getIsLocked}
                         />
                     )}
 

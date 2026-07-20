@@ -51,6 +51,7 @@ interface CurriculumTabProps {
     ) => Promise<void>;
     getClassSummary: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => 'not_allocated' | 'partially_allocated' | 'allocated_to_all' | 'in_progress' | 'completed_by_all';
     getStudentStatuses: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => any[];
+    getIsLocked: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => boolean;
 }
 
 const stripHtml = (html: string) => {
@@ -89,7 +90,8 @@ export default function CurriculumTab({
     setIsInventoryDrawerOpen,
     handleUpdatePacingState,
     getClassSummary,
-    getStudentStatuses
+    getStudentStatuses,
+    getIsLocked
 }: CurriculumTabProps) {
     const [expandedStudentStatuses, setExpandedStudentStatuses] = React.useState<Record<string, boolean>>({});
 
@@ -456,28 +458,26 @@ export default function CurriculumTab({
                                                                                                 {expandedStudentStatuses[`module-${mod.id}`] ? 'Hide' : 'Students'}
                                                                                             </button>
                                                                                         )}
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                handleUpdatePacingState('level', mod.id, 'locked');
-                                                                                            }}
-                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-350 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                            title="Lock Level (Lock all chapters and topics)"
-                                                                                        >
-                                                                                            <Lock className="size-3.5" />
-                                                                                        </button>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                handleUpdatePacingState('level', mod.id, 'unlocked');
-                                                                                            }}
-                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                            title="Unlock Level (Unlock all chapters and topics)"
-                                                                                        >
-                                                                                            <Unlock className="size-3.5" />
-                                                                                        </button>
+                                                                                        {(() => {
+                                                                                            const isLevelLocked = getIsLocked('level', mod.id);
+                                                                                            return (
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        handleUpdatePacingState('level', mod.id, isLevelLocked ? 'unlocked' : 'locked');
+                                                                                                    }}
+                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                        isLevelLocked
+                                                                                                            ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
+                                                                                                            : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
+                                                                                                    }`}
+                                                                                                    title={isLevelLocked ? "Unlock Level (Unlock all chapters and topics)" : "Lock Level (Lock all chapters and topics)"}
+                                                                                                >
+                                                                                                    {isLevelLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+                                                                                                </button>
+                                                                                            );
+                                                                                        })()}
                                                                                         <button
                                                                                             type="button"
                                                                                             onClick={(e) => {
@@ -566,28 +566,26 @@ export default function CurriculumTab({
                                                                                                 {expandedStudentStatuses[`module-${mod.id}`] ? 'Hide' : 'Students'}
                                                                                             </button>
                                                                                         )}
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                handleUpdatePacingState('level', mod.id, 'locked');
-                                                                                            }}
-                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-355 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                            title="Lock Level (Lock all chapters and topics)"
-                                                                                        >
-                                                                                            <Lock className="size-3.5" />
-                                                                                        </button>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                handleUpdatePacingState('level', mod.id, 'unlocked');
-                                                                                            }}
-                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                            title="Unlock Level (Unlock all chapters and topics)"
-                                                                                        >
-                                                                                            <Unlock className="size-3.5" />
-                                                                                        </button>
+                                                                                        {(() => {
+                                                                                            const isLevelLocked = getIsLocked('level', mod.id);
+                                                                                            return (
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        handleUpdatePacingState('level', mod.id, isLevelLocked ? 'unlocked' : 'locked');
+                                                                                                    }}
+                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                        isLevelLocked
+                                                                                                            ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
+                                                                                                            : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
+                                                                                                    }`}
+                                                                                                    title={isLevelLocked ? "Unlock Level (Unlock all chapters and topics)" : "Lock Level (Lock all chapters and topics)"}
+                                                                                                >
+                                                                                                    {isLevelLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+                                                                                                </button>
+                                                                                            );
+                                                                                        })()}
                                                                                         <button
                                                                                             type="button"
                                                                                             onClick={(e) => {
@@ -711,28 +709,26 @@ export default function CurriculumTab({
                                                                                                                 {expandedStudentStatuses[`chapter-${chap.id}`] ? 'Hide' : 'Students'}
                                                                                                             </button>
                                                                                                         )}
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                handleUpdatePacingState('chapter', chap.id, 'locked');
-                                                                                                            }}
-                                                                                                            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-350 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                                            title="Lock Chapter (Lock all topics)"
-                                                                                                        >
-                                                                                                            <Lock className="size-3" />
-                                                                                                        </button>
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                handleUpdatePacingState('chapter', chap.id, 'unlocked');
-                                                                                                            }}
-                                                                                                            className="p-1 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                                            title="Unlock Chapter (Unlock all topics)"
-                                                                                                        >
-                                                                                                            <Unlock className="size-3" />
-                                                                                                        </button>
+                                                                                                        {(() => {
+                                                                                                            const isChapLocked = getIsLocked('chapter', chap.id);
+                                                                                                            return (
+                                                                                                                <button
+                                                                                                                    type="button"
+                                                                                                                    onClick={(e) => {
+                                                                                                                        e.stopPropagation();
+                                                                                                                        handleUpdatePacingState('chapter', chap.id, isChapLocked ? 'unlocked' : 'locked');
+                                                                                                                    }}
+                                                                                                                    className={`p-1 rounded-lg transition-all cursor-pointer ${
+                                                                                                                        isChapLocked
+                                                                                                                            ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
+                                                                                                                            : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
+                                                                                                                    }`}
+                                                                                                                    title={isChapLocked ? "Unlock Chapter (Unlock all topics)" : "Lock Chapter (Lock all topics)"}
+                                                                                                                >
+                                                                                                                    {isChapLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                                                                                                                </button>
+                                                                                                            );
+                                                                                                        })()}
                                                                                                         <button
                                                                                                             type="button"
                                                                                                             onClick={(e) => {
@@ -883,32 +879,26 @@ export default function CurriculumTab({
                                                                                                     <Loader2 className="size-4 animate-spin text-[#ecb613] mx-1.5" />
                                                                                                 ) : (
                                                                                                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-805 p-1 rounded-xl border border-slate-205 dark:border-slate-700/60 shadow-xs">
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                handleUpdatePacingState('topic', lesson.id, 'locked');
-                                                                                                            }}
-                                                                                                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                                                                                                pacing.isLocked ? 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-xs' : 'text-slate-400 hover:text-slate-650 hover:bg-white dark:hover:bg-slate-700'
-                                                                                                            }`}
-                                                                                                            title="Lock Topic"
-                                                                                                        >
-                                                                                                            <Lock className="size-3" />
-                                                                                                        </button>
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                handleUpdatePacingState('topic', lesson.id, 'unlocked');
-                                                                                                            }}
-                                                                                                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                                                                                                pacing.isUnlocked && !pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-[#ecb613] shadow-xs' : 'text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700'
-                                                                                                            }`}
-                                                                                                            title="Unlock Topic"
-                                                                                                        >
-                                                                                                            <Unlock className="size-3" />
-                                                                                                        </button>
+                                                                                                        {(() => {
+                                                                                                            const isTopicLocked = getIsLocked('topic', lesson.id);
+                                                                                                            return (
+                                                                                                                <button
+                                                                                                                    type="button"
+                                                                                                                    onClick={(e) => {
+                                                                                                                        e.stopPropagation();
+                                                                                                                        handleUpdatePacingState('topic', lesson.id, isTopicLocked ? 'unlocked' : 'locked');
+                                                                                                                    }}
+                                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                                        isTopicLocked
+                                                                                                                            ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
+                                                                                                                            : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
+                                                                                                                    }`}
+                                                                                                                    title={isTopicLocked ? "Unlock Topic" : "Lock Topic"}
+                                                                                                                >
+                                                                                                                    {isTopicLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                                                                                                                </button>
+                                                                                                            );
+                                                                                                        })()}
                                                                                                         <button
                                                                                                             type="button"
                                                                                                             onClick={(e) => {
