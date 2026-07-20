@@ -614,19 +614,7 @@ export default function ClassroomsPage() {
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                         <div>
                             <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">Classroom Management</h1>
-                            <p className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-2">
-                                {activeView === 'today' 
-                                    ? "Showing today's scheduled classes and sessions." 
-                                    : "Manage your active music sessions, schedules, and student enrollment."}
-                                {activeView !== 'today' && (
-                                    <button 
-                                        onClick={() => setActiveView('today')}
-                                        className="text-xs font-bold text-[#ecb613] hover:underline bg-transparent border-0 cursor-pointer ml-1"
-                                    >
-                                        Show Today's Classes
-                                    </button>
-                                )}
-                            </p>
+                            <p className="text-slate-500 dark:text-slate-400 font-medium">Manage your active music sessions, schedules, and student enrollment.</p>
                         </div>
                         {teacherProfile?.role === 'admin' && (
                             <div className="flex items-center gap-3">
@@ -642,30 +630,36 @@ export default function ClassroomsPage() {
 
                     {/* Filter Bar */}
                     <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-                        <div className="flex flex-wrap items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 w-full md:w-auto gap-1">
+                        <div className="flex overflow-x-auto scrollbar-none whitespace-nowrap bg-slate-100 dark:bg-slate-800 rounded-xl p-1 w-full md:w-auto gap-1">
                             {viewMode === 'list' ? (
                                 <>
                                     <button 
+                                        onClick={() => setActiveView('today')}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0 text-center transition-colors ${activeView === 'today' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-550 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                    >
+                                        Today's Classes
+                                    </button>
+                                    <button 
                                         onClick={() => setActiveView('permanent')}
-                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'permanent' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0 text-center transition-colors ${activeView === 'permanent' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-555 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Permanent Classes
                                     </button>
                                     <button 
                                         onClick={() => setActiveView('temporary')}
-                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'temporary' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0 text-center transition-colors ${activeView === 'temporary' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-555 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Temporary Sessions
                                     </button>
                                     <button 
                                         onClick={() => setActiveView('all')}
-                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'all' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0 text-center transition-colors ${activeView === 'all' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-555 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         All Classes
                                     </button>
                                     <button 
                                         onClick={() => setActiveView('inactive')}
-                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm flex-1 md:flex-initial text-center transition-colors ${activeView === 'inactive' ? 'bg-white dark:bg-slate-700 text-rose-605 dark:text-rose-400' : 'text-slate-550 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
+                                        className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0 text-center transition-colors ${activeView === 'inactive' ? 'bg-white dark:bg-slate-700 text-rose-605 dark:text-rose-400' : 'text-slate-555 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
                                         Inactive / Archived
                                     </button>
