@@ -404,20 +404,25 @@ export default function OverviewTab({
                                         const attendance = getStudentAttendanceRate(student.student_id, student.mock_attendance);
                                         const score = getStudentAvgScore(student.student_id, student.mock_score);
                                         
-                                        const calcValues = [realProgress];
-                                        if (submission !== null) calcValues.push(submission);
-                                        if (attendance !== null) calcValues.push(attendance);
-                                        if (score !== null) calcValues.push(score * 10);
+                                        // Status is calculated logically based on academic metrics
+                                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'Consistent';
                                         
-                                        const cumulativeAverage = Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
-                                        
-                                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'At Risk';
-                                        if (submission === null && attendance === null && score === null) {
-                                            calculatedStatus = 'Consistent';
+                                        const hasLowAttendance = attendance !== null && attendance < 75;
+                                        const hasLowSubmissions = submission !== null && submission < 60;
+                                        const hasLowScore = score !== null && score < 5.0;
+
+                                        const isBorderlineAttendance = attendance !== null && attendance >= 75 && attendance < 85;
+                                        const isBorderlineSubmissions = submission !== null && submission >= 60 && submission < 75;
+                                        const isBorderlineScore = score !== null && score >= 5.0 && score < 7.0;
+
+                                        if (hasLowAttendance || hasLowSubmissions || hasLowScore) {
+                                            calculatedStatus = 'At Risk';
+                                        } else if (isBorderlineAttendance || isBorderlineSubmissions || isBorderlineScore) {
+                                            calculatedStatus = 'Improving';
                                         } else {
-                                            if (cumulativeAverage >= 80) calculatedStatus = 'Consistent';
-                                            else if (cumulativeAverage >= 65) calculatedStatus = 'Improving';
+                                            calculatedStatus = 'Consistent';
                                         }
+                                        
                                         return (
                                             <>
                                                 <div className="flex-1 min-w-0">
@@ -432,10 +437,10 @@ export default function OverviewTab({
                                                             calculatedStatus === 'Consistent' 
                                                                 ? 'bg-emerald-500' 
                                                                 : (calculatedStatus === 'Improving' ? 'bg-[#ecb613]' : 'bg-rose-500')
-                                                        }`} style={{ width: `${cumulativeAverage}%` }}></div>
+                                                        }`} style={{ width: `${realProgress}%` }}></div>
                                                     </div>
                                                 </div>
-                                                <span className="text-xs font-bold text-slate-400 w-8 text-right shrink-0">{cumulativeAverage}%</span>
+                                                <span className="text-xs font-bold text-slate-400 w-8 text-right shrink-0">{realProgress}%</span>
                                             </>
                                         );
                                     })()}
@@ -483,20 +488,24 @@ export default function OverviewTab({
                                         const submission = getStudentSubmissionRate(student.student_id, student.level || 'Level 1', student.mock_submission);
                                         const attendance = getStudentAttendanceRate(student.student_id, student.mock_attendance);
                                         const score = getStudentAvgScore(student.student_id, student.mock_score);
+
+                                        // Status is calculated logically based on academic metrics
+                                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'Consistent';
                                         
-                                        const calcValues = [realProgress];
-                                        if (submission !== null) calcValues.push(submission);
-                                        if (attendance !== null) calcValues.push(attendance);
-                                        if (score !== null) calcValues.push(score * 10);
-                                        
-                                        const cumulativeAverage = Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
-                                        
-                                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'At Risk';
-                                        if (submission === null && attendance === null && score === null) {
-                                            calculatedStatus = 'Consistent';
+                                        const hasLowAttendance = attendance !== null && attendance < 75;
+                                        const hasLowSubmissions = submission !== null && submission < 60;
+                                        const hasLowScore = score !== null && score < 5.0;
+
+                                        const isBorderlineAttendance = attendance !== null && attendance >= 75 && attendance < 85;
+                                        const isBorderlineSubmissions = submission !== null && submission >= 60 && submission < 75;
+                                        const isBorderlineScore = score !== null && score >= 5.0 && score < 7.0;
+
+                                        if (hasLowAttendance || hasLowSubmissions || hasLowScore) {
+                                            calculatedStatus = 'At Risk';
+                                        } else if (isBorderlineAttendance || isBorderlineSubmissions || isBorderlineScore) {
+                                            calculatedStatus = 'Improving';
                                         } else {
-                                            if (cumulativeAverage >= 80) calculatedStatus = 'Consistent';
-                                            else if (cumulativeAverage >= 65) calculatedStatus = 'Improving';
+                                            calculatedStatus = 'Consistent';
                                         }
 
                                         return (
