@@ -25,6 +25,7 @@ import FeesTab from './FeesTab';
 import PoliciesTab from './PoliciesTab';
 import AcademyPolicies from '../AcademyPolicies';
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
+import BlogNotification from './BlogNotification';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
 
 interface StudentProfile {
@@ -2545,6 +2546,11 @@ export default function StudentDashboardContainer() {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* Blog Post Notification — popup on first login for new posts, then corner banner */}
+            {profile && (
+                <BlogNotification studentId={profile.id} />
             )}
         </>
     );
