@@ -76,6 +76,12 @@ export default function CurriculumTab({
 }: CurriculumTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
 
+    const isOnline = classroom?.description?.includes('[delivery_format:online]');
+    const isOffline = classroom?.description?.includes('[delivery_format:offline]');
+    const cleanDescription = classroom?.description
+        ? classroom.description.replace(/\[delivery_format:(online|offline)\]/g, '').trim()
+        : '';
+
     // Filter and search logic
     const filteredLessons = useMemo(() => {
         let base = courseLessons;
@@ -111,9 +117,21 @@ export default function CurriculumTab({
             {/* Classroom Header Summary */}
             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs flex flex-col md:flex-row justify-between gap-6">
                 <div className="space-y-2 max-w-xl text-left">
-                    <span className="bg-orange-50 border border-orange-100 text-orange-600 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">Classroom Hub</span>
+                    <div className="flex flex-wrap gap-2">
+                        <span className="bg-orange-50 border border-orange-100 text-orange-600 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">Classroom Hub</span>
+                        {isOnline && (
+                            <span className="bg-blue-50 border border-blue-100 text-blue-650 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                Online Class
+                            </span>
+                        )}
+                        {isOffline && (
+                            <span className="bg-emerald-50 border border-emerald-100 text-emerald-655 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                Offline Class
+                            </span>
+                        )}
+                    </div>
                     <h2 className="text-xl md:text-2xl font-black text-slate-900 leading-tight">{classroom?.name || 'Not Enrolled'}</h2>
-                    <p className="text-xs text-slate-500 leading-relaxed">{classroom?.description || 'Active practice batch directory. Work through dynamic syllabus modules below.'}</p>
+                    <p className="text-xs text-slate-500 leading-relaxed">{cleanDescription || 'Active practice batch directory. Work through dynamic syllabus modules below.'}</p>
                 </div>
                 <div className="border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 flex flex-col justify-center shrink-0 text-left">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Your Instructor</p>

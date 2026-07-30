@@ -1174,6 +1174,40 @@ export default function StudentDashboardContainer() {
         }
     }, []);
 
+    // Auto-mark loaded broadcasts as read in the DB for the student
+    useEffect(() => {
+        if (broadcasts.length > 0 && profile?.id) {
+            const markBroadcastsAsRead = async () => {
+                try {
+                    // Fetch existing read receipts for this student
+                    const { data: readData, error } = await supabaseAuth
+                        .from('broadcast_reads')
+                        .select('broadcast_id')
+                        .eq('user_id', profile.id);
+                    if (error) {
+                        return; // Gracefully ignore if the table is not created yet
+                    }
+                    
+                    const readIds = new Set(readData?.map((r: any) => r.broadcast_id) || []);
+                    const unreadBroadcasts = broadcasts.filter((b: any) => !readIds.has(b.id));
+                    
+                    if (unreadBroadcasts.length > 0) {
+                        const insertData = unreadBroadcasts.map((b: any) => ({
+                            broadcast_id: b.id,
+                            user_id: profile.id
+                        }));
+                        await supabaseAuth
+                            .from('broadcast_reads')
+                            .insert(insertData);
+                    }
+                } catch (e) {
+                    console.error('Failed to mark broadcasts as read in DB:', e);
+                }
+            };
+            markBroadcastsAsRead();
+        }
+    }, [broadcasts, profile?.id]);
+
     // Merged classroom session/attendance logs
     const mergedLogs = useMemo(() => {
         const logsMap = new Map<string, any>();

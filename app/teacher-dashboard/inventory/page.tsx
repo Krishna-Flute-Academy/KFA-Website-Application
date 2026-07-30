@@ -91,6 +91,10 @@ export default function InventoryLibrary() {
     // Sync Backup Widget States
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastSyncedText, setLastSyncedText] = useState('Synced just now');
+
+    // Live DB Stats
+    const [activeStudentsCount, setActiveStudentsCount] = useState(14);
+    const [studentProgressRecords, setStudentProgressRecords] = useState<{ lesson_id: string; status: string }[]>([]);
     
     // Modals & Form States
     const [activeModal, setActiveModal] = useState<'chapter' | 'lesson' | 'module' | 'category' | null>(null);
@@ -213,6 +217,28 @@ export default function InventoryLibrary() {
                     setExpandedChapters({ [firstChap.id]: true });
                 }
             }
+            
+            // Fetch live stats from remote DB
+            try {
+                const { count: studentCount } = await supabaseAuth
+                    .from('users')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('role', 'student');
+                if (studentCount !== null) {
+                    setActiveStudentsCount(studentCount);
+                }
+
+                const { data: progressRecords } = await supabaseAuth
+                    .from('student_topic_progress')
+                    .select('lesson_id, status')
+                    .eq('status', 'completed');
+                if (progressRecords) {
+                    setStudentProgressRecords(progressRecords);
+                }
+            } catch (statsErr) {
+                console.warn('Could not query stats from database:', statsErr);
+            }
+
             setIsUsingFallback(false);
         } else {
             // Tables are empty, auto-seed database from INITIAL constants
@@ -252,6 +278,8 @@ export default function InventoryLibrary() {
     // Offline interactive mode fallback using localStorage
     const enableLocalFallback = () => {
         setIsUsingFallback(true);
+        setActiveStudentsCount(14);
+        setStudentProgressRecords([]);
         const localMods = localStorage.getItem('kfa_modules');
         const localChaps = localStorage.getItem('kfa_chapters');
         const localLess = localStorage.getItem('kfa_lessons');
@@ -1116,19 +1144,96 @@ export default function InventoryLibrary() {
         });
     };
 
-    // Trigger Simulated Cloud Backup Synchronization
-    const triggerBackupSync = () => {
+    // Trigger Cloud Backup Synchronization
+    const triggerBackupSync = async () => {
         setIsSyncing(true);
-        setTimeout(() => {
-            setIsSyncing(false);
+        try {
+            // Upsert categories, modules, chapters, and lessons from local state to remote database
+            if (categories.length > 0) {
+                const { error: catErr } = await supabaseAuth
+                    .from('course_categories')
+                    .upsert(categories, { onConflict: 'id' });
+                if (catErr) throw catErr;
+            }
+
+            if (modules.length > 0) {
+                const { error: modErr } = await supabaseAuth
+                    .from('course_modules')
+                    .upsert(modules, { onConflict: 'id' });
+                if (modErr) throw modErr;
+            }
+
+            if (chapters.length > 0) {
+                const { error: chapErr } = await supabaseAuth
+                    .from('course_chapters')
+                    .upsert(chapters, { onConflict: 'id' });
+                if (chapErr) throw chapErr;
+            }
+
+            if (lessons.length > 0) {
+                const { error: lesErr } = await supabaseAuth
+                    .from('course_lessons')
+                    .upsert(lessons, { onConflict: 'id' });
+                if (lesErr) throw lesErr;
+            }
+
+            // Fetch the updated counts & stats
+            const { count: studentCount } = await supabaseAuth
+                .from('users')
+                .select('*', { count: 'exact', head: true })
+                .eq('role', 'student');
+            if (studentCount !== null) {
+                setActiveStudentsCount(studentCount);
+            }
+
+            const { data: progressRecords } = await supabaseAuth
+                .from('student_topic_progress')
+                .select('lesson_id, status')
+                .eq('status', 'completed');
+            if (progressRecords) {
+                setStudentProgressRecords(progressRecords);
+            }
+
             setLastSyncedText('Synced just now');
-        }, 1500);
+            setIsUsingFallback(false);
+            alert('Cloud Sync Complete: Remote database and local state have been successfully synchronized!');
+        } catch (err) {
+            console.error('Failed to sync to database:', err);
+            alert(`Sync Failed: ${err instanceof Error ? err.message : 'Unknown database error'}`);
+        } finally {
+            setIsSyncing(false);
+        }
     };
 
     // Computed Info
     const activeModule = modules.find(m => m.id === selectedModuleId);
     const activeModuleParsed = activeModule ? parseModuleCategory(activeModule) : null;
     const activeHeadline = activeModule ? activeModule.title : '';
+
+    // Dynamic calculations for Active Class Completion
+    const activeModuleChapters = chapters.filter(c => c.module_id === selectedModuleId);
+    const activeModuleLessons = lessons.filter(l => activeModuleChapters.some(c => c.id === l.chapter_id));
+    const activeModuleLessonIds = new Set(activeModuleLessons.map(l => l.id));
+    
+    const completedCountForActiveModule = studentProgressRecords.filter(p => activeModuleLessonIds.has(p.lesson_id)).length;
+    
+    // Check if we have live DB stats
+    const hasDbStats = !isUsingFallback && activeStudentsCount > 0;
+    const finalActiveStudentsCount = hasDbStats ? activeStudentsCount : 14;
+    
+    // Total possible completions
+    const totalPossibleCompletions = finalActiveStudentsCount * activeModuleLessons.length;
+    
+    // Calculate rate
+    const completionRate = hasDbStats && totalPossibleCompletions > 0
+        ? Math.round((completedCountForActiveModule / totalPossibleCompletions) * 100)
+        : 78; // Fallback simulation if offline or clean DB
+
+    const masteredCount = hasDbStats && finalActiveStudentsCount > 0
+        ? Math.round(completedCountForActiveModule / finalActiveStudentsCount)
+        : Math.round(activeModuleLessons.length * 0.78); // Fallback simulation (78% of active lessons)
+
+    const estimatedDbSize = `${((lessons.length * 15 + chapters.length * 5 + modules.length * 2) / 100).toFixed(1)}MB`;
     const activeBadgeText = (() => {
         if (!activeModuleParsed || !activeModule) return 'ACTIVE CURRICULUM';
         let catText = activeModuleParsed.category;
@@ -1619,7 +1724,13 @@ export default function InventoryLibrary() {
                                     {/* WIDGET A: STUDENT PROGRESS TRACKER (Animated SVG circular progress wheel) */}
                                     <div className="rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
                                         <div className="space-y-1">
-                                            <span className="text-[9px] font-black bg-emerald-500/15 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Simulated Progress</span>
+                                            <span className={`text-[9px] font-black border px-2.5 py-1 rounded-full uppercase tracking-wider leading-none ${
+                                                hasDbStats 
+                                                    ? 'bg-amber-500/15 border-amber-500/20 text-amber-600 dark:text-amber-400' 
+                                                    : 'bg-emerald-500/15 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                            }`}>
+                                                {hasDbStats ? 'Live Database Progress' : 'Simulated Progress'}
+                                            </span>
                                             <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Active Class Completion</h4>
                                         </div>
 
@@ -1630,20 +1741,20 @@ export default function InventoryLibrary() {
                                                     <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="6" fill="transparent" />
                                                     <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-[#ecb613]" strokeWidth="6" fill="transparent"
                                                             strokeDasharray={2 * Math.PI * 32}
-                                                            strokeDashoffset={2 * Math.PI * 32 * (1 - 0.78)} />
+                                                            strokeDashoffset={2 * Math.PI * 32 * (1 - (completionRate / 100))} />
                                                 </svg>
-                                                <div className="absolute font-black text-sm text-slate-900 dark:text-white leading-none font-mono">78%</div>
+                                                <div className="absolute font-black text-sm text-slate-900 dark:text-white leading-none font-mono">{completionRate}%</div>
                                             </div>
                                             <div className="text-left space-y-1">
                                                 <div className="text-[10px] text-slate-400 font-bold uppercase font-mono">Completion Rate</div>
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-medium">
-                                                    Students have mastered 24 out of 30 sequential curriculum requirements.
+                                                    Students have mastered {masteredCount} out of {activeModuleLessons.length} sequential curriculum requirements.
                                                 </p>
                                             </div>
                                         </div>
 
                                         <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono">
-                                            <span>ACTIVE STUDENTS: 14</span>
+                                            <span>ACTIVE STUDENTS: {finalActiveStudentsCount}</span>
                                             <span className="text-[#ecb613]">VIEW CLASS</span>
                                         </div>
                                     </div>
@@ -1662,7 +1773,7 @@ export default function InventoryLibrary() {
                                                 </div>
                                                 <div>
                                                     <div className="text-[10px] font-bold text-slate-400 font-mono leading-none">{lastSyncedText}</div>
-                                                    <div className="text-[9px] font-semibold text-slate-400 mt-0.5">30 Active curriculum nodes active</div>
+                                                    <div className="text-[9px] font-semibold text-slate-400 mt-0.5">{lessons.length} Active curriculum nodes active</div>
                                                 </div>
                                             </div>
                                             
@@ -1686,7 +1797,7 @@ export default function InventoryLibrary() {
                                         </div>
 
                                         <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono leading-none">
-                                            <span>DB SIZE: 1.2MB</span>
+                                            <span>DB SIZE: {estimatedDbSize}</span>
                                             <span className="text-emerald-500 uppercase font-black tracking-wide leading-none">SECURE</span>
                                         </div>
                                     </div>
