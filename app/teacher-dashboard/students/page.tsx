@@ -442,82 +442,100 @@ export default function StudentDirectory() {
                     .eq('role', 'pending')
                     .order('created_at', { ascending: false });
 
-                if (pendingData) setPendingUsers(pendingData);
-
-                // Real-time subscription to listen for new student signups instantly!
-                channel = supabaseAuth
-                    .channel('realtime-unassigned-students')
-                    .on(
-                        'postgres_changes',
-                        { event: 'INSERT', schema: 'public', table: 'users' },
-                        (payload) => {
-                            const newStudent = payload.new;
-                            if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
-                                setUnassignedStudents(prev => [{
-                                    id: newStudent.id,
-                                    user_id: newStudent.id,
-                                    name: newStudent.name,
-                                    student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
-                                    batch: 'Unassigned',
-                                    attendance_pct: 0,
-                                    profile_pic_url: newStudent.profile_pic_url,
-                                    status: newStudent.status === 'active' ? 'Active' : 'Inactive',
-                                    created_at: newStudent.created_at || new Date().toISOString(),
-                                    phone: newStudent.phone || 'No Phone'
-                                }, ...prev]);
-                            }
-                        }
-                    )
-                    .subscribe();
-
-                // Real-time: new pending signup requests
-                supabaseAuth
-                    .channel('realtime-pending-users')
-                    .on(
-                        'postgres_changes',
-                        { event: '*', schema: 'public', table: 'users' },
-                        (payload) => {
-                            const u = payload.new as any;
-                            if (payload.eventType === 'INSERT' && u?.role === 'pending') {
-                                setPendingUsers(prev => [{ id: u.id, name: u.name, email: u.email, phone: u.phone, created_at: u.created_at || new Date().toISOString() }, ...prev]);
-                            } else if (payload.eventType === 'UPDATE' && u?.role !== 'pending') {
-                                // Remove from list once admin assigns a role
-                                setPendingUsers(prev => prev.filter(p => p.id !== u.id));
-                            }
-                        }
-                    )
-                    .subscribe();
+                if (isMounted && pendingData) setPendingUsers(pendingData);
 
             } catch (err) {
                 console.error('Error fetching students:', err);
             } finally {
-                setLoading(false);
+                if (isMounted) setLoading(false);
             }
         };
 
-        let channel: any = null;
+        let isMounted = true;
+        let unassignedChannel: any = null;
+        let pendingChannel: any = null;
+        let sessionsChannel: any = null;
+
         checkAuthAndFetchData();
 
+        // Real-time subscription to listen for new student signups instantly!
+        unassignedChannel = supabaseAuth
+            .channel('realtime-unassigned-students')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'users' },
+                (payload) => {
+                    if (!isMounted) return;
+                    const newStudent = payload.new;
+                    if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
+                        setUnassignedStudents(prev => [{
+                            id: newStudent.id,
+                            user_id: newStudent.id,
+                            name: newStudent.name,
+                            student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
+                            batch: 'Unassigned',
+                            attendance_pct: 0,
+                            profile_pic_url: newStudent.profile_pic_url,
+                            status: newStudent.status === 'active' ? 'Active' : 'Inactive',
+                            created_at: newStudent.created_at || new Date().toISOString(),
+                            phone: newStudent.phone || 'No Phone'
+                        }, ...prev]);
+                    }
+                }
+            )
+            .subscribe();
+
+        // Real-time: new pending signup requests
+        pendingChannel = supabaseAuth
+            .channel('realtime-pending-users')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'users' },
+                (payload) => {
+                    if (!isMounted) return;
+                    const u = payload.new as any;
+                    if (payload.eventType === 'INSERT' && u?.role === 'pending') {
+                        setPendingUsers(prev => [{ id: u.id, name: u.name, email: u.email, phone: u.phone, created_at: u.created_at || new Date().toISOString() }, ...prev]);
+                    } else if (payload.eventType === 'UPDATE' && u?.role !== 'pending') {
+                        // Remove from list once admin assigns a role
+                        setPendingUsers(prev => prev.filter(p => p.id !== u.id));
+                    }
+                }
+            )
+            .subscribe();
+
         // Subscribe to user session changes (online/offline updates)
-        const sessionsChannel = supabaseAuth
+        sessionsChannel = supabaseAuth
             .channel('realtime-sessions-students-directory')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'user_sessions' },
                 () => {
-                    reEvaluateOnlineStatus();
+                    if (isMounted) {
+                        reEvaluateOnlineStatus();
+                    }
                 }
             )
             .subscribe();
 
         // Refresh online statuses in real-time every 30 seconds
-        const onlineCheckerTimer = setInterval(reEvaluateOnlineStatus, 30000);
+        const onlineCheckerTimer = setInterval(() => {
+            if (isMounted) {
+                reEvaluateOnlineStatus();
+            }
+        }, 30000);
 
         return () => {
-            if (channel) {
-                supabaseAuth.removeChannel(channel);
+            isMounted = false;
+            if (unassignedChannel) {
+                supabaseAuth.removeChannel(unassignedChannel);
             }
-            supabaseAuth.removeChannel(sessionsChannel);
+            if (pendingChannel) {
+                supabaseAuth.removeChannel(pendingChannel);
+            }
+            if (sessionsChannel) {
+                supabaseAuth.removeChannel(sessionsChannel);
+            }
             clearInterval(onlineCheckerTimer);
         };
     }, [router]);

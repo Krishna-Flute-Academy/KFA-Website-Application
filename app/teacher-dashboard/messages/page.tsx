@@ -2109,34 +2109,6 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                     </div>
                                 </div>
 
-                                {/* Message Type Selector */}
-                                <div className="space-y-2 border-b border-slate-100 dark:border-slate-800 pb-4">
-                                    <label className="block text-xs font-black text-slate-405 dark:text-slate-500 uppercase tracking-wide">Message Type</label>
-                                    <div className="flex gap-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMessageType('broadcast')}
-                                            className={`flex-1 py-3 px-4 rounded-xl border text-center transition-all cursor-pointer font-bold text-xs ${
-                                                messageType === 'broadcast'
-                                                    ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-955/20 dark:text-amber-400'
-                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400'
-                                            }`}
-                                        >
-                                            📣 Broadcast Announcement (No Student Reply)
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setMessageType('normal')}
-                                            className={`flex-1 py-3 px-4 rounded-xl border text-center transition-all cursor-pointer font-bold text-xs ${
-                                                messageType === 'normal'
-                                                    ? 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-955/20 dark:text-teal-400'
-                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400'
-                                            }`}
-                                        >
-                                            💬 Normal Message (Replyable in Chatbox)
-                                        </button>
-                                    </div>
-                                </div>
 
                                 <div className="grid grid-cols-12 gap-6 items-start">
                                     {/* Left inputs column: recipients */}

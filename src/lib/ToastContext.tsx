@@ -126,55 +126,56 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
     // Supabase Realtime Notifications listener (global when user is logged in)
     useEffect(() => {
+        let isMounted = true;
         let channel: any = null;
 
-        const setupRealtime = async () => {
-            try {
-                const { data: { session } } = await supabaseAuth.auth.getSession();
-                const userId = session?.user?.id;
-                if (!userId) {
-                    if (channel) {
-                        supabaseAuth.removeChannel(channel);
-                        channel = null;
-                    }
-                    return;
-                }
-
-                console.log('[Global Realtime] Subscribing to notifications for user:', userId);
-                
-                if (channel) {
-                    supabaseAuth.removeChannel(channel);
-                }
-
-                channel = supabaseAuth
-                    .channel(`global-notifications-${userId}`)
-                    .on(
-                        'postgres_changes',
-                        {
-                            event: 'INSERT',
-                            schema: 'public',
-                            table: 'notifications',
-                            filter: `user_id=eq.${userId}`
-                        },
-                        (payload) => {
-                            const newNotif = payload.new;
-                            console.log('[Global Realtime] New notification received:', newNotif);
-                            showNotificationPopup(newNotif.title || 'Academy Alert', newNotif.message || '');
-                        }
-                    )
-                    .subscribe();
-            } catch (err) {
-                console.error('Error setting up global realtime notifications:', err);
+        const handleAuthChange = (session: any) => {
+            const userId = session?.user?.id;
+            
+            // Remove existing channel if any
+            if (channel) {
+                supabaseAuth.removeChannel(channel);
+                channel = null;
             }
+
+            if (!userId) return;
+
+            console.log('[Global Realtime] Subscribing to notifications for user:', userId);
+            channel = supabaseAuth
+                .channel(`global-notifications-${userId}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: 'INSERT',
+                        schema: 'public',
+                        table: 'notifications',
+                        filter: `user_id=eq.${userId}`
+                    },
+                    (payload) => {
+                        if (!isMounted) return;
+                        const newNotif = payload.new;
+                        console.log('[Global Realtime] New notification received:', newNotif);
+                        showNotificationPopup(newNotif.title || 'Academy Alert', newNotif.message || '');
+                    }
+                )
+                .subscribe();
         };
 
-        setupRealtime();
+        // Get initial session and setup synchronously/safely
+        supabaseAuth.auth.getSession().then(({ data: { session } }) => {
+            if (isMounted) {
+                handleAuthChange(session);
+            }
+        });
 
         const { data: { subscription } } = supabaseAuth.auth.onAuthStateChange((event, session) => {
-            setupRealtime();
+            if (isMounted) {
+                handleAuthChange(session);
+            }
         });
 
         return () => {
+            isMounted = false;
             subscription.unsubscribe();
             if (channel) {
                 supabaseAuth.removeChannel(channel);

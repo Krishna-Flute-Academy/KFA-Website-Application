@@ -76,7 +76,7 @@ export async function POST(req: Request) {
 
         // Initialize Supabase database client dynamically with the user's token so queries run with RLS context of the teacher/admin,
         // or bypass RLS if the system service role key is available.
-        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_AUTH_SUPABASE_SERVICE_ROLE_KEY;
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
         const supabase = serviceRoleKey 
             ? createClient(supabaseAuthUrl, serviceRoleKey, { auth: { persistSession: false } })
             : createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
