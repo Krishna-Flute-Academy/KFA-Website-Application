@@ -66,6 +66,7 @@ interface EnrichedAssignment {
 interface ClassroomInfo {
     id: string;
     name: string;
+    type?: string;
     teacher_id?: string;
     teacher_name?: string;
     teacher_email?: string;
@@ -1666,22 +1667,51 @@ export default function StudentDashboardContainer() {
             return;
         }
 
-        // Rule check: at least 1 day before the class date
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const selectedClassDate = new Date(dateStr);
-        selectedClassDate.setHours(0, 0, 0, 0);
+        // Rule check: strictly 24 hours before the scheduled class time
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const selectedClassDate = new Date(year, month - 1, day);
+        const dayOfWeek = selectedClassDate.getDay();
 
-        const diffTime = selectedClassDate.getTime() - today.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays < 1) {
-            alert('Leaves must be requested at least 1 day in advance. For same-day or past absences, please contact your teacher directly.');
-            return;
-        }
-
+        let classStartTime = '09:00:00'; // Default fallback
         setIsSubmittingExcuse(true);
+
+        try {
+            if (classroom.type === 'temporary') {
+                const { data: tempClass } = await supabaseAuth
+                    .from('temporary_classes')
+                    .select('start_time')
+                    .eq('id', classroom.id)
+                    .maybeSingle();
+                if (tempClass?.start_time) {
+                    classStartTime = tempClass.start_time;
+                }
+            } else {
+                const { data: scheds } = await supabaseAuth
+                    .from('batch_schedules')
+                    .select('start_time')
+                    .eq('classroom_id', classroom.id)
+                    .eq('day_of_week', dayOfWeek);
+                if (scheds && scheds.length > 0) {
+                    scheds.sort((a, b) => a.start_time.localeCompare(b.start_time));
+                    classStartTime = scheds[0].start_time;
+                }
+            }
+
+            const [hours, minutes] = classStartTime.split(':').map(Number);
+            selectedClassDate.setHours(hours, minutes || 0, 0, 0);
+
+            const now = new Date();
+            const diffMs = selectedClassDate.getTime() - now.getTime();
+            const diffHours = diffMs / (1000 * 60 * 60);
+
+            if (diffHours < 24) {
+                alert('Leaves must be requested at least 24 hours before the scheduled class time. For same-day or urgent absences, please contact your teacher or admin directly.');
+                setIsSubmittingExcuse(false);
+                return;
+            }
+        } catch (err) {
+            console.error('Error validating class schedule timing:', err);
+        }
 
         try {
             // Insert leave request
@@ -2177,6 +2207,7 @@ export default function StudentDashboardContainer() {
                                         bannerType = 'warning';
                                         bannerTitle = 'Reminder: 1 Class Remaining';
                                         bannerMessage = 'You have exactly 1 class left in your balance. Please pay your fees soon to ensure you can continue.';
+                                        showButton = false;
                                     } else if (feeStatus.status === 'upcoming') {
                                         bannerType = 'upcoming';
                                         bannerTitle = 'Upcoming Fee Payment';

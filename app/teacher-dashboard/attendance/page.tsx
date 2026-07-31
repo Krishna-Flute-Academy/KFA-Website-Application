@@ -189,7 +189,8 @@ export default function AttendancePage() {
     }, []);
     const initialToDate = useMemo(() => {
         const d = new Date();
-        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        // Set default to end of next month so future excused leaves are visible for scheduling makeups
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0);
         const year = lastDay.getFullYear();
         const month = String(lastDay.getMonth() + 1).padStart(2, '0');
         const day = String(lastDay.getDate()).padStart(2, '0');
@@ -265,7 +266,6 @@ export default function AttendancePage() {
                 
                 const loadedClassrooms = classesData || [];
                 setClassrooms(loadedClassrooms);
-                fetchLeaveRequests(loadedClassrooms);
 
                 // 2. Fetch all batch schedules in parallel
                 if (loadedClassrooms.length > 0) {
@@ -556,7 +556,14 @@ export default function AttendancePage() {
         } finally {
             setLeavesLoading(false);
         }
-    }, [classrooms]);
+    }, [classrooms, teacherProfile]);
+
+    // Fetch leave requests when teacherProfile or classrooms load
+    useEffect(() => {
+        if (teacherProfile) {
+            fetchLeaveRequests();
+        }
+    }, [teacherProfile, fetchLeaveRequests]);
 
     const handleApproveLeave = async (request: any) => {
         if (!teacherProfile) return;

@@ -190,7 +190,7 @@ export default function ClassroomDashboardPage({
 
     // Fetch broadcasts for this class & listen to real-time updates
     useEffect(() => {
-        if (!teacherProfile || !classroomId) return;
+        if (!teacherProfile?.id || !classroomId) return;
         
         const fetchClassroomBroadcasts = async () => {
             try {
@@ -224,7 +224,7 @@ export default function ClassroomDashboardPage({
         return () => {
             supabaseAuth.removeChannel(channel);
         };
-    }, [teacherProfile, classroomId]);
+    }, [teacherProfile?.id, classroomId]);
 
     const fetchClassroomMessages = useCallback(async () => {
         if (!classroomId) return;
@@ -243,7 +243,7 @@ export default function ClassroomDashboardPage({
     }, [classroomId]);
 
     useEffect(() => {
-        if (!teacherProfile || !classroomId) return;
+        if (!teacherProfile?.id || !classroomId) return;
 
         fetchClassroomMessages();
 
@@ -270,7 +270,7 @@ export default function ClassroomDashboardPage({
         return () => {
             supabaseAuth.removeChannel(channel);
         };
-    }, [teacherProfile, classroomId, fetchClassroomMessages]);
+    }, [teacherProfile?.id, classroomId, fetchClassroomMessages]);
 
     const handleSendClassroomChatMessage = async (messageText: string) => {
         if (!teacherProfile?.id || !classroomId || !messageText.trim()) return;
