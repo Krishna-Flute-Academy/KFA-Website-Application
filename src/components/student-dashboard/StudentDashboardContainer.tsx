@@ -8,7 +8,7 @@ import {
     Clock, Video, Play, Music, Award, Users, Search, PlayCircle, 
     Send, X, ClipboardList, Info, BarChart2, Plus, Volume2, 
     HelpCircle, ChevronRight, Download, LogOut, Check, Menu,
-    Sparkles, AlertTriangle, CreditCard, Scroll
+    Sparkles, AlertTriangle, CreditCard, Scroll, User
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -24,6 +24,7 @@ import ClassroomTab from './ClassroomTab';
 import FeesTab from './FeesTab';
 import PoliciesTab from './PoliciesTab';
 import AcademyPolicies from '../AcademyPolicies';
+import SettingsTab from './SettingsTab';
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import BlogNotification from './BlogNotification';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
@@ -32,6 +33,7 @@ interface StudentProfile {
     id: string;
     name: string;
     email: string;
+    phone?: string | null;
     level?: string;
     profile_pic_url?: string;
     role?: string;
@@ -223,7 +225,7 @@ export default function StudentDashboardContainer() {
         );
     }, [courseModules, allocatedModuleIds, courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees' | 'policies'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees' | 'policies' | 'settings'>('overview');
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>('metronome');
@@ -390,7 +392,7 @@ export default function StudentDashboardContainer() {
                 adminsRes
             ] = await Promise.all([
                 // 1. Profile
-                supabaseAuth.from('users').select('id, name, email, level, profile_pic_url, role, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date').eq('id', userId).maybeSingle(),
+                supabaseAuth.from('users').select('id, name, email, phone, level, profile_pic_url, role, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date').eq('id', userId).maybeSingle(),
                 
                 // 2. Payments
                 supabaseAuth.from('fees_payments').select('*').eq('student_id', userId).order('payment_date', { ascending: false }),
@@ -1949,6 +1951,7 @@ export default function StudentDashboardContainer() {
                             { id: 'library', label: 'Tools', icon: FileText },
                             { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
                             { id: 'policies', label: 'Academy Policies', icon: Scroll },
+                            { id: 'settings', label: 'Profile Settings', icon: User },
                         ].map((item) => {
                             const Icon = item.icon;
                             const active = activeTab === item.id;
@@ -2017,7 +2020,7 @@ export default function StudentDashboardContainer() {
                                 <Music className="w-5 h-5" />
                             </div>
                             <h2 className="text-[#3E3A35] font-extrabold tracking-tight capitalize text-sm md:text-base">
-                                {activeTab === 'library' ? 'Tools' : activeTab === 'tasks' ? 'Tasks & Submissions' : activeTab}
+                                {activeTab === 'library' ? 'Tools' : activeTab === 'tasks' ? 'Tasks & Submissions' : activeTab === 'settings' ? 'Profile Settings' : activeTab}
                             </h2>
                         </div>
 
@@ -2396,6 +2399,12 @@ export default function StudentDashboardContainer() {
                         {(renderBackgroundTabs || activeTab === 'policies') && (
                             <div style={{ display: activeTab === 'policies' ? 'block' : 'none' }}>
                                 <AcademyPolicies />
+                            </div>
+                        )}
+
+                        {(renderBackgroundTabs || activeTab === 'settings') && (
+                            <div style={{ display: activeTab === 'settings' ? 'block' : 'none' }}>
+                                <SettingsTab profile={profile} refreshData={refreshData} />
                             </div>
                         )}
                     </main>

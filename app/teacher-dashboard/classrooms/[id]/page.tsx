@@ -254,11 +254,15 @@ export default function ClassroomDashboardPage({
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'classroom_messages',
-                    filter: `classroom_id=eq.${classroomId}`
+                    table: 'classroom_messages'
                 },
-                () => {
-                    fetchClassroomMessages();
+                (payload) => {
+                    const newMsg = payload.new as any;
+                    const oldMsg = payload.old as any;
+                    const targetRoomId = newMsg?.classroom_id || oldMsg?.classroom_id;
+                    if (targetRoomId === classroomId) {
+                        fetchClassroomMessages();
+                    }
                 }
             )
             .subscribe();
@@ -2303,11 +2307,17 @@ export default function ClassroomDashboardPage({
                 }
             });
 
-            // Map progress status
+            // Map progress status and include implicit progress
             const progressMap = new Map<string, string>();
             studentProgress.forEach(p => {
                 if (p.student_id === studentId) {
                     progressMap.set(p.lesson_id, p.status);
+                    if (p.status === 'completed') {
+                        completed.add(p.lesson_id);
+                        unlocked.add(p.lesson_id);
+                    } else if (p.status === 'unlocked') {
+                        unlocked.add(p.lesson_id);
+                    }
                 }
             });
 
@@ -2637,19 +2647,27 @@ export default function ClassroomDashboardPage({
     }, [allocatedInventoryItems, courseChapters, courseLessons, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress]);
 
     const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
-        if (syllabusLessons.length === 0) return defaultMockVal;
-        const completedCount = syllabusLessons.filter(lesson => {
+        const studentUnlockedLessons = syllabusLessons.filter(lesson => {
+            const row = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lesson.id);
+            return row && row.status !== 'locked';
+        });
+
+        if (studentUnlockedLessons.length === 0) return 0;
+
+        const completedCount = studentUnlockedLessons.filter(lesson => {
             const row = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lesson.id);
             return row && row.status === 'completed';
         }).length;
-        return Math.round((completedCount / syllabusLessons.length) * 100);
+
+        return Math.round((completedCount / studentUnlockedLessons.length) * 100);
     }, [syllabusLessons, studentProgress]);
 
     const livePreviewData = useMemo(() => {
         if (!selectedStudentForCurriculum) return null;
 
-        const totalLessons = syllabusLessons.length;
-        const completedCount = syllabusLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length;
+        const unlockedLessons = syllabusLessons.filter(l => selectedStudentPermissions.unlockedLessons.has(l.id));
+        const totalLessons = unlockedLessons.length;
+        const completedCount = unlockedLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length;
         const progressPercentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
 
         const currentlyLearning = syllabusLessons.find(l => 

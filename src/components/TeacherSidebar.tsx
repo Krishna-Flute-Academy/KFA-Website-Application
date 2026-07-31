@@ -439,6 +439,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         ...(userRole === 'admin' ? [{ name: 'Role Allocation', icon: 'manage_accounts', href: `${basePath}/role-allocation` }] : []),
         ...(userRole === 'admin' ? [{ name: 'Login Sessions', icon: 'history', href: `${basePath}/sessions` }] : []),
         { name: 'Academy Policies', icon: 'policy', href: `${basePath}/policies` },
+        { name: 'Profile Settings', icon: 'settings', href: `${basePath}/settings` },
     ];
 
     const handleLogoutWithClear = () => {

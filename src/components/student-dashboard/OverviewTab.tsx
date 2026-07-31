@@ -152,12 +152,17 @@ export default function OverviewTab({
         ]);
         const allocatedLessonsList = courseLessons.filter(l => allocatedLessonIds.has(l.id));
 
-        if (allocatedLessonsList.length === 0) return 0;
-        const completedCount = allocatedLessonsList.filter(lesson => {
+        const unlockedLessonsList = allocatedLessonsList.filter(lesson => {
+            const prog = studentProgress.find(p => p.lesson_id === lesson.id);
+            return prog && prog.status !== 'locked';
+        });
+
+        if (unlockedLessonsList.length === 0) return 0;
+        const completedCount = unlockedLessonsList.filter(lesson => {
             const prog = studentProgress.find(p => p.lesson_id === lesson.id);
             return prog && prog.status === 'completed';
         }).length;
-        return Math.round((completedCount / allocatedLessonsList.length) * 100);
+        return Math.round((completedCount / unlockedLessonsList.length) * 100);
     }, [studentAllocations, courseLessons, courseChapters, studentProgress]);
 
     const taskSubmissionRate = React.useMemo(() => {
