@@ -317,13 +317,31 @@ export default function StudentDashboardContainer() {
     };
 
     const requestPushPermission = async () => {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+            if (Notification.permission === 'denied') {
+                alert('Notifications are blocked by your browser settings. Please enable them in your browser/device settings to receive alerts.');
+                return;
+            }
+        }
+
         if ('Notification' in window && 'serviceWorker' in navigator && profile?.id) {
             try {
                 const permission = await Notification.requestPermission();
                 setPushPermission(permission === 'granted');
                 if (permission === 'granted') {
-                    const registration = await navigator.serviceWorker.ready;
-                    await subscribeToWebPush(registration, profile.id);
+                    let registration: ServiceWorkerRegistration | undefined;
+                    try {
+                        registration = await Promise.race([
+                            navigator.serviceWorker.ready,
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('SW Ready Timeout')), 3000))
+                        ]) as ServiceWorkerRegistration;
+                    } catch (e) {
+                        console.warn('[Web Push] SW ready timeout, trying direct registration:', e);
+                        registration = await navigator.serviceWorker.register('/sw.js');
+                    }
+                    if (registration) {
+                        await subscribeToWebPush(registration, profile.id);
+                    }
                 }
             } catch (e) {
                 console.error('Error requesting notification permission:', e);
@@ -748,16 +766,12 @@ export default function StudentDashboardContainer() {
         init();
     }, []);
 
-    // Check and request default notifications permission
+    // Check and update notification permission status on mount
     useEffect(() => {
         if (typeof window !== 'undefined' && 'Notification' in window) {
-            if (Notification.permission === 'default') {
-                Notification.requestPermission().then(permission => {
-                    setPushPermission(permission === 'granted');
-                });
-            } else {
-                setPushPermission(Notification.permission === 'granted');
-            }
+            setPushPermission(Notification.permission === 'granted');
+        } else {
+            setPushPermission(false);
         }
     }, []);
 
@@ -954,6 +968,11 @@ export default function StudentDashboardContainer() {
                                             ));
                                         }
                                     });
+
+                                // Trigger refreshData to fetch the new notification and keep counts in-sync
+                                setTimeout(() => {
+                                    if (refreshDataRef.current) refreshDataRef.current();
+                                }, 500);
                             }
                         } else if (payload.eventType === 'UPDATE' && newMsg) {
                             setDirectMessages(prev => prev.map(m => m.id === newMsg.id ? { ...m, ...newMsg } : m));
@@ -1823,8 +1842,19 @@ export default function StudentDashboardContainer() {
     }, [broadcasts, dismissedAdminBroadcasts]);
 
     const unreadMessageCount = useMemo(() => {
-        return notifications.filter(n => !n.is_read && (n.type === 'messages' || n.type === 'reminder')).length;
-    }, [notifications]);
+        return notifications.filter(n => {
+            if (n.is_read) return false;
+            
+            // Check if it matches an active broadcast announcement
+            const matchesBroadcast = broadcasts.some(b => n.title === b.subject || n.message === b.content);
+            if (matchesBroadcast) return true;
+
+            // Check if it is a direct chat message (messages type and doesn't match a broadcast)
+            if (n.type === 'messages' && !matchesBroadcast) return true;
+
+            return false;
+        }).length;
+    }, [notifications, broadcasts]);
 
     if (loading) {
         return (
@@ -2313,17 +2343,18 @@ export default function StudentDashboardContainer() {
                             <div style={{ display: activeTab === 'messages' ? 'block' : 'none' }}>
                                 <MessagesTab 
                                     broadcasts={broadcasts}
-                                playVoiceNote={playVoiceNote}
-                                playingAudioId={playingAudioId}
-                                classroom={classroom}
-                                classmates={classmates}
-                                directMessages={directMessages}
-                                onSendDirectMessage={handleSendDirectMessage}
-                                profile={profile}
-                                admins={admins}
-                                notifications={notifications}
-                            />
-                        </div>
+                                    playVoiceNote={playVoiceNote}
+                                    playingAudioId={playingAudioId}
+                                    classroom={classroom}
+                                    classmates={classmates}
+                                    directMessages={directMessages}
+                                    onSendDirectMessage={handleSendDirectMessage}
+                                    profile={profile}
+                                    admins={admins}
+                                    notifications={notifications}
+                                    setNotifications={setNotifications}
+                                />
+                            </div>
                         )}
 
                         {(renderBackgroundTabs || activeTab === 'attendance') && (

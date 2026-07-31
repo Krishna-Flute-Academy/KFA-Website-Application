@@ -48,6 +48,7 @@ interface MessagesTabProps {
     profile: StudentProfile | null;
     admins?: any[];
     notifications?: any[];
+    setNotifications?: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 export default function MessagesTab({
@@ -60,7 +61,8 @@ export default function MessagesTab({
     onSendDirectMessage,
     profile,
     admins = [],
-    notifications = []
+    notifications = [],
+    setNotifications
 }: MessagesTabProps) {
     // Selection state: can be a category id or a contact object
     const [selectedFeed, setSelectedFeed] = useState<{ type: 'category' | 'chat'; id: string; name: string }>(
@@ -112,6 +114,12 @@ export default function MessagesTab({
                             .update({ is_read: true })
                             .in('id', contactNotifs.map(n => n.id));
                         if (notifError) throw notifError;
+
+                        if (setNotifications) {
+                            setNotifications(prev => prev.map(n => 
+                                contactNotifs.some(cn => cn.id === n.id) ? { ...n, is_read: true } : n
+                            ));
+                        }
                     }
                 } catch (e) {
                     console.error('Failed to mark student messages & notifications as read:', e);
@@ -155,6 +163,12 @@ export default function MessagesTab({
                             .update({ is_read: true })
                             .in('id', matchingNotifs.map(n => n.id));
                         if (error) throw error;
+
+                        if (setNotifications) {
+                            setNotifications(prev => prev.map(n => 
+                                matchingNotifs.some(mn => mn.id === n.id) ? { ...n, is_read: true } : n
+                            ));
+                        }
                     }
                 } catch (e) {
                     console.error('Failed to mark category notifications as read:', e);
@@ -184,15 +198,20 @@ export default function MessagesTab({
     const teacherName = classroom?.teacher_name || 'Academy Instructor';
     const showTeacherInSearch = leftSearch === '' || teacherName.toLowerCase().includes(leftSearch.toLowerCase());
 
-    const messageNotifications = useMemo(() => {
-        return notifications
-            .filter(n => n.type === 'messages')
-            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }, [notifications]);
-
     const unreadMessageNotifications = useMemo(() => {
-        return messageNotifications.filter(n => !n.is_read);
-    }, [messageNotifications]);
+        return notifications.filter(n => {
+            if (n.is_read) return false;
+            
+            // Check if it matches an active broadcast announcement
+            const matchesBroadcast = broadcasts.some(b => n.title === b.subject || n.message === b.content);
+            if (matchesBroadcast) return true;
+
+            // Check if it is a direct chat message (messages type and doesn't match a broadcast)
+            if (n.type === 'messages' && !matchesBroadcast) return true;
+
+            return false;
+        });
+    }, [notifications, broadcasts]);
 
     const contactDirectory = useMemo(() => {
         const contacts: Array<{ id: string; name: string }> = [];
@@ -209,6 +228,7 @@ export default function MessagesTab({
 
     const getUnreadCountForContact = (contactId: string, contactName: string) => {
         return unreadMessageNotifications.filter(n => {
+            if (n.type !== 'messages') return false;
             const contact = getNotificationContact(n);
             if (contact?.id) return contact.id === contactId;
             return String(n.title || '').toLowerCase().includes(contactName.toLowerCase());
