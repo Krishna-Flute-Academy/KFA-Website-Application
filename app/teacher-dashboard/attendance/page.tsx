@@ -1415,7 +1415,7 @@ export default function AttendancePage() {
         <div className="bg-[#f8f8f6] dark:bg-[#221d10] text-[#0f172a] dark:text-slate-100 min-h-screen flex font-sans">
             <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-            <main className="flex-1 flex flex-col min-w-0">
+            <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                 <TeacherHeader 
                     title="Attendance" 
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}

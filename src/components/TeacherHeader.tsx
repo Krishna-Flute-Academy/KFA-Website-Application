@@ -116,11 +116,9 @@ export default function TeacherHeader({
         }
     };
 
-    const unreadCount = notifications.filter(n => !n.is_read).length;
-
-    return (
-        <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
-            <div className="w-full h-full flex items-center justify-between px-4 md:px-8">
+    const unreadCount = notifications.filter(n => !n.is_read).length;    return (
+        <header className="min-h-16 h-auto md:h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 flex flex-col justify-center">
+            <div className="w-full h-16 flex items-center justify-between px-4 md:px-8">
                 <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
                     <button
                         onClick={() => window.dispatchEvent(new CustomEvent('kfa-toggle-sidebar'))}
@@ -140,19 +138,19 @@ export default function TeacherHeader({
                     )}
                     <h2 className="text-base md:text-lg font-bold tracking-tight text-slate-800 dark:text-white shrink-0 truncate max-w-[120px] sm:max-w-none">{title}</h2>
                     {onSearchChange && (
-                        <>
-                            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1 md:mx-2 shrink-0"></div>
-                            <div className="relative group max-w-xs sm:max-w-md w-full">
+                        <div className="hidden md:flex items-center flex-1 max-w-xs sm:max-w-md w-full">
+                            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-2 shrink-0"></div>
+                            <div className="relative group w-full">
                                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl group-focus-within:text-[#ecb613] select-none">search</span>
                                 <input
-                                    className="bg-slate-100 dark:bg-slate-800 border-none rounded-lg pl-10 pr-4 py-1.5 text-xs sm:text-sm w-full focus:ring-2 focus:ring-[#ecb613]/20 transition-all outline-none text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500"
+                                    className="bg-slate-100 dark:bg-slate-800 border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-full focus:ring-2 focus:ring-[#ecb613]/20 transition-all outline-none text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500"
                                     placeholder={placeholder}
                                     type="text"
                                     value={searchQuery ?? ''}
                                     onChange={(e) => onSearchChange(e.target.value)}
                                 />
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
                 <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-2 sm:ml-4">
@@ -218,7 +216,7 @@ export default function TeacherHeader({
                                             >
                                                 <div className="flex justify-between items-start gap-1">
                                                     <span className={`text-xs text-slate-800 dark:text-slate-200 ${!notif.is_read ? 'font-bold' : ''}`}>{notif.title}</span>
-                                                    <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
+                                                    <span className="text-[10px] text-slate-450 dark:text-slate-500 shrink-0">
                                                         {new Date(notif.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                                                     </span>
                                                 </div>
@@ -250,6 +248,22 @@ export default function TeacherHeader({
                     )}
                 </div>
             </div>
+
+            {/* Mobile Search Input Row */}
+            {onSearchChange && (
+                <div className="px-4 pb-3 pt-1 md:hidden w-full border-t border-slate-100 dark:border-slate-800/50 bg-white/50 dark:bg-slate-900/50">
+                    <div className="relative group w-full">
+                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg group-focus-within:text-[#ecb613] select-none">search</span>
+                        <input
+                            className="bg-slate-100 dark:bg-slate-800 border-none rounded-lg pl-9 pr-4 py-1.5 text-xs w-full focus:ring-2 focus:ring-[#ecb613]/20 transition-all outline-none text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500"
+                            placeholder={placeholder}
+                            type="text"
+                            value={searchQuery ?? ''}
+                            onChange={(e) => onSearchChange(e.target.value)}
+                        />
+                    </div>
+                </div>
+            )}
         </header>
     );
 }

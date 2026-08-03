@@ -1698,7 +1698,7 @@ export default function TaskReviewPage() {
                         </header>
 
                         {/* Filter Tabs */}
-                        <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm flex-wrap">
+                        <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
                             {tabConfig.map(tab => {
                                 const count = tab.id === 'all'
                                     ? new Set(submissions.map(s => s.task_id)).size
@@ -1713,7 +1713,7 @@ export default function TaskReviewPage() {
                                     <button
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id)}
-                                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all shrink-0 snap-start ${
                                             isActive
                                                 ? 'bg-[#ecb613] text-slate-900 shadow-sm'
                                                 : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'

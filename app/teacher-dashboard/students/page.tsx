@@ -1499,125 +1499,139 @@ export default function StudentDirectory() {
                                 )}
 
                                 <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                    <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/50">
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-800">
+                                    <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-800/50">
+                                        {/* Row 1: Filter tabs and export button */}
+                                        <div className="flex items-center justify-between gap-3 w-full">
+                                            <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-850 overflow-x-auto scrollbar-none snap-x flex-1 max-w-sm sm:flex-initial">
                                                 <button 
                                                     onClick={() => setFilterMode('all')}
-                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>All Students</button>
+                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>All Students</button>
                                                 <button 
                                                     onClick={() => setFilterMode('recent')}
-                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'recent' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Recent</button>
+                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'recent' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Recent</button>
                                                 {teacherProfile && (
                                                     <button 
                                                         onClick={() => setFilterMode('unassigned')}
-                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({allUnassignedStudents.length})</button>
+                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({allUnassignedStudents.length})</button>
                                                 )}
                                             </div>
-                                            {filterMode !== 'unassigned' && (
-                                                <>
-                                                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                                            <button 
+                                                onClick={handleExportCSV}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-all focus:ring-2 focus:ring-[#ecb613]/50 shrink-0">
+                                                <span className="material-symbols-outlined text-lg">download</span>
+                                                <span className="hidden sm:inline">Export</span>
+                                            </button>
+                                        </div>
+
+                                        {/* Row 2: Selectors (only visible when not viewing unassigned) */}
+                                        {filterMode !== 'unassigned' && (
+                                            <div className="grid grid-cols-2 gap-3 w-full sm:flex sm:items-center sm:w-auto">
+                                                <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 shadow-xs flex items-center justify-between">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase select-none mr-2">Batch:</span>
                                                     <select 
                                                         value={selectedBatch} 
                                                         onChange={(e) => setSelectedBatch(e.target.value)} 
-                                                        className="text-sm font-medium bg-transparent border-none focus:ring-0 text-slate-600 dark:text-slate-400 py-1 pl-1 pr-8 cursor-pointer">
+                                                        className="text-xs font-bold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 py-1 pl-1 pr-6 cursor-pointer flex-1 outline-none">
                                                         <option value="All Batches">All Batches</option>
                                                         {availableBatches.map(batch => (
                                                             <option key={batch} value={batch}>{batch}</option>
                                                         ))}
                                                         <option value="Unassigned">Unassigned</option>
                                                     </select>
-                                                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                                                </div>
+                                                <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 shadow-xs flex items-center justify-between">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase select-none mr-2">Status:</span>
                                                     <select 
                                                         value={statusFilter} 
                                                         onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')} 
-                                                        className="text-sm font-medium bg-transparent border-none focus:ring-0 text-slate-600 dark:text-slate-400 py-1 pl-1 pr-8 cursor-pointer">
+                                                        className="text-xs font-bold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 py-1 pl-1 pr-6 cursor-pointer flex-1 outline-none">
                                                         <option value="all">All Status</option>
                                                         <option value="active">Active Only</option>
                                                         <option value="inactive">Inactive Only</option>
                                                     </select>
-                                                </>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <button 
-                                                onClick={handleExportCSV}
-                                                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-all focus:ring-2 focus:ring-[#ecb613]/50">
-                                                <span className="material-symbols-outlined text-lg">download</span>
-                                                Export
-                                            </button>
-                                        </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                             {/* Mobile Cards View */}
                                             <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
                                                 {paginatedStudents.map((student) => (
-                                                    <div key={student.id} className={`p-4 space-y-3 ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3">
-                                                                {filterMode !== 'unassigned' && (
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={selectedIds.has(student.id)}
-                                                                        onChange={() => toggleSelectStudent(student.id)}
-                                                                        className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
-                                                                    />
-                                                                )}
-                                                                <div className="relative shrink-0">
-                                                                    <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
-                                                                        {student.profile_pic_url ? (
-                                                                            <img 
-                                                                                src={student.profile_pic_url} 
-                                                                                alt={student.name} 
-                                                                                className="w-full h-full object-cover rounded-full"
-                                                                                loading="lazy"
+                                                    <div key={student.id} className={`p-4 space-y-3 relative hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
+                                                        {/* Clickable Card Body linking to student profile */}
+                                                        <Link href={`/teacher-dashboard/students/${student.id}`} className="block space-y-3 cursor-pointer">
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-3">
+                                                                    {/* Checkbox (stop propagation to not trigger Link click) */}
+                                                                    {filterMode !== 'unassigned' && (
+                                                                        <div onClick={(e) => e.stopPropagation()} className="flex items-center">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={selectedIds.has(student.id)}
+                                                                                onChange={() => toggleSelectStudent(student.id)}
+                                                                                className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
                                                                             />
-                                                                        ) : (
-                                                                            <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="relative shrink-0">
+                                                                        <div className="size-11 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
+                                                                            {student.profile_pic_url ? (
+                                                                                <img 
+                                                                                    src={student.profile_pic_url} 
+                                                                                    alt={student.name} 
+                                                                                    className="w-full h-full object-cover rounded-full"
+                                                                                    loading="lazy"
+                                                                                />
+                                                                            ) : (
+                                                                                <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                            )}
+                                                                        </div>
+                                                                        {student.is_online && (
+                                                                            <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
                                                                         )}
                                                                     </div>
-                                                                    {student.is_online && (
-                                                                        <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
-                                                                    )}
+                                                                    <div>
+                                                                        <span className="text-sm font-black text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">{student.name}</span>
+                                                                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight mt-0.5">{student.student_id_formatted}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                                                    student.pacing_status === 'Consistent'
+                                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                        : student.pacing_status === 'Improving'
+                                                                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                                            : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+                                                                }`}>
+                                                                    {student.pacing_status || 'Consistent'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+                                                                <div>
+                                                                    <span className="font-bold text-slate-400 mr-1 text-[10px] uppercase">Batch:</span> 
+                                                                    <span className="font-semibold text-slate-700 dark:text-slate-350">{student.batch}</span>
                                                                 </div>
                                                                 <div>
-                                                                    <Link
-                                                                        href={`/teacher-dashboard/students/${student.id}`}
-                                                                        className="text-sm font-bold text-slate-900 dark:text-white hover:text-[#ecb613] transition-colors"
-                                                                    >
-                                                                        {student.name}
-                                                                    </Link>
-                                                                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-tight">{student.student_id_formatted}</p>
+                                                                    <span className="font-bold text-slate-400 mr-1 text-[10px] uppercase">Attendance:</span> 
+                                                                    <span className={`font-black ${student.attendance_pct >= 85 ? 'text-emerald-600' : student.attendance_pct >= 70 ? 'text-amber-500' : 'text-rose-500'}`}>{student.attendance_pct}%</span>
                                                                 </div>
                                                             </div>
-                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                                                student.pacing_status === 'Consistent'
-                                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                                                    : student.pacing_status === 'Improving'
-                                                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                                                                        : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-                                                            }`}>
-                                                                {student.pacing_status || 'Consistent'}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-                                                            <div>
-                                                                <span className="font-bold">Batch:</span> {student.batch}
+                                                            {teacherProfile?.role === 'admin' && student.teacher_name && (
+                                                                <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                                                                    <span className="font-bold text-slate-400 mr-1 text-[10px] uppercase">Teacher:</span> 
+                                                                    <span className="font-semibold text-slate-700 dark:text-slate-350">{student.teacher_name}</span>
+                                                                </div>
+                                                            )}
+                                                        </Link>
+
+                                                        {/* Actions row */}
+                                                        <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                                                            <div className="text-[10px] text-slate-450 dark:text-slate-550 font-bold uppercase tracking-wider">
+                                                                Quick Actions
                                                             </div>
-                                                            <div>
-                                                                <span className="font-bold">Attendance:</span> {student.attendance_pct}%
-                                                            </div>
-                                                        </div>
-                                                        {teacherProfile?.role === 'admin' && student.teacher_name && (
-                                                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                                                <span className="font-bold">Teacher:</span> {student.teacher_name}
-                                                            </div>
-                                                        )}
-                                                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                                                             {filterMode === 'unassigned' ? (
                                                                 <button
                                                                     onClick={() => setShowClaimModal(student)}
-                                                                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                                                                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
                                                                 >
                                                                     <span className="material-symbols-outlined text-sm">person_add</span>
                                                                     Claim Student
@@ -1626,22 +1640,24 @@ export default function StudentDirectory() {
                                                                 <div className="flex gap-2">
                                                                     <Link
                                                                         href={`/teacher-dashboard/students/${student.id}`}
-                                                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                                        className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-650 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold flex items-center gap-1"
                                                                         title="View Details"
                                                                     >
                                                                         <span className="material-symbols-outlined text-base">visibility</span>
+                                                                        View Profile
                                                                     </Link>
                                                                     <Link
                                                                         href={`/teacher-dashboard/students/${student.id}/edit`}
-                                                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[#a15912] dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                                        className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[#a15912] dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold flex items-center gap-1"
                                                                         title="Edit Profile"
                                                                     >
                                                                         <span className="material-symbols-outlined text-base">edit</span>
+                                                                        Edit
                                                                     </Link>
                                                                     {teacherProfile?.role === 'admin' && (
                                                                         <button
                                                                             onClick={() => setStudentToDelete({ id: student.id, name: student.name })}
-                                                                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                                                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 flex items-center justify-center"
                                                                             title="Delete Student"
                                                                         >
                                                                             <span className="material-symbols-outlined text-base">delete</span>

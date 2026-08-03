@@ -421,7 +421,7 @@ export default function UserSessionsDashboard() {
             <div className="flex h-screen overflow-hidden">
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-                <main className="flex-1 flex flex-col min-w-0">
+                <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                     <TeacherHeader 
                         title="Login Sessions" 
                         backLink="/admin-dashboard/"
@@ -477,22 +477,22 @@ export default function UserSessionsDashboard() {
                             </div>
                         </div>
                         {/* Tab Segment Selectors */}
-                        <div className="flex border-b border-slate-200 dark:border-slate-800 w-full text-xs font-black uppercase tracking-wider font-mono select-none shrink-0">
+                        <div className="flex border-b border-slate-200 dark:border-slate-800 w-full text-xs font-black uppercase tracking-wider font-mono select-none shrink-0 overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
                             <button
                                 onClick={() => setActiveTab('all')}
-                                className={`flex-1 py-3 text-center border-b-2 transition-all ${activeTab === 'all' ? 'border-amber-500 text-amber-500 font-extrabold' : 'border-transparent text-slate-400'}`}
+                                className={`flex-1 min-w-[140px] shrink-0 snap-start py-3 text-center border-b-2 transition-all ${activeTab === 'all' ? 'border-amber-500 text-amber-500 font-extrabold' : 'border-transparent text-slate-400'}`}
                             >
                                 All Session Logs
                             </button>
                             <button
                                 onClick={() => setActiveTab('months')}
-                                className={`flex-1 py-3 text-center border-b-2 transition-all ${activeTab === 'months' ? 'border-amber-500 text-amber-500 font-extrabold' : 'border-transparent text-slate-400'}`}
+                                className={`flex-1 min-w-[140px] shrink-0 snap-start py-3 text-center border-b-2 transition-all ${activeTab === 'months' ? 'border-amber-500 text-amber-500 font-extrabold' : 'border-transparent text-slate-400'}`}
                             >
                                 Month-wise Logins
                             </button>
                             <button
                                 onClick={() => setActiveTab('students')}
-                                className={`flex-1 py-3 text-center border-b-2 transition-all ${activeTab === 'students' ? 'border-amber-500 text-amber-500 font-extrabold' : 'border-transparent text-slate-400'}`}
+                                className={`flex-1 min-w-[140px] shrink-0 snap-start py-3 text-center border-b-2 transition-all ${activeTab === 'students' ? 'border-amber-500 text-amber-500 font-extrabold' : 'border-transparent text-slate-400'}`}
                             >
                                 Group by Students
                             </button>

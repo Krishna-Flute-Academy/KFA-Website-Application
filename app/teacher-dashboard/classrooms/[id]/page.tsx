@@ -3836,7 +3836,7 @@ export default function ClassroomDashboardPage({
 
             <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-            <main className="flex-1 flex flex-col min-w-0">
+            <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                 {isMeetingView ? (
                     <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-905/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between px-8 py-4 gap-4 flex-shrink-0 shadow-sm">
                         <div className="flex items-center gap-3 text-left">
@@ -3929,12 +3929,12 @@ export default function ClassroomDashboardPage({
 
                 <div className="p-4 sm:p-6 md:p-8 w-full flex-1 overflow-y-auto custom-scrollbar">
                     {/* Row-wise Tabs */}
-                    <div className="flex items-center gap-8 border-b border-slate-205 dark:border-slate-800 mb-8 overflow-x-auto custom-scrollbar whitespace-nowrap">
+                    <div className="flex items-center gap-8 border-b border-slate-205 dark:border-slate-800 mb-8 overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
                         {['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Class Logs', 'Chat', 'Settings'].map((tab) => (
                             <button 
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`pb-4 font-extrabold transition-colors border-b-2 cursor-pointer ${
+                                className={`pb-4 font-extrabold transition-colors border-b-2 cursor-pointer shrink-0 snap-start ${
                                     activeTab === tab 
                                         ? 'text-[#ecb613] dark:text-[#ecb613] border-[#ecb613] dark:border-[#ecb613]' 
                                         : 'text-slate-505 dark:text-slate-400 hover:text-[#ecb613]/85 border-transparent'

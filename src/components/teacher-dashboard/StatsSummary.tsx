@@ -82,12 +82,12 @@ export default function StatsSummary({
     ];
 
     return (
-        <section className={`grid ${isAdmin ? 'grid-cols-4' : 'grid-cols-3'} gap-1.5 sm:gap-4 md:gap-6 w-full`}>
+        <section className={`grid grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : 'sm:grid-cols-3'} gap-3 sm:gap-4 md:gap-6 w-full`}>
             {statsList.map((stat, i) => (
                 <Link 
                     key={i} 
                     href={stat.href} 
-                    className={`bg-white dark:bg-slate-900 p-2 sm:p-5 rounded-r-2xl rounded-l-md border border-slate-200 dark:border-slate-800 shadow-xs transition-all hover:scale-[1.02] hover:shadow-md flex flex-col md:flex-row md:items-center gap-1.5 sm:gap-4 relative overflow-hidden ${stat.borderClass}`}
+                    className={`bg-white dark:bg-slate-900 p-3 sm:p-5 rounded-r-2xl rounded-l-md border border-slate-200 dark:border-slate-800 shadow-xs transition-all hover:scale-[1.02] hover:shadow-md flex flex-col md:flex-row md:items-center gap-1.5 sm:gap-4 relative overflow-hidden ${stat.borderClass} ${!isAdmin && i === 2 ? 'col-span-2 sm:col-span-1' : ''}`}
                 >
                     {/* Status dot notification for mobile */}
                     {stat.statusDot && (

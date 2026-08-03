@@ -1178,11 +1178,11 @@ export default function TeacherDashboardContainer() {
     }
 
     return (
-        <div className="bg-[#f8f8f6] dark:bg-[#1a1608] text-slate-900 dark:text-slate-100 font-sans min-h-screen">
-            <div className="flex min-h-screen">
+        <div className="bg-[#f8f8f6] dark:bg-[#1a1608] text-slate-900 dark:text-slate-100 font-sans min-h-screen overflow-x-hidden">
+            <div className="flex min-h-screen max-w-full overflow-x-hidden">
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-                <main className="flex-1 flex flex-col">
+                <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                     <TeacherHeader title={isAdmin ? "Admin-dashboard" : "Dashboard Overview"} />
 
                     <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 w-full flex-1">

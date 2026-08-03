@@ -581,7 +581,7 @@ export default function FeesManagementDashboard() {
             <div className="flex h-screen overflow-hidden">
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-                <main className="flex-1 flex flex-col min-w-0">
+                <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                     <TeacherHeader 
                         title="Fees Management" 
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
