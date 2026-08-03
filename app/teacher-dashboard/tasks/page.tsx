@@ -1015,8 +1015,14 @@ export default function TaskReviewPage() {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
-        const friendlySize = `${sizeInMb}MB`;
+        let friendlySize = '';
+        if (file.size >= 1024 * 1024) {
+            friendlySize = `${(file.size / (1024 * 1024)).toFixed(1)}MB`;
+        } else if (file.size >= 1024) {
+            friendlySize = `${(file.size / 1024).toFixed(1)}KB`;
+        } else {
+            friendlySize = `${file.size} Bytes`;
+        }
 
         let mappedType = 'file';
         if (file.type.startsWith('audio/')) {

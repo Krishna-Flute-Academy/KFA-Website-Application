@@ -52,6 +52,15 @@ const cleanModuleDescription = (desc: string) => {
     return stripHtml(clean);
 };
 
+const getCleanDuration = (duration: string, fileSize: string) => {
+    if (!duration) return '';
+    if (fileSize && duration.includes(fileSize)) {
+        const parts = duration.split('•');
+        return parts[0].trim();
+    }
+    return duration;
+};
+
 /**
  * CurriculumTab displays the syllabus and detailed lesson information for students.
  */
@@ -279,7 +288,7 @@ export default function CurriculumTab({
                                                                                                             {lesson.lesson_number}. {lesson.title}
                                                                                                         </h6>
                                                                                                         <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                                                                                            {lesson.duration || '5 mins'} · {lesson.difficulty || 'Easy'}
+                                                                                                            {getCleanDuration(lesson.duration, lesson.file_size) || '5 mins'} · {lesson.difficulty || 'Easy'}{lesson.file_size ? ` · 💾 ${lesson.file_size}` : ''}
                                                                                                         </p>
                                                                                                     </div>
                                                                                                 </div>
@@ -290,19 +299,34 @@ export default function CurriculumTab({
                                                                                                         Locked
                                                                                                     </span>
                                                                                                 ) : (
-                                                                                                    <button
-                                                                                                        onClick={(e) => {
-                                                                                                            e.stopPropagation();
-                                                                                                            handleToggleLessonComplete(lesson.id, status);
-                                                                                                        }}
-                                                                                                        className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all shrink-0 ${
-                                                                                                            isCompleted
-                                                                                                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
-                                                                                                                : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-600 text-slate-600 border border-slate-200/50'
-                                                                                                        }`}
-                                                                                                    >
-                                                                                                        {isCompleted ? 'Completed ✓' : 'Mark Complete'}
-                                                                                                    </button>
+                                                                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                                                                        {(lesson.material_url || lesson.link_url) && (
+                                                                                                            <button
+                                                                                                                onClick={(e) => {
+                                                                                                                    e.stopPropagation();
+                                                                                                                    setSelectedTopic(lesson);
+                                                                                                                    setShowMaterialPopup(true);
+                                                                                                                }}
+                                                                                                                className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 rounded-md text-[10px] font-extrabold transition-all"
+                                                                                                                title="Quick Open Material"
+                                                                                                            >
+                                                                                                                Open
+                                                                                                            </button>
+                                                                                                        )}
+                                                                                                        <button
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                handleToggleLessonComplete(lesson.id, status);
+                                                                                                            }}
+                                                                                                            className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${
+                                                                                                                isCompleted
+                                                                                                                    ? 'bg-emerald-100 hover:bg-emerald-250 text-emerald-700'
+                                                                                                                    : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-600 text-slate-600 border border-slate-200/50'
+                                                                                                            }`}
+                                                                                                        >
+                                                                                                            {isCompleted ? '✓' : 'Done'}
+                                                                                                        </button>
+                                                                                                    </div>
                                                                                                 )}
                                                                                             </div>
                                                                                         );
@@ -377,12 +401,17 @@ export default function CurriculumTab({
                                         <div className="flex flex-wrap gap-2 pt-1">
                                             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full">
                                                 <Clock className="w-3 h-3 text-slate-400" />
-                                                {selectedTopic.duration || '5 mins'}
+                                                {getCleanDuration(selectedTopic.duration, selectedTopic.file_size) || '5 mins'}
                                             </span>
                                             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full">
                                                 <Award className="w-3 h-3 text-slate-400" />
                                                 {selectedTopic.difficulty || 'Easy'}
                                             </span>
+                                            {selectedTopic.file_size && (
+                                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full">
+                                                    💾 {selectedTopic.file_size}
+                                                </span>
+                                            )}
                                             {selectedTopic.material_type && (
                                                 <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#7C5E3F] bg-[#FAF5EE] border border-[#7C5E3F]/10 px-2.5 py-1 rounded-full capitalize">
                                                     {selectedTopic.material_type === 'pdf' ? <FileText className="w-3 h-3" /> : 
@@ -411,26 +440,14 @@ export default function CurriculumTab({
 
                                         {/* Actions Panel */}
                                         <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-slate-100">
-                                            {selectedTopic.material_url ? (
+                                            {selectedTopic.material_url || selectedTopic.link_url ? (
                                                 <button
                                                     onClick={() => setShowMaterialPopup(true)}
                                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl shadow-xs transition-colors"
                                                 >
                                                     <BookOpen className="w-4 h-4" /> Open Material
                                                 </button>
-                                            ) : null}
-
-                                            {selectedTopic.link_url ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowMaterialPopup(true)}
-                                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-750 transition-colors text-center"
-                                                >
-                                                    <BookOpen className="w-4 h-4 text-slate-500" /> Open Protected Reference
-                                                </button>
-                                            ) : null}
-
-                                            {!selectedTopic.material_url && !selectedTopic.link_url && (
+                                            ) : (
                                                 <button
                                                     disabled
                                                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl cursor-not-allowed"

@@ -3,10 +3,10 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../lib/supabase-auth';
-import { 
-    Loader2, BookOpen, Calendar, Mail, FileText, CheckCircle, 
-    Clock, Video, Play, Music, Award, Users, Search, PlayCircle, 
-    Send, X, ClipboardList, Info, BarChart2, Plus, Volume2, 
+import {
+    Loader2, BookOpen, Calendar, Mail, FileText, CheckCircle,
+    Clock, Video, Play, Music, Award, Users, Search, PlayCircle,
+    Send, X, ClipboardList, Info, BarChart2, Plus, Volume2,
     HelpCircle, ChevronRight, Download, LogOut, Check, Menu,
     Sparkles, AlertTriangle, CreditCard, Scroll, User
 } from 'lucide-react';
@@ -135,7 +135,7 @@ export default function StudentDashboardContainer() {
     const [sessionLogs, setSessionLogs] = useState<any[]>([]);
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
     const [classNotes, setClassNotes] = useState<ClassNote[]>([]);
-    
+
     // Classroom schedules & direct messaging states
     const [batchSchedules, setBatchSchedules] = useState<any[]>([]);
     const [makeupSchedules, setMakeupSchedules] = useState<any[]>([]);
@@ -213,15 +213,15 @@ export default function StudentDashboardContainer() {
     }, [courseLessons, allocatedLessonIds]);
 
     const allocatedChapters = useMemo(() => {
-        return courseChapters.filter(c => 
-            allocatedChapterIds.has(c.id) || 
+        return courseChapters.filter(c =>
+            allocatedChapterIds.has(c.id) ||
             courseLessons.some(l => l.chapter_id === c.id && allocatedLessonIds.has(l.id))
         );
     }, [courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
 
     const allocatedModules = useMemo(() => {
-        return courseModules.filter(m => 
-            allocatedModuleIds.has(m.id) || 
+        return courseModules.filter(m =>
+            allocatedModuleIds.has(m.id) ||
             courseChapters.some(c => c.module_id === m.id && (allocatedChapterIds.has(c.id) || courseLessons.some(l => l.chapter_id === c.id && allocatedLessonIds.has(l.id))))
         );
     }, [courseModules, allocatedModuleIds, courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
@@ -394,37 +394,37 @@ export default function StudentDashboardContainer() {
             ] = await Promise.all([
                 // 1. Profile
                 supabaseAuth.from('users').select('id, name, email, phone, level, profile_pic_url, role, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date').eq('id', userId).maybeSingle(),
-                
+
                 // 2. Payments
                 supabaseAuth.from('fees_payments').select('*').eq('student_id', userId).order('payment_date', { ascending: false }),
-                
+
                 // 3. Classroom Mapping
                 supabaseAuth.from('classroom_students').select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status, users!classrooms_teacher_id_fkey(name, email))').eq('student_id', userId),
-                
+
                 // 4. Overrides
                 supabaseAuth.from('session_student_overrides').select('id, student_id, override_date, reason, target_classroom_id, classrooms (id, name, description, status)').eq('student_id', userId),
-                
+
                 // 5. Attendance
                 supabaseAuth.from('attendance').select('*').eq('student_id', userId).order('date', { ascending: false }).limit(100),
-                
+
                 // 6. Broadcasts
                 supabaseAuth.from('broadcasts').select('*, sender:users!teacher_id(name, role)').order('created_at', { ascending: false }),
-                
+
                 // 7. Notifications
                 supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-                
+
                 // 8. Modules
                 supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
-                
+
                 // 9. Chapters
                 supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
-                
+
                 // 10. Lessons
                 supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true }),
-                
+
                 // 11. Curriculum Progress
                 supabaseAuth.from('student_topic_progress').select('*').eq('student_id', userId),
-                
+
                 // 12. Direct Messages
                 supabaseAuth.from('messages').select('*').or(`sender_id.eq.${userId},receiver_id.eq.${userId}`).order('created_at', { ascending: false }).limit(100),
 
@@ -447,7 +447,7 @@ export default function StudentDashboardContainer() {
             setStudentProgress(progressRes.data || []);
             const rawMessages = messagesRes.data || [];
             setDirectMessages([...rawMessages].reverse());
-            
+
             // Mark incoming messages as delivered when loaded
             const undeliveredMessages = rawMessages.filter(m => m.receiver_id === userId && (!m.status || m.status === 'sent'));
             if (undeliveredMessages.length > 0) {
@@ -529,8 +529,8 @@ export default function StudentDashboardContainer() {
                 cls && classroomId !== 'synthetic-classroom'
                     ? supabaseAuth.from('classroom_students').select('student_id, users!student_id(id, name, level, profile_pic_url)').eq('classroom_id', cls.id).neq('student_id', userId)
                     : cls && classroomId === 'synthetic-classroom'
-                    ? supabaseAuth.from('users').select('id, name, level, profile_pic_url').eq('teacher_id', cls.teacher_id).eq('role', 'student').neq('id', userId)
-                    : Promise.resolve({ data: [] }),
+                        ? supabaseAuth.from('users').select('id, name, level, profile_pic_url').eq('teacher_id', cls.teacher_id).eq('role', 'student').neq('id', userId)
+                        : Promise.resolve({ data: [] }),
 
                 // P3: class_notes
                 allClassroomIds.length > 0
@@ -636,7 +636,7 @@ export default function StudentDashboardContainer() {
             const liveRoom = primaryRooms.find(r => r.is_live);
             const primaryRoom = cls ? (primaryRooms.find(r => r.id === cls.id) || primaryRooms[0]) : primaryRooms[0];
             const defaultRoom = liveRoom || primaryRoom;
-            
+
             if (defaultRoom) {
                 setClassroom(prev => {
                     if (prev) {
@@ -657,13 +657,13 @@ export default function StudentDashboardContainer() {
                     name: u.name || 'Classmate',
                     level: u.level || 'Beginner',
                     profile_pic_url: u.profile_pic_url || null
-                  }))
+                }))
                 : classmatesList.map((c: any) => ({
                     id: c.users?.id || c.student_id,
                     name: c.users?.name || 'Classmate',
                     level: c.users?.level || 'Beginner',
                     profile_pic_url: c.users?.profile_pic_url || null
-                  }));
+                }));
             setClassmates(formattedClassmates);
 
             // Process class notes
@@ -728,7 +728,7 @@ export default function StudentDashboardContainer() {
             // Process broadcasts filtering
             const broadcastsData = broadcastsRes.data || [];
             const studentBroadcasts = broadcastsData.filter((b: any) => {
-                return b.recipients?.some((r: any) => 
+                return b.recipients?.some((r: any) =>
                     (r.type === 'global') ||
                     (r.type === 'student' && r.id === userId) ||
                     (r.type === 'class' && allClassroomIds.includes(r.id))
@@ -738,7 +738,7 @@ export default function StudentDashboardContainer() {
 
             // Set schedules & overrides
             setBatchSchedules(schedulesRes.data || []);
-            
+
             // Enrich makeup overrides
             const enrichedOverrides = activeOverrides.map(o => {
                 const tc = tempClasses.find(t => t.classroom_id === o.target_classroom_id);
@@ -791,7 +791,7 @@ export default function StudentDashboardContainer() {
                     const registration = await navigator.serviceWorker.register('/sw.js');
                     await registration.update();
                     console.log('[Web Push] Service Worker registered and updated successfully');
-                    
+
                     // If permission is already granted, verify/sync subscription in DB
                     if (Notification.permission === 'granted') {
                         await subscribeToWebPush(registration, profile.id);
@@ -839,21 +839,21 @@ export default function StudentDashboardContainer() {
                             if (ctx) {
                                 if (ctx.state === 'suspended') ctx.resume();
                                 const now = ctx.currentTime;
-                                
+
                                 // Fundamental note (pleasant triangle wave)
                                 const osc1 = ctx.createOscillator();
                                 osc1.type = 'triangle';
                                 osc1.frequency.setValueAtTime(587.33, now); // D5
                                 osc1.frequency.exponentialRampToValueAtTime(880.00, now + 0.15); // slide up to A5
-                                
+
                                 const gainNode = ctx.createGain();
                                 gainNode.gain.setValueAtTime(0, now);
                                 gainNode.gain.linearRampToValueAtTime(0.25, now + 0.05); // fade in
                                 gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.65); // fade out
-                                
+
                                 osc1.connect(gainNode);
                                 gainNode.connect(ctx.destination);
-                                
+
                                 osc1.start(now);
                                 osc1.stop(now + 0.7);
                             }
@@ -910,7 +910,7 @@ export default function StudentDashboardContainer() {
                             };
                         });
 
-                        setActiveRooms(prevRooms => 
+                        setActiveRooms(prevRooms =>
                             prevRooms.map(r => r.id === updatedRoom.id ? {
                                 ...r,
                                 is_live: updatedRoom.is_live,
@@ -934,7 +934,7 @@ export default function StudentDashboardContainer() {
                 (payload) => {
                     const newRecord = payload.new as any;
                     const oldRecord = payload.old as any;
-                    const isRelevant = 
+                    const isRelevant =
                         (newRecord && newRecord.student_id === userId) ||
                         (oldRecord && oldRecord.student_id === userId);
                     console.log('Realtime classroom_students payload received:', payload, 'Is relevant:', isRelevant);
@@ -950,14 +950,14 @@ export default function StudentDashboardContainer() {
                 (payload) => {
                     const newMsg = payload.new as any;
                     const oldMsg = payload.old as any;
-                    const isRelevant = 
+                    const isRelevant =
                         (newMsg && (newMsg.sender_id === userId || newMsg.receiver_id === userId)) ||
                         (oldMsg && (oldMsg.sender_id === userId || oldMsg.receiver_id === userId));
                     console.log('Realtime message payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant) {
                         if (payload.eventType === 'INSERT' && newMsg) {
                             setDirectMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
-                            
+
                             // Auto-mark as delivered if student is the receiver
                             if (newMsg.receiver_id === userId) {
                                 supabaseAuth
@@ -966,7 +966,7 @@ export default function StudentDashboardContainer() {
                                     .eq('id', newMsg.id)
                                     .then(({ error }) => {
                                         if (!error) {
-                                            setDirectMessages(prev => prev.map(m => 
+                                            setDirectMessages(prev => prev.map(m =>
                                                 m.id === newMsg.id ? { ...m, status: 'delivered' } : m
                                             ));
                                         }
@@ -1056,7 +1056,7 @@ export default function StudentDashboardContainer() {
                 (payload) => {
                     const newRecord = payload.new as any;
                     const oldRecord = payload.old as any;
-                    const isRelevant = 
+                    const isRelevant =
                         (newRecord && newRecord.student_id === userId) ||
                         (oldRecord && oldRecord.student_id === userId);
                     console.log('Realtime assignment_students payload received:', payload, 'Is relevant:', isRelevant);
@@ -1072,7 +1072,7 @@ export default function StudentDashboardContainer() {
                 (payload) => {
                     const newRecord = payload.new as any;
                     const oldRecord = payload.old as any;
-                    const isRelevant = 
+                    const isRelevant =
                         (newRecord && newRecord.student_id === userId) ||
                         (oldRecord && oldRecord.student_id === userId);
                     console.log('Realtime session_student_overrides payload received:', payload, 'Is relevant:', isRelevant);
@@ -1103,7 +1103,7 @@ export default function StudentDashboardContainer() {
                 (payload) => {
                     const newRecord = payload.new as any;
                     const oldRecord = payload.old as any;
-                    const isRelevant = 
+                    const isRelevant =
                         (newRecord && (newRecord.student_id === userId || newRecord.student_id === 'classwide_default')) ||
                         (oldRecord && (oldRecord.student_id === userId || oldRecord.student_id === 'classwide_default'));
                     console.log('Realtime student_topic_progress payload received:', payload, 'Is relevant:', isRelevant);
@@ -1209,10 +1209,10 @@ export default function StudentDashboardContainer() {
                     if (error) {
                         return; // Gracefully ignore if the table is not created yet
                     }
-                    
+
                     const readIds = new Set(readData?.map((r: any) => r.broadcast_id) || []);
                     const unreadBroadcasts = broadcasts.filter((b: any) => !readIds.has(b.id));
-                    
+
                     if (unreadBroadcasts.length > 0) {
                         const insertData = unreadBroadcasts.map((b: any) => ({
                             broadcast_id: b.id,
@@ -1293,11 +1293,11 @@ export default function StudentDashboardContainer() {
                 .from('messages')
                 .insert([payload])
                 .select();
-            
+
             if (error) throw error;
             if (data) {
                 setDirectMessages(prev => prev.some(m => m.id === data[0].id) ? prev : [...prev, data[0]]);
-                
+
                 // Send notification to the recipient of the message
                 try {
                     await supabaseAuth.from('notifications').insert({
@@ -1459,7 +1459,7 @@ export default function StudentDashboardContainer() {
     // Toggle Complete Syllabus lesson
     const handleToggleLessonComplete = async (lessonId: string, currentStatus: string) => {
         if (!profile || !classroom) return;
-        
+
         const nextStatus = currentStatus === 'completed' ? 'unlocked' : 'completed';
         const completedAt = nextStatus === 'completed' ? new Date().toISOString() : null;
 
@@ -1606,9 +1606,9 @@ export default function StudentDashboardContainer() {
 
                 const notificationTitle = `Task Submission: ${profile.name}`;
                 const notificationMsg = `${profile.name} submitted their response for task "${selectedAssignment.title}".`;
-                
+
                 const notificationInserts: any[] = [];
-                
+
                 if (teacherId) {
                     notificationInserts.push({
                         user_id: teacherId,
@@ -1644,7 +1644,7 @@ export default function StudentDashboardContainer() {
             alert('Practice recording submitted successfully!');
 
             await refreshData();
-            
+
             setSelectedAssignment(null);
             setSubmitVideoUrl('');
             setSubmitAudioBlob(null);
@@ -1738,9 +1738,9 @@ export default function StudentDashboardContainer() {
 
             const notificationTitle = `Leave Request: ${profile.name}`;
             const notificationMsg = `${profile.name} requested leave for class on ${dateStr}.${excuseReason.trim() ? ` Reason: ${excuseReason.trim()}` : ''}`;
-            
+
             const notificationInserts: any[] = [];
-            
+
             if (classroom.teacher_id) {
                 notificationInserts.push({
                     user_id: classroom.teacher_id,
@@ -1821,7 +1821,7 @@ export default function StudentDashboardContainer() {
     }, [profile]);
 
     const totalAllocatedLessons = useMemo(() => {
-        return allocatedLessons.filter(l => 
+        return allocatedLessons.filter(l =>
             getLessonStatus(l.id, l.chapter_id) !== 'locked'
         ).length;
     }, [allocatedLessons, studentProgress]);
@@ -1876,7 +1876,7 @@ export default function StudentDashboardContainer() {
     const unreadMessageCount = useMemo(() => {
         return notifications.filter(n => {
             if (n.is_read) return false;
-            
+
             // Check if it matches an active broadcast announcement
             const matchesBroadcast = broadcasts.some(b => n.title === b.subject || n.message === b.content);
             if (matchesBroadcast) return true;
@@ -1918,12 +1918,12 @@ export default function StudentDashboardContainer() {
     return (
         <>
             {showPracticeSuite && (
-                <PracticeSuiteModal 
-                    defaultTab={practiceSuiteTab} 
-                    onClose={() => setShowPracticeSuite(false)} 
+                <PracticeSuiteModal
+                    defaultTab={practiceSuiteTab}
+                    onClose={() => setShowPracticeSuite(false)}
                 />
             )}
-            
+
             <div className="flex min-h-screen bg-[#FAF6F0]" style={{ fontFamily: 'Lexend, sans-serif' }}>
                 {/* Google Fonts */}
                 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -1931,7 +1931,7 @@ export default function StudentDashboardContainer() {
 
                 {/* Sidebar Overlay Backdrop for Mobile */}
                 {mobileSidebarOpen && (
-                    <div 
+                    <div
                         className="fixed inset-0 z-40 bg-black/50 backdrop-blur-xs md:hidden"
                         onClick={() => setMobileSidebarOpen(false)}
                     />
@@ -1993,13 +1993,12 @@ export default function StudentDashboardContainer() {
                                         setActiveTab(item.id as any);
                                         setMobileSidebarOpen(false);
                                     }}
-                                    className={`w-full flex items-center gap-3 py-3 transition-all relative ${
-                                        active 
-                                            ? 'bg-[#FAF5EE] text-[#7C5E3F] font-black border-l-4 border-[#7C5E3F] pl-3.5 pr-4 rounded-r-2xl' 
+                                    className={`w-full flex items-center gap-3 py-3 transition-all relative ${active
+                                            ? 'bg-[#FAF5EE] text-[#7C5E3F] font-black border-l-4 border-[#7C5E3F] pl-3.5 pr-4 rounded-r-2xl'
                                             : hasUnreadMessages
                                                 ? 'bg-[#FAF5EE]/45 text-[#7C5E3F] font-bold border-l-4 border-amber-400/80 pl-3.5 pr-4 rounded-r-2xl shadow-3xs'
                                                 : 'text-[#5C5852] hover:bg-[#FAF5EE]/50 hover:text-[#7C5E3F] px-4 rounded-xl'
-                                    }`}
+                                        }`}
                                 >
                                     <Icon className={`w-[22px] h-[22px] shrink-0 ${active ? 'text-[#7C5E3F]' : hasUnreadMessages ? 'text-amber-500' : 'text-slate-400'}`} />
                                     <span className="text-sm font-semibold">{item.label}</span>
@@ -2056,7 +2055,7 @@ export default function StudentDashboardContainer() {
 
                         <div className="flex items-center gap-4 text-[#5C5852]">
                             <div className="relative flex" ref={notifDropdownRef}>
-                                <button 
+                                <button
                                     onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
                                     className="p-1.5 hover:bg-[#FAF5EE] rounded-full transition-colors relative focus:outline-hidden"
                                 >
@@ -2067,13 +2066,13 @@ export default function StudentDashboardContainer() {
                                         </span>
                                     )}
                                 </button>
-                                
+
                                 {showNotificationsDropdown && (
                                     <div className="fixed right-4 top-16 w-[calc(100vw-2rem)] max-w-[320px] sm:max-w-sm md:absolute md:-right-2 md:top-full md:mt-2 md:w-96 bg-[#FAF6F0] rounded-xl border border-[#E6E1DA] shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                                         <div className="px-4 py-2 border-b border-[#E6E1DA] flex items-center justify-between">
                                             <span className="font-bold text-sm text-[#3E3A35]">Notifications</span>
                                             {notifications.filter(n => !n.is_read).length > 0 && (
-                                                <button 
+                                                <button
                                                     onClick={markAllNotificationsAsRead}
                                                     className="text-xs text-[#7C5E3F] hover:underline font-semibold"
                                                 >
@@ -2081,7 +2080,7 @@ export default function StudentDashboardContainer() {
                                                 </button>
                                             )}
                                         </div>
-                                        
+
                                         {pushPermission === false && (
                                             <div className="mx-4 my-2 p-3 bg-[#FAF5EE] rounded-lg border border-[#d49900]/20 flex flex-col gap-1.5">
                                                 <div className="flex gap-2">
@@ -2091,7 +2090,7 @@ export default function StudentDashboardContainer() {
                                                         <span className="text-[9px] text-slate-500 leading-normal">Get pop-up and sound alerts on this device when classes start.</span>
                                                     </div>
                                                 </div>
-                                                <button 
+                                                <button
                                                     onClick={requestPushPermission}
                                                     className="w-full py-1 text-center bg-[#7C5E3F] hover:bg-[#6A4E31] text-white font-semibold text-[10px] rounded-md transition-colors"
                                                 >
@@ -2107,8 +2106,8 @@ export default function StudentDashboardContainer() {
                                                 </div>
                                             ) : (
                                                 notifications.map((notif) => (
-                                                    <div 
-                                                        key={notif.id} 
+                                                    <div
+                                                        key={notif.id}
                                                         className={`px-4 py-2.5 hover:bg-[#FAF1E6]/50 transition-colors border-b border-[#F5EFE6] last:border-b-0 flex flex-col gap-0.5 text-left ${!notif.is_read ? 'bg-[#FAF5EE]/70 font-medium' : ''}`}
                                                     >
                                                         <div className="flex justify-between items-start gap-1">
@@ -2135,7 +2134,7 @@ export default function StudentDashboardContainer() {
                                     {profile?.name?.charAt(0) || 'S'}
                                 </div>
                             )}
-                            
+
                             <button onClick={handleLogout} className="md:hidden text-rose-500 p-2">
                                 <LogOut className="w-4 h-4" />
                             </button>
@@ -2182,15 +2181,15 @@ export default function StudentDashboardContainer() {
                             <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                 {(() => {
                                     const classesLeft = profile.fees_classes_paid || 0;
-                                    
+
                                     // Hide notifications if there is a pending payment reported by the student
                                     if (feeStatus.hasPendingPayment) return null;
-                                    
+
                                     let bannerType: 'overdue' | 'due' | 'warning' | 'upcoming' | null = null;
                                     let bannerTitle = '';
                                     let bannerMessage = '';
                                     let showButton = true;
-                                    
+
                                     if (classesLeft <= 0) {
                                         bannerType = 'overdue';
                                         bannerTitle = 'Action Required: 4 Classes Completed';
@@ -2206,16 +2205,16 @@ export default function StudentDashboardContainer() {
                                     } else if (classesLeft === 1) {
                                         bannerType = 'warning';
                                         bannerTitle = 'Reminder: 1 Class Remaining';
-                                        bannerMessage = 'You have exactly 1 class left in your balance. Please pay your fees soon to ensure you can continue.';
+                                        bannerMessage = 'You have exactly 1 class left in your balance.';
                                         showButton = false;
                                     } else if (feeStatus.status === 'upcoming') {
                                         bannerType = 'upcoming';
                                         bannerTitle = 'Upcoming Fee Payment';
                                         bannerMessage = `Your monthly fee is due on ${feeStatus.formattedDueDate}.`;
                                     }
-                                    
+
                                     if (!bannerType) return null;
-                                    
+
                                     let bgClass = '';
                                     let borderClass = '';
                                     let titleColor = '';
@@ -2223,7 +2222,7 @@ export default function StudentDashboardContainer() {
                                     let btnClass = '';
                                     let iconColor = '';
                                     let Icon = Clock;
-                                    
+
                                     if (bannerType === 'overdue') {
                                         bgClass = 'bg-rose-50';
                                         borderClass = 'border-rose-500';
@@ -2249,7 +2248,7 @@ export default function StudentDashboardContainer() {
                                         iconColor = 'text-amber-700 bg-amber-50 border border-amber-100';
                                         Icon = Clock;
                                     }
-                                    
+
                                     return (
                                         <div className={`${bgClass} border border-l-4 ${borderClass} py-2.5 px-4 rounded-xl flex items-center justify-between gap-4 shadow-xs relative overflow-hidden`}>
                                             <div className="flex items-center gap-3 min-w-0 text-left">
@@ -2264,7 +2263,7 @@ export default function StudentDashboardContainer() {
                                                 </div>
                                             </div>
                                             {showButton && (
-                                                <button 
+                                                <button
                                                     onClick={() => setActiveTab('fees')}
                                                     className={`text-[10px] font-black px-3.5 py-1.5 rounded-lg transition-all active:scale-95 shadow-xs shrink-0 inline-flex items-center gap-1 uppercase tracking-wider ${btnClass}`}
                                                 >
@@ -2279,103 +2278,103 @@ export default function StudentDashboardContainer() {
 
                         {(renderBackgroundTabs || activeTab === 'overview') && (
                             <div style={{ display: activeTab === 'overview' ? 'block' : 'none' }}>
-                            <OverviewTab 
-                                profile={profile}
-                                payments={payments}
-                                classroom={classroom}
-                                assignments={assignments}
-                                broadcasts={broadcasts}
-                                unreadAdminBroadcasts={unreadAdminBroadcasts}
-                                setActiveTab={setActiveTab}
-                                handleDismissAdminBroadcast={handleDismissAdminBroadcast}
-                                levelLabel={levelLabel}
-                                attendancePct={attendancePct}
-                                attendanceStats={attendanceStats}
-                                featuredLesson={featuredLesson}
-                                setSelectedTopic={setSelectedTopic}
-                                setShowMaterialPopup={setShowMaterialPopup}
-                                setPracticeSuiteTab={setPracticeSuiteTab}
-                                setShowPracticeSuite={setShowPracticeSuite}
-                                classmates={classmates}
-                                studentAllocations={studentAllocations}
-                                studentProgress={studentProgress}
-                                courseLessons={courseLessons}
-                                courseChapters={courseChapters}
-                                courseModules={courseModules}
-                                attendance={attendance}
-                                
-                            />
-                        </div>
+                                <OverviewTab
+                                    profile={profile}
+                                    payments={payments}
+                                    classroom={classroom}
+                                    assignments={assignments}
+                                    broadcasts={broadcasts}
+                                    unreadAdminBroadcasts={unreadAdminBroadcasts}
+                                    setActiveTab={setActiveTab}
+                                    handleDismissAdminBroadcast={handleDismissAdminBroadcast}
+                                    levelLabel={levelLabel}
+                                    attendancePct={attendancePct}
+                                    attendanceStats={attendanceStats}
+                                    featuredLesson={featuredLesson}
+                                    setSelectedTopic={setSelectedTopic}
+                                    setShowMaterialPopup={setShowMaterialPopup}
+                                    setPracticeSuiteTab={setPracticeSuiteTab}
+                                    setShowPracticeSuite={setShowPracticeSuite}
+                                    classmates={classmates}
+                                    studentAllocations={studentAllocations}
+                                    studentProgress={studentProgress}
+                                    courseLessons={courseLessons}
+                                    courseChapters={courseChapters}
+                                    courseModules={courseModules}
+                                    attendance={attendance}
+
+                                />
+                            </div>
                         )}
 
                         {(renderBackgroundTabs || activeTab === 'classroom') && (
                             <div style={{ display: activeTab === 'classroom' ? 'block' : 'none' }}>
-                                <ClassroomTab 
+                                <ClassroomTab
                                     classroom={classroom}
-                                activeRooms={activeRooms}
-                                setClassroom={setClassroom}
-                                classmates={classmates}
-                                mergedLogs={mergedLogs}
-                                profile={profile}
-                                batchSchedules={batchSchedules}
-                                makeupSchedules={makeupSchedules}
-                                refreshData={refreshData}
-                                classNotes={classNotes}
-                                assignments={assignments}
-                                broadcasts={broadcasts}
-                                classroomMessages={classroomMessages.filter(message => message.classroom_id === classroom?.id)}
-                                isSendingClassroomMessage={isSendingClassroomMessage}
-                                onSendClassroomMessage={handleSendClassroomMessage}
-                                onSelectAssignment={setSelectedAssignment}
-                            />
-                        </div>
+                                    activeRooms={activeRooms}
+                                    setClassroom={setClassroom}
+                                    classmates={classmates}
+                                    mergedLogs={mergedLogs}
+                                    profile={profile}
+                                    batchSchedules={batchSchedules}
+                                    makeupSchedules={makeupSchedules}
+                                    refreshData={refreshData}
+                                    classNotes={classNotes}
+                                    assignments={assignments}
+                                    broadcasts={broadcasts}
+                                    classroomMessages={classroomMessages.filter(message => message.classroom_id === classroom?.id)}
+                                    isSendingClassroomMessage={isSendingClassroomMessage}
+                                    onSendClassroomMessage={handleSendClassroomMessage}
+                                    onSelectAssignment={setSelectedAssignment}
+                                />
+                            </div>
                         )}
 
                         {(renderBackgroundTabs || activeTab === 'curriculum') && (
                             <div style={{ display: activeTab === 'curriculum' ? 'block' : 'none' }}>
-                                <CurriculumTab 
+                                <CurriculumTab
                                     classroom={classroom}
-                                courseModules={allocatedModules}
-                                courseChapters={allocatedChapters}
-                                courseLessons={allocatedLessons}
-                                completedLessonsCount={completedLessonsCount}
-                                totalAllocatedLessons={totalAllocatedLessons}
-                                expandedModules={expandedModules}
-                                setExpandedModules={setExpandedModules}
-                                expandedChapters={expandedChapters}
-                                setExpandedChapters={setExpandedChapters}
-                                getLessonStatus={getLessonStatus}
-                                selectedTopic={selectedTopic}
-                                setSelectedTopic={setSelectedTopic}
-                                handleToggleLessonComplete={handleToggleLessonComplete}
-                                getTopicBreadcrumbs={getTopicBreadcrumbs}
-                                setShowMaterialPopup={setShowMaterialPopup}
-                                classmates={classmates}
-                            />
-                        </div>
+                                    courseModules={allocatedModules}
+                                    courseChapters={allocatedChapters}
+                                    courseLessons={allocatedLessons}
+                                    completedLessonsCount={completedLessonsCount}
+                                    totalAllocatedLessons={totalAllocatedLessons}
+                                    expandedModules={expandedModules}
+                                    setExpandedModules={setExpandedModules}
+                                    expandedChapters={expandedChapters}
+                                    setExpandedChapters={setExpandedChapters}
+                                    getLessonStatus={getLessonStatus}
+                                    selectedTopic={selectedTopic}
+                                    setSelectedTopic={setSelectedTopic}
+                                    handleToggleLessonComplete={handleToggleLessonComplete}
+                                    getTopicBreadcrumbs={getTopicBreadcrumbs}
+                                    setShowMaterialPopup={setShowMaterialPopup}
+                                    classmates={classmates}
+                                />
+                            </div>
                         )}
 
                         {(renderBackgroundTabs || activeTab === 'tasks') && (
                             <div style={{ display: activeTab === 'tasks' ? 'block' : 'none' }}>
-                                <TasksTab 
+                                <TasksTab
                                     assignments={assignments}
-                                selectedAssignment={selectedAssignment}
-                                setSelectedAssignment={setSelectedAssignment}
-                                submitVideoUrl={submitVideoUrl}
-                                setSubmitVideoUrl={setSubmitVideoUrl}
-                                submissionType={submissionType}
-                                setSubmissionType={setSubmissionType}
-                                submitAudioBlob={submitAudioBlob}
-                                setSubmitAudioBlob={setSubmitAudioBlob}
-                                isSubmittingTask={isSubmittingTask}
-                                handleSubmitTask={handleSubmitTask}
-                            />
-                        </div>
+                                    selectedAssignment={selectedAssignment}
+                                    setSelectedAssignment={setSelectedAssignment}
+                                    submitVideoUrl={submitVideoUrl}
+                                    setSubmitVideoUrl={setSubmitVideoUrl}
+                                    submissionType={submissionType}
+                                    setSubmissionType={setSubmissionType}
+                                    submitAudioBlob={submitAudioBlob}
+                                    setSubmitAudioBlob={setSubmitAudioBlob}
+                                    isSubmittingTask={isSubmittingTask}
+                                    handleSubmitTask={handleSubmitTask}
+                                />
+                            </div>
                         )}
 
                         {(renderBackgroundTabs || activeTab === 'messages') && (
                             <div style={{ display: activeTab === 'messages' ? 'block' : 'none' }}>
-                                <MessagesTab 
+                                <MessagesTab
                                     broadcasts={broadcasts}
                                     playVoiceNote={playVoiceNote}
                                     playingAudioId={playingAudioId}
@@ -2393,33 +2392,33 @@ export default function StudentDashboardContainer() {
 
                         {(renderBackgroundTabs || activeTab === 'attendance') && (
                             <div style={{ display: activeTab === 'attendance' ? 'block' : 'none' }}>
-                                <AttendanceTab 
+                                <AttendanceTab
                                     attendanceStats={attendanceStats}
-                                mergedLogs={mergedLogs}
-                                showExcuseModal={showExcuseModal}
-                                setShowExcuseModal={setShowExcuseModal}
-                                excuseDate={excuseDate}
-                                setExcuseDate={setExcuseDate}
-                                excuseReason={excuseReason}
-                                setExcuseReason={setExcuseReason}
-                                isSubmittingExcuse={isSubmittingExcuse}
-                                handleSubmitExcuse={handleSubmitExcuse}
-                            />
-                        </div>
+                                    mergedLogs={mergedLogs}
+                                    showExcuseModal={showExcuseModal}
+                                    setShowExcuseModal={setShowExcuseModal}
+                                    excuseDate={excuseDate}
+                                    setExcuseDate={setExcuseDate}
+                                    excuseReason={excuseReason}
+                                    setExcuseReason={setExcuseReason}
+                                    isSubmittingExcuse={isSubmittingExcuse}
+                                    handleSubmitExcuse={handleSubmitExcuse}
+                                />
+                            </div>
                         )}
 
                         {(renderBackgroundTabs || activeTab === 'library') && (
                             <div style={{ display: activeTab === 'library' ? 'block' : 'none' }}>
-                                <LibraryTab 
+                                <LibraryTab
                                     setPracticeSuiteTab={setPracticeSuiteTab}
                                     setShowPracticeSuite={setShowPracticeSuite}
-                            />
-                        </div>
+                                />
+                            </div>
                         )}
 
                         {profile && (renderBackgroundTabs || activeTab === 'fees') && (
                             <div style={{ display: activeTab === 'fees' ? 'block' : 'none' }}>
-                                <FeesTab 
+                                <FeesTab
                                     profile={profile}
                                     payments={payments}
                                     refreshData={refreshData}
@@ -2444,11 +2443,11 @@ export default function StudentDashboardContainer() {
 
             {/* Topic Material Popup Modal */}
             {showMaterialPopup && selectedTopic && (
-                <div 
+                <div
                     className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 md:p-6 animate-in fade-in duration-200"
                     onClick={() => setShowMaterialPopup(false)}
                 >
-                    <div 
+                    <div
                         className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-5xl w-full h-[80vh] md:h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-left select-none"
                         onClick={(e) => e.stopPropagation()}
                         onCopy={(e) => e.preventDefault()}
@@ -2464,19 +2463,19 @@ export default function StudentDashboardContainer() {
                                 </h3>
                             </div>
                             <div className="flex items-center gap-3">
-                                {false && (selectedTopic.material_url || selectedTopic.link_url) && (
+                                {selectedTopic.link_url && (
                                     <a
-                                        href={selectedTopic.material_url || selectedTopic.link_url}
+                                        href={selectedTopic.link_url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-350 text-[10px] md:text-xs font-bold rounded-lg transition-colors"
+                                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#7C5E3F] hover:bg-[#634a31] text-white text-[10px] md:text-xs font-bold rounded-lg transition-colors shadow-sm"
                                     >
-                                        <Download className="w-3.5 h-3.5" />
-                                        Open in New Tab
+                                        <BookOpen className="w-3.5 h-3.5" />
+                                        Open Reference Link
                                     </a>
                                 )}
-                                <button 
-                                    onClick={() => setShowMaterialPopup(false)} 
+                                <button
+                                    onClick={() => setShowMaterialPopup(false)}
                                     className="p-1.5 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-full transition-colors"
                                 >
                                     <X className="w-5 h-5 text-slate-400" />
@@ -2487,7 +2486,7 @@ export default function StudentDashboardContainer() {
                         {/* Content Viewer */}
                         <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex flex-col items-center justify-center overflow-hidden relative">
                             {(() => {
-                                return <SecureCurriculumMaterial url={selectedTopic.material_url || selectedTopic.link_url} title={selectedTopic.title} materialType={selectedTopic.material_type} viewerName={profile?.name} viewerEmail={profile?.email} getYouTubeEmbedUrl={getYouTubeEmbedUrl} />;
+                                return <SecureCurriculumMaterial url={selectedTopic.material_url || selectedTopic.link_url} title={selectedTopic.title} materialType={selectedTopic.material_type} viewerName={profile?.name} viewerEmail={profile?.email} getYouTubeEmbedUrl={getYouTubeEmbedUrl} showWatermark={false} />;
                                 /* Legacy renderer retained temporarily for data-shape compatibility. */
                                 const url = selectedTopic.material_url || selectedTopic.link_url;
                                 if (!url) {
@@ -2508,11 +2507,11 @@ export default function StudentDashboardContainer() {
 
                                 if (isYouTube) {
                                     return (
-                                        <iframe 
-                                            src={getYouTubeEmbedUrl(url)} 
-                                            className="w-full h-full border-0" 
-                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                                            allowFullScreen 
+                                        <iframe
+                                            src={getYouTubeEmbedUrl(url)}
+                                            className="w-full h-full border-0"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
                                             title={selectedTopic.title}
                                         />
                                     );
@@ -2520,9 +2519,9 @@ export default function StudentDashboardContainer() {
 
                                 if (isPdf) {
                                     return (
-                                        <iframe 
-                                            src={`${url}#toolbar=1`} 
-                                            className="w-full h-full border-0 bg-white" 
+                                        <iframe
+                                            src={`${url}#toolbar=1`}
+                                            className="w-full h-full border-0 bg-white"
                                             title={selectedTopic.title}
                                         />
                                     );
@@ -2587,7 +2586,7 @@ export default function StudentDashboardContainer() {
             {playingAudioId && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-3xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-[#E6E1DA] rounded-full py-3 px-6 shadow-xl flex items-center justify-between gap-4 animate-in slide-in-from-bottom-10 duration-300">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <button 
+                        <button
                             type="button"
                             onClick={togglePlayback}
                             className="w-10 h-10 rounded-full bg-[#7C5E3F] text-white hover:bg-[#634a31] flex items-center justify-center shrink-0 shadow-md transition-colors"
@@ -2610,7 +2609,7 @@ export default function StudentDashboardContainer() {
                         <span className="text-[9px] font-bold text-slate-400 shrink-0">
                             {formatAudioTime(audioCurrentTime)}
                         </span>
-                        <input 
+                        <input
                             type="range"
                             min={0}
                             max={audioDuration || 100}
@@ -2627,7 +2626,7 @@ export default function StudentDashboardContainer() {
                         <span className="material-symbols-outlined text-[#7C5E3F] text-lg select-none">
                             {audioVolume === 0 ? 'volume_off' : audioVolume < 0.5 ? 'volume_down' : 'volume_up'}
                         </span>
-                        <input 
+                        <input
                             type="range"
                             min={0}
                             max={1}
@@ -2636,7 +2635,7 @@ export default function StudentDashboardContainer() {
                             onChange={handleVolumeChange}
                             className="w-16 h-1 bg-[#E6E1DA] rounded-lg appearance-none cursor-pointer accent-[#7C5E3F]"
                         />
-                        <button 
+                        <button
                             type="button"
                             onClick={() => {
                                 if (audioRef.current) {

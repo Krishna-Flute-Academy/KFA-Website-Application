@@ -13,6 +13,7 @@ interface TeacherHeaderProps {
     showAvatar?: boolean;
     avatarUrl?: string;
     backLink?: string;
+    children?: React.ReactNode;
 }
 
 export default function TeacherHeader({ 
@@ -23,7 +24,8 @@ export default function TeacherHeader({
     showSettings = false,
     showAvatar = false,
     avatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
-    backLink
+    backLink,
+    children
 }: TeacherHeaderProps) {
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
@@ -154,6 +156,7 @@ export default function TeacherHeader({
                     )}
                 </div>
                 <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-2 sm:ml-4">
+                    {children}
 
                     
                     <button 
