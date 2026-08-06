@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, Search, ChevronLeft, ChevronRight, PlusCircle, Filter, Calendar, List, MapPin, Activity, Link as LinkIcon, Mic, Disc, Music, Trash2, Check, Info } from 'lucide-react';
+import { Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, Search, ChevronLeft, ChevronRight, PlusCircle, Filter, Calendar, List, MapPin, Activity, Link as LinkIcon, Mic, Disc, Music, Trash2, Check, Info, Edit } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
@@ -86,6 +86,85 @@ export default function ClassroomsPage() {
     const [formatFilter, setFormatFilter] = useState<'all' | 'online' | 'offline'>('all');
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
+    interface TodoItem {
+        id: string;
+        title: string;
+        date: string;
+        dueText: string;
+        completed: boolean;
+    }
+    const [todos, setTodos] = useState<TodoItem[]>([]);
+    const [showAddTodo, setShowAddTodo] = useState(false);
+    const [newTodoTitle, setNewTodoTitle] = useState('');
+    const [newTodoDate, setNewTodoDate] = useState(new Date().toISOString().split('T')[0]);
+
+    const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+    const [editingTodoTitle, setEditingTodoTitle] = useState('');
+    const [editingTodoDate, setEditingTodoDate] = useState('');
+
+    const formatDueDate = (dateStr: string) => {
+        if (!dateStr) return 'No due date';
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return dateStr;
+        const yr = parseInt(parts[0], 10);
+        const mo = parseInt(parts[1], 10);
+        const dy = parseInt(parts[2], 10);
+        const date = new Date(yr, mo - 1, dy);
+        
+        const today = new Date();
+        const tomorrow = new Date();
+        tomorrow.setDate(today.getDate() + 1);
+        
+        const isToday = date.getFullYear() === today.getFullYear() &&
+                        date.getMonth() === today.getMonth() &&
+                        date.getDate() === today.getDate();
+                        
+        const isTomorrow = date.getFullYear() === tomorrow.getFullYear() &&
+                           date.getMonth() === tomorrow.getMonth() &&
+                           date.getDate() === tomorrow.getDate();
+                           
+        if (isToday) return 'Due today';
+        if (isTomorrow) return 'Due tomorrow';
+        
+        return `Due ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    };
+
+    useEffect(() => {
+        const saved = localStorage.getItem('instructor_todos');
+        if (saved) {
+            try {
+                setTodos(JSON.parse(saved));
+            } catch (e) {
+                console.error(e);
+            }
+        } else {
+            const today = new Date().toISOString().split('T')[0];
+            const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+            setTodos([
+                { id: '1', title: 'Review Piano Exam Recitals', date: today, dueText: 'Due today', completed: false },
+                { id: '2', title: 'Update Flute Theory Syllabus', date: tomorrow, dueText: 'Due tomorrow', completed: false }
+            ]);
+        }
+    }, []);
+
+    const saveTodos = (newTodos: TodoItem[]) => {
+        setTodos(newTodos);
+        localStorage.setItem('instructor_todos', JSON.stringify(newTodos));
+    };
+
+    const handleToggleTodo = (id: string) => {
+        const updated = todos.map(todo => 
+            todo.id === id ? { ...todo, completed: !todo.completed } : todo
+        );
+        saveTodos(updated);
+    };
+
+    const handleDeleteTodo = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const updated = todos.filter(todo => todo.id !== id);
+        saveTodos(updated);
+    };
+
     useEffect(() => {
         const checkActiveSession = () => {
             const liveRoom = classrooms.find(c => c.is_live);
@@ -126,19 +205,66 @@ export default function ClassroomsPage() {
         }
     }, [toast]);
 
+    interface DeletedClassroomItem {
+        id: string;
+        name: string;
+        type: 'permanent' | 'temporary';
+        deletedAt: string;
+        classroom: any;
+    }
+    const [recycleBin, setRecycleBin] = useState<DeletedClassroomItem[]>([]);
+    const [showRecycleBin, setShowRecycleBin] = useState(false);
+
+    useEffect(() => {
+        const savedBin = localStorage.getItem('classrooms_recycle_bin');
+        if (savedBin) {
+            try {
+                setRecycleBin(JSON.parse(savedBin));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    }, []);
+
+    const saveRecycleBin = (bin: DeletedClassroomItem[]) => {
+        setRecycleBin(bin);
+        localStorage.setItem('classrooms_recycle_bin', JSON.stringify(bin));
+    };
+
     const handleDeleteClassroom = async (room: any) => {
-        const confirmMsg = `Are you sure you want to delete the ${room.type === 'permanent' ? 'permanent class' : 'temporary session'} "${room.name}"? This will permanently delete the class and all associated data.`;
+        const confirmMsg = `Are you sure you want to delete the ${room.type === 'permanent' ? 'permanent class' : 'temporary session'} "${room.name}"? This will move it to the Recycle Bin, from which you can restore it later.`;
         if (!window.confirm(confirmMsg)) return;
 
         setIsDeletingId(room.id);
         try {
             const table = room.type === 'permanent' ? 'classrooms' : 'temporary_classes';
+
+            // 1. Fetch full details for archiving
+            const { data: fullClassroom, error: fetchErr } = await supabaseAuth
+                .from(table)
+                .select('*')
+                .eq('id', room.id)
+                .single();
+
+            if (fetchErr) throw fetchErr;
+
+            // 2. Delete from database
             const { error } = await supabaseAuth
                 .from(table)
                 .delete()
                 .eq('id', room.id);
 
             if (error) throw error;
+
+            // 3. Put into Recycle Bin local storage
+            const newBinItem: DeletedClassroomItem = {
+                id: room.id,
+                name: room.name || fullClassroom.title || 'Temporary Class',
+                type: room.type,
+                deletedAt: new Date().toISOString(),
+                classroom: fullClassroom
+            };
+            saveRecycleBin([newBinItem, ...recycleBin]);
 
             // Remove from local state
             if (room.type === 'permanent') {
@@ -149,7 +275,7 @@ export default function ClassroomsPage() {
 
             setToast({
                 type: 'success',
-                message: `Classroom "${room.name}" deleted successfully!`
+                message: `Classroom "${room.name}" moved to Recycle Bin.`
             });
         } catch (err: any) {
             console.error('Error deleting classroom:', err);
@@ -165,31 +291,71 @@ export default function ClassroomsPage() {
     const handleDeleteMultiple = async () => {
         const count = selectedIds.length;
         if (count === 0) return;
-        const confirmMsg = `Are you sure you want to delete the ${count} selected classrooms? This will permanently delete the classes and all associated schedule/student data.`;
+        const confirmMsg = `Are you sure you want to delete the ${count} selected classrooms? This will move them to the Recycle Bin, from which you can restore them later.`;
         if (!window.confirm(confirmMsg)) return;
 
         setIsDeletingMultiple(true);
         try {
             // Find which selected IDs are permanent and which are temporary
-            const permanentIds = classrooms.filter(c => selectedIds.includes(c.id)).map(c => c.id);
-            const temporaryIds = tempClassrooms.filter(tc => selectedIds.includes(tc.id)).map(tc => tc.id);
+            const permanentObjects = classrooms.filter(c => selectedIds.includes(c.id));
+            const temporaryObjects = tempClassrooms.filter(tc => selectedIds.includes(tc.id));
 
-            // Trigger deletes using Promise.all or direct queries
+            const permanentIds = permanentObjects.map(c => c.id);
+            const temporaryIds = temporaryObjects.map(tc => tc.id);
+
+            const newBinItems: DeletedClassroomItem[] = [];
+
+            // Fetch and delete permanent
             if (permanentIds.length > 0) {
+                const { data: fullPerms, error: fetchErr } = await supabaseAuth
+                    .from('classrooms')
+                    .select('*')
+                    .in('id', permanentIds);
+                if (fetchErr) throw fetchErr;
+
                 const { error: permErr } = await supabaseAuth
                     .from('classrooms')
                     .delete()
                     .in('id', permanentIds);
                 if (permErr) throw permErr;
+
+                fullPerms?.forEach(p => {
+                    newBinItems.push({
+                        id: p.id,
+                        name: p.name,
+                        type: 'permanent',
+                        deletedAt: new Date().toISOString(),
+                        classroom: p
+                    });
+                });
             }
 
+            // Fetch and delete temporary
             if (temporaryIds.length > 0) {
+                const { data: fullTemps, error: fetchErr } = await supabaseAuth
+                    .from('temporary_classes')
+                    .select('*')
+                    .in('id', temporaryIds);
+                if (fetchErr) throw fetchErr;
+
                 const { error: tempErr } = await supabaseAuth
                     .from('temporary_classes')
                     .delete()
                     .in('id', temporaryIds);
                 if (tempErr) throw tempErr;
+
+                fullTemps?.forEach(t => {
+                    newBinItems.push({
+                        id: t.id,
+                        name: t.title || 'Temporary Class',
+                        type: 'temporary',
+                        deletedAt: new Date().toISOString(),
+                        classroom: t
+                    });
+                });
             }
+
+            saveRecycleBin([...newBinItems, ...recycleBin]);
 
             // Sync local React states
             setClassrooms(prev => prev.filter(c => !selectedIds.includes(c.id)));
@@ -197,7 +363,7 @@ export default function ClassroomsPage() {
 
             setToast({
                 type: 'success',
-                message: `Successfully deleted ${count} classrooms!`
+                message: `Successfully moved ${count} classrooms to Recycle Bin.`
             });
             setSelectedIds([]);
         } catch (err: any) {
@@ -211,151 +377,198 @@ export default function ClassroomsPage() {
         }
     };
 
-    useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
-            try {
-                const { data: { session } } = await supabaseAuth.auth.getSession();
-                if (!session) {
-                    router.push('/login?type=teacher');
-                    return;
-                }
+    const handleRestoreClassroom = async (item: DeletedClassroomItem) => {
+        try {
+            const table = item.type === 'permanent' ? 'classrooms' : 'temporary_classes';
+            const { error } = await supabaseAuth
+                .from(table)
+                .insert([item.classroom]);
 
-                const { data: profile } = await supabaseAuth
-                    .from('users')
-                    .select('id, name, email, role')
-                    .eq('id', session.user.id)
-                    .single();
-                setTeacherProfile(profile);
+            if (error) {
+                console.error("Supabase restore error:", error);
+                setToast({
+                    type: 'error',
+                    message: `Failed to restore classroom: ${error.message}`
+                });
+                return;
+            }
 
-                if (!profile) return;
+            // Remove from local recycle bin state & local storage
+            const updatedBin = recycleBin.filter(b => b.id !== item.id);
+            saveRecycleBin(updatedBin);
 
-                const isAdminUser = profile.role === 'admin';
+            // Re-fetch data to sync all views
+            await fetchData();
 
-                // Fetch all active teachers/admins to map their names in memory
-                const { data: teachersData, error: teachersError } = await supabaseAuth
-                    .from('users')
-                    .select('id, name')
-                    .in('role', ['teacher', 'admin']);
-                if (teachersError) {
-                    console.error('Error fetching teachersData for mapping:', teachersError);
-                }
-                const teacherMap: Record<string, string> = {};
-                if (teachersData) {
-                    teachersData.forEach(t => {
-                        teacherMap[t.id] = t.name;
-                    });
-                }
+            setToast({
+                type: 'success',
+                message: `Classroom "${item.name}" restored successfully!`
+            });
+        } catch (err: any) {
+            console.error('Error restoring classroom:', err);
+            setToast({
+                type: 'error',
+                message: `An unexpected error occurred: ${err.message || err}`
+            });
+        }
+    };
 
-                const classroomsQuery = supabaseAuth
-                    .from('classrooms')
-                    .select('*');
+    const handlePermanentDeleteClassroom = (itemId: string) => {
+        if (!window.confirm("Are you sure you want to permanently delete this classroom from the Recycle Bin? This action is permanent and cannot be undone.")) return;
+        const updatedBin = recycleBin.filter(b => b.id !== itemId);
+        saveRecycleBin(updatedBin);
+    };
 
-                const { data: roomsData, error: roomsError } = isAdminUser
-                    ? await classroomsQuery
-                    : await classroomsQuery.eq('teacher_id', profile.id);
+    const handleClearRecycleBin = () => {
+        if (!window.confirm("Are you sure you want to empty the Recycle Bin? All deleted classrooms will be permanently lost.")) return;
+        saveRecycleBin([]);
+    };
 
-                if (roomsError) throw roomsError;
+    const fetchData = React.useCallback(async () => {
+        setLoading(true);
+        try {
+            const { data: { session } } = await supabaseAuth.auth.getSession();
+            if (!session) {
+                router.push('/login?type=teacher');
+                return;
+            }
 
-                // Fetch batch schedules for all classrooms
-                const roomIds = (roomsData || []).map(r => r.id);
-                const { data: allSchedules } = roomIds.length > 0
-                    ? await supabaseAuth.from('batch_schedules').select('classroom_id, day_of_week, start_time, end_time').in('classroom_id', roomIds)
-                    : { data: [] };
+            const { data: profile } = await supabaseAuth
+                .from('users')
+                .select('id, name, email, role')
+                .eq('id', session.user.id)
+                .single();
+            setTeacherProfile(profile);
 
-                setRawSchedules(allSchedules || []);
+            if (!profile) return;
 
-                const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                const scheduleMap: Record<string, string> = {};
-                if (allSchedules) {
-                    const grouped: Record<string, typeof allSchedules> = {};
-                    allSchedules.forEach(s => {
-                        if (!grouped[s.classroom_id]) grouped[s.classroom_id] = [];
-                        grouped[s.classroom_id].push(s);
-                    });
-                    for (const [cid, entries] of Object.entries(grouped)) {
-                        const days = Array.from(new Set(entries.map(e => DAY_SHORT[e.day_of_week]))).join(', ');
-                        
-                        // Just take the first timing range for the summary view
-                        const first = entries[0];
-                        if (first) {
-                            const startStr = formatTime12hr(first.start_time.slice(0, 5));
-                            const endStr = formatTime12hr(first.end_time.slice(0, 5));
-                            scheduleMap[cid] = `${days} • ${startStr} - ${endStr}`;
-                        } else {
-                            scheduleMap[cid] = `${days}`;
-                        }
+            const isAdminUser = profile.role === 'admin';
+
+            // Fetch all active teachers/admins to map their names in memory
+            const { data: teachersData, error: teachersError } = await supabaseAuth
+                .from('users')
+                .select('id, name')
+                .in('role', ['teacher', 'admin']);
+            if (teachersError) {
+                console.error('Error fetching teachersData for mapping:', teachersError);
+            }
+            const teacherMap: Record<string, string> = {};
+            if (teachersData) {
+                teachersData.forEach(t => {
+                    teacherMap[t.id] = t.name;
+                });
+            }
+
+            const classroomsQuery = supabaseAuth
+                .from('classrooms')
+                .select('*');
+
+            const { data: roomsData, error: roomsError } = isAdminUser
+                ? await classroomsQuery
+                : await classroomsQuery.eq('teacher_id', profile.id);
+
+            if (roomsError) throw roomsError;
+
+            // Fetch batch schedules for all classrooms
+            const roomIds = (roomsData || []).map(r => r.id);
+            const { data: allSchedules } = roomIds.length > 0
+                ? await supabaseAuth.from('batch_schedules').select('classroom_id, day_of_week, start_time, end_time').in('classroom_id', roomIds)
+                : { data: [] };
+
+            setRawSchedules(allSchedules || []);
+
+            const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const scheduleMap: Record<string, string> = {};
+            if (allSchedules) {
+                const grouped: Record<string, typeof allSchedules> = {};
+                allSchedules.forEach(s => {
+                    if (!grouped[s.classroom_id]) grouped[s.classroom_id] = [];
+                    grouped[s.classroom_id].push(s);
+                });
+                for (const [cid, entries] of Object.entries(grouped)) {
+                    const days = Array.from(new Set(entries.map(e => DAY_SHORT[e.day_of_week]))).join(', ');
+                    
+                    // Just take the first timing range for the summary view
+                    const first = entries[0];
+                    if (first) {
+                        const startStr = formatTime12hr(first.start_time.slice(0, 5));
+                        const endStr = formatTime12hr(first.end_time.slice(0, 5));
+                        scheduleMap[cid] = `${days} • ${startStr} - ${endStr}`;
+                    } else {
+                        scheduleMap[cid] = `${days}`;
                     }
                 }
-
-                const roomsWithCounts = await Promise.all((roomsData || []).map(async (room) => {
-                    const { count } = await supabaseAuth
-                        .from('classroom_students')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('classroom_id', room.id);
-
-                    return {
-                        ...room,
-                        teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
-                        schedule: scheduleMap[room.id] || room.schedule || 'No schedule set',
-                        student_count: count || 0,
-                        status: room.status || 'Active',
-                        type: room.type || 'permanent'
-                    };
-                }));
-
-                setClassrooms(roomsWithCounts.filter(r => r.type === 'permanent'));
-
-                // Fetch Temporary Classes
-                const tempQuery = supabaseAuth
-                    .from('temporary_classes')
-                    .select('*')
-                    .order('class_date', { ascending: false });
-
-                const { data: tempRoomsData } = isAdminUser
-                    ? await tempQuery
-                    : await tempQuery.eq('teacher_id', profile.id);
-                
-                const tempRoomsWithCounts = await Promise.all((tempRoomsData || []).map(async (room) => {
-                    const { count } = await supabaseAuth
-                        .from('session_student_overrides')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('target_classroom_id', room.classroom_id);
-
-                    return {
-                        id: room.id,
-                        name: room.title || 'Temporary Class',
-                        description: (roomsData || []).find(c => c.id === room.classroom_id)?.description || `Temporary Session on ${room.class_date}`,
-                        schedule: (() => {
-                            const parsed = parseClassDate(room.class_date);
-                            const dayName = parsed ? parsed.toLocaleDateString('en-US', { weekday: 'short' }) : 'Invalid Date';
-                            return `${dayName} • ${formatTime12hr(room.start_time.slice(0,5))} - ${formatTime12hr(room.end_time.slice(0,5))}`;
-                        })(),
-                        teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
-                        student_count: count || 0,
-                        status: (() => {
-                            const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
-                            return shadowRoom ? (shadowRoom.status || 'Active') : 'Active';
-                        })(),
-                        class_date: room.class_date,
-                        classroom_id: room.classroom_id,
-                        start_time: room.start_time,
-                        end_time: room.end_time,
-                        type: 'temporary' as const
-                    };
-                }));
-                
-                setTempClassrooms(tempRoomsWithCounts);
-
-            } catch (err) {
-                console.error('Error fetching classrooms:', err);
-            } finally {
-                setLoading(false);
             }
-        };
 
-        fetchData();
+            const roomsWithCounts = await Promise.all((roomsData || []).map(async (room) => {
+                const { count } = await supabaseAuth
+                    .from('classroom_students')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('classroom_id', room.id);
+
+                return {
+                    ...room,
+                    teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
+                    schedule: scheduleMap[room.id] || room.schedule || 'No schedule set',
+                    student_count: count || 0,
+                    status: room.status || 'Active',
+                    type: room.type || 'permanent'
+                };
+            }));
+
+            setClassrooms(roomsWithCounts.filter(r => r.type === 'permanent'));
+
+            // Fetch Temporary Classes
+            const tempQuery = supabaseAuth
+                .from('temporary_classes')
+                .select('*')
+                .order('class_date', { ascending: false });
+
+            const { data: tempRoomsData } = isAdminUser
+                ? await tempQuery
+                : await tempQuery.eq('teacher_id', profile.id);
+            
+            const tempRoomsWithCounts = await Promise.all((tempRoomsData || []).map(async (room) => {
+                const { count } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('target_classroom_id', room.classroom_id);
+
+                return {
+                    id: room.id,
+                    name: room.title || 'Temporary Class',
+                    description: (roomsData || []).find(c => c.id === room.classroom_id)?.description || `Temporary Session on ${room.class_date}`,
+                    schedule: (() => {
+                        const parsed = parseClassDate(room.class_date);
+                        const dayName = parsed ? parsed.toLocaleDateString('en-US', { weekday: 'short' }) : 'Invalid Date';
+                        return `${dayName} • ${formatTime12hr(room.start_time.slice(0,5))} - ${formatTime12hr(room.end_time.slice(0,5))}`;
+                    })(),
+                    teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
+                    student_count: count || 0,
+                    status: (() => {
+                        const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
+                        return shadowRoom ? (shadowRoom.status || 'Active') : 'Active';
+                    })(),
+                    class_date: room.class_date,
+                    classroom_id: room.classroom_id,
+                    start_time: room.start_time,
+                    end_time: room.end_time,
+                    type: 'temporary' as const
+                };
+            }));
+            
+            setTempClassrooms(tempRoomsWithCounts);
+
+        } catch (err) {
+            console.error('Error fetching classrooms:', err);
+        } finally {
+            setLoading(false);
+        }
     }, [router]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
@@ -538,6 +751,34 @@ export default function ClassroomsPage() {
         return filtered;
     }, [getClassesForDate, statusFilter, formatFilter, searchQuery, activeSession]);
 
+    const weeklyUtilization = React.useMemo(() => {
+        const counts = [0, 0, 0, 0, 0, 0, 0];
+        
+        rawSchedules.forEach(s => {
+            const dow = s.day_of_week;
+            if (dow >= 0 && dow <= 6) {
+                counts[dow]++;
+            }
+        });
+        
+        const orderedDays = [
+            { label: 'Mon', count: counts[1] },
+            { label: 'Tue', count: counts[2] },
+            { label: 'Wed', count: counts[3] },
+            { label: 'Thu', count: counts[4] },
+            { label: 'Fri', count: counts[5] },
+            { label: 'Sat', count: counts[6] },
+            { label: 'Sun', count: counts[0] }
+        ];
+        
+        const maxCount = Math.max(...orderedDays.map(d => d.count), 1);
+        
+        return orderedDays.map(d => ({
+            ...d,
+            percentage: (d.count / maxCount) * 100
+        }));
+    }, [rawSchedules]);
+
     if (loading) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6]">
@@ -548,6 +789,7 @@ export default function ClassroomsPage() {
     }
 
     const todayStr = formatDate(new Date());
+
     let displayedClassrooms = activeView === 'today' 
         ? getClassesForDate(todayStr) 
         : activeView === 'permanent' 
@@ -627,8 +869,16 @@ export default function ClassroomsPage() {
                         </div>
                         {teacherProfile?.role === 'admin' && (
                             <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => setShowRecycleBin(true)}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 font-bold rounded-xl shadow-sm hover:shadow-md transition-all border border-slate-200 dark:border-slate-700"
+                                    title="Recycle Bin (Deleted Classrooms)"
+                                >
+                                    <span className="material-symbols-outlined text-lg">delete_sweep</span>
+                                    Recycle Bin ({recycleBin.length})
+                                </button>
                                 <Link href="/teacher-dashboard/classrooms/add">
-                                    <button className="flex items-center gap-2 px-6 py-2.5 bg-[#ecb613] text-slate-900 font-bold rounded-xl shadow-sm hover:shadow-md transition-all">
+                                    <button className="flex items-center gap-2 px-6 py-2.5 bg-[#ecb613] text-slate-900 font-bold rounded-xl shadow-sm hover:shadow-md transition-all whitespace-nowrap">
                                         <PlusCircle className="size-5" />
                                         Configure New Class
                                     </button>
@@ -1435,67 +1685,187 @@ export default function ClassroomsPage() {
                                         <span className="text-xs font-bold text-amber-600 dark:text-amber-400 px-3 py-1 bg-amber-50 dark:bg-amber-900/20 rounded-full">Report</span>
                                     </div>
                                     <div className="h-64 flex items-end justify-between gap-4 px-2">
-                                        <div className="flex-1 flex flex-col items-center gap-2">
-                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-48 overflow-hidden group">
-                                                <div className="absolute bottom-0 w-full bg-[#ecb613] h-[60%] rounded-t-lg group-hover:opacity-80 transition-opacity"></div>
+                                        {weeklyUtilization.map((dayData, idx) => (
+                                            <div key={idx} className="flex-1 flex flex-col items-center gap-2" title={`${dayData.count} classes scheduled`}>
+                                                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-48 overflow-hidden group">
+                                                    <div 
+                                                        className="absolute bottom-0 w-full bg-[#ecb613] rounded-t-lg group-hover:opacity-80 transition-all duration-300"
+                                                        style={{ height: `${dayData.percentage}%` }}
+                                                    ></div>
+                                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                        <span className="bg-slate-900/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow">
+                                                            {dayData.count}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{dayData.label}</span>
                                             </div>
-                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Mon</span>
-                                        </div>
-                                        <div className="flex-1 flex flex-col items-center gap-2">
-                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-48 overflow-hidden group">
-                                                <div className="absolute bottom-0 w-full bg-[#ecb613] h-[85%] rounded-t-lg group-hover:opacity-80 transition-opacity"></div>
-                                            </div>
-                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Tue</span>
-                                        </div>
-                                        <div className="flex-1 flex flex-col items-center gap-2">
-                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-48 overflow-hidden group">
-                                                <div className="absolute bottom-0 w-full bg-[#ecb613] h-[45%] rounded-t-lg group-hover:opacity-80 transition-opacity"></div>
-                                            </div>
-                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Wed</span>
-                                        </div>
-                                        <div className="flex-1 flex flex-col items-center gap-2">
-                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-48 overflow-hidden group">
-                                                <div className="absolute bottom-0 w-full bg-[#ecb613] h-[95%] rounded-t-lg group-hover:opacity-80 transition-opacity"></div>
-                                            </div>
-                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Thu</span>
-                                        </div>
-                                        <div className="flex-1 flex flex-col items-center gap-2">
-                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg relative h-48 overflow-hidden group">
-                                                <div className="absolute bottom-0 w-full bg-[#ecb613] h-[70%] rounded-t-lg group-hover:opacity-80 transition-opacity"></div>
-                                            </div>
-                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Fri</span>
-                                        </div>
+                                        ))}
                                     </div>
                                 </div>
-                                <div className="bg-[#f8f8f6] dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
-                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">Instructor To-Do</h3>
-                                    <div className="space-y-4">
-                                        <div className="flex items-start gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 cursor-pointer hover:border-[#ecb613] transition-colors">
-                                            <div className="mt-1">
-                                                <div className="w-5 h-5 rounded-md border-2 border-[#fef3c7] dark:border-[#ecb613]/50 flex items-center justify-center"></div>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-bold text-slate-900 dark:text-white">Review Piano Exam Recitals</p>
-                                                <p className="text-xs text-slate-500 font-medium mt-0.5">Due today, 5:00 PM</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-start gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 cursor-pointer hover:border-[#ecb613] transition-colors">
-                                            <div className="mt-1">
-                                                <div className="w-5 h-5 rounded-md border-2 border-[#fef3c7] dark:border-[#ecb613]/50 flex items-center justify-center"></div>
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-bold text-slate-900 dark:text-white">Update Flute Theory Syllabus</p>
-                                                <p className="text-xs text-slate-500 font-medium mt-0.5">Due tomorrow</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-start gap-3 p-3 bg-white/50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-[#ecb613] transition-colors cursor-pointer group">
-                                            <button className="w-full flex items-center justify-center gap-2 py-1 text-slate-500 group-hover:text-[#ecb613] text-xs font-bold transition-colors">
-                                                <Plus className="size-4" />
-                                                Add Quick Task
-                                            </button>
+                                <div className="bg-[#f8f8f6] dark:bg-slate-800/50 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">Instructor To-Do</h3>
+                                        <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                                            {todos.map(todo => (
+                                                <div key={todo.id} className="w-full flex">
+                                                    {editingTodoId === todo.id ? (
+                                                        <div className="p-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-[#ecb613] space-y-2 w-full" onClick={e => e.stopPropagation()}>
+                                                            <input
+                                                                type="text"
+                                                                value={editingTodoTitle}
+                                                                onChange={e => setEditingTodoTitle(e.target.value)}
+                                                                className="w-full bg-transparent border-0 focus:ring-0 text-sm font-bold text-slate-900 dark:text-white p-0 focus:outline-none"
+                                                                autoFocus
+                                                            />
+                                                            <div className="flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+                                                                <div className="flex items-center gap-1 w-2/3">
+                                                                    <span className="text-[10px] text-slate-400 font-semibold whitespace-nowrap">Due:</span>
+                                                                    <input
+                                                                        type="date"
+                                                                        value={editingTodoDate}
+                                                                        onChange={e => setEditingTodoDate(e.target.value)}
+                                                                        className="bg-transparent border-0 focus:ring-0 text-xs text-slate-500 font-medium p-0 focus:outline-none cursor-pointer"
+                                                                    />
+                                                                </div>
+                                                                <div className="flex gap-1.5">
+                                                                    <button 
+                                                                        onClick={() => setEditingTodoId(null)}
+                                                                        className="px-2 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-350 transition-colors"
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            if (!editingTodoTitle.trim()) return;
+                                                                            const updated = todos.map(t => 
+                                                                                t.id === todo.id 
+                                                                                    ? { 
+                                                                                        ...t, 
+                                                                                        title: editingTodoTitle.trim(), 
+                                                                                        date: editingTodoDate, 
+                                                                                        dueText: formatDueDate(editingTodoDate) 
+                                                                                      } 
+                                                                                    : t
+                                                                            );
+                                                                            saveTodos(updated);
+                                                                            setEditingTodoId(null);
+                                                                        }}
+                                                                        className="px-2 py-1 bg-[#ecb613] text-slate-900 rounded-md text-[10px] font-bold shadow hover:bg-[#ecb613]/90 transition-colors"
+                                                                    >
+                                                                        Save
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div 
+                                                            onClick={() => handleToggleTodo(todo.id)}
+                                                            className={`flex items-start gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 cursor-pointer hover:border-[#ecb613] transition-all group w-full ${todo.completed ? 'opacity-60' : ''}`}
+                                                        >
+                                                            <div className="mt-1">
+                                                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${todo.completed ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-[#fef3c7] dark:border-[#ecb613]/50'}`}>
+                                                                    {todo.completed && <Check className="size-3 stroke-[4]" />}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className={`text-sm font-bold text-slate-900 dark:text-white truncate ${todo.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>{todo.title}</p>
+                                                                <p className="text-xs text-slate-500 font-medium mt-0.5">{todo.dueText}</p>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100">
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setEditingTodoId(todo.id);
+                                                                        setEditingTodoTitle(todo.title);
+                                                                        setEditingTodoDate(todo.date || new Date().toISOString().split('T')[0]);
+                                                                    }}
+                                                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-all text-slate-450 hover:text-[#ecb613]"
+                                                                >
+                                                                    <Edit className="size-3.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={(e) => handleDeleteTodo(todo.id, e)}
+                                                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-all text-slate-400 hover:text-rose-500"
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            {todos.length === 0 && (
+                                                <p className="text-center text-xs text-slate-400 dark:text-slate-500 py-6">No tasks. Great job!</p>
+                                            )}
                                         </div>
                                     </div>
+                                    <div className="mt-4">
+                                        {showAddTodo ? (
+                                            <div className="p-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-[#ecb613] space-y-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Task title..."
+                                                    value={newTodoTitle}
+                                                    onChange={e => setNewTodoTitle(e.target.value)}
+                                                    className="w-full bg-transparent border-0 focus:ring-0 text-sm font-bold text-slate-900 dark:text-white p-0 focus:outline-none"
+                                                    autoFocus
+                                                />
+                                                <div className="flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+                                                    <div className="flex items-center gap-1 w-2/3">
+                                                        <span className="text-[10px] text-slate-400 font-semibold whitespace-nowrap">Due:</span>
+                                                        <input
+                                                            type="date"
+                                                            value={newTodoDate}
+                                                            onChange={e => setNewTodoDate(e.target.value)}
+                                                            className="bg-transparent border-0 focus:ring-0 text-xs text-slate-500 font-medium p-0 focus:outline-none cursor-pointer"
+                                                        />
+                                                    </div>
+                                                    <div className="flex gap-1.5">
+                                                        <button 
+                                                            onClick={() => {
+                                                                setShowAddTodo(false);
+                                                                setNewTodoTitle('');
+                                                            }}
+                                                            className="px-2 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-350 transition-colors"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => {
+                                                                if (!newTodoTitle.trim()) return;
+                                                                const newTodo: TodoItem = {
+                                                                    id: Date.now().toString(),
+                                                                    title: newTodoTitle.trim(),
+                                                                    date: newTodoDate,
+                                                                    dueText: formatDueDate(newTodoDate),
+                                                                    completed: false
+                                                                };
+                                                                saveTodos([...todos, newTodo]);
+                                                                setShowAddTodo(false);
+                                                                setNewTodoTitle('');
+                                                                setNewTodoDate(new Date().toISOString().split('T')[0]);
+                                                            }}
+                                                            className="px-2 py-1 bg-[#ecb613] text-slate-900 rounded-md text-[10px] font-bold shadow hover:bg-[#ecb613]/90 transition-colors"
+                                                        >
+                                                            Save
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div 
+                                                className="flex items-start gap-3 p-3 bg-white/50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-[#ecb613] transition-colors cursor-pointer group" 
+                                                onClick={() => setShowAddTodo(true)}
+                                            >
+                                                <button className="w-full flex items-center justify-center gap-2 py-1 text-slate-500 group-hover:text-[#ecb613] text-xs font-bold transition-colors">
+                                                    <Plus className="size-4" />
+                                                    Add Quick Task
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
+                                </div>
                                 </div>
                         </>
                     )}
@@ -1540,6 +1910,83 @@ export default function ClassroomsPage() {
                         <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
                     </div>
                 )}
+            {/* ─── Recycle Bin Modal ──────────────────────────────────────────────── */}
+            {showRecycleBin && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-[#ecb613] text-2xl">delete_sweep</span>
+                                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Classrooms Recycle Bin</h3>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {recycleBin.length > 0 && (
+                                    <button
+                                        onClick={handleClearRecycleBin}
+                                        className="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-450 dark:hover:bg-rose-900/30 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">delete_forever</span>
+                                        Empty Bin
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setShowRecycleBin(false)}
+                                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-650 transition-colors"
+                                >
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-6 max-h-[400px] overflow-y-auto space-y-3">
+                            {recycleBin.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400">
+                                    <span className="material-symbols-outlined text-5xl mb-2 text-slate-300 dark:text-slate-700">delete_outline</span>
+                                    <p className="text-sm font-semibold">Your recycle bin is empty.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Deleted classrooms will show up here to be restored if needed.</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {recycleBin.map((item) => (
+                                        <div key={item.id} className="py-3 flex items-center justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-slate-900 dark:text-white truncate">{item.name}</p>
+                                                <p className="text-xs text-slate-450 mt-0.5">
+                                                    Type: <span className="capitalize font-semibold text-slate-650 dark:text-slate-350">{item.type}</span> • Deleted: {new Date(item.deletedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleRestoreClassroom(item)}
+                                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                                                    title="Restore Classroom"
+                                                >
+                                                    <span className="material-symbols-outlined text-sm">settings_backup_restore</span>
+                                                    Restore
+                                                </button>
+                                                <button
+                                                    onClick={() => handlePermanentDeleteClassroom(item.id)}
+                                                    className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all"
+                                                    title="Delete Permanently"
+                                                >
+                                                    <span className="material-symbols-outlined text-lg">delete</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex justify-end border-t border-slate-100 dark:border-slate-800">
+                            <button
+                                onClick={() => setShowRecycleBin(false)}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             </main>
         </div>
     );

@@ -1105,7 +1105,7 @@ export default function TeacherDashboardContainer() {
         // Bind events to cells
         cells.forEach(cell => {
             const cellDate = new Date(cell.date);
-            const cellDow = (cellDate.getDay() + 6) % 7;
+            const cellDow = cellDate.getDay();
 
             // Bind recurring classes matching Day Of Week
             const matchingSchedules = classroomSchedules.filter(sch => sch.day_of_week === cellDow);
