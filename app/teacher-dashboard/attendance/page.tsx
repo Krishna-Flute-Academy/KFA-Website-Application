@@ -689,6 +689,9 @@ export default function AttendancePage() {
                 return { ...prev, [batchId]: nextSummary };
             });
 
+            // Trigger refresh of missed report so changed status updates immediately
+            fetchMissedReport();
+
         } catch (err: any) {
             console.error('Error marking attendance:', err);
             alert(`Failed to save attendance: ${err.message || err}`);

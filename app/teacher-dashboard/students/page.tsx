@@ -282,9 +282,10 @@ export default function StudentDirectory() {
 
                         // 1. Calculate Attendance Percentage
                         let attendancePct = 100;
-                        if (studentAttendance.length > 0) {
-                            const presentCount = studentAttendance.filter(status => status === 'present' || status === 'late').length;
-                            attendancePct = Math.round((presentCount / studentAttendance.length) * 100);
+                        const eligibleAttendance = studentAttendance.filter(status => status !== 'excused');
+                        if (eligibleAttendance.length > 0) {
+                            const presentCount = eligibleAttendance.filter(status => status === 'present' || status === 'late').length;
+                            attendancePct = Math.round((presentCount / eligibleAttendance.length) * 100);
                         }
 
                         // 2. Calculate Progress Percentage
@@ -401,10 +402,11 @@ export default function StudentDirectory() {
                         const completedCount = progressCountMap.get(s.id) || 0;
                         const studentAssignments = assignmentsMap.get(s.id) || [];
 
-                        let attendancePct = 0;
-                        if (studentAttendance.length > 0) {
-                            const presentCount = studentAttendance.filter(status => status === 'present' || status === 'late').length;
-                            attendancePct = Math.round((presentCount / studentAttendance.length) * 100);
+                        let attendancePct = 100;
+                        const eligibleAttendance = studentAttendance.filter(status => status !== 'excused');
+                        if (eligibleAttendance.length > 0) {
+                            const presentCount = eligibleAttendance.filter(status => status === 'present' || status === 'late').length;
+                            attendancePct = Math.round((presentCount / eligibleAttendance.length) * 100);
                         }
 
                         const progressPct = totalLessonsCount > 0 ? Math.round((completedCount / totalLessonsCount) * 100) : 0;

@@ -70,6 +70,7 @@ interface DirectoryStudent {
     name: string;
     profile_pic_url: string | null;
     status: string;
+    is_online?: boolean;
 }
 
 interface ClassNote {
@@ -1675,7 +1676,24 @@ export default function ClassroomDashboardPage({
                 : await usersQuery.eq('teacher_id', teacherProfile.id);
 
             if (error) throw error;
-            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id));
+
+            // Fetch online/active user sessions
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+            const { data: activeSessions } = await supabaseAuth
+                .from('user_sessions')
+                .select('user_id')
+                .is('logout_at', null)
+                .gt('last_activity_at', fiveMinutesAgo);
+
+            const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+
+            const available = (data || [])
+                .map((s: any) => ({
+                    ...s,
+                    is_online: onlineUserIds.has(s.id)
+                }))
+                .filter((s: any) => !enrolledIds.has(s.id));
+
             setDirectoryStudents(available);
         } catch (err) {
             console.error('Error fetching directory:', err);
@@ -3558,10 +3576,12 @@ export default function ClassroomDashboardPage({
                                             </div>
                                             <div className="flex-1 min-w-0 text-left">
                                                 <p className="text-sm font-bold text-slate-905 dark:text-white truncate">{s.name}</p>
-                                                <p className="text-xs text-slate-500">
-                                                    <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${s.status === 'active' ? 'bg-green-500' : 'bg-slate-400'}`} />
-                                                    {s.status === 'active' ? 'Active' : 'Inactive'}
-                                                </p>
+                                                {s.is_online && (
+                                                    <p className="text-xs text-slate-500 flex items-center">
+                                                        <span className="inline-block w-1.5 h-1.5 rounded-full mr-1 bg-green-500 animate-pulse" />
+                                                        Active
+                                                    </p>
+                                                )}
                                             </div>
                                             <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all ${
                                                 isSelected

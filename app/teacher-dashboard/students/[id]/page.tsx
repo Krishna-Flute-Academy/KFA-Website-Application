@@ -754,9 +754,10 @@ export default function StudentProfilePage() {
         );
     }
 
+    const eligibleAttendance = attendance.filter(a => a.status !== 'excused');
     const attendanceStats = {
-        present: attendance.filter(a => a.status === 'present' || a.status === 'late').length,
-        total: attendance.length,
+        present: eligibleAttendance.filter(a => a.status === 'present' || a.status === 'late').length,
+        total: eligibleAttendance.length,
     };
     const presencePercentage = attendanceStats.total > 0
         ? Math.round((attendanceStats.present / attendanceStats.total) * 100)

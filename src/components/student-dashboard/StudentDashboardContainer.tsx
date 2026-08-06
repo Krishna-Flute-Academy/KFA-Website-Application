@@ -1234,13 +1234,23 @@ export default function StudentDashboardContainer() {
     const mergedLogs = useMemo(() => {
         const logsMap = new Map<string, any>();
         sessionLogs.forEach(log => {
-            logsMap.set(log.session_date, log);
+            if (log.session_date) {
+                const cleanDate = log.session_date.split('T')[0].split(' ')[0];
+                logsMap.set(cleanDate, log);
+            }
         });
 
-        const allDates = new Set<string>([
-            ...sessionLogs.map(log => log.session_date),
-            ...attendance.map(a => a.date)
-        ]);
+        const allDates = new Set<string>();
+        sessionLogs.forEach(log => {
+            if (log.session_date) {
+                allDates.add(log.session_date.split('T')[0].split(' ')[0]);
+            }
+        });
+        attendance.forEach(a => {
+            if (a.date) {
+                allDates.add(a.date.split('T')[0].split(' ')[0]);
+            }
+        });
 
         const sortedDates = Array.from(allDates).sort((a, b) => b.localeCompare(a));
 
@@ -1251,7 +1261,7 @@ export default function StudentDashboardContainer() {
 
         return sortedDates.map(dateStr => {
             const log = logsMap.get(dateStr);
-            const att = attendance.find(a => a.date === dateStr);
+            const att = attendance.find(a => a.date && a.date.split('T')[0].split(' ')[0] === dateStr);
             const targetClassroomId = log?.classroom_id || att?.classroom_id;
             return {
                 date: dateStr,
@@ -1809,8 +1819,9 @@ export default function StudentDashboardContainer() {
     }), [attendance]);
 
     const attendancePct = useMemo(() => {
-        return attendanceStats.total > 0
-            ? Math.round(((attendanceStats.present + attendanceStats.late) / attendanceStats.total) * 100)
+        const eligibleTotal = attendanceStats.present + attendanceStats.late + attendanceStats.absent;
+        return eligibleTotal > 0
+            ? Math.round(((attendanceStats.present + attendanceStats.late) / eligibleTotal) * 100)
             : null;
     }, [attendanceStats]);
 

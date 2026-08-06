@@ -33,7 +33,8 @@ export default function AttendanceTab({
     const lateCount = activeRecords.filter(r => r === 'late').length;
     const absentCount = activeRecords.filter(r => r === 'absent').length;
     const excusedCount = activeRecords.filter(r => r === 'excused').length;
-    const presentRate = totalCount > 0 ? Math.round(((presentCount + lateCount) / totalCount) * 100) : 0;
+    const activeTotalCount = totalCount - excusedCount;
+    const presentRate = activeTotalCount > 0 ? Math.round(((presentCount + lateCount) / activeTotalCount) * 100) : 0;
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
