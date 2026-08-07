@@ -198,6 +198,7 @@ export default function AttendancePage() {
     }, []);
     const [fromDate, setFromDate] = useState<string>(initialFromDate);
     const [toDate, setToDate] = useState<string>(initialToDate);
+    const [debugInfo, setDebugInfo] = useState<any>(null);
     const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
     const [logsLoading, setLogsLoading] = useState(false);
 
@@ -896,11 +897,7 @@ export default function AttendancePage() {
 
             if (logsErr) throw logsErr;
 
-            console.log("DEBUG fetchMissedReport:", {
-                teacherProfile,
-                fromDate,
-                toDate,
-                missedStatusFilter,
+            setDebugInfo({
                 studentIdsCount: studentIds.length,
                 studentIdsMatchPranshu: studentIds.some(id => id.startsWith("2a31496d")),
                 logsDataCount: logsData?.length,
@@ -2033,6 +2030,17 @@ export default function AttendancePage() {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {debugInfo && (
+                                        <div className="bg-amber-50 dark:bg-slate-800 p-4 rounded-2xl mb-4 border border-amber-200 dark:border-slate-700 text-[10px] font-mono text-left text-slate-800 dark:text-slate-200">
+                                            <h4 className="font-bold text-amber-900 dark:text-amber-400 mb-2">🔍 PRANSHU DIAGNOSTICS:</h4>
+                                            <div>- Total student IDs queried: {debugInfo.studentIdsCount}</div>
+                                            <div>- Pranshu profile found in students query: {debugInfo.studentIdsMatchPranshu ? "✅ YES" : "❌ NO"}</div>
+                                            <div>- Raw Missed/Excused Logs returned by DB: {debugInfo.logsDataCount}</div>
+                                            <div className="mt-2">- Pranshu Raw Logs in DB: <pre className="bg-white/50 p-2 rounded-lg mt-1 overflow-x-auto">{JSON.stringify(debugInfo.pranshuRawLogs, null, 2)}</pre></div>
+                                            <div className="mt-2">- Pranshu Overrides: <pre className="bg-white/50 p-2 rounded-lg mt-1 overflow-x-auto">{JSON.stringify(debugInfo.pranshuOverrides, null, 2)}</pre></div>
+                                        </div>
+                                    )}
 
                                     {/* Grid/Table Results */}
                                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
