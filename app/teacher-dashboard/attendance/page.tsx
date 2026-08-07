@@ -181,10 +181,10 @@ export default function AttendancePage() {
 
     const initialFromDate = useMemo(() => {
         const d = new Date();
-        const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);
-        const year = firstDay.getFullYear();
-        const month = String(firstDay.getMonth() + 1).padStart(2, '0');
-        const day = String(firstDay.getDate()).padStart(2, '0');
+        const pastDate = new Date(d.getTime() - 60 * 24 * 60 * 60 * 1000);
+        const year = pastDate.getFullYear();
+        const month = String(pastDate.getMonth() + 1).padStart(2, '0');
+        const day = String(pastDate.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     }, []);
     const initialToDate = useMemo(() => {
@@ -903,18 +903,8 @@ export default function AttendancePage() {
                 return !isOverride;
             });
 
-            // Group by student_id to only keep the latest missed class for each student
-            const latestLogsByStudent: any[] = [];
-            const seenStudents = new Set();
-            regularLogs.forEach((log: any) => {
-                if (!seenStudents.has(log.student_id)) {
-                    seenStudents.add(log.student_id);
-                    latestLogsByStudent.push(log);
-                }
-            });
-
             // 5. Resolve classroom names and check makeup completion status
-            const resolved = await Promise.all(latestLogsByStudent.map(async (row: any) => {
+            const resolved = await Promise.all(regularLogs.map(async (row: any) => {
                 let name = classrooms.find(c => c.id === row.classroom_id)?.name;
                 let isTemp = false;
 
