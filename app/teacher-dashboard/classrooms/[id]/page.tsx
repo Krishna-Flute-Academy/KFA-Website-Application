@@ -818,12 +818,14 @@ export default function ClassroomDashboardPage({
                 const roomData = roomRes.data;
                 const roomError = roomRes.error;
 
-                setTeacherProfile(profile);
+                const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('kfa-user-role') : null;
+                const userRole = cachedRole || profile?.role;
+                setTeacherProfile(profile ? { ...profile, role: userRole } : null);
                 if (!profile) return;
                 if (roomError) throw roomError;
 
                 // Authorization check
-                if (profile.role !== 'admin' && roomData.teacher_id !== profile.id) {
+                if (userRole !== 'admin' && roomData.teacher_id !== profile.id) {
                     throw new Error('Unauthorized classroom access');
                 }
 

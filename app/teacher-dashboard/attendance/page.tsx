@@ -253,8 +253,10 @@ export default function AttendancePage() {
                     return;
                 }
 
-                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
-                const isAdmin = profile.role === 'admin';
+                const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('kfa-user-role') : null;
+                const userRole = cachedRole || profile.role;
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: userRole });
+                const isAdmin = userRole === 'admin';
                 
                 // 1. Fetch classrooms
                 const classesQuery = supabaseAuth

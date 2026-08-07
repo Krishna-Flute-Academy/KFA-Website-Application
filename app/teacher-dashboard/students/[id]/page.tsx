@@ -148,7 +148,9 @@ export default function StudentProfilePage() {
                     .select('id, name, email, role')
                     .eq('id', session.user.id)
                     .single();
-                setTeacherProfile(profile);
+                const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('kfa-user-role') : null;
+                const userRole = cachedRole || profile?.role;
+                setTeacherProfile(profile ? { ...profile, role: userRole } : null);
 
                 // 3. Fetch Student Details directly from users table
                 const { data: userData, error: userError } = await supabaseAuth
@@ -180,7 +182,7 @@ export default function StudentProfilePage() {
                 }
 
                 // Authorization check for teachers
-                if (profile && profile.role !== 'admin' && userData.teacher_id !== profile.id) {
+                if (profile && userRole !== 'admin' && userData.teacher_id !== profile.id) {
                     alert('You are not authorized to view this student profile.');
                     router.push('/teacher-dashboard/students');
                     return;

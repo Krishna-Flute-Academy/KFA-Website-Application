@@ -259,6 +259,11 @@ export default function TeacherDashboardContainer() {
                 router.push('/');
                 return;
             }
+
+            const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('kfa-user-role') : null;
+            if (cachedRole) {
+                profile.role = cachedRole;
+            }
             setTeacherProfile(profile);
 
             // If Admin, load teacher listing for dropdown
