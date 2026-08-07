@@ -198,7 +198,6 @@ export default function AttendancePage() {
     }, []);
     const [fromDate, setFromDate] = useState<string>(initialFromDate);
     const [toDate, setToDate] = useState<string>(initialToDate);
-    const [debugInfo, setDebugInfo] = useState<any>(null);
     const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
     const [logsLoading, setLogsLoading] = useState(false);
 
@@ -897,13 +896,7 @@ export default function AttendancePage() {
 
             if (logsErr) throw logsErr;
 
-            setDebugInfo({
-                studentIdsCount: studentIds.length,
-                studentIdsMatchPranshu: studentIds.some(id => id.startsWith("2a31496d")),
-                logsDataCount: logsData?.length,
-                pranshuRawLogs: logsData?.filter((log: any) => log.student_id.startsWith("2a31496d")),
-                pranshuOverrides: overridesData?.filter((o: any) => o.student_id.startsWith("2a31496d"))
-            });
+
 
             // Filter out logs that are actually missed makeup classes (overrides)
             // so they don't count as separate root missed classes.
@@ -912,9 +905,21 @@ export default function AttendancePage() {
                 const isOverride = (overridesData || []).some((o: any) => {
                     if (!o.override_date) return false;
                     const oDateClean = o.override_date.split('T')[0].split(' ')[0];
-                    return o.student_id === r.student_id && 
+                    
+                    const matchesOverride = o.student_id === r.student_id && 
                            o.target_classroom_id === r.classroom_id && 
                            oDateClean === rDateClean;
+
+                    if (matchesOverride) {
+                        // Check if there is an original missed class record (parent) in logsData
+                        const hasParentRecord = (logsData || []).some((parent: any) => {
+                            if (parent.student_id !== r.student_id || parent.id === r.id) return false;
+                            const pDateClean = parent.date.split('T')[0].split(' ')[0];
+                            return pDateClean < oDateClean;
+                        });
+                        return hasParentRecord;
+                    }
+                    return false;
                 });
                 return !isOverride;
             });
@@ -2031,16 +2036,7 @@ export default function AttendancePage() {
                                         </div>
                                     </div>
 
-                                    {debugInfo && (
-                                        <div className="bg-amber-50 dark:bg-slate-800 p-4 rounded-2xl mb-4 border border-amber-200 dark:border-slate-700 text-[10px] font-mono text-left text-slate-800 dark:text-slate-200">
-                                            <h4 className="font-bold text-amber-900 dark:text-amber-400 mb-2">🔍 PRANSHU DIAGNOSTICS:</h4>
-                                            <div>- Total student IDs queried: {debugInfo.studentIdsCount}</div>
-                                            <div>- Pranshu profile found in students query: {debugInfo.studentIdsMatchPranshu ? "✅ YES" : "❌ NO"}</div>
-                                            <div>- Raw Missed/Excused Logs returned by DB: {debugInfo.logsDataCount}</div>
-                                            <div className="mt-2">- Pranshu Raw Logs in DB: <pre className="bg-white/50 p-2 rounded-lg mt-1 overflow-x-auto">{JSON.stringify(debugInfo.pranshuRawLogs, null, 2)}</pre></div>
-                                            <div className="mt-2">- Pranshu Overrides: <pre className="bg-white/50 p-2 rounded-lg mt-1 overflow-x-auto">{JSON.stringify(debugInfo.pranshuOverrides, null, 2)}</pre></div>
-                                        </div>
-                                    )}
+
 
                                     {/* Grid/Table Results */}
                                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
