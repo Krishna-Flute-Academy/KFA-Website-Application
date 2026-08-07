@@ -838,6 +838,13 @@ export default function AttendancePage() {
                 : await studentsQuery.eq('teacher_id', teacherProfile.id);
 
             if (studentsErr) throw studentsErr;
+
+            console.log("DEBUG studentIds query status:", {
+                studentsErr,
+                studentsDataCount: studentsData?.length,
+                pranshuInStudentsData: studentsData?.filter((s: any) => s.id.startsWith("2a31496d"))
+            });
+
             const studentIds = (studentsData || []).map(s => s.id);
 
             if (studentIds.length === 0) {
@@ -890,6 +897,18 @@ export default function AttendancePage() {
                 .order('date', { ascending: false });
 
             if (logsErr) throw logsErr;
+
+            console.log("DEBUG fetchMissedReport:", {
+                teacherProfile,
+                fromDate,
+                toDate,
+                missedStatusFilter,
+                studentIdsCount: studentIds.length,
+                studentIdsMatchPranshu: studentIds.some(id => id.startsWith("2a31496d")),
+                logsDataCount: logsData?.length,
+                pranshuRawLogs: logsData?.filter((log: any) => log.student_id.startsWith("2a31496d")),
+                pranshuOverrides: overridesData?.filter((o: any) => o.student_id.startsWith("2a31496d"))
+            });
 
             // Filter out logs that are actually missed makeup classes (overrides)
             // so they don't count as separate root missed classes.
