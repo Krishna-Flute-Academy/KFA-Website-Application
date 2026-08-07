@@ -106,6 +106,15 @@ export default function AuthCallbackPage() {
                 }
             }
 
+            // Check if there is a 'next' redirect URL (e.g. /reset-password)
+            const params = new URLSearchParams(window.location.search);
+            const nextParam = params.get('next');
+
+            if (nextParam === '/reset-password') {
+                router.push('/reset-password');
+                return;
+            }
+
             // Existing user — redirect based on role
             const role = existingUser.role?.toLowerCase();
 

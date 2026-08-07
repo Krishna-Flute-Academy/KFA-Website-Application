@@ -145,7 +145,11 @@ export const INITIAL_CHAPTERS: CourseChapter[] = [
     { id: 'a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d', module_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Completing the Middle Octave', description: '7 essential topics covering Dha, Ni, Upper Sa, the complete Madhya Saptak, Alankars, and song practice.', chapter_number: 6 },
     
     // Level 2 Chapters
-    { id: 'd48691c0-a49a-4b0c-a1a5-e56ba0386994', module_id: 'a2b3c4d5-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 1 - Elementary Scales', description: '4 Essential topics • Scale structures', chapter_number: 1 },
+    { id: 'd48691c0-a49a-4b0c-a1a5-e56ba0386994', module_id: 'a2b3c4d5-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 1 - Expanding Range and Rhythm Control', description: '5 Essential topics • Developing middle octave control, rhythm cycles, and offbeat playing', chapter_number: 1 },
+    { id: 'f2a3b4c5-d6e7-8f9a-0b1c-2d3e4f5a6b7c', module_id: 'a2b3c4d5-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 2 - Composition and Song Practice', description: '7 Essential topics • Compositions, melodies, songs, bhajans, and musical expression', chapter_number: 2 },
+    { id: 'e5b6c7d8-f9a0-1b2c-3d4e-5f6a7b8c9d0e', module_id: 'a2b3c4d5-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 3 - Introduction to Raag and Classical Structure', description: '7 Essential topics • Teentaal, Raag Bhoopali, note movements, Merukhand, and Alaap', chapter_number: 3 },
+    { id: 'b7c8d9e0-f1a2-3b4c-5d6e-7f8a9b0c1d2e', module_id: 'a2b3c4d5-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 4 - Raag Bilawal', description: '7 Essential topics • Raag Bilawal structure, Pakad, Alankars, composition, Alaap, Merukhand, and song application', chapter_number: 4 },
+    { id: 'e6f7a8b9-0c1d-2e3f-4a5b-6c7d8e9f0a1b', module_id: 'a2b3c4d5-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 5 - Murki, Kan Swar & Meend', description: '5 Essential topics • Understanding and applying classical ornamentation techniques', chapter_number: 5 },
     
     // Level 3 Chapters
     { id: 'c07864a0-3550-40be-9608-cee5d0880d57', module_id: 'a3b4c5d6-e5f6-7a8b-9c0d-1e2f3a4b5c6d', title: 'Chapter 1 - Intermediate Rhythms', description: '6 Essential topics • Triple meter structures', chapter_number: 1 },
@@ -867,5 +871,557 @@ Dha Ni Dha Ni</pre>`,
 Ga Ma Pa Dha | Pa Ma Ga</pre>`,
         lesson_number: 7, material_type: 'note', is_introductory: false, is_very_important: false,
         bullet_points: ['Play simple melodies using the complete octave.', 'Maintain correct rhythm.', 'Use proper breath control.', 'Play with smooth note transitions.', 'Perform songs confidently with a metronome.']
+    },
+    // Level 2, Chapter 1 - Expanding Range and Rhythm Control
+    {
+        id: 'c21e0100-1111-2222-3333-444444444444',
+        chapter_id: 'd48691c0-a49a-4b0c-a1a5-e56ba0386994',
+        title: 'Full Scale Practice (Sa to Upper Sa)',
+        description: `<h3>Overview</h3><p>In this topic, students strengthen their command over the complete Middle Octave (Madhya Saptak) by practicing the full scale in both ascending (Arohan) and descending (Avarohan) order. The focus is on producing a clear tone, maintaining steady rhythm, and developing smooth finger coordination.</p><h4>Practice</h4><p><strong>Ascending (Arohan)</strong></p><pre>Sa Re Ga Ma Pa Dha Ni Sa'</pre><p><strong>Descending (Avarohan)</strong></p><pre>Sa' Ni Dha Pa Ma Ga Re Sa</pre>`,
+        lesson_number: 1,
+        material_type: 'note',
+        is_introductory: true,
+        is_very_important: true,
+        bullet_points: [
+            'Play the complete scale smoothly.',
+            'Maintain a steady rhythm with a metronome.',
+            'Produce clear and even notes.',
+            'Develop smooth finger movement.',
+            'Maintain consistent tone throughout the octave.'
+        ]
+    },
+    {
+        id: 'c21e0200-1111-2222-3333-444444444444',
+        chapter_id: 'd48691c0-a49a-4b0c-a1a5-e56ba0386994',
+        title: 'Base Pa to Upper Sa Practice',
+        description: `<h3>Overview</h3><p>This exercise expands the student's playing range by connecting the Lower Pa (P.) with the complete Middle Octave. It improves octave transition, finger control, and breath stability.</p><h4>Practice</h4><pre>P. Sa Re Ga
+
+P. Sa Re Ga Ma
+
+P. Sa Re Ga Ma Pa
+
+P. Sa Re Ga Ma Pa Dha Ni Sa'</pre>`,
+        lesson_number: 2,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: true,
+        bullet_points: [
+            'Play smoothly from Lower Pa to Upper Sa.',
+            'Maintain balanced breath throughout.',
+            'Produce clear notes across the range.',
+            'Develop smooth octave transitions.',
+            'Maintain steady rhythm.'
+        ]
+    },
+    {
+        id: 'c21e0300-1111-2222-3333-444444444444',
+        chapter_id: 'd48691c0-a49a-4b0c-a1a5-e56ba0386994',
+        title: 'Advanced Alankar Practice',
+        description: `<h3>Overview</h3><p>These Alankars improve finger agility, note accuracy, coordination, and musical thinking. Students should begin slowly and gradually increase speed using a metronome.</p><h4>Practice Patterns</h4><p><strong>Pattern 1</strong></p><pre>Sa Re Ga Re
+Re Ga Ma Ga
+Ga Ma Pa Ma</pre><p><strong>Pattern 2</strong></p><pre>Sa Re Ga Ma
+Re Ga Ma Pa
+Ga Ma Pa Dha</pre><p><strong>Pattern 3 (Skipping Notes)</strong></p><pre>Sa Ga
+Re Ma
+Ga Pa</pre>`,
+        lesson_number: 3,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Practice all Alankars accurately.',
+            'Maintain equal timing between notes.',
+            'Develop finger agility.',
+            'Improve note clarity.',
+            'Increase speed only after achieving accuracy.'
+        ]
+    },
+    {
+        id: 'c21e0400-1111-2222-3333-444444444444',
+        chapter_id: 'd48691c0-a49a-4b0c-a1a5-e56ba0386994',
+        title: 'Rhythm Practice',
+        description: `<h3>Overview</h3><p>Students learn to perform scales and Alankars in different rhythmic cycles. Practicing with a metronome or tabla improves timing, coordination, and rhythmic confidence.</p><h4>Practice Rhythms</h4><p><strong>4/4 Rhythm</strong></p><pre>1 2 3 4</pre><p><strong>Keherwa (8 Beats)</strong></p><pre>Dha Ge Na Ti | Na Ka Dhi Na</pre><p><strong>Dadra (6 Beats)</strong></p><pre>Dha Dhi Na | Dha Tu Na</pre><p><strong>3/4 Rhythm</strong></p><pre>1 2 3</pre>`,
+        lesson_number: 4,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Practice scales in different rhythms.',
+            'Play Alankars with a metronome.',
+            'Maintain accurate timing.',
+            'Understand the feel of Keherwa and Dadra.',
+            'Develop rhythmic consistency.'
+        ]
+    },
+    {
+        id: 'c21e0500-1111-2222-3333-444444444444',
+        chapter_id: 'd48691c0-a49a-4b0c-a1a5-e56ba0386994',
+        title: 'Understanding Offbeat Playing',
+        description: `<h3>Overview</h3><p>Students are introduced to Offbeat Playing, where a musical phrase begins on a beat other than the first beat of the cycle. This develops rhythmic awareness and improves coordination with tabla accompaniment.</p><h4>Practice</h4><p><strong>Start on Beat 2 (Beat 1 - Rest)</strong></p><pre>(Rest) Sa Re Ga Ma</pre><p>Practice the same phrase starting from:</p><ul><li>Beat 2</li><li>Beat 3</li><li>Beat 4</li></ul>`,
+        lesson_number: 5,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Understand the concept of offbeat playing.',
+            'Start phrases on different beats.',
+            'Maintain the rhythm while shifting the starting beat.',
+            'Improve coordination with tabla.',
+            'Develop rhythmic confidence and musical awareness.'
+        ]
+    },
+    // Level 2, Chapter 2 - Composition and Song Practice
+    {
+        id: 'c22e0100-1111-2222-3333-444444444444',
+        chapter_id: 'f2a3b4c5-d6e7-8f9a-0b1c-2d3e4f5a6b7c',
+        title: 'Introduction to Musical Composition',
+        description: `<h3>Overview</h3><p>In this topic, students are introduced to the concept of a musical composition (Bandish/Dhun). They learn how individual notes combine to form musical phrases and how rhythm, breath control, and expression bring a melody to life.</p><h4>Concepts</h4><ul><li>What is a Composition (Bandish / Dhun)?</li><li>How notes form musical phrases.</li><li>Importance of rhythm and expression.</li></ul>`,
+        lesson_number: 1,
+        material_type: 'note',
+        is_introductory: true,
+        is_very_important: true,
+        bullet_points: [
+            'Understand the concept of a musical composition.',
+            'Recognize musical phrases.',
+            'Maintain smooth note transitions.',
+            'Play with correct rhythm.',
+            'Develop basic musical expression.'
+        ]
+    },
+    {
+        id: 'c22e0200-1111-2222-3333-444444444444',
+        chapter_id: 'f2a3b4c5-d6e7-8f9a-0b1c-2d3e4f5a6b7c',
+        title: 'Basic Flute Compositions',
+        description: `<h3>Overview</h3><p>Students learn simple flute compositions that strengthen note relationships, rhythm, and finger coordination while improving confidence in playing melodic phrases.</p><h4>Practice Patterns</h4><p><strong>Practice 1 – SPPS Composition</strong></p><pre>Sa Pa Pa Sa
+
+Pa Pa Sa</pre><p><strong>Practice 2 – P.P.P. DPP Composition</strong></p><pre>P. P. P.
+
+D P P</pre>`,
+        lesson_number: 2,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: true,
+        bullet_points: [
+            'Play both compositions accurately.',
+            'Maintain a steady rhythm.',
+            'Develop the relationship between Sa and Pa.',
+            'Improve Lower Octave control.',
+            'Produce a clear and consistent tone.'
+        ]
+    },
+    {
+        id: 'c22e0300-1111-2222-3333-444444444444',
+        chapter_id: 'f2a3b4c5-d6e7-8f9a-0b1c-2d3e4f5a6b7c',
+        title: 'Melody Development Exercises',
+        description: `<h3>Overview</h3><p>These exercises help students connect notes into meaningful musical phrases while improving breath control, phrasing, and note continuity.</p><h4>Practice</h4><pre>Sa Re Ga Ma | Ga Re Sa
+Ga Ma Pa Dha | Pa Ma Ga
+Sa Ga Ma Pa | Dha Pa Ma</pre>`,
+        lesson_number: 3,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Play melodic phrases smoothly.',
+            'Maintain proper breath control.',
+            'Connect notes without breaks.',
+            'Develop musical phrasing.',
+            'Play with consistent rhythm.'
+        ]
+    },
+    {
+        id: 'c22e0400-1111-2222-3333-444444444444',
+        chapter_id: 'f2a3b4c5-d6e7-8f9a-0b1c-2d3e4f5a6b7c',
+        title: 'Bollywood Song Practice',
+        description: `<h3>Overview</h3><p>Students apply their technical skills by learning familiar Bollywood melodies. These songs improve melody recognition, rhythm, expression, and overall musical confidence.</p><h4>Songs</h4><ul><li>Titan Theme</li><li>Ye Dosti</li><li>Chookar Mere Man Ko</li><li>Aa Chal Ke Tujhe</li></ul>`,
+        lesson_number: 4,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Play each melody accurately.',
+            'Maintain the correct rhythm.',
+            'Use smooth note transitions.',
+            'Develop musical expression.',
+            'Perform songs confidently.'
+        ]
+    },
+    {
+        id: 'c22e0500-1111-2222-3333-444444444444',
+        chapter_id: 'f2a3b4c5-d6e7-8f9a-0b1c-2d3e4f5a6b7c',
+        title: 'Bhajan Practice',
+        description: `<h3>Overview</h3><p>Bhajans help students develop slow, expressive playing while improving breath control and emotional connection with the music.</p><h4>Bhajans</h4><ul><li>Achyutam Keshavam</li><li>Om Jai Jagdish Hare</li><li>Shri Krishna Govinda Hare Murari</li></ul>`,
+        lesson_number: 5,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Play bhajans with a steady tempo.',
+            'Maintain smooth blowing.',
+            'Use expressive phrasing.',
+            'Produce a pleasant tone.',
+            'Develop emotional expression.'
+        ]
+    },
+    {
+        id: 'c22e0600-1111-2222-3333-444444444444',
+        chapter_id: 'f2a3b4c5-d6e7-8f9a-0b1c-2d3e4f5a6b7c',
+        title: 'Rhythm Application',
+        description: `<h3>Overview</h3><p>Students learn to apply different rhythmic cycles while playing compositions and songs using a metronome or tabla accompaniment.</p><h4>Practice Rhythms</h4><p><strong>4/4 Rhythm</strong></p><pre>1 2 3 4</pre><p><strong>Keherwa (8 Beats)</strong></p><pre>Dha Ge Na Ti | Na Ka Dhi Na</pre><p><strong>Dadra (6 Beats)</strong></p><pre>Dha Dhi Na | Dha Tu Na</pre>`,
+        lesson_number: 6,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Practice songs in different rhythms.',
+            'Maintain accurate timing.',
+            'Play confidently with a metronome.',
+            'Understand Keherwa and Dadra rhythm cycles.',
+            'Develop rhythmic consistency.'
+        ]
+    },
+    {
+        id: 'c22e0700-1111-2222-3333-444444444444',
+        chapter_id: 'f2a3b4c5-d6e7-8f9a-0b1c-2d3e4f5a6b7c',
+        title: 'Musical Expression Practice',
+        description: `<h3>Overview</h3><p>This topic introduces the fundamentals of musical expression. Students learn how small changes in emphasis, pauses, and breath control can make a performance more expressive and engaging.</p><h4>Practice Concepts</h4><ul><li>Note emphasis</li><li>Musical pauses</li><li>Dynamic blowing</li><li>Phrase shaping</li></ul>`,
+        lesson_number: 7,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Understand basic musical expression.',
+            'Apply note emphasis appropriately.',
+            'Use pauses naturally between phrases.',
+            'Control blowing dynamics.',
+            'Play songs with feeling instead of mechanically.'
+        ]
+    },
+    // Level 2, Chapter 3 - Introduction to Raag and Classical Structure
+    {
+        id: 'c23e0100-1111-2222-3333-444444444444',
+        chapter_id: 'e5b6c7d8-f9a0-1b2c-3d4e-5f6a7b8c9d0e',
+        title: 'Understanding Teentaal',
+        description: `<h3>Overview</h3><p>Teentaal is the most commonly used rhythm cycle in Hindustani Classical Music. In this topic, students learn its 16-beat structure, clap and wave pattern, and the basic tabla theka. They also practice scales and Alankars within Teentaal to develop rhythmic awareness.</p><h4>Teentaal Structure</h4><p><strong>16 Beats</strong></p><p>1 (Clap) | 5 (Clap) | 9 (Wave) | 13 (Clap)</p><h4>Basic Theka</h4><pre>Dha Dhin Dhin Dha\nDha Dhin Dhin Dha\nDha Tin Tin Ta\nTa Dhin Dhin Dha</pre><h4>Practice</h4><ul><li>Sa Re Ga Ma in Teentaal</li><li>Simple Alankars in Teentaal</li></ul>`,
+        lesson_number: 1,
+        material_type: 'note',
+        is_introductory: true,
+        is_very_important: true,
+        bullet_points: [
+            'Understand the structure of Teentaal.',
+            'Identify Sam, Tali, and Khali.',
+            'Recite the Teentaal theka correctly.',
+            'Practice scales in Teentaal.',
+            'Practice Alankars with a metronome or tabla.',
+            'Develop rhythmic awareness.'
+        ]
+    },
+    {
+        id: 'c23e0200-1111-2222-3333-444444444444',
+        chapter_id: 'e5b6c7d8-f9a0-1b2c-3d4e-5f6a7b8c9d0e',
+        title: 'Introduction to Raag Bhoopali',
+        description: `<h3>Overview</h3><p>Students are introduced to Raag Bhoopali, one of the most popular beginner ragas in Hindustani Classical Music. They learn its note structure, ascending and descending scales, and the mood it creates.</p><h4>Notes Used</h4><p>Sa Re Ga Pa Dha Sa'</p><h4>Notes Omitted</h4><p>Ma and Ni</p><h4>Arohan (Ascending)</h4><pre>Sa Re Ga Pa Dha Sa'</pre><h4>Avarohan (Descending)</h4><pre>Sa' Dha Pa Ga Re Sa</pre>`,
+        lesson_number: 2,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: true,
+        bullet_points: [
+            'Understand the structure of Raag Bhoopali.',
+            'Identify the notes used in the raga.',
+            'Recognize the omitted notes.',
+            'Play the Arohan correctly.',
+            'Play the Avarohan correctly.',
+            'Understand the mood and character of Bhoopali.'
+        ]
+    },
+    {
+        id: 'c23e0300-1111-2222-3333-444444444444',
+        chapter_id: 'e5b6c7d8-f9a0-1b2c-3d4e-5f6a7b8c9d0e',
+        title: 'Bhoopali Note Movements',
+        description: `<h3>Overview</h3><p>Students practice the characteristic note movements (Pakad and basic phrases) of Raag Bhoopali. These exercises develop smooth fingering and introduce the melodic identity of the raga.</p><h4>Practice</h4><pre>Sa Re Ga\n\nGa Pa Dha\n\nDha Pa Ga\n\nGa Re Sa</pre>`,
+        lesson_number: 3,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Practice each phrase smoothly.',
+            'Maintain proper rhythm.',
+            'Develop expressive note transitions.',
+            'Produce a clear tone.',
+            'Recognize the characteristic movement of Bhoopali.'
+        ]
+    },
+    {
+        id: 'c23e0400-1111-2222-3333-444444444444',
+        chapter_id: 'e5b6c7d8-f9a0-1b2c-3d4e-5f6a7b8c9d0e',
+        title: 'Bhoopali Composition',
+        description: `<h3>Overview</h3><p>Students learn a simple classical composition in Raag Bhoopali and practice it with Teentaal using a metronome or tabla.</p><h4>Composition</h4><pre>Sa Re Ga | Pa Dha Pa\n\nGa Re Sa | Re Ga Pa</pre>`,
+        lesson_number: 4,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Play the composition accurately.',
+            'Maintain Teentaal throughout.',
+            'Land correctly on Sam.',
+            'Use smooth phrasing.',
+            'Perform confidently with tabla or metronome.'
+        ]
+    },
+    {
+        id: 'c23e0500-1111-2222-3333-444444444444',
+        chapter_id: 'e5b6c7d8-f9a0-1b2c-3d4e-5f6a7b8c9d0e',
+        title: 'Understanding Merukhand',
+        description: `<h3>Overview</h3><p>Students are introduced to Merukhand, a classical practice method that rearranges note sequences to improve finger control, creativity, and improvisation skills.</p><h4>Purpose</h4><ul><li>Develop improvisation ability.</li><li>Strengthen note control.</li><li>Improve finger coordination.</li><li>Enhance musical creativity.</li></ul>`,
+        lesson_number: 5,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Understand the concept of Merukhand.',
+            'Recognize different note combinations.',
+            'Practice slowly with correct rhythm.',
+            'Maintain note clarity.',
+            'Develop improvisation skills.'
+        ]
+    },
+    {
+        id: 'c23e0600-1111-2222-3333-444444444444',
+        chapter_id: 'e5b6c7d8-f9a0-1b2c-3d4e-5f6a7b8c9d0e',
+        title: 'Bhoopali Merukhand Practice',
+        description: `<h3>Overview</h3><p>Students practice Merukhand patterns using the notes of Raag Bhoopali to improve flexibility, creativity, and rhythmic accuracy.</p><h4>Practice</h4><pre>Sa Re Ga Pa\n\nSa Ga Re Pa\n\nRe Ga Pa Sa\n\nGa Pa Re Sa</pre>`,
+        lesson_number: 6,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Practice all Merukhand patterns accurately.',
+            'Maintain equal timing between notes.',
+            'Develop finger agility.',
+            'Improve note clarity.',
+            'Increase speed gradually using a metronome.'
+        ]
+    },
+    {
+        id: 'c23e0700-1111-2222-3333-444444444444',
+        chapter_id: 'e5b6c7d8-f9a0-1b2c-3d4e-5f6a7b8c9d0e',
+        title: 'Introduction to Alaap',
+        description: `<h3>Overview</h3><p>Students learn the basics of Alaap, the slow and expressive introduction to a raga. The focus is on developing musical expression, breath control, and understanding the emotional mood of Raag Bhoopali.</p><h4>Practice</h4><pre>Sa... Re... Ga...\n\nGa... Pa... Dha...\n\nDha... Pa... Ga...\n\nRe... Sa...</pre>`,
+        lesson_number: 7,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Understand the purpose of Alaap.',
+            'Play slowly with expression.',
+            'Maintain controlled breath.',
+            'Connect notes smoothly.',
+            'Reflect the mood of Raag Bhoopali.'
+        ]
+    },
+    // Level 2, Chapter 4 - Raag Bilawal
+    {
+        id: 'c24e0100-1111-2222-3333-444444444444',
+        chapter_id: 'b7c8d9e0-f1a2-3b4c-5d6e-7f8a9b0c1d2e',
+        title: 'Introduction to Raag Bilawal',
+        description: `<h3>Overview</h3><p>Students are introduced to Raag Bilawal, one of the fundamental ragas in Hindustani Classical Music. All seven notes in this raga are Shuddha Swaras, making it equivalent to the natural major scale in Western music.</p><h4>Thaat</h4><p>Bilawal</p><h4>Notes Used</h4><p>Sa Re Ga Ma Pa Dha Ni Sa'</p><h4>Arohan (Ascending)</h4><pre>Sa Re Ga Ma Pa Dha Ni Sa'</pre><h4>Avarohan (Descending)</h4><pre>Sa' Ni Dha Pa Ma Ga Re Sa</pre>`,
+        lesson_number: 1,
+        material_type: 'note',
+        is_introductory: true,
+        is_very_important: true,
+        bullet_points: [
+            'Understand the structure of Raag Bilawal.',
+            'Identify the Bilawal Thaat.',
+            'Recognize all Shuddha Swaras.',
+            'Play the Arohan correctly.',
+            'Play the Avarohan correctly.',
+            'Understand why Bilawal is considered the foundation scale of Hindustani music.'
+        ]
+    },
+    {
+        id: 'c24e0200-1111-2222-3333-444444444444',
+        chapter_id: 'b7c8d9e0-f1a2-3b4c-5d6e-7f8a9b0c1d2e',
+        title: 'Bilawal Note Movements (Pakad)',
+        description: `<h3>Overview</h3><p>Students learn the characteristic note movements (Pakad) of Raag Bilawal. These phrases help develop the melodic identity of the raga and improve musical phrasing.</p><h4>Practice</h4><pre>Ga Re Ga\n\nMa Ga Re Sa\n\nPa Dha Ni Dha Pa\n\nGa Ma Pa | Dha Pa Ma Ga</pre>`,
+        lesson_number: 2,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: true,
+        bullet_points: [
+            'Practice each Pakad smoothly.',
+            'Maintain proper rhythm.',
+            'Develop smooth note transitions.',
+            'Recognize the characteristic phrases of Bilawal.',
+            'Play with a clear and pleasant tone.'
+        ]
+    },
+    {
+        id: 'c24e0300-1111-2222-3333-444444444444',
+        chapter_id: 'b7c8d9e0-f1a2-3b4c-5d6e-7f8a9b0c1d2e',
+        title: 'Bilawal Alankar Practice',
+        description: `<h3>Overview</h3><p>Students practice Alankars based on the Bilawal scale to improve finger coordination, speed control, and note clarity.</p><h4>Practice</h4><p><strong>Ascending</strong></p><pre>Sa Re Ga Ma\nRe Ga Ma Pa\nGa Ma Pa Dha</pre><p><strong>Descending</strong></p><pre>Sa Ni Dha Pa\nNi Dha Pa Ma\nDha Pa Ma Ga</pre>`,
+        lesson_number: 3,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Practice all Alankars accurately.',
+            'Maintain equal timing between notes.',
+            'Develop finger coordination.',
+            'Improve note clarity.',
+            'Increase speed gradually with a metronome.'
+        ]
+    },
+    {
+        id: 'c24e0400-1111-2222-3333-444444444444',
+        chapter_id: 'b7c8d9e0-f1a2-3b4c-5d6e-7f8a9b0c1d2e',
+        title: 'Bilawal Composition',
+        description: `<h3>Overview</h3><p>Students learn a simple composition in Teentaal or Keherwa while focusing on rhythm, phrasing, and musical expression.</p><h4>Composition</h4><pre>Sa Re Ga Ma | Ga Re Sa\n\nGa Ma Pa Dha | Pa Ma Ga</pre>`,
+        lesson_number: 4,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Play the composition accurately.',
+            'Maintain correct rhythm.',
+            'Land correctly on Sam.',
+            'Use smooth note transitions.',
+            'Perform confidently with a metronome or tabla.'
+        ]
+    },
+    {
+        id: 'c24e0500-1111-2222-3333-444444444444',
+        chapter_id: 'b7c8d9e0-f1a2-3b4c-5d6e-7f8a9b0c1d2e',
+        title: 'Alaap Practice',
+        description: `<h3>Overview</h3><p>Students begin developing a slow and expressive Alaap in Raag Bilawal. The emphasis is on breath control, note connection, and expressing the mood of the raga.</p><h4>Practice</h4><pre>Sa... Re... Ga...\n\nGa... Ma... Pa...\n\nPa... Dha... Ni...\n\nNi... Dha... Pa...</pre>`,
+        lesson_number: 5,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Understand the purpose of Alaap.',
+            'Play slowly with controlled breath.',
+            'Connect notes smoothly.',
+            'Develop musical expression.',
+            'Reflect the character of Raag Bilawal.'
+        ]
+    },
+    {
+        id: 'c24e0600-1111-2222-3333-444444444444',
+        chapter_id: 'b7c8d9e0-f1a2-3b4c-5d6e-7f8a9b0c1d2e',
+        title: 'Merukhand Practice',
+        description: `<h3>Overview</h3><p>Students practice Merukhand patterns using the Bilawal scale. These exercises strengthen finger coordination, improve note control, and introduce basic improvisation techniques.</p><h4>Practice</h4><pre>Sa Re Ga Ma\n\nSa Ga Re Ma\n\nRe Ga Ma Sa\n\nGa Ma Re Sa</pre>`,
+        lesson_number: 6,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Understand the concept of Merukhand.',
+            'Practice each pattern accurately.',
+            'Maintain steady rhythm.',
+            'Develop finger agility.',
+            'Improve creativity and improvisation.'
+        ]
+    },
+    {
+        id: 'c24e0700-1111-2222-3333-444444444444',
+        chapter_id: 'b7c8d9e0-f1a2-3b4c-5d6e-7f8a9b0c1d2e',
+        title: 'Song Application',
+        description: `<h3>Overview</h3><p>Students apply the Bilawal scale by learning a simple melody or song based on the raga. This helps bridge the gap between technical exercises and practical musical performance.</p><h4>Practice</h4><p>Choose a simple melody based on Raag Bilawal and practice it with a metronome or tabla.</p>`,
+        lesson_number: 7,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Play the melody with correct notes.',
+            'Maintain steady rhythm.',
+            'Apply Bilawal note movements naturally.',
+            'Use smooth phrasing and expression.',
+            'Perform confidently from beginning to end.'
+        ]
+    },
+    // Level 2, Chapter 5 - Murki, Kan Swar & Meend
+    {
+        id: 'c25e0100-1111-2222-3333-444444444444',
+        chapter_id: 'e6f7a8b9-0c1d-2e3f-4a5b-6c7d8e9f0a1b',
+        title: 'Introduction to Murki (मुरकी)',
+        description: `<h3>Overview</h3><p>Murki is a fast ornamental technique in Hindustani Classical Music. It consists of a quick cluster of notes played around a main note, adding beauty, movement, and expression to a melody. Murki is lighter and faster than Gamak.</p><h4>Example</h4><p>If the main note is Ga: <strong>Re Ga Re Ga</strong></p><h4>Example Phrase</h4><p>Sa (Re Ga Re) Sa</p><h4>Playing Technique</h4><ul><li>Very quick finger movement.</li><li>Light and controlled blowing.</li><li>Notes should sound smooth and connected.</li></ul><h4>Common Usage</h4><ul><li>Light Classical Music</li><li>Bhajans</li><li>Bollywood Songs</li><li>Raag Expression</li></ul><h4>Common Raags</h4><p>Kafi, Khamaj, Pilu</p>`,
+        lesson_number: 1,
+        material_type: 'note',
+        is_introductory: true,
+        is_very_important: true,
+        bullet_points: [
+            'Understand the concept of Murki.',
+            'Recognize Murki in musical phrases.',
+            'Practice quick finger movement.',
+            'Maintain connected notes while playing.',
+            'Play Murki with light breath control.'
+        ]
+    },
+    {
+        id: 'c25e0200-1111-2222-3333-444444444444',
+        chapter_id: 'e6f7a8b9-0c1d-2e3f-4a5b-6c7d8e9f0a1b',
+        title: 'Introduction to Kan Swar (कण स्वर)',
+        description: `<h3>Overview</h3><p>Kan Swar is a grace note played immediately before the main note. The grace note is touched very briefly, adding elegance and emotional expression to the melody.</p><h4>Example</h4><p>Main Note: Ga: <strong>(Re) Ga</strong></p><h4>Example Phrase</h4><p>Sa (Re) Ga Ma</p><h4>Playing Technique</h4><ul><li>Touch the grace note very briefly.</li><li>Use quick finger movement.</li><li>Transition smoothly into the main note.</li><li>Keep the grace note subtle.</li></ul><h4>Benefits</h4><ul><li>Adds classical expression.</li><li>Creates smooth note transitions.</li><li>Enhances melodic beauty.</li></ul>`,
+        lesson_number: 2,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: true,
+        bullet_points: [
+            'Understand the concept of Kan Swar.',
+            'Play grace notes smoothly.',
+            'Maintain proper finger control.',
+            'Avoid emphasizing the grace note.',
+            'Use Kan Swar naturally in phrases.'
+        ]
+    },
+    {
+        id: 'c25e0300-1111-2222-3333-444444444444',
+        chapter_id: 'e6f7a8b9-0c1d-2e3f-4a5b-6c7d8e9f0a1b',
+        title: 'Introduction to Meend (मींड)',
+        description: `<h3>Overview</h3><p>Meend is the smooth glide from one note to another without breaking the sound. It is one of the most expressive techniques in Bansuri and is widely used in Hindustani Classical Music.</p><h4>Example</h4><p>Instead of playing <strong>Sa Ga</strong>, play <strong>Sa ~~~ Ga</strong></p><h4>Practice</h4><p>Sa → Re → Ga</p><h4>Types of Meend</h4><ul><li><strong>Short Meend</strong>: Sa → Re</li><li><strong>Long Meend</strong>: Sa → Ga, Sa → Ma</li><li><strong>Descending Meend</strong>: Pa → Ga</li></ul><h4>Playing Technique</h4><ul><li>Lift the fingers gradually.</li><li>Maintain continuous airflow.</li><li>Avoid breaking the sound.</li><li>Keep the glide smooth and natural.</li></ul>`,
+        lesson_number: 3,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: true,
+        bullet_points: [
+            'Understand the concept of Meend.',
+            'Play short Meends smoothly.',
+            'Play long Meends with continuous airflow.',
+            'Maintain a connected tone throughout.',
+            'Develop expressive note transitions.'
+        ]
+    },
+    {
+        id: 'c25e0400-1111-2222-3333-444444444444',
+        chapter_id: 'e6f7a8b9-0c1d-2e3f-4a5b-6c7d8e9f0a1b',
+        title: 'Comparison of Murki, Kan Swar & Meend',
+        description: `<h3>Overview</h3><p>This topic helps students understand the differences between the three most commonly used ornamentation techniques in Hindustani Classical Music.</p><table class="min-w-full border border-slate-300 dark:border-slate-700 rounded-lg"><thead><tr class="bg-slate-100 dark:bg-slate-800"><th class="p-2 border">Technique</th><th class="p-2 border">Meaning</th><th class="p-2 border">Speed</th><th class="p-2 border">Musical Effect</th></tr></thead><tbody><tr><td class="p-2 border font-semibold">Murki</td><td class="p-2 border">Quick cluster of notes</td><td class="p-2 border">Very Fast</td><td class="p-2 border">Decorative</td></tr><tr><td class="p-2 border font-semibold">Kan Swar</td><td class="p-2 border">Grace note</td><td class="p-2 border">Very Quick</td><td class="p-2 border">Subtle Ornament</td></tr><tr><td class="p-2 border font-semibold">Meend</td><td class="p-2 border">Smooth glide between notes</td><td class="p-2 border">Smooth</td><td class="p-2 border">Expressive</td></tr></tbody></table>`,
+        lesson_number: 4,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Differentiate between Murki, Kan Swar, and Meend.',
+            'Recognize where each ornament is used.',
+            'Understand the musical effect of each technique.',
+            'Choose the appropriate ornament for a phrase.'
+        ]
+    },
+    {
+        id: 'c25e0500-1111-2222-3333-444444444444',
+        chapter_id: 'e6f7a8b9-0c1d-2e3f-4a5b-6c7d8e9f0a1b',
+        title: 'Applying Ornamentation in Raag Bhoopali',
+        description: `<h3>Overview</h3><p>Students learn how Murki, Kan Swar, and Meend can be applied to simple phrases in Raag Bhoopali to make the melody more expressive.</p><h4>Original Phrase</h4><p>Sa Re Ga Pa Dha</p><h4>Ornamentations</h4><ul><li><strong>Kan Swar</strong>: Sa (Re) Ga</li><li><strong>Murki</strong>: Ga Re Ga</li><li><strong>Meend</strong>: Ga ~~~ Pa</li></ul>`,
+        lesson_number: 5,
+        material_type: 'note',
+        is_introductory: false,
+        is_very_important: false,
+        bullet_points: [
+            'Apply Kan Swar correctly.',
+            'Play Murki with speed and clarity.',
+            'Perform Meend smoothly.',
+            'Maintain rhythm while using ornamentation.',
+            'Use ornamentation naturally in simple phrases.'
+        ]
     }
 ];

@@ -70,6 +70,7 @@ interface DirectoryStudent {
     name: string;
     profile_pic_url: string | null;
     status: string;
+    is_online?: boolean;
 }
 
 interface ClassNote {
@@ -190,7 +191,7 @@ export default function ClassroomDashboardPage({
 
     // Fetch broadcasts for this class & listen to real-time updates
     useEffect(() => {
-        if (!teacherProfile || !classroomId) return;
+        if (!teacherProfile?.id || !classroomId) return;
         
         const fetchClassroomBroadcasts = async () => {
             try {
@@ -224,7 +225,7 @@ export default function ClassroomDashboardPage({
         return () => {
             supabaseAuth.removeChannel(channel);
         };
-    }, [teacherProfile, classroomId]);
+    }, [teacherProfile?.id, classroomId]);
 
     const fetchClassroomMessages = useCallback(async () => {
         if (!classroomId) return;
@@ -243,7 +244,7 @@ export default function ClassroomDashboardPage({
     }, [classroomId]);
 
     useEffect(() => {
-        if (!teacherProfile || !classroomId) return;
+        if (!teacherProfile?.id || !classroomId) return;
 
         fetchClassroomMessages();
 
@@ -254,11 +255,15 @@ export default function ClassroomDashboardPage({
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'classroom_messages',
-                    filter: `classroom_id=eq.${classroomId}`
+                    table: 'classroom_messages'
                 },
-                () => {
-                    fetchClassroomMessages();
+                (payload) => {
+                    const newMsg = payload.new as any;
+                    const oldMsg = payload.old as any;
+                    const targetRoomId = newMsg?.classroom_id || oldMsg?.classroom_id;
+                    if (targetRoomId === classroomId) {
+                        fetchClassroomMessages();
+                    }
                 }
             )
             .subscribe();
@@ -266,7 +271,7 @@ export default function ClassroomDashboardPage({
         return () => {
             supabaseAuth.removeChannel(channel);
         };
-    }, [teacherProfile, classroomId, fetchClassroomMessages]);
+    }, [teacherProfile?.id, classroomId, fetchClassroomMessages]);
 
     const handleSendClassroomChatMessage = async (messageText: string) => {
         if (!teacherProfile?.id || !classroomId || !messageText.trim()) return;
@@ -813,12 +818,14 @@ export default function ClassroomDashboardPage({
                 const roomData = roomRes.data;
                 const roomError = roomRes.error;
 
-                setTeacherProfile(profile);
+                const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('kfa-user-role') : null;
+                const userRole = cachedRole || profile?.role;
+                setTeacherProfile(profile ? { ...profile, role: userRole } : null);
                 if (!profile) return;
                 if (roomError) throw roomError;
 
                 // Authorization check
-                if (profile.role !== 'admin' && roomData.teacher_id !== profile.id) {
+                if (userRole !== 'admin' && roomData.teacher_id !== profile.id) {
                     throw new Error('Unauthorized classroom access');
                 }
 
@@ -1510,7 +1517,7 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, level')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery.order('name', { ascending: true })
@@ -1544,7 +1551,7 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, level')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery.order('name', { ascending: true })
@@ -1664,14 +1671,31 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, status')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery
                 : await usersQuery.eq('teacher_id', teacherProfile.id);
 
             if (error) throw error;
-            const available = (data || []).filter((s: any) => !enrolledIds.has(s.id));
+
+            // Fetch online/active user sessions
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+            const { data: activeSessions } = await supabaseAuth
+                .from('user_sessions')
+                .select('user_id')
+                .is('logout_at', null)
+                .gt('last_activity_at', fiveMinutesAgo);
+
+            const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+
+            const available = (data || [])
+                .map((s: any) => ({
+                    ...s,
+                    is_online: onlineUserIds.has(s.id)
+                }))
+                .filter((s: any) => !enrolledIds.has(s.id));
+
             setDirectoryStudents(available);
         } catch (err) {
             console.error('Error fetching directory:', err);
@@ -2303,11 +2327,17 @@ export default function ClassroomDashboardPage({
                 }
             });
 
-            // Map progress status
+            // Map progress status and include implicit progress
             const progressMap = new Map<string, string>();
             studentProgress.forEach(p => {
                 if (p.student_id === studentId) {
                     progressMap.set(p.lesson_id, p.status);
+                    if (p.status === 'completed') {
+                        completed.add(p.lesson_id);
+                        unlocked.add(p.lesson_id);
+                    } else if (p.status === 'unlocked') {
+                        unlocked.add(p.lesson_id);
+                    }
                 }
             });
 
@@ -2637,19 +2667,27 @@ export default function ClassroomDashboardPage({
     }, [allocatedInventoryItems, courseChapters, courseLessons, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress]);
 
     const getRealStudentProgress = useCallback((studentId: string, defaultMockVal: number) => {
-        if (syllabusLessons.length === 0) return defaultMockVal;
-        const completedCount = syllabusLessons.filter(lesson => {
+        const studentUnlockedLessons = syllabusLessons.filter(lesson => {
+            const row = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lesson.id);
+            return row && row.status !== 'locked';
+        });
+
+        if (studentUnlockedLessons.length === 0) return 0;
+
+        const completedCount = studentUnlockedLessons.filter(lesson => {
             const row = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lesson.id);
             return row && row.status === 'completed';
         }).length;
-        return Math.round((completedCount / syllabusLessons.length) * 100);
+
+        return Math.round((completedCount / studentUnlockedLessons.length) * 100);
     }, [syllabusLessons, studentProgress]);
 
     const livePreviewData = useMemo(() => {
         if (!selectedStudentForCurriculum) return null;
 
-        const totalLessons = syllabusLessons.length;
-        const completedCount = syllabusLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length;
+        const unlockedLessons = syllabusLessons.filter(l => selectedStudentPermissions.unlockedLessons.has(l.id));
+        const totalLessons = unlockedLessons.length;
+        const completedCount = unlockedLessons.filter(l => selectedStudentPermissions.completedLessons.has(l.id)).length;
         const progressPercentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
 
         const currentlyLearning = syllabusLessons.find(l => 
@@ -3540,10 +3578,12 @@ export default function ClassroomDashboardPage({
                                             </div>
                                             <div className="flex-1 min-w-0 text-left">
                                                 <p className="text-sm font-bold text-slate-905 dark:text-white truncate">{s.name}</p>
-                                                <p className="text-xs text-slate-500">
-                                                    <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${s.status === 'active' ? 'bg-green-500' : 'bg-slate-400'}`} />
-                                                    {s.status === 'active' ? 'Active' : 'Inactive'}
-                                                </p>
+                                                {s.is_online && (
+                                                    <p className="text-xs text-slate-500 flex items-center">
+                                                        <span className="inline-block w-1.5 h-1.5 rounded-full mr-1 bg-green-500 animate-pulse" />
+                                                        Active
+                                                    </p>
+                                                )}
                                             </div>
                                             <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all ${
                                                 isSelected
@@ -3818,7 +3858,7 @@ export default function ClassroomDashboardPage({
 
             <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-            <main className="flex-1 flex flex-col min-w-0">
+            <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                 {isMeetingView ? (
                     <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-905/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between px-8 py-4 gap-4 flex-shrink-0 shadow-sm">
                         <div className="flex items-center gap-3 text-left">
@@ -3911,12 +3951,12 @@ export default function ClassroomDashboardPage({
 
                 <div className="p-4 sm:p-6 md:p-8 w-full flex-1 overflow-y-auto custom-scrollbar">
                     {/* Row-wise Tabs */}
-                    <div className="flex items-center gap-8 border-b border-slate-205 dark:border-slate-800 mb-8 overflow-x-auto custom-scrollbar whitespace-nowrap">
+                    <div className="flex items-center gap-8 border-b border-slate-205 dark:border-slate-800 mb-8 overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
                         {['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Class Logs', 'Chat', 'Settings'].map((tab) => (
                             <button 
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`pb-4 font-extrabold transition-colors border-b-2 cursor-pointer ${
+                                className={`pb-4 font-extrabold transition-colors border-b-2 cursor-pointer shrink-0 snap-start ${
                                     activeTab === tab 
                                         ? 'text-[#ecb613] dark:text-[#ecb613] border-[#ecb613] dark:border-[#ecb613]' 
                                         : 'text-slate-505 dark:text-slate-400 hover:text-[#ecb613]/85 border-transparent'

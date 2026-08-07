@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { 
@@ -44,6 +44,7 @@ import {
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import RichTextEditor from '../../../src/components/RichTextEditor';
+import SecureCurriculumMaterial from '../../../src/components/SecureCurriculumMaterial';
 import { 
     CourseCategory,
     CourseModule, 
@@ -82,8 +83,17 @@ export default function InventoryLibrary() {
     const [selectedModuleId, setSelectedModuleId] = useState<string>('a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d');
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [draggedChapterId, setDraggedChapterId] = useState<string | null>(null);
+    const [draggedLessonId, setDraggedLessonId] = useState<string | null>(null);
     const [dragOverChapterId, setDragOverChapterId] = useState<string | null>(null);
     const [isSavingSequence, setIsSavingSequence] = useState(false);
+    
+    // Recycle Bin & Undo deletion states
+    const [trashLessons, setTrashLessons] = useState<CourseLesson[]>([]);
+    const [trashChapters, setTrashChapters] = useState<CourseChapter[]>([]);
+    const [activeTrashTab, setActiveTrashTab] = useState<'topics' | 'chapters'>('topics');
+    const [showTrashModal, setShowTrashModal] = useState(false);
+    const [undoLessonId, setUndoLessonId] = useState<string | null>(null);
+    const [undoChapterId, setUndoChapterId] = useState<string | null>(null);
     
     // DB Mode Status
     const [isUsingFallback, setIsUsingFallback] = useState(false);
@@ -91,6 +101,10 @@ export default function InventoryLibrary() {
     // Sync Backup Widget States
     const [isSyncing, setIsSyncing] = useState(false);
     const [lastSyncedText, setLastSyncedText] = useState('Synced just now');
+
+    // Live DB Stats
+    const [activeStudentsCount, setActiveStudentsCount] = useState(14);
+    const [studentProgressRecords, setStudentProgressRecords] = useState<{ lesson_id: string; status: string }[]>([]);
     
     // Modals & Form States
     const [activeModal, setActiveModal] = useState<'chapter' | 'lesson' | 'module' | 'category' | null>(null);
@@ -126,6 +140,24 @@ export default function InventoryLibrary() {
 
     // Initial Fetch & Auth Verify
     useEffect(() => {
+        const localTrash = localStorage.getItem('kfa_trash_lessons');
+        if (localTrash) {
+            try {
+                setTrashLessons(JSON.parse(localTrash));
+            } catch (e) {
+                console.error('Error parsing trash lessons:', e);
+            }
+        }
+
+        const localTrashChaps = localStorage.getItem('kfa_trash_chapters');
+        if (localTrashChaps) {
+            try {
+                setTrashChapters(JSON.parse(localTrashChaps));
+            } catch (e) {
+                console.error('Error parsing trash chapters:', e);
+            }
+        }
+
         const fetchAuthAndData = async () => {
             try {
                 const { data: { session } } = await supabaseAuth.auth.getSession();
@@ -213,6 +245,28 @@ export default function InventoryLibrary() {
                     setExpandedChapters({ [firstChap.id]: true });
                 }
             }
+            
+            // Fetch live stats from remote DB
+            try {
+                const { count: studentCount } = await supabaseAuth
+                    .from('users')
+                    .select('*', { count: 'exact', head: true })
+                    .or('role.eq.student,role.eq.pending');
+                if (studentCount !== null) {
+                    setActiveStudentsCount(studentCount);
+                }
+
+                const { data: progressRecords } = await supabaseAuth
+                    .from('student_topic_progress')
+                    .select('lesson_id, status')
+                    .eq('status', 'completed');
+                if (progressRecords) {
+                    setStudentProgressRecords(progressRecords);
+                }
+            } catch (statsErr) {
+                console.warn('Could not query stats from database:', statsErr);
+            }
+
             setIsUsingFallback(false);
         } else {
             // Tables are empty, auto-seed database from INITIAL constants
@@ -252,6 +306,8 @@ export default function InventoryLibrary() {
     // Offline interactive mode fallback using localStorage
     const enableLocalFallback = () => {
         setIsUsingFallback(true);
+        setActiveStudentsCount(14);
+        setStudentProgressRecords([]);
         const localMods = localStorage.getItem('kfa_modules');
         const localChaps = localStorage.getItem('kfa_chapters');
         const localLess = localStorage.getItem('kfa_lessons');
@@ -328,6 +384,15 @@ export default function InventoryLibrary() {
             .sort((a, b) => a.chapter_number - b.chapter_number);
     };
 
+    const getCleanDuration = (duration: string, fileSize: string) => {
+        if (!duration) return '';
+        if (fileSize && duration.includes(fileSize)) {
+            const parts = duration.split('•');
+            return parts[0].trim();
+        }
+        return duration;
+    };
+
     const getMaterialIcon = (type: string, hasUrl: boolean = true) => {
         if (!hasUrl) {
             return <FileText className="size-5 text-slate-400 shrink-0" />;
@@ -351,11 +416,11 @@ export default function InventoryLibrary() {
         setSelectedModuleId(moduleId);
         const moduleChaps = getModuleChapters(moduleId);
         
-        // Auto-expand the first chapter accordion by default
+        // Auto-expand all chapters by default to reduce click count
         const newExpanded: Record<string, boolean> = {};
-        if (moduleChaps.length > 0) {
-            newExpanded[moduleChaps[0].id] = true;
-        }
+        moduleChaps.forEach(c => {
+            newExpanded[c.id] = true;
+        });
         setExpandedChapters(newExpanded);
         setCurrentView('dashboard');
     };
@@ -408,6 +473,84 @@ export default function InventoryLibrary() {
         }
     };
 
+    const moveLessonToChapter = async (lessonId: string, targetChapterId: string) => {
+        const targetLesson = lessons.find(l => l.id === lessonId);
+        if (!targetLesson) return;
+        const sourceChapterId = targetLesson.chapter_id;
+        if (sourceChapterId === targetChapterId) return;
+
+        setLoading(true);
+
+        // 1. Gather all lessons in target chapter (excluding the dragged one if it's there)
+        const targetChapterLessons = lessons
+            .filter(l => l.chapter_id === targetChapterId && l.id !== lessonId)
+            .sort((a, b) => a.lesson_number - b.lesson_number);
+            
+        // Append the moved lesson to the end
+        const movedLesson = { ...targetLesson, chapter_id: targetChapterId };
+        const newTargetList = [...targetChapterLessons, movedLesson].map((l, idx) => ({
+            ...l,
+            lesson_number: idx + 1
+        }));
+
+        // 2. Gather remaining lessons in source chapter
+        const sourceChapterLessonsRemaining = lessons
+            .filter(l => l.chapter_id === sourceChapterId && l.id !== lessonId)
+            .sort((a, b) => a.lesson_number - b.lesson_number)
+            .map((l, idx) => ({
+                ...l,
+                lesson_number: idx + 1
+            }));
+
+        if (isUsingFallback) {
+            const otherChaptersLessons = lessons.filter(l => l.chapter_id !== sourceChapterId && l.id !== lessonId && l.chapter_id !== targetChapterId);
+            const updatedLessonsList = [
+                ...otherChaptersLessons,
+                ...sourceChapterLessonsRemaining,
+                ...newTargetList
+            ];
+            persistLocalData(modules, chapters, updatedLessonsList);
+            setLoading(false);
+        } else {
+            try {
+                // Update target lesson first with temporary safe index to prevent database conflicts
+                const { error: moveErr } = await supabaseAuth
+                    .from('course_lessons')
+                    .update({ 
+                        chapter_id: targetChapterId,
+                        lesson_number: 99999
+                    })
+                    .eq('id', lessonId);
+                if (moveErr) throw moveErr;
+
+                // Re-sequence source chapter remaining lessons:
+                for (const l of sourceChapterLessonsRemaining) {
+                    const { error } = await supabaseAuth
+                        .from('course_lessons')
+                        .update({ lesson_number: l.lesson_number })
+                        .eq('id', l.id);
+                    if (error) throw error;
+                }
+
+                // Re-sequence target chapter lessons:
+                for (const l of newTargetList) {
+                    const { error } = await supabaseAuth
+                        .from('course_lessons')
+                        .update({ lesson_number: l.lesson_number })
+                        .eq('id', l.id);
+                    if (error) throw error;
+                }
+
+                await loadDatabaseData();
+            } catch (err) {
+                console.error('Error moving lesson:', err);
+                alert('Failed to move topic material. Please try again.');
+            } finally {
+                setLoading(false);
+            }
+        }
+    };
+
     // Open Chapter Edit Modal (populates correctly on edit click)
     const openChapterModal = (chapter?: CourseChapter, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
@@ -444,51 +587,105 @@ export default function InventoryLibrary() {
         if (!cleanedTitle || !chapterForm.module_id) return;
 
         setLoading(true);
+
+        // 1. Prepare the updated chapters list locally
+        let updatedChaps = [...chapters];
+        const targetChapterId = editingItem ? editingItem.id : crypto.randomUUID();
+
+        // Remove the chapter if it already exists (we'll re-insert it in order)
+        updatedChaps = updatedChaps.filter(c => c.id !== targetChapterId);
+
+        // Create the chapter object
+        const chapObj: CourseChapter = {
+            id: targetChapterId,
+            title: cleanedTitle,
+            description: chapterForm.description,
+            chapter_number: chapterForm.chapter_number,
+            module_id: chapterForm.module_id
+        };
+
+        // Find sibling chapters in the target module
+        const targetModuleChaps = updatedChaps.filter(c => c.module_id === chapterForm.module_id);
+        targetModuleChaps.sort((a, b) => a.chapter_number - b.chapter_number);
+
+        // Insert at target index (chapter_number - 1)
+        const targetIndex = Math.max(0, Math.min(targetModuleChaps.length, chapterForm.chapter_number - 1));
+        targetModuleChaps.splice(targetIndex, 0, chapObj);
+
+        // Re-sequence the target module
+        const sequencedTarget = targetModuleChaps.map((c, idx) => ({ ...c, chapter_number: idx + 1 }));
+
+        // Compile the full set of chapters: start with non-target modules
+        let finalChapters = updatedChaps.filter(c => c.module_id !== chapterForm.module_id);
+        
+        // Add the re-sequenced target module chapters
+        finalChapters.push(...sequencedTarget);
+
+        // If we moved the chapter from a different module, we also need to re-sequence the source module!
+        const isModuleChanged = editingItem && editingItem.module_id !== chapterForm.module_id;
+        if (isModuleChanged) {
+            const sourceModuleChaps = finalChapters.filter(c => c.module_id === editingItem.module_id);
+            sourceModuleChaps.sort((a, b) => a.chapter_number - b.chapter_number);
+            const sequencedSource = sourceModuleChaps.map((c, idx) => ({ ...c, chapter_number: idx + 1 }));
+            
+            // Filter out source module chapters and add the re-sequenced ones
+            finalChapters = finalChapters.filter(c => c.module_id !== editingItem.module_id);
+            finalChapters.push(...sequencedSource);
+        }
+
         if (isUsingFallback) {
-            let updatedChaps = [...chapters];
-            if (editingItem) {
-                updatedChaps = updatedChaps.map(c => c.id === editingItem.id ? { ...c, ...chapterForm, title: cleanedTitle } : c);
-            } else {
-                const newChap: CourseChapter = {
-                    id: 'chap_' + Math.random().toString(36).substring(7),
-                    ...chapterForm,
-                    title: cleanedTitle
-                };
-                updatedChaps.push(newChap);
-                setExpandedChapters(prev => ({ ...prev, [newChap.id]: true }));
-            }
-            persistLocalData(modules, updatedChaps, lessons);
+            persistLocalData(modules, finalChapters, lessons);
             setLoading(false);
             setActiveModal(null);
+            if (!editingItem) {
+                setExpandedChapters(prev => ({ ...prev, [targetChapterId]: true }));
+            }
         } else {
             try {
-                if (editingItem) {
-                    const { error } = await supabaseAuth
-                        .from('course_chapters')
-                        .update({
-                            title: cleanedTitle,
-                            description: chapterForm.description,
-                            chapter_number: chapterForm.chapter_number,
-                            module_id: chapterForm.module_id
-                        })
-                        .eq('id', editingItem.id);
-                    if (error) throw error;
-                } else {
-                    const newId = crypto.randomUUID();
-                    const { error } = await supabaseAuth
-                        .from('course_chapters')
-                        .insert([{
-                            id: newId,
-                            title: cleanedTitle,
-                            description: chapterForm.description,
-                            chapter_number: chapterForm.chapter_number,
-                            module_id: chapterForm.module_id
-                        }]);
-                    if (error) throw error;
-                    setExpandedChapters(prev => ({ ...prev, [newId]: true }));
+                // Collect all chapters that need database updates/inserts
+                // Specifically: those in the target module, and those in the source module (if changed)
+                const chaptersToUpdate = finalChapters.filter(c => 
+                    c.module_id === chapterForm.module_id || 
+                    (isModuleChanged && c.module_id === editingItem.module_id)
+                );
+
+                // Step A: Update/Insert with negative chapter numbers to prevent unique index conflicts
+                for (let index = 0; index < chaptersToUpdate.length; index++) {
+                    const chap = chaptersToUpdate[index];
+                    const existsInDb = chapters.some(c => c.id === chap.id);
+                    if (!existsInDb) {
+                        const { error } = await supabaseAuth.from('course_chapters').insert({
+                            id: chap.id,
+                            title: chap.title,
+                            description: chap.description,
+                            module_id: chap.module_id,
+                            chapter_number: -100000 - index
+                        });
+                        if (error) throw error;
+                    } else {
+                        const { error } = await supabaseAuth.from('course_chapters').update({
+                            title: chap.title,
+                            description: chap.description,
+                            module_id: chap.module_id,
+                            chapter_number: -100000 - index
+                        }).eq('id', chap.id);
+                        if (error) throw error;
+                    }
                 }
+
+                // Step B: Set final positive chapter numbers
+                for (const chap of chaptersToUpdate) {
+                    const { error } = await supabaseAuth.from('course_chapters').update({
+                        chapter_number: chap.chapter_number
+                    }).eq('id', chap.id);
+                    if (error) throw error;
+                }
+
                 await loadDatabaseData();
                 setActiveModal(null);
+                if (!editingItem) {
+                    setExpandedChapters(prev => ({ ...prev, [targetChapterId]: true }));
+                }
             } catch (err) {
                 console.error('Chapter save failed:', err);
                 const message = err instanceof Error ? err.message : 'Unknown database error';
@@ -502,15 +699,39 @@ export default function InventoryLibrary() {
     // Delete Chapter
     const deleteChapter = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!confirm('Are you sure you want to delete this chapter? All its learning materials will be deleted.')) return;
-
+        
         const deletedChapter = chapters.find(chapter => chapter.id === id);
         if (!deletedChapter) return;
+
+        const chapterLessons = lessons.filter(l => l.chapter_id === id);
+
+        if (!confirm(`Are you sure you want to delete chapter "${deletedChapter.title}"? ${chapterLessons.length > 0 ? `All its ${chapterLessons.length} topics will also be moved to the Recycle Bin.` : ''}`)) {
+            return;
+        }
+
+        setLoading(true);
+
+        // Move chapter and its lessons to the trash list
+        const updatedTrashChaps = [deletedChapter, ...trashChapters];
+        setTrashChapters(updatedTrashChaps);
+        localStorage.setItem('kfa_trash_chapters', JSON.stringify(updatedTrashChaps));
+
+        if (chapterLessons.length > 0) {
+            const updatedTrashLess = [...chapterLessons, ...trashLessons];
+            setTrashLessons(updatedTrashLess);
+            localStorage.setItem('kfa_trash_lessons', JSON.stringify(updatedTrashLess));
+        }
+
+        // Trigger undo toast
+        setUndoChapterId(id);
+        setTimeout(() => {
+            setUndoChapterId(prev => prev === id ? null : prev);
+        }, 6000);
+
         const remainingModuleChapters = getModuleChapters(deletedChapter.module_id)
             .filter(chapter => chapter.id !== id)
             .map((chapter, index) => ({ ...chapter, chapter_number: index + 1 }));
 
-        setLoading(true);
         if (isUsingFallback) {
             const sequenceById = new Map(remainingModuleChapters.map(chapter => [chapter.id, chapter]));
             const updatedChaps = chapters.filter(c => c.id !== id).map(chapter => sequenceById.get(chapter.id) || chapter);
@@ -852,8 +1073,14 @@ export default function InventoryLibrary() {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
-        const friendlySize = `${sizeInMb}MB`;
+        let friendlySize = '';
+        if (file.size >= 1024 * 1024) {
+            friendlySize = `${(file.size / (1024 * 1024)).toFixed(1)}MB`;
+        } else if (file.size >= 1024) {
+            friendlySize = `${(file.size / 1024).toFixed(1)}KB`;
+        } else {
+            friendlySize = `${file.size} Bytes`;
+        }
 
         // MIME Mapping rule
         let mappedType = 'file';
@@ -1082,16 +1309,36 @@ export default function InventoryLibrary() {
     // Delete Lesson
     const deleteLesson = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!confirm('Are you sure you want to delete this lesson material?')) return;
+        
+        // Find the lesson to be deleted
+        const lessonToDelete = lessons.find(l => l.id === id);
+        if (!lessonToDelete) return;
+        
+        if (!confirm(`Are you sure you want to delete "${lessonToDelete.title}"? (It will be moved to the Recycle Bin)`)) {
+            return;
+        }
 
         setLoading(true);
+        
+        // Add to trash list
+        const updatedTrash = [lessonToDelete, ...trashLessons];
+        setTrashLessons(updatedTrash);
+        localStorage.setItem('kfa_trash_lessons', JSON.stringify(updatedTrash));
+        
+        // Trigger undo toast
+        setUndoLessonId(id);
+        setTimeout(() => {
+            setUndoLessonId(prev => prev === id ? null : prev);
+        }, 6000);
+
         if (isUsingFallback) {
             const updatedLess = lessons.filter(l => l.id !== id);
             persistLocalData(modules, chapters, updatedLess);
             setLoading(false);
         } else {
             try {
-                await supabaseAuth.from('course_lessons').delete().eq('id', id);
+                const { error } = await supabaseAuth.from('course_lessons').delete().eq('id', id);
+                if (error) throw error;
                 await loadDatabaseData();
             } catch (err) {
                 console.error(err);
@@ -1100,6 +1347,161 @@ export default function InventoryLibrary() {
                 setLoading(false);
             }
         }
+    };
+
+    // Restore Lesson from Recycle Bin
+    const restoreLesson = async (lessonId: string) => {
+        const lessonToRestore = trashLessons.find(l => l.id === lessonId);
+        if (!lessonToRestore) return;
+
+        setLoading(true);
+
+        // Remove from trash state and storage
+        const updatedTrash = trashLessons.filter(l => l.id !== lessonId);
+        setTrashLessons(updatedTrash);
+        localStorage.setItem('kfa_trash_lessons', JSON.stringify(updatedTrash));
+
+        // Re-insert into lessons list
+        if (isUsingFallback) {
+            const updatedLess = [...lessons, lessonToRestore];
+            persistLocalData(modules, chapters, updatedLess);
+            setLoading(false);
+        } else {
+            try {
+                // Insert the record back into the database
+                const { error } = await supabaseAuth.from('course_lessons').insert({
+                    id: lessonToRestore.id,
+                    title: lessonToRestore.title,
+                    description: lessonToRestore.description,
+                    material_type: lessonToRestore.material_type,
+                    material_url: lessonToRestore.material_url,
+                    file_name: lessonToRestore.file_name,
+                    file_size: lessonToRestore.file_size,
+                    duration: lessonToRestore.duration,
+                    link_url: lessonToRestore.link_url,
+                    chapter_id: lessonToRestore.chapter_id,
+                    lesson_number: lessonToRestore.lesson_number,
+                    bullet_points: lessonToRestore.bullet_points
+                });
+                if (error) throw error;
+                await loadDatabaseData();
+            } catch (err) {
+                console.error('Error restoring lesson:', err);
+                alert('Failed to restore topic material.');
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        // Hide undo notification if it was this lesson
+        setUndoLessonId(prev => prev === lessonId ? null : prev);
+    };
+
+    // Permanently Delete Lesson from Recycle Bin
+    const permanentlyDeleteLesson = (lessonId: string) => {
+        const lesson = trashLessons.find(l => l.id === lessonId);
+        if (!lesson) return;
+        if (!confirm(`Are you sure you want to permanently delete "${lesson.title}"? This cannot be undone.`)) {
+            return;
+        }
+
+        const updatedTrash = trashLessons.filter(l => l.id !== lessonId);
+        setTrashLessons(updatedTrash);
+        localStorage.setItem('kfa_trash_lessons', JSON.stringify(updatedTrash));
+    };
+    // Restore Chapter from Recycle Bin (including all its nested topics)
+    const restoreChapter = async (chapterId: string) => {
+        const chapterToRestore = trashChapters.find(c => c.id === chapterId);
+        if (!chapterToRestore) return;
+
+        setLoading(true);
+
+        // Remove from trashChapters
+        const updatedTrashChaps = trashChapters.filter(c => c.id !== chapterId);
+        setTrashChapters(updatedTrashChaps);
+        localStorage.setItem('kfa_trash_chapters', JSON.stringify(updatedTrashChaps));
+
+        // Find topics belonging to this chapter in trashLessons
+        const lessonsToRestore = trashLessons.filter(l => l.chapter_id === chapterId);
+        const remainingTrashLessons = trashLessons.filter(l => l.chapter_id !== chapterId);
+        setTrashLessons(remainingTrashLessons);
+        localStorage.setItem('kfa_trash_lessons', JSON.stringify(remainingTrashLessons));
+
+        if (isUsingFallback) {
+            const updatedChaps = [...chapters, chapterToRestore];
+            const updatedLess = [...lessons, ...lessonsToRestore];
+            persistLocalData(modules, updatedChaps, updatedLess);
+            setLoading(false);
+        } else {
+            try {
+                // Re-insert chapter record back into database
+                const { error: chapError } = await supabaseAuth.from('course_chapters').insert({
+                    id: chapterToRestore.id,
+                    title: chapterToRestore.title,
+                    description: chapterToRestore.description,
+                    module_id: chapterToRestore.module_id,
+                    chapter_number: chapterToRestore.chapter_number
+                });
+                if (chapError) throw chapError;
+
+                // Re-insert all restored lessons back into database
+                for (const lesson of lessonsToRestore) {
+                    await supabaseAuth.from('course_lessons').insert({
+                        id: lesson.id,
+                        title: lesson.title,
+                        description: lesson.description,
+                        material_type: lesson.material_type,
+                        material_url: lesson.material_url,
+                        file_name: lesson.file_name,
+                        file_size: lesson.file_size,
+                        duration: lesson.duration,
+                        link_url: lesson.link_url,
+                        chapter_id: lesson.chapter_id,
+                        lesson_number: lesson.lesson_number,
+                        bullet_points: lesson.bullet_points
+                    });
+                }
+                await loadDatabaseData();
+            } catch (err) {
+                console.error('Error restoring chapter:', err);
+                alert('Failed to restore chapter structure.');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Hide undo notification if it was this chapter
+        setUndoChapterId(prev => prev === chapterId ? null : prev);
+    };
+
+    // Permanently Delete Chapter from Recycle Bin
+    const permanentlyDeleteChapter = (chapterId: string) => {
+        const chapter = trashChapters.find(c => c.id === chapterId);
+        if (!chapter) return;
+        if (!confirm(`Are you sure you want to permanently delete chapter "${chapter.title}"? This will permanently erase all its nested topics as well.`)) {
+            return;
+        }
+
+        const updatedTrashChaps = trashChapters.filter(c => c.id !== chapterId);
+        setTrashChapters(updatedTrashChaps);
+        localStorage.setItem('kfa_trash_chapters', JSON.stringify(updatedTrashChaps));
+
+        // Erase nested lessons from trash too
+        const remainingTrashLessons = trashLessons.filter(l => l.chapter_id !== chapterId);
+        setTrashLessons(remainingTrashLessons);
+        localStorage.setItem('kfa_trash_lessons', JSON.stringify(remainingTrashLessons));
+    };
+
+    // Clear all Recycle Bin items (topics and chapters)
+    const clearTrash = () => {
+        if (trashLessons.length === 0 && trashChapters.length === 0) return;
+        if (!confirm('Are you sure you want to empty the Recycle Bin? All items will be permanently deleted.')) {
+            return;
+        }
+        setTrashLessons([]);
+        setTrashChapters([]);
+        localStorage.removeItem('kfa_trash_lessons');
+        localStorage.removeItem('kfa_trash_chapters');
     };
 
     // Trigger Play/View attachment previewer overlay
@@ -1116,19 +1518,96 @@ export default function InventoryLibrary() {
         });
     };
 
-    // Trigger Simulated Cloud Backup Synchronization
-    const triggerBackupSync = () => {
+    // Trigger Cloud Backup Synchronization
+    const triggerBackupSync = async () => {
         setIsSyncing(true);
-        setTimeout(() => {
-            setIsSyncing(false);
+        try {
+            // Upsert categories, modules, chapters, and lessons from local state to remote database
+            if (categories.length > 0) {
+                const { error: catErr } = await supabaseAuth
+                    .from('course_categories')
+                    .upsert(categories, { onConflict: 'id' });
+                if (catErr) throw catErr;
+            }
+
+            if (modules.length > 0) {
+                const { error: modErr } = await supabaseAuth
+                    .from('course_modules')
+                    .upsert(modules, { onConflict: 'id' });
+                if (modErr) throw modErr;
+            }
+
+            if (chapters.length > 0) {
+                const { error: chapErr } = await supabaseAuth
+                    .from('course_chapters')
+                    .upsert(chapters, { onConflict: 'id' });
+                if (chapErr) throw chapErr;
+            }
+
+            if (lessons.length > 0) {
+                const { error: lesErr } = await supabaseAuth
+                    .from('course_lessons')
+                    .upsert(lessons, { onConflict: 'id' });
+                if (lesErr) throw lesErr;
+            }
+
+            // Fetch the updated counts & stats
+            const { count: studentCount } = await supabaseAuth
+                .from('users')
+                .select('*', { count: 'exact', head: true })
+                .or('role.eq.student,role.eq.pending');
+            if (studentCount !== null) {
+                setActiveStudentsCount(studentCount);
+            }
+
+            const { data: progressRecords } = await supabaseAuth
+                .from('student_topic_progress')
+                .select('lesson_id, status')
+                .eq('status', 'completed');
+            if (progressRecords) {
+                setStudentProgressRecords(progressRecords);
+            }
+
             setLastSyncedText('Synced just now');
-        }, 1500);
+            setIsUsingFallback(false);
+            alert('Cloud Sync Complete: Remote database and local state have been successfully synchronized!');
+        } catch (err) {
+            console.error('Failed to sync to database:', err);
+            alert(`Sync Failed: ${err instanceof Error ? err.message : 'Unknown database error'}`);
+        } finally {
+            setIsSyncing(false);
+        }
     };
 
     // Computed Info
     const activeModule = modules.find(m => m.id === selectedModuleId);
     const activeModuleParsed = activeModule ? parseModuleCategory(activeModule) : null;
     const activeHeadline = activeModule ? activeModule.title : '';
+
+    // Dynamic calculations for Active Class Completion
+    const activeModuleChapters = chapters.filter(c => c.module_id === selectedModuleId);
+    const activeModuleLessons = lessons.filter(l => activeModuleChapters.some(c => c.id === l.chapter_id));
+    const activeModuleLessonIds = new Set(activeModuleLessons.map(l => l.id));
+    
+    const completedCountForActiveModule = studentProgressRecords.filter(p => activeModuleLessonIds.has(p.lesson_id)).length;
+    
+    // Check if we have live DB stats
+    const hasDbStats = !isUsingFallback && activeStudentsCount > 0;
+    const finalActiveStudentsCount = hasDbStats ? activeStudentsCount : 14;
+    
+    // Total possible completions
+    const totalPossibleCompletions = finalActiveStudentsCount * activeModuleLessons.length;
+    
+    // Calculate rate
+    const completionRate = hasDbStats && totalPossibleCompletions > 0
+        ? Math.round((completedCountForActiveModule / totalPossibleCompletions) * 100)
+        : 78; // Fallback simulation if offline or clean DB
+
+    const masteredCount = hasDbStats && finalActiveStudentsCount > 0
+        ? Math.round(completedCountForActiveModule / finalActiveStudentsCount)
+        : Math.round(activeModuleLessons.length * 0.78); // Fallback simulation (78% of active lessons)
+
+    const estimatedDbSize = `${((lessons.length * 15 + chapters.length * 5 + modules.length * 2) / 100).toFixed(1)}MB`;
     const activeBadgeText = (() => {
         if (!activeModuleParsed || !activeModule) return 'ACTIVE CURRICULUM';
         let catText = activeModuleParsed.category;
@@ -1148,6 +1627,34 @@ export default function InventoryLibrary() {
         return catText.toUpperCase();
     })();
     const moduleChapters = getModuleChapters(selectedModuleId);
+
+    const searchLower = searchQuery.trim().toLowerCase();
+    const hasSearch = searchLower.length > 0;
+
+    const matchedLessons = useMemo(() => {
+        if (!hasSearch) return [];
+        return lessons.filter(l => 
+            (l.title || '').toLowerCase().includes(searchLower) ||
+            (l.description || '').toLowerCase().includes(searchLower) ||
+            (l.file_name || '').toLowerCase().includes(searchLower)
+        );
+    }, [lessons, searchLower, hasSearch]);
+
+    const matchedChapters = useMemo(() => {
+        if (!hasSearch) return [];
+        return chapters.filter(c => 
+            (c.title || '').toLowerCase().includes(searchLower) ||
+            (c.description || '').toLowerCase().includes(searchLower)
+        );
+    }, [chapters, searchLower, hasSearch]);
+
+    const matchedModules = useMemo(() => {
+        if (!hasSearch) return [];
+        return modules.filter(m => 
+            (m.title || '').toLowerCase().includes(searchLower) ||
+            (m.description || '').toLowerCase().includes(searchLower)
+        );
+    }, [modules, searchLower, hasSearch]);
 
     // Filters based on header search query
     const filteredModules = modules.filter(m => {
@@ -1208,8 +1715,23 @@ export default function InventoryLibrary() {
                     title="Curriculum & Inventory Manager" 
                     searchQuery={searchQuery}
                     onSearchChange={setSearchQuery}
+                    placeholder="Search levels, chapters, topics or files..."
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
-                />
+                >
+                    {/* Premium Recycle Bin Button */}
+                    <button
+                        onClick={() => setShowTrashModal(true)}
+                        className="size-9 sm:size-10 flex items-center justify-center rounded-lg text-slate-650 dark:text-slate-400 hover:bg-[#ecb613]/10 hover:text-[#ecb613] transition-colors relative shrink-0"
+                        title="Recycle Bin (Deleted Materials)"
+                    >
+                        <Trash2 className="size-5" />
+                        {(trashLessons.length + trashChapters.length) > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-black font-mono text-[9px] size-4 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 leading-none">
+                                {trashLessons.length + trashChapters.length}
+                            </span>
+                        )}
+                    </button>
+                </TeacherHeader>
 
                 {/* Connection Status Subtitle Bar */}
                 <div className="px-8 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-400 select-none shrink-0">
@@ -1230,8 +1752,226 @@ export default function InventoryLibrary() {
                 ) : (
                     <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8">
                         
+                        {/* ==================== VIEW S: SEARCH RESULTS SCREEN ==================== */}
+                        {hasSearch && (
+                            <div className="space-y-8 animate-fadeIn text-left">
+                                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-1.5 h-4 bg-amber-500 rounded-full" />
+                                        <h2 className="font-extrabold text-sm tracking-wider uppercase text-slate-700 dark:text-slate-300">
+                                            Search Results for &quot;{searchQuery}&quot;
+                                        </h2>
+                                    </div>
+                                    <button 
+                                        onClick={() => setSearchQuery('')}
+                                        className="text-xs font-bold text-slate-400 hover:text-amber-500 transition-colors"
+                                    >
+                                        Clear Search
+                                    </button>
+                                </div>
+
+                                {matchedLessons.length === 0 && matchedChapters.length === 0 && matchedModules.length === 0 ? (
+                                    <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl text-slate-400">
+                                        <HelpCircle className="size-10 text-amber-500 stroke-[1.2] mx-auto mb-2 opacity-50" />
+                                        <p className="text-xs font-semibold">No results match your search query.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-8">
+                                        {/* Matched Lessons/Topics */}
+                                        {matchedLessons.length > 0 && (
+                                            <div className="space-y-4">
+                                                <h3 className="font-extrabold text-xs tracking-wider uppercase text-slate-400 font-mono">Matched Topics ({matchedLessons.length})</h3>
+                                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                                    {matchedLessons.map(lesson => {
+                                                        const chap = chapters.find(c => c.id === lesson.chapter_id);
+                                                        const mod = chap ? modules.find(m => m.id === chap.module_id) : null;
+                                                        const hasAttachment = !!lesson.material_url;
+
+                                                        return (
+                                                            <div 
+                                                                key={lesson.id}
+                                                                className="rounded-2xl p-5 border flex flex-col justify-between h-48 relative bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-850 hover:border-amber-400/60 dark:hover:border-amber-500/50 hover:shadow-md transition-all text-left"
+                                                            >
+                                                                <div className="space-y-1.5">
+                                                                    <div className="flex items-center justify-between gap-4">
+                                                                        <div className="flex flex-wrap items-center gap-1.5">
+                                                                            {getMaterialIcon(lesson.material_type, hasAttachment)}
+                                                                            <span className="text-[10px] font-extrabold text-[#d97706] dark:text-amber-400 uppercase tracking-widest font-mono">
+                                                                                Topic {lesson.lesson_number}
+                                                                            </span>
+                                                                            {mod && (
+                                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 px-2 py-0.5 rounded-full uppercase font-mono">
+                                                                                    {mod.title.split(':')[0] || mod.title}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        
+                                                                        <div className="flex items-center gap-1 shrink-0 relative z-20">
+                                                                            <button 
+                                                                                onClick={(e) => {
+                                                                                    const targetChap = chapters.find(c => c.id === lesson.chapter_id);
+                                                                                    if (targetChap) {
+                                                                                        openLessonModal(targetChap.id, lesson, e);
+                                                                                    }
+                                                                                }}
+                                                                                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-amber-500 transition-all font-semibold"
+                                                                                title="Edit Topic Details"
+                                                                            >
+                                                                                <Edit2 className="size-3.5" />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                    
+                                                                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white leading-snug line-clamp-1">
+                                                                        {lesson.title}
+                                                                    </h4>
+                                                                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 font-medium leading-normal">
+                                                                        {stripHtml(lesson.description)}
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="flex flex-wrap items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 gap-2">
+                                                                    <div className="text-[10px] font-bold font-mono text-slate-400 flex items-center gap-1.5">
+                                                                        {hasAttachment && lesson.file_size && (
+                                                                            <span className="text-slate-400 mr-1.5">💾 {lesson.file_size}</span>
+                                                                        )}
+                                                                        <span>{hasAttachment ? (getCleanDuration(lesson.duration, lesson.file_size) || 'FILE ATTACHMENT') : 'LINK/TOPIC REFERENCE'}</span>
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-2">
+                                                                        {hasAttachment && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    handlePlayPreview(lesson, e);
+                                                                                }}
+                                                                                className="px-3 py-1.5 bg-[#ecb613] hover:bg-amber-500 text-slate-950 font-black rounded-lg text-[10px] tracking-wider uppercase transition-all flex items-center gap-1"
+                                                                            >
+                                                                                <Play className="size-3 fill-current" />
+                                                                                <span>Quick View</span>
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                if (chap && mod) {
+                                                                                    setSelectedModuleId(mod.id);
+                                                                                    const moduleChaps = getModuleChapters(mod.id);
+                                                                                    const newExpanded: Record<string, boolean> = {};
+                                                                                    moduleChaps.forEach(c => {
+                                                                                        newExpanded[c.id] = (c.id === chap.id);
+                                                                                    });
+                                                                                    setExpandedChapters(newExpanded);
+                                                                                    setCurrentView('dashboard');
+                                                                                    setSelectedLessonPreview(lesson);
+                                                                                }
+                                                                            }}
+                                                                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold rounded-lg text-[10px] tracking-wider uppercase transition-all"
+                                                                        >
+                                                                            Go to Chapter
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Matched Chapters */}
+                                        {matchedChapters.length > 0 && (
+                                            <div className="space-y-4">
+                                                <h3 className="font-extrabold text-xs tracking-wider uppercase text-slate-400 font-mono">Matched Chapters ({matchedChapters.length})</h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                    {matchedChapters.map(chap => {
+                                                        const mod = modules.find(m => m.id === chap.module_id);
+                                                        return (
+                                                            <div 
+                                                                key={chap.id}
+                                                                onClick={() => {
+                                                                    if (mod) {
+                                                                        setSelectedModuleId(mod.id);
+                                                                        const moduleChaps = getModuleChapters(mod.id);
+                                                                        const newExpanded: Record<string, boolean> = {};
+                                                                        moduleChaps.forEach(c => {
+                                                                            newExpanded[c.id] = (c.id === chap.id);
+                                                                        });
+                                                                        setExpandedChapters(newExpanded);
+                                                                        setCurrentView('dashboard');
+                                                                    }
+                                                                }}
+                                                                className="rounded-2xl p-5 border border-slate-250 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer bg-white dark:bg-slate-900 flex flex-col justify-between text-left"
+                                                            >
+                                                                <div className="space-y-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-[10px] font-extrabold text-[#d97706] uppercase tracking-widest font-mono">
+                                                                            Ch {chap.chapter_number}
+                                                                        </span>
+                                                                        {mod && (
+                                                                            <span className="text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-800/80 px-2 py-0.5 rounded-full uppercase font-mono">
+                                                                                {mod.title}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">
+                                                                        {chap.title}
+                                                                    </h4>
+                                                                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                                                                        {stripHtml(chap.description)}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mt-4">
+                                                                    View in Curriculum →
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Matched Modules */}
+                                        {matchedModules.length > 0 && (
+                                            <div className="space-y-4">
+                                                <h3 className="font-extrabold text-xs tracking-wider uppercase text-slate-400 font-mono">Matched Modules ({matchedModules.length})</h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                    {matchedModules.map(mod => {
+                                                        const parsed = parseModuleCategory(mod);
+                                                        return (
+                                                            <div 
+                                                                key={mod.id}
+                                                                onClick={() => {
+                                                                    handleSelectModule(mod.id);
+                                                                }}
+                                                                className="rounded-2xl p-5 border border-slate-250 dark:border-slate-800 hover:border-amber-400 dark:hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer bg-white dark:bg-slate-900 flex flex-col justify-between text-left"
+                                                            >
+                                                                <div className="space-y-2">
+                                                                    <span className="text-[10px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-800/80 px-2 py-0.5 rounded-full uppercase font-mono">
+                                                                        {parsed.category}
+                                                                    </span>
+                                                                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">
+                                                                        {mod.title}
+                                                                    </h4>
+                                                                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                                                                        {stripHtml(parsed.description)}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mt-4">
+                                                                    Open Module →
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
                         {/* ==================== VIEW A: LANDING SCREEN ==================== */}
-                        {currentView === 'landing' && (
+                        {!hasSearch && currentView === 'landing' && (
                             <div className="space-y-8 animate-fadeIn">
                                 
                                 {/* Landing Premium Header Banner */}
@@ -1352,7 +2092,7 @@ export default function InventoryLibrary() {
                         )}
 
                         {/* ==================== VIEW B: CURRICULUM WORKSPACE SCREEN ==================== */}
-                        {currentView === 'dashboard' && (
+                        {!hasSearch && currentView === 'dashboard' && (
                             <div className="flex flex-col xl:flex-row gap-8 items-start animate-fadeIn">
                                 
                                 {/* Left/Middle 2/3 Column: Chapter Collapsible accordions stack & Module Header info */}
@@ -1425,9 +2165,29 @@ export default function InventoryLibrary() {
                                                 return (
                                                     <div 
                                                         key={chap.id}
-                                                        onDragOver={(event) => { event.preventDefault(); if (draggedChapterId && draggedChapterId !== chap.id) setDragOverChapterId(chap.id); }}
+                                                        onDragOver={(event) => {
+                                                            event.preventDefault();
+                                                            if (draggedChapterId && draggedChapterId !== chap.id) {
+                                                                setDragOverChapterId(chap.id);
+                                                            } else if (draggedLessonId) {
+                                                                const targetLesson = lessons.find(l => l.id === draggedLessonId);
+                                                                if (targetLesson && targetLesson.chapter_id !== chap.id) {
+                                                                    setDragOverChapterId(chap.id);
+                                                                }
+                                                            }
+                                                        }}
                                                         onDragLeave={() => setDragOverChapterId(current => current === chap.id ? null : current)}
-                                                        onDrop={(event) => { event.preventDefault(); if (draggedChapterId) void reorderChapter(draggedChapterId, chap.id); setDraggedChapterId(null); setDragOverChapterId(null); }}
+                                                        onDrop={(event) => {
+                                                            event.preventDefault();
+                                                            if (draggedChapterId) {
+                                                                void reorderChapter(draggedChapterId, chap.id);
+                                                            } else if (draggedLessonId) {
+                                                                void moveLessonToChapter(draggedLessonId, chap.id);
+                                                            }
+                                                            setDraggedChapterId(null);
+                                                            setDraggedLessonId(null);
+                                                            setDragOverChapterId(null);
+                                                        }}
                                                         className={`rounded-3xl border bg-white dark:bg-slate-900 overflow-hidden shadow-xs transition-all duration-200 ${dragOverChapterId === chap.id ? 'border-amber-500 ring-2 ring-amber-500/25 translate-y-1' : 'border-slate-200/85 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-750'} ${draggedChapterId === chap.id ? 'opacity-50' : ''}`}
                                                     >
                                                         {/* Chapter Accordion Header bar */}
@@ -1529,8 +2289,18 @@ export default function InventoryLibrary() {
                                                                             return (
                                                                                 <div 
                                                                                     key={lesson.id}
+                                                                                    draggable={true}
+                                                                                    onDragStart={(event) => {
+                                                                                        event.stopPropagation();
+                                                                                        setDraggedLessonId(lesson.id);
+                                                                                        event.dataTransfer.effectAllowed = 'move';
+                                                                                        event.dataTransfer.setData('text/plain', lesson.id);
+                                                                                    }}
+                                                                                    onDragEnd={() => {
+                                                                                        setDraggedLessonId(null);
+                                                                                    }}
                                                                                     onClick={() => setSelectedLessonPreview(lesson)}
-                                                                                    className="rounded-2xl p-5 border flex flex-col justify-between h-44 relative bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-850 hover:border-amber-400/60 dark:hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer"
+                                                                                    className={`rounded-2xl p-5 border flex flex-col justify-between h-44 relative bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-850 hover:border-amber-400/60 dark:hover:border-amber-500/50 hover:shadow-md transition-all cursor-pointer ${draggedLessonId === lesson.id ? 'opacity-50' : ''}`}
                                                                                 >
                                                                                     {/* Card Upper Title & actions */}
                                                                                     <div className="space-y-1.5">
@@ -1570,25 +2340,45 @@ export default function InventoryLibrary() {
 
                                                                                     {/* Card Bottom detail line & link */}
                                                                                     <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 select-none">
-                                                                                        <div className="text-[10px] font-bold font-mono text-slate-400">
-                                                                                            {hasAttachment 
-                                                                                                ? (lesson.duration || 'FILE ATTACHMENT') 
-                                                                                                : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE')}
+                                                                                        <div className="text-[10px] font-bold font-mono text-slate-400 flex items-center gap-1.5 min-w-0">
+                                                                                            {hasAttachment && lesson.file_size && (
+                                                                                                <span className="text-slate-450 mr-1.5 shrink-0">💾 {lesson.file_size}</span>
+                                                                                            )}
+                                                                                            <span className="truncate">
+                                                                                                {hasAttachment 
+                                                                                                    ? (getCleanDuration(lesson.duration, lesson.file_size) || 'FILE ATTACHMENT') 
+                                                                                                    : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE')}
+                                                                                            </span>
                                                                                         </div>
                                                                                         
-                                                                                        {isLinkClickable && (
-                                                                                            <a
-                                                                                                href={lesson.link_url}
-                                                                                                target="_blank"
-                                                                                                rel="noopener noreferrer"
-                                                                                                onClick={(e) => e.stopPropagation()}
-                                                                                                className="inline-flex items-center gap-1 text-[10px] font-black text-amber-500 hover:text-amber-600 bg-amber-500/10 px-2.5 py-1.5 rounded-full tracking-wider uppercase transition-all relative z-10"
-                                                                                                title="Open external link"
-                                                                                            >
-                                                                                                <span>Link</span>
-                                                                                                <ExternalLink className="size-2.5" />
-                                                                                            </a>
-                                                                                        )}
+                                                                                        <div className="flex items-center gap-2 relative z-20 shrink-0">
+                                                                                            {hasAttachment && (
+                                                                                                <button
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        handlePlayPreview(lesson, e);
+                                                                                                    }}
+                                                                                                    className="inline-flex items-center gap-1 text-[10px] font-black text-[#d97706] hover:text-[#b45309] bg-amber-500/10 hover:bg-amber-500/25 px-2.5 py-1.5 rounded-full tracking-wider uppercase transition-all"
+                                                                                                    title="Quick View Attachment"
+                                                                                                >
+                                                                                                    <span>Play</span>
+                                                                                                    <Play className="size-2.5 fill-current" />
+                                                                                                </button>
+                                                                                            )}
+                                                                                            {isLinkClickable && (
+                                                                                                <a
+                                                                                                    href={lesson.link_url}
+                                                                                                    target="_blank"
+                                                                                                    rel="noopener noreferrer"
+                                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                                    className="inline-flex items-center gap-1 text-[10px] font-black text-amber-500 hover:text-amber-600 bg-amber-500/10 px-2.5 py-1.5 rounded-full tracking-wider uppercase transition-all"
+                                                                                                    title="Open external link"
+                                                                                                >
+                                                                                                    <span>Link</span>
+                                                                                                    <ExternalLink className="size-2.5" />
+                                                                                                </a>
+                                                                                            )}
+                                                                                        </div>
                                                                                     </div>
                                                                                 </div>
                                                                             );
@@ -1619,7 +2409,13 @@ export default function InventoryLibrary() {
                                     {/* WIDGET A: STUDENT PROGRESS TRACKER (Animated SVG circular progress wheel) */}
                                     <div className="rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs text-left relative overflow-hidden flex flex-col justify-between min-h-[220px]">
                                         <div className="space-y-1">
-                                            <span className="text-[9px] font-black bg-emerald-500/15 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-full uppercase tracking-wider leading-none">Simulated Progress</span>
+                                            <span className={`text-[9px] font-black border px-2.5 py-1 rounded-full uppercase tracking-wider leading-none ${
+                                                hasDbStats 
+                                                    ? 'bg-amber-500/15 border-amber-500/20 text-amber-600 dark:text-amber-400' 
+                                                    : 'bg-emerald-500/15 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                            }`}>
+                                                {hasDbStats ? 'Live Database Progress' : 'Simulated Progress'}
+                                            </span>
                                             <h4 className="font-black text-sm text-slate-900 dark:text-white leading-tight mt-2">Active Class Completion</h4>
                                         </div>
 
@@ -1630,20 +2426,20 @@ export default function InventoryLibrary() {
                                                     <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-slate-100 dark:text-slate-800" strokeWidth="6" fill="transparent" />
                                                     <circle cx="40" cy="40" r="32" stroke="currentColor" className="text-[#ecb613]" strokeWidth="6" fill="transparent"
                                                             strokeDasharray={2 * Math.PI * 32}
-                                                            strokeDashoffset={2 * Math.PI * 32 * (1 - 0.78)} />
+                                                            strokeDashoffset={2 * Math.PI * 32 * (1 - (completionRate / 100))} />
                                                 </svg>
-                                                <div className="absolute font-black text-sm text-slate-900 dark:text-white leading-none font-mono">78%</div>
+                                                <div className="absolute font-black text-sm text-slate-900 dark:text-white leading-none font-mono">{completionRate}%</div>
                                             </div>
                                             <div className="text-left space-y-1">
                                                 <div className="text-[10px] text-slate-400 font-bold uppercase font-mono">Completion Rate</div>
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal font-medium">
-                                                    Students have mastered 24 out of 30 sequential curriculum requirements.
+                                                    Students have mastered {masteredCount} out of {activeModuleLessons.length} sequential curriculum requirements.
                                                 </p>
                                             </div>
                                         </div>
 
                                         <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono">
-                                            <span>ACTIVE STUDENTS: 14</span>
+                                            <span>ACTIVE STUDENTS: {finalActiveStudentsCount}</span>
                                             <span className="text-[#ecb613]">VIEW CLASS</span>
                                         </div>
                                     </div>
@@ -1662,7 +2458,7 @@ export default function InventoryLibrary() {
                                                 </div>
                                                 <div>
                                                     <div className="text-[10px] font-bold text-slate-400 font-mono leading-none">{lastSyncedText}</div>
-                                                    <div className="text-[9px] font-semibold text-slate-400 mt-0.5">30 Active curriculum nodes active</div>
+                                                    <div className="text-[9px] font-semibold text-slate-400 mt-0.5">{lessons.length} Active curriculum nodes active</div>
                                                 </div>
                                             </div>
                                             
@@ -1686,7 +2482,7 @@ export default function InventoryLibrary() {
                                         </div>
 
                                         <div className="border-t border-slate-100 dark:border-slate-800/60 pt-3 flex items-center justify-between text-[10px] font-bold text-slate-400 font-mono leading-none">
-                                            <span>DB SIZE: 1.2MB</span>
+                                            <span>DB SIZE: {estimatedDbSize}</span>
                                             <span className="text-emerald-500 uppercase font-black tracking-wide leading-none">SECURE</span>
                                         </div>
                                     </div>
@@ -2087,34 +2883,16 @@ export default function InventoryLibrary() {
                                 </button>
                             </div>
                             
-                            {/* Interactive Media Frame */}
-                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative">
-                                {mediaPreview.type === 'video' ? (
-                                    <video src={mediaPreview.url} controls className="w-full h-full object-contain" autoPlay />
-                                ) : mediaPreview.type === 'audio' ? (
-                                    <div className="w-full p-8 flex flex-col items-center justify-center gap-4 bg-slate-950/40 h-full">
-                                        <Music className="size-16 text-amber-500 animate-pulse" />
-                                        <audio src={mediaPreview.url} controls className="w-full max-w-md" autoPlay />
-                                    </div>
-                                ) : mediaPreview.type === 'pdf' ? (
-                                    <embed src={mediaPreview.url} type="application/pdf" className="w-full h-full" />
-                                ) : mediaPreview.type === 'image' ? (
-                                    <img src={mediaPreview.url} alt={mediaPreview.title} className="w-full h-full object-contain" />
-                                ) : (
-                                    <div className="text-center p-8 space-y-4">
-                                        <FileText className="size-16 text-slate-600 mx-auto" />
-                                        <p className="text-xs text-slate-400 max-w-sm">No interactive simulation available for generic files. Open details below:</p>
-                                        <a 
-                                            href={mediaPreview.url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
-                                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-full text-xs transition-all uppercase tracking-wider"
-                                        >
-                                            <span>Open File Attachment</span>
-                                            <ExternalLink className="size-3.5" />
-                                        </a>
-                                    </div>
-                                )}
+                            {/* Interactive Protected Media Frame */}
+                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative select-none">
+                                <SecureCurriculumMaterial 
+                                    url={mediaPreview.url} 
+                                    title={mediaPreview.title} 
+                                    materialType={mediaPreview.type} 
+                                    viewerName={teacherProfile?.name} 
+                                    viewerEmail={teacherProfile?.email} 
+                                    showWatermark={false} 
+                                />
                             </div>
                         </div>
                     </div>
@@ -2173,7 +2951,7 @@ export default function InventoryLibrary() {
                                 <div className="flex flex-wrap items-center gap-3 select-none text-[10px] font-extrabold font-mono text-slate-400 uppercase tracking-wider">
                                     {selectedLessonPreview.duration && (
                                         <span className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-750 text-slate-600 dark:text-slate-300">
-                                            {selectedLessonPreview.duration}
+                                            {getCleanDuration(selectedLessonPreview.duration, selectedLessonPreview.file_size)}
                                         </span>
                                     )}
                                     {selectedLessonPreview.file_name && (
@@ -2230,6 +3008,223 @@ export default function InventoryLibrary() {
                         </div>
                     </div>
                 )}
+
+                {/* 5. PREMIUM RECYCLE BIN MODAL */}
+                {showTrashModal && (
+                    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full max-h-[80vh] flex flex-col shadow-2xl animate-scaleIn text-slate-900 dark:text-slate-100">
+                            <div className="flex justify-between items-center mb-2 shrink-0">
+                                <div className="flex items-center gap-2">
+                                    <Trash2 className="size-5 text-[#d97706]" />
+                                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 font-mono">
+                                        Recycle Bin
+                                    </h3>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {(trashLessons.length > 0 || trashChapters.length > 0) && (
+                                        <button 
+                                            onClick={clearTrash}
+                                            className="text-[10px] font-bold text-red-500 hover:text-red-650 transition-colors uppercase tracking-wider mr-2"
+                                        >
+                                            Empty Bin
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => setShowTrashModal(false)} 
+                                        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all"
+                                    >
+                                        <X className="size-4" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Tab Selectors */}
+                            <div className="flex border-b border-slate-100 dark:border-slate-800/80 mb-4 shrink-0 text-xs font-bold font-mono">
+                                <button
+                                    onClick={() => setActiveTrashTab('topics')}
+                                    className={`flex-1 py-2.5 transition-all border-b-2 uppercase tracking-wider ${activeTrashTab === 'topics' ? 'border-[#ecb613] text-amber-500 font-extrabold' : 'border-transparent text-slate-400'}`}
+                                >
+                                    Topics ({trashLessons.length})
+                                </button>
+                                <button
+                                    onClick={() => setActiveTrashTab('chapters')}
+                                    className={`flex-1 py-2.5 transition-all border-b-2 uppercase tracking-wider ${activeTrashTab === 'chapters' ? 'border-[#ecb613] text-amber-500 font-extrabold' : 'border-transparent text-slate-400'}`}
+                                >
+                                    Chapters ({trashChapters.length})
+                                </button>
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-left">
+                                {activeTrashTab === 'topics' ? (
+                                    trashLessons.length === 0 ? (
+                                        <div className="py-12 text-center text-slate-400">
+                                            <Trash2 className="size-10 stroke-[1.2] mx-auto mb-2 opacity-30" />
+                                            <p className="text-xs font-semibold">No deleted topics in Recycle Bin.</p>
+                                        </div>
+                                    ) : (
+                                        trashLessons.map((lesson) => {
+                                            const chap = chapters.find(c => c.id === lesson.chapter_id);
+                                            const mod = chap ? modules.find(m => m.id === chap.module_id) : null;
+                                            
+                                            return (
+                                                <div 
+                                                    key={lesson.id}
+                                                    className="p-4 rounded-2xl border border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex items-center justify-between gap-4 transition-all"
+                                                >
+                                                    <div className="min-w-0 space-y-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            {getMaterialIcon(lesson.material_type, !!lesson.material_url)}
+                                                            <h4 className="font-extrabold text-xs text-slate-900 dark:text-white leading-tight truncate max-w-[180px]">
+                                                                {lesson.title}
+                                                            </h4>
+                                                        </div>
+                                                        {chap && (
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide font-mono truncate leading-none">
+                                                                {mod?.title.split(':')[0] || 'Curriculum'} • {chap.title}
+                                                            </p>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <button
+                                                            onClick={() => restoreLesson(lesson.id)}
+                                                            className="p-2 hover:bg-emerald-500/10 rounded-xl text-emerald-600 hover:text-emerald-500 transition-all font-semibold"
+                                                            title="Restore topic to chapter"
+                                                        >
+                                                            <RefreshCw className="size-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => permanentlyDeleteLesson(lesson.id)}
+                                                            className="p-2 hover:bg-red-500/10 rounded-xl text-slate-400 hover:text-red-500 transition-all"
+                                                            title="Delete permanently"
+                                                        >
+                                                            <Trash2 className="size-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )
+                                ) : (
+                                    trashChapters.length === 0 ? (
+                                        <div className="py-12 text-center text-slate-400">
+                                            <Trash2 className="size-10 stroke-[1.2] mx-auto mb-2 opacity-30" />
+                                            <p className="text-xs font-semibold">No deleted chapters in Recycle Bin.</p>
+                                        </div>
+                                    ) : (
+                                        trashChapters.map((chap) => {
+                                            const mod = modules.find(m => m.id === chap.module_id);
+                                            const nestedLessonsCount = trashLessons.filter(l => l.chapter_id === chap.id).length;
+                                            
+                                            return (
+                                                <div 
+                                                    key={chap.id}
+                                                    className="p-4 rounded-2xl border border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex items-center justify-between gap-4 transition-all"
+                                                >
+                                                    <div className="min-w-0 space-y-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <BookOpen className="size-4.5 text-amber-500" />
+                                                            <h4 className="font-extrabold text-xs text-slate-900 dark:text-white leading-tight truncate max-w-[180px]">
+                                                                {chap.title}
+                                                            </h4>
+                                                        </div>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide font-mono truncate leading-none">
+                                                            {mod?.title.split(':')[0] || 'Level'} • {nestedLessonsCount} {nestedLessonsCount === 1 ? 'topic' : 'topics'} inside
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <button
+                                                            onClick={() => restoreChapter(chap.id)}
+                                                            className="p-2 hover:bg-emerald-500/10 rounded-xl text-emerald-600 hover:text-emerald-500 transition-all font-semibold"
+                                                            title="Restore chapter and its topics"
+                                                        >
+                                                            <RefreshCw className="size-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => permanentlyDeleteChapter(chap.id)}
+                                                            className="p-2 hover:bg-red-500/10 rounded-xl text-slate-400 hover:text-red-500 transition-all"
+                                                            title="Delete permanently"
+                                                        >
+                                                            <Trash2 className="size-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 6. FLOATING UNDO TOPIC DELETION TOAST */}
+                {undoLessonId && (() => {
+                    const deletedLesson = trashLessons.find(l => l.id === undoLessonId);
+                    if (!deletedLesson) return null;
+                    return (
+                        <div className="fixed bottom-6 right-6 z-50 bg-slate-950 text-white border border-slate-800 rounded-2xl py-3.5 px-4 shadow-xl flex items-center justify-between gap-4 animate-slideIn max-w-sm w-full select-none">
+                            <div className="flex items-center gap-2.5 min-w-0 text-left">
+                                <div className="size-6 rounded-lg bg-amber-500/15 border border-amber-500/20 flex items-center justify-center shrink-0">
+                                    <Trash2 className="size-3.5 text-amber-500" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest font-mono">Deleted Topic</p>
+                                    <p className="text-xs font-semibold text-slate-200 truncate mt-0.5">&quot;{deletedLesson.title}&quot;</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button 
+                                    onClick={() => restoreLesson(undoLessonId)}
+                                    className="px-3 py-1.5 bg-[#ecb613] hover:bg-amber-500 text-slate-950 font-extrabold rounded-lg text-[10px] tracking-wide uppercase transition-colors shrink-0 leading-none"
+                                >
+                                    Undo
+                                </button>
+                                <button 
+                                    onClick={() => setUndoLessonId(null)}
+                                    className="p-1 hover:bg-slate-850 rounded-lg text-slate-500 hover:text-white transition-colors"
+                                >
+                                    <X className="size-4" />
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* 7. FLOATING UNDO CHAPTER DELETION TOAST */}
+                {undoChapterId && (() => {
+                    const deletedChap = trashChapters.find(c => c.id === undoChapterId);
+                    if (!deletedChap) return null;
+                    return (
+                        <div className="fixed bottom-6 right-6 z-50 bg-slate-950 text-white border border-slate-800 rounded-2xl py-3.5 px-4 shadow-xl flex items-center justify-between gap-4 animate-slideIn max-w-sm w-full select-none">
+                            <div className="flex items-center gap-2.5 min-w-0 text-left">
+                                <div className="size-6 rounded-lg bg-amber-500/15 border border-amber-500/20 flex items-center justify-center shrink-0">
+                                    <Trash2 className="size-3.5 text-amber-500" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest font-mono">Deleted Chapter</p>
+                                    <p className="text-xs font-semibold text-slate-200 truncate mt-0.5">&quot;{deletedChap.title}&quot;</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button 
+                                    onClick={() => restoreChapter(undoChapterId)}
+                                    className="px-3 py-1.5 bg-[#ecb613] hover:bg-amber-500 text-slate-950 font-extrabold rounded-lg text-[10px] tracking-wide uppercase transition-colors shrink-0 leading-none"
+                                >
+                                    Undo
+                                </button>
+                                <button 
+                                    onClick={() => setUndoChapterId(null)}
+                                    className="p-1 hover:bg-slate-850 rounded-lg text-slate-500 hover:text-white transition-colors"
+                                >
+                                    <X className="size-4" />
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
 
 
 

@@ -25,6 +25,7 @@ import PersonalNotebookWidget from './PersonalNotebookWidget';
 import MessagesWidget from './MessagesWidget';
 import ClassesListWidget from './ClassesListWidget';
 import PriorityTasksWidget from './PriorityTasksWidget';
+import ClassTimingsTableWidget from './ClassTimingsTableWidget';
 
 // --- Types ---
 interface Submission {
@@ -50,6 +51,7 @@ interface BatchSchedule {
     id: string;
     classroom_id: string;
     classroom_name: string;
+    classroom_description?: string;
     day_of_week: number;
     start_time: string;
     end_time: string;
@@ -59,6 +61,7 @@ interface TemporaryClass {
     id: string;
     classroom_id: string | null;
     classroom_name: string;
+    classroom_description?: string;
     title: string;
     class_date: string;
     start_time: string;
@@ -177,6 +180,10 @@ export default function TeacherDashboardContainer() {
     const [forgottenClasses, setForgottenClasses] = useState<any[]>([]);
     const [classrooms, setClassrooms] = useState<any[]>([]);
 
+    // Timings roster state
+    const [classroomStudents, setClassroomStudents] = useState<Record<string, string[]>>({});
+    const [tempClassOverrides, setTempClassOverrides] = useState<Record<string, { override_date: string, student_name: string }[]>>({});
+
     // Side panel (calendar click details)
     const [sidePanelOpen, setSidePanelOpen] = useState(false);
     const [selectedDateStr, setSelectedDateStr] = useState('');
@@ -225,13 +232,14 @@ export default function TeacherDashboardContainer() {
                     classroomSchedules, temporaryClasses, upcomingClasses,
                     forgottenClasses, classrooms, unassignedStudents,
                     pendingLeaves, pendingPayments, dueStudents,
-                    pendingSubmissionsList, teachers
+                    pendingSubmissionsList, teachers, classroomStudents,
+                    tempClassOverrides
                 };
                 localStorage.setItem(`teacherDashboardCache_${teacherProfile.id}`, JSON.stringify(cacheData));
             } catch (e) { console.error('Cache save error:', e); }
         }, 1000);
         return () => clearTimeout(cacheTimer);
-    }, [teacherProfile, stats, feesStats, recentSubmissions, classroomSchedules, temporaryClasses, upcomingClasses, forgottenClasses, classrooms, unassignedStudents, pendingLeaves, pendingPayments, dueStudents, pendingSubmissionsList, teachers]);
+    }, [teacherProfile, stats, feesStats, recentSubmissions, classroomSchedules, temporaryClasses, upcomingClasses, forgottenClasses, classrooms, unassignedStudents, pendingLeaves, pendingPayments, dueStudents, pendingSubmissionsList, teachers, classroomStudents, tempClassOverrides]);
 
     const loadDashboardData = async () => {
         try {
@@ -250,6 +258,11 @@ export default function TeacherDashboardContainer() {
             if (!profile || profile.role === 'student') {
                 router.push('/');
                 return;
+            }
+
+            const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('kfa-user-role') : null;
+            if (cachedRole) {
+                profile.role = cachedRole;
             }
             setTeacherProfile(profile);
 
@@ -304,13 +317,13 @@ export default function TeacherDashboardContainer() {
                 const { count } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .eq('role', 'student');
+                    .or('role.eq.student,role.eq.pending');
                 studentsCount = count || 0;
             } else {
                 const { count } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .eq('role', 'student')
+                    .or('role.eq.student,role.eq.pending')
                     .eq('teacher_id', userId);
                 studentsCount = count || 0;
             }
@@ -391,7 +404,7 @@ export default function TeacherDashboardContainer() {
                 const { data: allStudsForStats } = await supabaseAuth
                     .from('users')
                     .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
-                    .eq('role', 'student');
+                    .or('role.eq.student,role.eq.pending');
 
                 const { data: allPayForStats } = await supabaseAuth
                     .from('fees_payments')
@@ -483,13 +496,14 @@ export default function TeacherDashboardContainer() {
             if (classIds.length > 0) {
                 const { data: schedules } = await supabaseAuth
                     .from('batch_schedules')
-                    .select('id, classroom_id, classrooms(name), day_of_week, start_time, end_time')
+                    .select('id, classroom_id, classrooms(name, description), day_of_week, start_time, end_time')
                     .in('classroom_id', classIds);
 
                 const formattedSchedules: BatchSchedule[] = (schedules || []).map((sch: any) => ({
                     id: sch.id,
                     classroom_id: sch.classroom_id,
                     classroom_name: sch.classrooms?.name || 'Classroom',
+                    classroom_description: sch.classrooms?.description || '',
                     day_of_week: sch.day_of_week,
                     start_time: sch.start_time,
                     end_time: sch.end_time
@@ -500,13 +514,14 @@ export default function TeacherDashboardContainer() {
                 // Fetch temporary classes
                 const { data: temps } = await supabaseAuth
                     .from('temporary_classes')
-                    .select('id, classroom_id, classrooms(name), title, class_date, start_time, end_time')
+                    .select('id, classroom_id, classrooms(name, description), title, class_date, start_time, end_time')
                     .in('classroom_id', classIds);
 
                 const formattedTemps: TemporaryClass[] = (temps || []).map((t: any) => ({
                     id: t.id,
                     classroom_id: t.classroom_id,
                     classroom_name: t.classrooms?.name || t.title || 'Special Session',
+                    classroom_description: t.classrooms?.description || '',
                     title: t.title || 'Temporary Class',
                     class_date: t.class_date,
                     start_time: t.start_time,
@@ -514,6 +529,48 @@ export default function TeacherDashboardContainer() {
                 }));
                 setTemporaryClasses(formattedTemps);
                 localTemps = formattedTemps;
+
+                // Fetch classroom students for timing roster
+                const { data: classStudsData } = await supabaseAuth
+                    .from('classroom_students')
+                    .select('classroom_id, student_id, users!student_id(name)');
+                
+                const classStudsMap: Record<string, string[]> = {};
+                if (classStudsData) {
+                    classStudsData.forEach((row: any) => {
+                        const studentName = row.users?.name;
+                        if (studentName) {
+                            if (!classStudsMap[row.classroom_id]) {
+                                classStudsMap[row.classroom_id] = [];
+                            }
+                            classStudsMap[row.classroom_id].push(studentName);
+                        }
+                    });
+                }
+                setClassroomStudents(classStudsMap);
+
+                // Fetch session student overrides for temporary classes
+                const { data: overridesData } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .select('target_classroom_id, student_id, override_date, users!student_id(name)');
+
+                const overridesMap: Record<string, { override_date: string, student_name: string }[]> = {};
+                if (overridesData) {
+                    overridesData.forEach((row: any) => {
+                        const studentName = row.users?.name;
+                        if (studentName) {
+                            const targetId = row.target_classroom_id;
+                            if (!overridesMap[targetId]) {
+                                overridesMap[targetId] = [];
+                            }
+                            overridesMap[targetId].push({
+                                override_date: row.override_date,
+                                student_name: studentName
+                            });
+                        }
+                    });
+                }
+                setTempClassOverrides(overridesMap);
             }
 
             // 5. Today's Classes List (Sunday=0, Monday=1, ... in batch_schedules)
@@ -643,7 +700,7 @@ export default function TeacherDashboardContainer() {
             let studentsListQuery = supabaseAuth
                 .from('users')
                 .select('id, name')
-                .eq('role', 'student')
+                .or('role.eq.student,role.eq.pending')
                 .eq('status', 'active')
                 .order('name', { ascending: true });
             if (profile.role !== 'admin') {
@@ -656,7 +713,7 @@ export default function TeacherDashboardContainer() {
             const { data: activeStudents } = await supabaseAuth
                 .from('users')
                 .select('id, name')
-                .eq('role', 'student')
+                .or('role.eq.student,role.eq.pending')
                 .eq('status', 'active');
 
             const { data: classroomStudents } = await supabaseAuth
@@ -689,7 +746,7 @@ export default function TeacherDashboardContainer() {
             const { data: allStuds } = await supabaseAuth
                 .from('users')
                 .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             const { data: allPay } = await supabaseAuth
                 .from('fees_payments')
@@ -1053,7 +1110,7 @@ export default function TeacherDashboardContainer() {
         // Bind events to cells
         cells.forEach(cell => {
             const cellDate = new Date(cell.date);
-            const cellDow = (cellDate.getDay() + 6) % 7;
+            const cellDow = cellDate.getDay();
 
             // Bind recurring classes matching Day Of Week
             const matchingSchedules = classroomSchedules.filter(sch => sch.day_of_week === cellDow);
@@ -1126,11 +1183,11 @@ export default function TeacherDashboardContainer() {
     }
 
     return (
-        <div className="bg-[#f8f8f6] dark:bg-[#1a1608] text-slate-900 dark:text-slate-100 font-sans min-h-screen">
-            <div className="flex min-h-screen">
+        <div className="bg-[#f8f8f6] dark:bg-[#1a1608] text-slate-900 dark:text-slate-100 font-sans min-h-screen overflow-x-hidden">
+            <div className="flex min-h-screen max-w-full overflow-x-hidden">
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
-                <main className="flex-1 flex flex-col">
+                <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                     <TeacherHeader title={isAdmin ? "Admin-dashboard" : "Dashboard Overview"} />
 
                     <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 w-full flex-1">
@@ -1140,6 +1197,16 @@ export default function TeacherDashboardContainer() {
                             feesStats={feesStats} 
                             isAdmin={isAdmin} 
                         />
+
+                        {/* Class Timings & Students Roster (Admin Only) */}
+                        {isAdmin && (
+                            <ClassTimingsTableWidget
+                                classroomSchedules={classroomSchedules}
+                                temporaryClasses={temporaryClasses}
+                                classroomStudents={classroomStudents}
+                                tempClassOverrides={tempClassOverrides}
+                            />
+                        )}
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
                             {/* Main Content: Submissions, Announcements, Calendar, Messages */}

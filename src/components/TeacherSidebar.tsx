@@ -164,7 +164,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 const { count, error } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact' })
-                    .eq('role', 'student')
+                    .or('role.eq.student,role.eq.pending')
                     .is('teacher_id', null);
                 
                 if (error) throw error;
@@ -439,6 +439,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         ...(userRole === 'admin' ? [{ name: 'Role Allocation', icon: 'manage_accounts', href: `${basePath}/role-allocation` }] : []),
         ...(userRole === 'admin' ? [{ name: 'Login Sessions', icon: 'history', href: `${basePath}/sessions` }] : []),
         { name: 'Academy Policies', icon: 'policy', href: `${basePath}/policies` },
+        { name: 'Profile Settings', icon: 'settings', href: `${basePath}/settings` },
     ];
 
     const handleLogoutWithClear = () => {
@@ -459,7 +460,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
             )}
             <aside className={`
                 w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0
-                fixed md:sticky top-0 left-0 h-screen z-40 transition-transform duration-300 md:translate-x-0
+                fixed md:sticky top-0 left-0 h-screen z-50 transition-transform duration-300 md:translate-x-0
                 ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
             `}>
             <div className="p-6 flex items-center justify-between">

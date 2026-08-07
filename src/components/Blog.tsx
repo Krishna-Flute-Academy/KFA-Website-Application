@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, User, Eye, Tag, ArrowLeft, Home, Share2, Search } from 'lucide-react';
+import { Calendar, User, Eye, Tag, ArrowLeft, Home, Share2, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { supabase, BlogPost } from '../lib/supabase';
 import ReadingProgressBar from './ReadingProgressBar';
@@ -18,6 +18,7 @@ export const Blog: React.FC<BlogProps> = ({ initialPostId, onBack }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
     const [showAllTags, setShowAllTags] = useState(false);
     const [processedContent, setProcessedContent] = useState<string>('');
 
@@ -168,7 +169,16 @@ export const Blog: React.FC<BlogProps> = ({ initialPostId, onBack }) => {
         return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     };
 
-    const filteredPosts = selectedTag ? posts.filter(post => post.tags?.includes(selectedTag)) : posts;
+    const filteredPosts = posts.filter(post => {
+        const matchesTag = selectedTag ? post.tags?.includes(selectedTag) : true;
+        const lowerQuery = searchQuery.toLowerCase().trim();
+        const matchesSearch = lowerQuery === '' ? true : (
+            (post.title?.toLowerCase() || '').includes(lowerQuery) ||
+            (post.excerpt?.toLowerCase() || '').includes(lowerQuery) ||
+            (post.tags?.some(tag => tag.toLowerCase().includes(lowerQuery)) || false)
+        );
+        return matchesTag && matchesSearch;
+    });
 
     // --- RENDER LOGIC ---
     const renderContent = () => {
@@ -263,10 +273,33 @@ export const Blog: React.FC<BlogProps> = ({ initialPostId, onBack }) => {
                     </Link>
                 </div>
 
-                <div className="text-center mb-16 animate-in fade-in duration-700">
+                <div className="text-center mb-10 animate-in fade-in duration-700">
                     <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-blue-900 mb-6 tracking-tight">Our Blog</h1>
                     <div className="w-24 h-1.5 bg-gradient-to-r from-blue-500 via-yellow-400 to-blue-500 mx-auto mb-8 rounded-full"></div>
                     <p className="text-xl text-blue-700 max-w-3xl mx-auto leading-relaxed font-medium italic">Insights, stories, and musical wisdom from Krishna Flute Academy</p>
+                </div>
+
+                {/* Search Bar */}
+                <div className="max-w-md mx-auto mb-12 relative px-4 sm:px-0">
+                    <div className="relative flex items-center bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-blue-100 dark:border-slate-800 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 focus-within:ring-offset-0 transition-all duration-300">
+                        <Search className="absolute left-4 w-5 h-5 text-blue-400 pointer-events-none" />
+                        <input
+                            type="text"
+                            placeholder="Search articles by title, excerpt, or tags..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-12 pr-10 py-3.5 bg-transparent rounded-2xl text-blue-900 dark:text-white placeholder-blue-300 text-sm focus:outline-none"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-4 p-1 hover:bg-blue-50 dark:hover:bg-slate-850 rounded-full text-blue-400 hover:text-blue-600 transition-colors"
+                                aria-label="Clear search"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {getPopularTags().length > 0 && (
@@ -298,9 +331,28 @@ export const Blog: React.FC<BlogProps> = ({ initialPostId, onBack }) => {
                 )}
 
                 {filteredPosts.length === 0 ? (
-                    <div className="text-center py-20 bg-blue-50 rounded-3xl animate-in zoom-in duration-500">
-                        <p className="text-2xl font-bold text-blue-900">No blog posts available yet.</p>
-                        <p className="text-blue-600 mt-2">Check back soon for new articles!</p>
+                    <div className="text-center py-20 bg-blue-50/40 rounded-3xl border border-dashed border-blue-200 animate-in zoom-in duration-500 max-w-2xl mx-auto px-6">
+                        <Search className="w-12 h-12 text-blue-300 mx-auto mb-4" />
+                        <p className="text-2xl font-bold text-blue-900">No matches found</p>
+                        <p className="text-blue-600 mt-2">Try adjusting your search query or tag selections.</p>
+                        <div className="mt-6 flex justify-center gap-3">
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 font-bold transition-all shadow-md hover:scale-105"
+                                >
+                                    Clear Search
+                                </button>
+                            )}
+                            {selectedTag && (
+                                <button
+                                    onClick={() => setSelectedTag(null)}
+                                    className="px-5 py-2 bg-white text-blue-600 border border-blue-200 rounded-full hover:border-blue-400 font-bold transition-all hover:scale-105"
+                                >
+                                    Clear Tag Filter
+                                </button>
+                            )}
+                        </div>
                     </div>
                 ) : (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-10">

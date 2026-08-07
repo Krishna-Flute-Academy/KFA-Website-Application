@@ -10,7 +10,7 @@ import { sendClassroomNotification } from '../../../src/lib/notifications';
 import { 
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
-    Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe,
+    Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe, Eye,
     FolderPlus, Edit, MessageSquare, ArrowLeft, Trash2, CheckCheck
 } from 'lucide-react';
 
@@ -125,6 +125,8 @@ function MessagesDashboardContent() {
         }
     });
     const [dbSetupErrorTemplates, setDbSetupErrorTemplates] = useState(false);
+    const [broadcastReads, setBroadcastReads] = useState<any[]>([]);
+    const [dbSetupErrorReads, setDbSetupErrorReads] = useState(false);
     const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
     // Toast Notifications states
@@ -726,7 +728,7 @@ function MessagesDashboardContent() {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
                         .select('id, name, profile_pic_url')
-                        .eq('role', 'student');
+                        .or('role.eq.student,role.eq.pending');
                     uniqueStudents = (studentList || []).map((s: any) => ({
                         id: s.id,
                         name: s.name || 'Unknown',
@@ -737,7 +739,7 @@ function MessagesDashboardContent() {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
                         .select('id, name, profile_pic_url')
-                        .eq('role', 'student')
+                        .or('role.eq.student,role.eq.pending')
                         .eq('teacher_id', profile.id);
                     uniqueStudents = (studentList || []).map((s: any) => ({
                         id: s.id,
@@ -774,6 +776,26 @@ function MessagesDashboardContent() {
                     console.warn('[Messages] Exception querying broadcasts:', pe);
                     const local = localStorage.getItem('kfa_local_broadcasts');
                     setBroadcasts(local ? JSON.parse(local) : INITIAL_MOCK_BROADCASTS);
+                }
+
+                // 3.5. Fetch Broadcast Reads Table
+                try {
+                    const { data: readsData, error: readsError } = await supabaseAuth
+                        .from('broadcast_reads')
+                        .select('broadcast_id, read_at, user_id, users(id, name)');
+                    if (readsError) {
+                        console.warn('[Messages] Broadcast reads table check failed:', readsError.message);
+                        if (readsError.code === '42P01' || readsError.code === 'PGRST205' || readsError.message?.includes('schema cache') || readsError.message?.includes('does not exist')) {
+                            setDbSetupErrorReads(true);
+                        }
+                        setBroadcastReads([]);
+                    } else {
+                        setBroadcastReads(readsData || []);
+                        setDbSetupErrorReads(false);
+                    }
+                } catch (pe) {
+                    console.warn('[Messages] Exception querying broadcast reads:', pe);
+                    setBroadcastReads([]);
                 }
 
                 // 4. Test/Query Custom Recipient Groups Table
@@ -958,6 +980,35 @@ function MessagesDashboardContent() {
                         setDirectMessages(prev => prev.map(m => 
                             m.id === updatedMsg.id ? { ...m, status: updatedMsg.status } : m
                         ));
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'broadcast_reads' },
+                async (payload) => {
+                    const newRead = payload.new as any;
+                    if (newRead) {
+                        try {
+                            const { data: userData } = await supabaseAuth
+                                .from('users')
+                                .select('id, name')
+                                .eq('id', newRead.user_id)
+                                .single();
+                            if (userData) {
+                                setBroadcastReads(prev => {
+                                    if (prev.some(r => r.broadcast_id === newRead.broadcast_id && r.user_id === newRead.user_id)) return prev;
+                                    return [...prev, {
+                                        broadcast_id: newRead.broadcast_id,
+                                        read_at: newRead.read_at,
+                                        user_id: newRead.user_id,
+                                        users: userData
+                                    }];
+                                });
+                            }
+                        } catch (e) {
+                            console.error('Failed to fetch user for realtime read receipt:', e);
+                        }
                     }
                 }
             )
@@ -1463,19 +1514,21 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
                     <div className="flex-1 overflow-y-auto px-8 py-8 flex flex-col gap-8 bg-[#f8f8f6] dark:bg-[#1a1608]/50">
                     
                     {/* Database Setup Banner Warning */}
-                    {(dbSetupError || dbSetupErrorGroups || dbSetupErrorTemplates) && (
+                    {/* Database Setup Banner Warning */}
+                    {(dbSetupError || dbSetupErrorGroups || dbSetupErrorTemplates || dbSetupErrorReads) && (
                         <div className="bg-rose-50 border border-rose-200/80 p-5 rounded-2xl flex flex-col gap-4 shadow-sm select-text">
                             <div className="flex gap-3">
                                 <Info className="text-rose-500 w-5 h-5 shrink-0 mt-0.5" />
                                 <div>
                                     <h4 className="text-sm font-extrabold text-rose-900">
-                                        {dbSetupError && dbSetupErrorGroups && dbSetupErrorTemplates ? 'Supabase Message & Template Tables Not Found' : 
+                                        {dbSetupError && dbSetupErrorGroups && dbSetupErrorTemplates && dbSetupErrorReads ? 'Supabase Message, Template & Reads Tables Not Found' : 
                                          (dbSetupError ? 'Broadcasts Table Not Found. ' : '') + 
                                          (dbSetupErrorGroups ? 'Custom Recipient Groups Table Not Found. ' : '') + 
-                                         (dbSetupErrorTemplates ? 'Message Templates Table Not Found.' : '')}
+                                         (dbSetupErrorTemplates ? 'Message Templates Table Not Found. ' : '') +
+                                         (dbSetupErrorReads ? 'Broadcast Reads Table Not Found.' : '')}
                                     </h4>
                                     <p className="text-xs text-rose-700 font-medium leading-relaxed mt-1">
-                                        To enable permanent backend storage for your messaging and template features, open your Supabase SQL Editor and run the script below.
+                                        To enable permanent backend storage for your messaging and tracking features, open your Supabase SQL Editor and run the script below.
                                     </p>
                                 </div>
                             </div>
@@ -1516,6 +1569,19 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
 ALTER TABLE public.message_templates ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL USING (true) WITH CHECK (true);
 `}
+{dbSetupErrorReads && `CREATE TABLE IF NOT EXISTS public.broadcast_reads (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  broadcast_id UUID NOT NULL REFERENCES public.broadcasts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  read_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  CONSTRAINT unique_broadcast_user_read UNIQUE (broadcast_id, user_id)
+);
+ALTER TABLE public.broadcast_reads ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow authenticated users to read broadcast_reads" ON public.broadcast_reads;
+CREATE POLICY "Allow authenticated users to read broadcast_reads" ON public.broadcast_reads FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow authenticated users to insert their own broadcast_reads" ON public.broadcast_reads;
+CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON public.broadcast_reads FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+`}
                                 </pre>
                                 <button 
                                     onClick={() => {
@@ -1527,7 +1593,10 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                             sql += `CREATE TABLE IF NOT EXISTS public.custom_recipient_groups (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  description TEXT,\n  recipients JSONB NOT NULL DEFAULT '[]',\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.custom_recipient_groups ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all custom_recipient_groups" ON public.custom_recipient_groups;\nCREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_groups FOR ALL USING (true) WITH CHECK (true);\n\n`;
                                         }
                                         if (dbSetupErrorTemplates) {
-                                            sql += `CREATE TABLE IF NOT EXISTS public.message_templates (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  subject TEXT NOT NULL,\n  content TEXT NOT NULL,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.message_templates ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all message_templates" ON public.message_templates;\nCREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL USING (true) WITH CHECK (true);`;
+                                            sql += `CREATE TABLE IF NOT EXISTS public.message_templates (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  teacher_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  name TEXT NOT NULL,\n  subject TEXT NOT NULL,\n  content TEXT NOT NULL,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\nALTER TABLE public.message_templates ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow all message_templates" ON public.message_templates;\nCREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL USING (true) WITH CHECK (true);\n\n`;
+                                        }
+                                        if (dbSetupErrorReads) {
+                                            sql += `CREATE TABLE IF NOT EXISTS public.broadcast_reads (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  broadcast_id UUID NOT NULL REFERENCES public.broadcasts(id) ON DELETE CASCADE,\n  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,\n  read_at TIMESTAMPTZ DEFAULT now() NOT NULL,\n  CONSTRAINT unique_broadcast_user_read UNIQUE (broadcast_id, user_id)\n);\nALTER TABLE public.broadcast_reads ENABLE ROW LEVEL SECURITY;\nDROP POLICY IF EXISTS "Allow authenticated users to read broadcast_reads" ON public.broadcast_reads;\nCREATE POLICY "Allow authenticated users to read broadcast_reads" ON public.broadcast_reads FOR SELECT TO authenticated USING (true);\nDROP POLICY IF EXISTS "Allow authenticated users to insert their own broadcast_reads" ON public.broadcast_reads;\nCREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON public.broadcast_reads FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);\n\n`;
                                         }
                                         navigator.clipboard.writeText(sql);
                                         setSqlGroupsCopied(true);
@@ -2040,34 +2109,6 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                     </div>
                                 </div>
 
-                                {/* Message Type Selector */}
-                                <div className="space-y-2 border-b border-slate-100 dark:border-slate-800 pb-4">
-                                    <label className="block text-xs font-black text-slate-405 dark:text-slate-500 uppercase tracking-wide">Message Type</label>
-                                    <div className="flex gap-4">
-                                        <button
-                                            type="button"
-                                            onClick={() => setMessageType('broadcast')}
-                                            className={`flex-1 py-3 px-4 rounded-xl border text-center transition-all cursor-pointer font-bold text-xs ${
-                                                messageType === 'broadcast'
-                                                    ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-955/20 dark:text-amber-400'
-                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400'
-                                            }`}
-                                        >
-                                            📣 Broadcast Announcement (No Student Reply)
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setMessageType('normal')}
-                                            className={`flex-1 py-3 px-4 rounded-xl border text-center transition-all cursor-pointer font-bold text-xs ${
-                                                messageType === 'normal'
-                                                    ? 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-955/20 dark:text-teal-400'
-                                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400'
-                                            }`}
-                                        >
-                                            💬 Normal Message (Replyable in Chatbox)
-                                        </button>
-                                    </div>
-                                </div>
 
                                 <div className="grid grid-cols-12 gap-6 items-start">
                                     {/* Left inputs column: recipients */}
@@ -2243,6 +2284,28 @@ CREATE POLICY "Allow all message_templates" ON public.message_templates FOR ALL 
                                                             <Mic className="w-3.5 h-3.5 text-[#ecb613]" />
                                                             Play Attached Flute Note
                                                         </button>
+                                                    </div>
+                                                )}
+
+                                                {/* Read Receipts */}
+                                                {!dbSetupErrorReads && (
+                                                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                                        <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+                                                            <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                            <span>Read By ({broadcastReads.filter((r: any) => r.broadcast_id === bc.id).length})</span>
+                                                        </div>
+                                                        {broadcastReads.filter((r: any) => r.broadcast_id === bc.id).length === 0 ? (
+                                                            <p className="text-[10px] text-slate-400 dark:text-slate-500 italic">No students have read this announcement yet.</p>
+                                                        ) : (
+                                                            <div className="flex flex-wrap gap-1.5">
+                                                                {broadcastReads.filter((r: any) => r.broadcast_id === bc.id).map((r: any) => (
+                                                                    <span key={r.users?.id || r.user_id} className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 dark:bg-emerald-955/20 text-emerald-700 dark:text-emerald-400 border border-emerald-250 dark:border-emerald-900/40 text-[9px] font-bold rounded-full">
+                                                                        <Check className="w-2.5 h-2.5" />
+                                                                        {r.users?.name || 'Unknown Student'}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>

@@ -453,13 +453,13 @@ Hello Krishna Flute Academy, I have an inquiry!
                 >
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="flex justify-between items-center h-16">
-                            <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
                                 <img
                                     src={'/image.png'}
                                     alt="Krishna Flute Academy Logo"
-                                    className="h-10 w-10 md:h-12 md:w-12 object-contain"
+                                    className="h-8 w-8 min-[400px]:h-9 min-[400px]:w-9 sm:h-10 sm:w-10 md:h-12 md:w-12 object-contain shrink-0"
                                 />
-                                <span className="text-base md:text-lg font-bold text-blue-900">Krishna Flute Academy</span>
+                                <span className="text-xs min-[360px]:text-sm sm:text-base md:text-lg font-black text-blue-900 tracking-tight whitespace-nowrap">Krishna Flute Academy</span>
                             </div>
 
                             <div className="hidden md:flex items-center space-x-6 lg:space-x-8">
@@ -471,8 +471,8 @@ Hello Krishna Flute Academy, I have an inquiry!
                                 <button onClick={() => scrollToSection('contact')} className="text-blue-700 hover:text-blue-900 transition-colors text-sm lg:text-base font-medium">Contact</button>
                             </div>
 
-                            <div className="flex items-center justify-end">
-                                <div className="hidden sm:flex items-center space-x-3 mr-8 md:mr-16 lg:mr-32 xl:mr-48">
+                            <div className="flex items-center justify-end shrink-0">
+                                <div className="hidden sm:flex items-center space-x-3 mr-5">
                                     <a href={socialLinks.facebook} target="_blank" rel="noopener noreferrer" className="w-8 h-8 md:w-9 md:h-9 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700 transition-all duration-300 transform hover:scale-110">
                                         <Facebook className="w-4 h-4 md:w-5 md:h-5 text-white" />
                                     </a>
@@ -484,22 +484,23 @@ Hello Krishna Flute Academy, I have an inquiry!
                                     </a>
                                 </div>
 
-                                <div className="flex items-center mr-2 sm:mr-0">
-                                    <a href={getDashboardLink()} className="flex items-center justify-center space-x-1.5 px-3 py-1.5 sm:px-5 sm:py-2 bg-[#a15912] text-white rounded-full font-semibold md:text-sm text-xs transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105">
-                                        <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                <div className="flex items-center">
+                                    <a href={getDashboardLink()} className="flex items-center justify-center space-x-1 px-2.5 py-1.5 min-[400px]:space-x-1.5 min-[400px]:px-3.5 min-[400px]:py-2 sm:px-5 sm:py-2 bg-[#a15912] text-white rounded-full font-bold text-[10px] min-[400px]:text-xs md:text-sm transition-all duration-300 shadow-md hover:bg-[#8a4b0f] hover:scale-105 whitespace-nowrap">
+                                        <User className="w-3 h-3 min-[400px]:w-3.5 min-[400px]:h-3.5 sm:w-4 sm:h-4" />
                                         <span>{getAuthButtonLabel()}</span>
                                     </a>
                                 </div>
 
                                 <button
-                                    className="md:hidden p-2 ml-4 rounded-lg hover:bg-gray-100 transition-colors"
+                                    className="md:hidden p-1.5 ml-2 min-[400px]:p-2 min-[400px]:ml-3 rounded-lg hover:bg-gray-100 transition-colors text-blue-900"
                                     onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                                    aria-label="Toggle Menu"
                                 >
-                                    {mobileMenuOpen ? <X className="w-6 h-6 text-blue-900" /> : <Menu className="w-6 h-6 text-blue-900" />}
+                                    {mobileMenuOpen ? <X className="w-5 h-5 min-[400px]:w-6 min-[400px]:h-6" /> : <Menu className="w-5 h-5 min-[400px]:w-6 min-[400px]:h-6" />}
                                 </button>
 
                                 {isAdmin && (
-                                    <div className="hidden md:flex items-center space-x-2">
+                                    <div className="hidden md:flex items-center space-x-2 ml-4">
                                         <span className="text-xs text-green-600 font-semibold bg-green-50 px-2 py-1 rounded">Admin</span>
                                         <button
                                             onClick={handleAdminLogout}

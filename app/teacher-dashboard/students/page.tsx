@@ -85,6 +85,31 @@ export default function StudentDirectory() {
     // Pending signup requests (users who signed up but not yet assigned a role)
     const [pendingUsers, setPendingUsers] = useState<{ id: string; name: string; email: string; phone?: string; created_at: string }[]>([]);
 
+    interface DeletedStudentItem {
+        id: string;
+        name: string;
+        deletedAt: string;
+        student: any;
+    }
+    const [recycleBin, setRecycleBin] = useState<DeletedStudentItem[]>([]);
+    const [showRecycleBin, setShowRecycleBin] = useState(false);
+
+    useEffect(() => {
+        const savedBin = localStorage.getItem('students_recycle_bin');
+        if (savedBin) {
+            try {
+                setRecycleBin(JSON.parse(savedBin));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    }, []);
+
+    const saveRecycleBin = (bin: DeletedStudentItem[]) => {
+        setRecycleBin(bin);
+        localStorage.setItem('students_recycle_bin', JSON.stringify(bin));
+    };
+
     const ITEMS_PER_PAGE = 10;
 
     useEffect(() => {
@@ -257,9 +282,10 @@ export default function StudentDirectory() {
 
                         // 1. Calculate Attendance Percentage
                         let attendancePct = 100;
-                        if (studentAttendance.length > 0) {
-                            const presentCount = studentAttendance.filter(status => status === 'present' || status === 'late').length;
-                            attendancePct = Math.round((presentCount / studentAttendance.length) * 100);
+                        const eligibleAttendance = studentAttendance.filter(status => status !== 'excused');
+                        if (eligibleAttendance.length > 0) {
+                            const presentCount = eligibleAttendance.filter(status => status === 'present' || status === 'late').length;
+                            attendancePct = Math.round((presentCount / eligibleAttendance.length) * 100);
                         }
 
                         // 2. Calculate Progress Percentage
@@ -376,10 +402,11 @@ export default function StudentDirectory() {
                         const completedCount = progressCountMap.get(s.id) || 0;
                         const studentAssignments = assignmentsMap.get(s.id) || [];
 
-                        let attendancePct = 0;
-                        if (studentAttendance.length > 0) {
-                            const presentCount = studentAttendance.filter(status => status === 'present' || status === 'late').length;
-                            attendancePct = Math.round((presentCount / studentAttendance.length) * 100);
+                        let attendancePct = 100;
+                        const eligibleAttendance = studentAttendance.filter(status => status !== 'excused');
+                        if (eligibleAttendance.length > 0) {
+                            const presentCount = eligibleAttendance.filter(status => status === 'present' || status === 'late').length;
+                            attendancePct = Math.round((presentCount / eligibleAttendance.length) * 100);
                         }
 
                         const progressPct = totalLessonsCount > 0 ? Math.round((completedCount / totalLessonsCount) * 100) : 0;
@@ -442,82 +469,100 @@ export default function StudentDirectory() {
                     .eq('role', 'pending')
                     .order('created_at', { ascending: false });
 
-                if (pendingData) setPendingUsers(pendingData);
-
-                // Real-time subscription to listen for new student signups instantly!
-                channel = supabaseAuth
-                    .channel('realtime-unassigned-students')
-                    .on(
-                        'postgres_changes',
-                        { event: 'INSERT', schema: 'public', table: 'users' },
-                        (payload) => {
-                            const newStudent = payload.new;
-                            if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
-                                setUnassignedStudents(prev => [{
-                                    id: newStudent.id,
-                                    user_id: newStudent.id,
-                                    name: newStudent.name,
-                                    student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
-                                    batch: 'Unassigned',
-                                    attendance_pct: 0,
-                                    profile_pic_url: newStudent.profile_pic_url,
-                                    status: newStudent.status === 'active' ? 'Active' : 'Inactive',
-                                    created_at: newStudent.created_at || new Date().toISOString(),
-                                    phone: newStudent.phone || 'No Phone'
-                                }, ...prev]);
-                            }
-                        }
-                    )
-                    .subscribe();
-
-                // Real-time: new pending signup requests
-                supabaseAuth
-                    .channel('realtime-pending-users')
-                    .on(
-                        'postgres_changes',
-                        { event: '*', schema: 'public', table: 'users' },
-                        (payload) => {
-                            const u = payload.new as any;
-                            if (payload.eventType === 'INSERT' && u?.role === 'pending') {
-                                setPendingUsers(prev => [{ id: u.id, name: u.name, email: u.email, phone: u.phone, created_at: u.created_at || new Date().toISOString() }, ...prev]);
-                            } else if (payload.eventType === 'UPDATE' && u?.role !== 'pending') {
-                                // Remove from list once admin assigns a role
-                                setPendingUsers(prev => prev.filter(p => p.id !== u.id));
-                            }
-                        }
-                    )
-                    .subscribe();
+                if (isMounted && pendingData) setPendingUsers(pendingData);
 
             } catch (err) {
                 console.error('Error fetching students:', err);
             } finally {
-                setLoading(false);
+                if (isMounted) setLoading(false);
             }
         };
 
-        let channel: any = null;
+        let isMounted = true;
+        let unassignedChannel: any = null;
+        let pendingChannel: any = null;
+        let sessionsChannel: any = null;
+
         checkAuthAndFetchData();
 
+        // Real-time subscription to listen for new student signups instantly!
+        unassignedChannel = supabaseAuth
+            .channel('realtime-unassigned-students')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'users' },
+                (payload) => {
+                    if (!isMounted) return;
+                    const newStudent = payload.new;
+                    if (newStudent && newStudent.role === 'student' && !newStudent.teacher_id) {
+                        setUnassignedStudents(prev => [{
+                            id: newStudent.id,
+                            user_id: newStudent.id,
+                            name: newStudent.name,
+                            student_id_formatted: `KFA-2024-${newStudent.id.slice(0, 3).toUpperCase()}`,
+                            batch: 'Unassigned',
+                            attendance_pct: 0,
+                            profile_pic_url: newStudent.profile_pic_url,
+                            status: newStudent.status === 'active' ? 'Active' : 'Inactive',
+                            created_at: newStudent.created_at || new Date().toISOString(),
+                            phone: newStudent.phone || 'No Phone'
+                        }, ...prev]);
+                    }
+                }
+            )
+            .subscribe();
+
+        // Real-time: new pending signup requests
+        pendingChannel = supabaseAuth
+            .channel('realtime-pending-users')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'users' },
+                (payload) => {
+                    if (!isMounted) return;
+                    const u = payload.new as any;
+                    if (payload.eventType === 'INSERT' && u?.role === 'pending') {
+                        setPendingUsers(prev => [{ id: u.id, name: u.name, email: u.email, phone: u.phone, created_at: u.created_at || new Date().toISOString() }, ...prev]);
+                    } else if (payload.eventType === 'UPDATE' && u?.role !== 'pending') {
+                        // Remove from list once admin assigns a role
+                        setPendingUsers(prev => prev.filter(p => p.id !== u.id));
+                    }
+                }
+            )
+            .subscribe();
+
         // Subscribe to user session changes (online/offline updates)
-        const sessionsChannel = supabaseAuth
+        sessionsChannel = supabaseAuth
             .channel('realtime-sessions-students-directory')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'user_sessions' },
                 () => {
-                    reEvaluateOnlineStatus();
+                    if (isMounted) {
+                        reEvaluateOnlineStatus();
+                    }
                 }
             )
             .subscribe();
 
         // Refresh online statuses in real-time every 30 seconds
-        const onlineCheckerTimer = setInterval(reEvaluateOnlineStatus, 30000);
+        const onlineCheckerTimer = setInterval(() => {
+            if (isMounted) {
+                reEvaluateOnlineStatus();
+            }
+        }, 30000);
 
         return () => {
-            if (channel) {
-                supabaseAuth.removeChannel(channel);
+            isMounted = false;
+            if (unassignedChannel) {
+                supabaseAuth.removeChannel(unassignedChannel);
             }
-            supabaseAuth.removeChannel(sessionsChannel);
+            if (pendingChannel) {
+                supabaseAuth.removeChannel(pendingChannel);
+            }
+            if (sessionsChannel) {
+                supabaseAuth.removeChannel(sessionsChannel);
+            }
             clearInterval(onlineCheckerTimer);
         };
     }, [router]);
@@ -617,6 +662,21 @@ export default function StudentDirectory() {
 
         setIsDeleting(true);
         try {
+            // 1. Fetch full details for the recycle bin
+            const { data: fullStudent, error: fetchErr } = await supabaseAuth
+                .from('users')
+                .select('*')
+                .eq('id', studentToDelete.id)
+                .single();
+
+            if (fetchErr) {
+                console.error("Error fetching student details for recycle bin:", fetchErr);
+                alert("Failed to archive student in Recycle Bin. Aborting deletion.");
+                setIsDeleting(false);
+                return;
+            }
+
+            // 2. Delete from database
             const { error } = await supabaseAuth
                 .from('users')
                 .delete()
@@ -627,6 +687,15 @@ export default function StudentDirectory() {
                 alert("Failed to delete student. Please try again.");
                 return;
             }
+
+            // 3. Put into Recycle Bin local storage
+            const newBinItem: DeletedStudentItem = {
+                id: studentToDelete.id,
+                name: studentToDelete.name,
+                deletedAt: new Date().toISOString(),
+                student: fullStudent
+            };
+            saveRecycleBin([newBinItem, ...recycleBin]);
 
             setStudents(prev => prev.filter(s => s.id !== studentToDelete.id));
             setStudentToDelete(null);
@@ -662,6 +731,21 @@ export default function StudentDirectory() {
         setIsBulkDeleting(true);
         try {
             const ids = Array.from(selectedIds);
+
+            // 1. Fetch full details for the recycle bin
+            const { data: fullStudents, error: fetchErr } = await supabaseAuth
+                .from('users')
+                .select('*')
+                .in('id', ids);
+
+            if (fetchErr || !fullStudents || fullStudents.length === 0) {
+                console.error("Error fetching students details for recycle bin:", fetchErr);
+                alert("Failed to archive students in Recycle Bin. Aborting deletion.");
+                setIsBulkDeleting(false);
+                return;
+            }
+
+            // 2. Delete from database
             const { error } = await supabaseAuth
                 .from('users')
                 .delete()
@@ -673,6 +757,15 @@ export default function StudentDirectory() {
                 return;
             }
 
+            // 3. Put into Recycle Bin local storage
+            const newBinItems: DeletedStudentItem[] = fullStudents.map(student => ({
+                id: student.id,
+                name: student.name,
+                deletedAt: new Date().toISOString(),
+                student: student
+            }));
+            saveRecycleBin([...newBinItems, ...recycleBin]);
+
             setStudents(prev => prev.filter(s => !selectedIds.has(s.id)));
             setSelectedIds(new Set());
             setShowBulkDeleteModal(false);
@@ -682,6 +775,55 @@ export default function StudentDirectory() {
         } finally {
             setIsBulkDeleting(false);
         }
+    };
+
+    const handleRestoreStudent = async (item: DeletedStudentItem) => {
+        try {
+            const { error } = await supabaseAuth
+                .from('users')
+                .insert([item.student]);
+
+            if (error) {
+                console.error("Supabase restore error:", error);
+                alert(`Failed to restore student: ${error.message}`);
+                return;
+            }
+
+            const updatedBin = recycleBin.filter(b => b.id !== item.id);
+            saveRecycleBin(updatedBin);
+
+            const restoredData: StudentData = {
+                id: item.student.id,
+                user_id: item.student.id,
+                name: item.student.name,
+                student_id_formatted: 'KFA-' + item.student.student_serial_id.toString().padStart(4, '0'),
+                batch: 'Unassigned',
+                attendance_pct: 100,
+                pacing_status: 'Consistent',
+                is_online: false,
+                profile_pic_url: item.student.profile_pic_url || '',
+                teacher_name: '',
+                phone: item.student.phone || '',
+                status: item.student.status || 'active'
+            };
+            setStudents(prev => [restoredData, ...prev]);
+
+            alert(`Student "${item.name}" restored successfully!`);
+        } catch (err: any) {
+            console.error('Error restoring student:', err);
+            alert("An unexpected error occurred while restoring the student.");
+        }
+    };
+
+    const handlePermanentDeleteStudent = (itemId: string) => {
+        if (!window.confirm("Are you sure you want to permanently delete this student from the Recycle Bin? This action is permanent and cannot be undone.")) return;
+        const updatedBin = recycleBin.filter(b => b.id !== itemId);
+        saveRecycleBin(updatedBin);
+    };
+
+    const handleClearRecycleBin = () => {
+        if (!window.confirm("Are you sure you want to empty the Recycle Bin? All deleted students will be permanently lost.")) return;
+        saveRecycleBin([]);
     };
 
     // ─── Download CSV Template ────────────────────────────────────────────────
@@ -957,7 +1099,7 @@ export default function StudentDirectory() {
                             </div>
                             <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Delete Student?</h3>
                             <p className="text-slate-500 dark:text-slate-400 text-sm">
-                                Are you sure you want to delete <span className="font-bold text-slate-700 dark:text-slate-300">{studentToDelete.name}</span>? This action cannot be undone and will permanently remove all associated data, submissions, and grades.
+                                Are you sure you want to delete <span className="font-bold text-slate-700 dark:text-slate-300">{studentToDelete.name}</span>? This will move them to the Recycle Bin, from which they can be restored later.
                             </p>
                         </div>
                         <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
@@ -993,14 +1135,8 @@ export default function StudentDirectory() {
                             </div>
                             <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Bulk Delete {selectedIds.size} Student{selectedIds.size !== 1 ? 's' : ''}?</h3>
                             <p className="text-slate-500 dark:text-slate-400 text-sm">
-                                This will permanently remove <span className="font-bold text-rose-600">{selectedIds.size} student{selectedIds.size !== 1 ? 's' : ''}</span> and all their associated data. This action <span className="font-bold">cannot be undone</span>.
+                                This will move <span className="font-bold text-rose-600">{selectedIds.size} student{selectedIds.size !== 1 ? 's' : ''}</span> to the Recycle Bin. You will be able to restore them later if needed.
                             </p>
-                            <div className="mt-4 p-3 bg-rose-50 dark:bg-rose-900/20 rounded-lg border border-rose-100 dark:border-rose-800">
-                                <p className="text-xs font-semibold text-rose-700 dark:text-rose-400 flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-base">warning</span>
-                                    All attendance records, submissions, and grades will be deleted.
-                                </p>
-                            </div>
                         </div>
                         <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
                             <button 
@@ -1018,6 +1154,84 @@ export default function StudentDirectory() {
                                 ) : (
                                     <><span className="material-symbols-outlined text-lg">delete_sweep</span>Delete {selectedIds.size} Student{selectedIds.size !== 1 ? 's' : ''}</>
                                 )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Recycle Bin Modal ──────────────────────────────────────────────── */}
+            {showRecycleBin && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-[#ecb613] text-2xl">delete_sweep</span>
+                                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Student Recycle Bin</h3>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {recycleBin.length > 0 && (
+                                    <button
+                                        onClick={handleClearRecycleBin}
+                                        className="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-450 dark:hover:bg-rose-900/30 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">delete_forever</span>
+                                        Empty Bin
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setShowRecycleBin(false)}
+                                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-650 transition-colors"
+                                >
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-6 max-h-[400px] overflow-y-auto space-y-3">
+                            {recycleBin.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400">
+                                    <span className="material-symbols-outlined text-5xl mb-2 text-slate-300 dark:text-slate-700">delete_outline</span>
+                                    <p className="text-sm font-semibold">Your recycle bin is empty.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Deleted students will show up here to be restored if needed.</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {recycleBin.map((item) => (
+                                        <div key={item.id} className="py-3 flex items-center justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-slate-900 dark:text-white truncate">{item.name}</p>
+                                                <p className="text-xs text-slate-400 mt-0.5">
+                                                    Joined: {item.student.join_date || 'N/A'} • Deleted: {new Date(item.deletedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleRestoreStudent(item)}
+                                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                                                    title="Restore Student"
+                                                >
+                                                    <span className="material-symbols-outlined text-sm">settings_backup_restore</span>
+                                                    Restore
+                                                </button>
+                                                <button
+                                                    onClick={() => handlePermanentDeleteStudent(item.id)}
+                                                    className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all"
+                                                    title="Delete Permanently"
+                                                >
+                                                    <span className="material-symbols-outlined text-lg">delete</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex justify-end border-t border-slate-100 dark:border-slate-800">
+                            <button
+                                onClick={() => setShowRecycleBin(false)}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                            >
+                                Close
                             </button>
                         </div>
                     </div>
@@ -1387,13 +1601,23 @@ export default function StudentDirectory() {
                                         <p className="text-sm text-slate-500 mt-1">Manage and track progress for {students.length} enrolled students.</p>
                                     </div>
                                     {(teacherProfile?.role === 'admin' || teacherProfile?.role === 'teacher') && (
-                                        <Link
-                                            href="/teacher-dashboard/students/add"
-                                            className="bg-black dark:bg-[#ecb613] dark:text-slate-900 hover:bg-slate-800 text-white px-5 h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-all"
-                                        >
-                                            <span className="material-symbols-outlined text-lg">person_add</span>
-                                            Add New Student
-                                        </Link>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => setShowRecycleBin(true)}
+                                                className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 px-4 h-11 rounded-lg text-sm font-bold shadow-sm transition-all border border-slate-250 dark:border-slate-700"
+                                                title="Recycle Bin (Deleted Students)"
+                                            >
+                                                <span className="material-symbols-outlined text-lg">delete_sweep</span>
+                                                Recycle Bin ({recycleBin.length})
+                                            </button>
+                                            <Link
+                                                href="/teacher-dashboard/students/add"
+                                                className="bg-black dark:bg-[#ecb613] dark:text-slate-900 hover:bg-slate-800 text-white px-5 h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-all whitespace-nowrap"
+                                            >
+                                                <span className="material-symbols-outlined text-lg">person_add</span>
+                                                Add New Student
+                                            </Link>
+                                        </div>
                                     )}
                                 </div>
 
@@ -1481,155 +1705,120 @@ export default function StudentDirectory() {
                                 )}
 
                                 <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                    <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-800/50">
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-800">
+                                    <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-800/50">
+                                        {/* Row 1: Filter tabs and export button */}
+                                        <div className="flex items-center justify-between gap-3 w-full">
+                                            <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-850 overflow-x-auto scrollbar-none snap-x flex-1 max-w-sm sm:flex-initial">
                                                 <button 
                                                     onClick={() => setFilterMode('all')}
-                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>All Students</button>
+                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>All Students</button>
                                                 <button 
                                                     onClick={() => setFilterMode('recent')}
-                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'recent' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Recent</button>
+                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'recent' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Recent</button>
                                                 {teacherProfile && (
                                                     <button 
                                                         onClick={() => setFilterMode('unassigned')}
-                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({allUnassignedStudents.length})</button>
+                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({allUnassignedStudents.length})</button>
                                                 )}
                                             </div>
-                                            {filterMode !== 'unassigned' && (
-                                                <>
-                                                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                                            <button 
+                                                onClick={handleExportCSV}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-all focus:ring-2 focus:ring-[#ecb613]/50 shrink-0">
+                                                <span className="material-symbols-outlined text-lg">download</span>
+                                                <span className="hidden sm:inline">Export</span>
+                                            </button>
+                                        </div>
+
+                                        {/* Row 2: Selectors (only visible when not viewing unassigned) */}
+                                        {filterMode !== 'unassigned' && (
+                                            <div className="grid grid-cols-2 gap-3 w-full sm:flex sm:items-center sm:w-auto">
+                                                <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 shadow-xs flex items-center justify-between">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase select-none mr-2">Batch:</span>
                                                     <select 
                                                         value={selectedBatch} 
                                                         onChange={(e) => setSelectedBatch(e.target.value)} 
-                                                        className="text-sm font-medium bg-transparent border-none focus:ring-0 text-slate-600 dark:text-slate-400 py-1 pl-1 pr-8 cursor-pointer">
+                                                        className="text-xs font-bold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 py-1 pl-1 pr-6 cursor-pointer flex-1 outline-none">
                                                         <option value="All Batches">All Batches</option>
                                                         {availableBatches.map(batch => (
                                                             <option key={batch} value={batch}>{batch}</option>
                                                         ))}
                                                         <option value="Unassigned">Unassigned</option>
                                                     </select>
-                                                    <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                                                </div>
+                                                <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 shadow-xs flex items-center justify-between">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase select-none mr-2">Status:</span>
                                                     <select 
                                                         value={statusFilter} 
                                                         onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')} 
-                                                        className="text-sm font-medium bg-transparent border-none focus:ring-0 text-slate-600 dark:text-slate-400 py-1 pl-1 pr-8 cursor-pointer">
+                                                        className="text-xs font-bold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 py-1 pl-1 pr-6 cursor-pointer flex-1 outline-none">
                                                         <option value="all">All Status</option>
                                                         <option value="active">Active Only</option>
                                                         <option value="inactive">Inactive Only</option>
                                                     </select>
-                                                </>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <button 
-                                                onClick={handleExportCSV}
-                                                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-all focus:ring-2 focus:ring-[#ecb613]/50">
-                                                <span className="material-symbols-outlined text-lg">download</span>
-                                                Export
-                                            </button>
-                                        </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                             {/* Mobile Cards View */}
                                             <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
                                                 {paginatedStudents.map((student) => (
-                                                    <div key={student.id} className={`p-4 space-y-3 ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-3">
-                                                                {filterMode !== 'unassigned' && (
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={selectedIds.has(student.id)}
-                                                                        onChange={() => toggleSelectStudent(student.id)}
-                                                                        className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
-                                                                    />
-                                                                )}
-                                                                <div className="relative shrink-0">
-                                                                    <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
-                                                                        {student.profile_pic_url ? (
-                                                                            <img 
-                                                                                src={student.profile_pic_url} 
-                                                                                alt={student.name} 
-                                                                                className="w-full h-full object-cover rounded-full"
-                                                                                loading="lazy"
-                                                                            />
-                                                                        ) : (
-                                                                            <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
-                                                                        )}
-                                                                    </div>
-                                                                    {student.is_online && (
-                                                                        <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
+                                                    <div 
+                                                        key={student.id} 
+                                                        className={`px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}
+                                                    >
+                                                        {/* Left side: checkbox & text details */}
+                                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                            {filterMode !== 'unassigned' && (
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedIds.has(student.id)}
+                                                                    onChange={() => toggleSelectStudent(student.id)}
+                                                                    className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer shrink-0"
+                                                                />
+                                                            )}
+                                                            <Link href={`/teacher-dashboard/students/${student.id}`} className="min-w-0 flex-1 cursor-pointer">
+                                                                <div className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                                                                    {student.name}
+                                                                </div>
+                                                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                                                                    <span className="truncate">{student.batch}</span>
+                                                                    {teacherProfile?.role === 'admin' && student.teacher_name && (
+                                                                        <span className="truncate">• {student.teacher_name}</span>
                                                                     )}
                                                                 </div>
-                                                                <div>
-                                                                    <Link
-                                                                        href={`/teacher-dashboard/students/${student.id}`}
-                                                                        className="text-sm font-bold text-slate-900 dark:text-white hover:text-[#ecb613] transition-colors"
-                                                                    >
-                                                                        {student.name}
-                                                                    </Link>
-                                                                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-tight">{student.student_id_formatted}</p>
-                                                                </div>
-                                                            </div>
-                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                                                student.pacing_status === 'Consistent'
-                                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                                                    : student.pacing_status === 'Improving'
-                                                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                                                                        : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-                                                            }`}>
-                                                                {student.pacing_status || 'Consistent'}
-                                                            </span>
+                                                            </Link>
                                                         </div>
-                                                        <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-                                                            <div>
-                                                                <span className="font-bold">Batch:</span> {student.batch}
-                                                            </div>
-                                                            <div>
-                                                                <span className="font-bold">Attendance:</span> {student.attendance_pct}%
-                                                            </div>
-                                                        </div>
-                                                        {teacherProfile?.role === 'admin' && student.teacher_name && (
-                                                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                                                <span className="font-bold">Teacher:</span> {student.teacher_name}
-                                                            </div>
-                                                        )}
-                                                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+
+                                                        {/* Right side: Edit & Delete icons */}
+                                                        <div className="flex items-center gap-1 shrink-0">
                                                             {filterMode === 'unassigned' ? (
                                                                 <button
                                                                     onClick={() => setShowClaimModal(student)}
-                                                                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                                                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-sm flex items-center gap-1"
                                                                 >
-                                                                    <span className="material-symbols-outlined text-sm">person_add</span>
-                                                                    Claim Student
+                                                                    <span className="material-symbols-outlined text-[14px]">person_add</span>
+                                                                    Claim
                                                                 </button>
                                                             ) : (
-                                                                <div className="flex gap-2">
-                                                                    <Link
-                                                                        href={`/teacher-dashboard/students/${student.id}`}
-                                                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
-                                                                        title="View Details"
-                                                                    >
-                                                                        <span className="material-symbols-outlined text-base">visibility</span>
-                                                                    </Link>
+                                                                <>
                                                                     <Link
                                                                         href={`/teacher-dashboard/students/${student.id}/edit`}
-                                                                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[#a15912] dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                                        className="p-1.5 text-[#a15912] dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all flex items-center justify-center"
                                                                         title="Edit Profile"
                                                                     >
-                                                                        <span className="material-symbols-outlined text-base">edit</span>
+                                                                        <span className="material-symbols-outlined text-lg">edit</span>
                                                                     </Link>
                                                                     {teacherProfile?.role === 'admin' && (
                                                                         <button
                                                                             onClick={() => setStudentToDelete({ id: student.id, name: student.name })}
-                                                                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                                                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all flex items-center justify-center"
                                                                             title="Delete Student"
                                                                         >
-                                                                            <span className="material-symbols-outlined text-base">delete</span>
+                                                                            <span className="material-symbols-outlined text-lg">delete</span>
                                                                         </button>
                                                                     )}
-                                                                </div>
+                                                                </>
                                                             )}
                                                         </div>
                                                     </div>
@@ -1752,7 +1941,6 @@ export default function StudentDirectory() {
                                                                         </div>
                                                                     ) : (
                                                                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                            <Link href={`/teacher-dashboard/students/${student.id}`} className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="View details"><span className="material-symbols-outlined text-xl">visibility</span></Link>
                                                                             <Link href={`/teacher-dashboard/students/${student.id}/edit`} className="p-2 text-slate-400 hover:text-[#ecb613] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Edit profile"><span className="material-symbols-outlined text-xl">edit</span></Link>
                                                                             <button 
                                                                                 onClick={() => router.push(`/teacher-dashboard/messages?chat=${student.id}`)}

@@ -188,7 +188,7 @@ const getDefaultSections = (): PolicySection[] => [
             },
             {
                 title: 'Proficiency Level Progress',
-                description: 'This shows how many lessons a student has completed out of the total lessons assigned to them.\n\nExample: If a student has 10 lessons allocated in their syllabus chapters and completes 5, their proficiency progress is 50%.',
+                description: 'This shows how many lessons a student has completed out of the total unlocked (or completed) lessons. Unlike total allocated lessons, it reflects the completion rate of the material the student has actively reached.\n\nExample: If a student has unlocked 4 lessons and completed 2, their proficiency progress is 50%.',
                 isCritical: true
             },
             {
@@ -208,7 +208,7 @@ const getDefaultSections = (): PolicySection[] => [
             },
             {
                 title: 'Academic Standing (Consistency Status)',
-                description: 'The overall average determines the student\'s status:\n\n• Consistent (Green): Average of 80% or above. Indicates excellent regular practice and attendance.\n• Improving (Amber): Average between 65% and 79%. Indicates steady progress.\n• At Risk (Red): Average below 65%. Indicates a need to review practice time or attendance.',
+                description: 'The student\'s status is determined dynamically by evaluating their active metrics against warning thresholds:\n\n• Consistent (Green): Attendance is 85% or above, Task Submission is 75% or above, and Average Academic Score is 7.0/10 or above.\n• Improving (Amber): No "At Risk" thresholds are hit, but at least one metric falls into borderline ranges: Attendance (75%–84%), Task Submission (60%–74%), or Avg. Score (5.0–6.9).\n• At Risk (Red): Any single metric falls below the warning thresholds: Attendance below 75%, Task Submission below 60%, or Avg. Score below 5.0.',
                 isCritical: true
             }
         ]
@@ -290,7 +290,8 @@ export default function AcademyPolicies({ isAdmin: isAdminProp }: { isAdmin?: bo
                     const dbProgress = data.find(item => item.id === 'progress');
                     
                     const needsUpdate = !dbProgress || 
-                        dbProgress.points.some((p: any) => p.description.includes('$$') || p.description.includes('\\frac'));
+                        dbProgress.points.some((p: any) => p.description.includes('$$') || p.description.includes('\\frac')) ||
+                        !dbProgress.points.some((p: any) => p.description.includes('unlocked (or completed) lessons'));
                         
                     let finalData = [...data];
                     if (needsUpdate && progressDefault) {
