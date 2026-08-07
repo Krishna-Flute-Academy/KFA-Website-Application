@@ -892,8 +892,6 @@ export default function AttendancePage() {
                 `)
                 .in('student_id', studentIds)
                 .in('status', statuses)
-                .gte('date', fromDate)
-                .lte('date', toDate)
                 .order('date', { ascending: false });
 
             if (logsErr) throw logsErr;
@@ -1035,8 +1033,16 @@ export default function AttendancePage() {
                 finalLogs = resolved.filter(log => log.student_name.toLowerCase().includes(query));
             }
 
-            const pending = finalLogs.filter(log => !log.isMakeupCompleted);
-            const completed = finalLogs.filter(log => log.isMakeupCompleted);
+            const pending = finalLogs.filter(log => {
+                if (log.isMakeupCompleted) return false;
+                const logDate = log.date.split('T')[0].split(' ')[0];
+                return logDate <= toDate;
+            });
+            const completed = finalLogs.filter(log => {
+                if (!log.isMakeupCompleted) return false;
+                const logDate = log.date.split('T')[0].split(' ')[0];
+                return logDate >= fromDate && logDate <= toDate;
+            });
 
             setMissedLogs(pending);
             setCompletedMissedLogs(completed);
