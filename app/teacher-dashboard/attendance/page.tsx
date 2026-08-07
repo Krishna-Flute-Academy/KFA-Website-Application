@@ -1360,41 +1360,146 @@ export default function AttendancePage() {
     const fetchExcusedSuggestions = useCallback(async (dateStr: string) => {
         if (!teacherProfile) return;
         try {
-            const { data, error } = await supabaseAuth
+            // Get day of week (0-6) from the local date representation of dateStr
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const localDate = new Date(year, month - 1, day);
+            const dayOfWeek = localDate.getDay();
+
+            // Fetch classroom students
+            const { data: permStudentsData } = await supabaseAuth
+                .from('classroom_students')
+                .select('classroom_id, student_id, users!student_id(name)');
+            
+            // Fetch temporary classroom students
+            const { data: tempStudentsData } = await supabaseAuth
+                .from('temporary_class_students')
+                .select('temporary_class_id, student_id, users!student_id(name)');
+
+            // Fetch overrides for this date
+            const { data: overridesData } = await supabaseAuth
+                .from('session_student_overrides')
+                .select('target_classroom_id, student_id, users!student_id(name)')
+                .eq('override_date', dateStr);
+
+            // Fetch attendance on this date
+            const { data: attendanceData } = await supabaseAuth
                 .from('attendance')
-                .select(`
-                    classroom_id,
-                    student_id,
-                    users!student_id(name)
-                `)
-                .eq('date', dateStr)
-                .eq('status', 'excused');
+                .select('classroom_id, student_id, status, users!student_id(name)')
+                .eq('date', dateStr);
 
-            if (error) throw error;
-
-            const counts: Record<string, { name: string; studentNames: string[] }> = {};
-            (data || []).forEach((row: any) => {
-                const cid = row.classroom_id;
-                const roomName = classrooms.find(c => c.id === cid)?.name || 'Classroom';
-                const studentName = row.users?.name || 'Unknown Student';
-                if (!counts[cid]) {
-                    counts[cid] = { name: roomName, studentNames: [] };
-                }
-                counts[cid].studentNames.push(studentName);
+            const attendanceMap: Record<string, string> = {};
+            (attendanceData || []).forEach((att: any) => {
+                const key = `${att.classroom_id}_${att.student_id}`;
+                attendanceMap[key] = att.status; // 'present', 'absent', 'late', 'excused'
             });
 
-            const suggestions = Object.entries(counts).map(([cid, info]) => ({
-                classroomId: cid,
-                classroomName: info.name,
-                excusedCount: info.studentNames.length,
-                excusedStudents: info.studentNames
-            }));
+            const suggestions: any[] = [];
+
+            // 1. Process Permanent Classrooms
+            classrooms.forEach((room: any) => {
+                const schedules = allSchedules.filter((s: any) => s.classroom_id === room.id && s.day_of_week === dayOfWeek);
+                
+                schedules.forEach((sched: any) => {
+                    const regularStudents = (permStudentsData || [])
+                        .filter((cs: any) => cs.classroom_id === room.id)
+                        .map((cs: any) => ({
+                            id: cs.student_id,
+                            name: cs.users?.name || 'Unknown Student',
+                            isOverride: false
+                        }));
+
+                    const overrideStudents = (overridesData || [])
+                        .filter((o: any) => o.target_classroom_id === room.id)
+                        .map((o: any) => ({
+                            id: o.student_id,
+                            name: o.users?.name || 'Unknown Student',
+                            isOverride: true
+                        }));
+
+                    const allAllocated = [...regularStudents, ...overrideStudents];
+
+                    let excusedCount = 0;
+                    const studentList = allAllocated.map(s => {
+                        const status = attendanceMap[`${room.id}_${s.id}`];
+                        if (status === 'excused') {
+                            excusedCount++;
+                        }
+                        return {
+                            ...s,
+                            status: status || null
+                        };
+                    });
+
+                    const startClean = sched.start_time.substring(0, 5);
+                    const endClean = sched.end_time.substring(0, 5);
+
+                    suggestions.push({
+                        classroomId: room.id,
+                        classroomName: room.name,
+                        timings: `${startClean} - ${endClean}`,
+                        isTemporary: false,
+                        excusedCount,
+                        students: studentList,
+                        startTime: sched.start_time
+                    });
+                });
+            });
+
+            // 2. Process Temporary Classrooms
+            const activeTemps = temporaryClasses.filter((tc: any) => tc.class_date === dateStr);
+            activeTemps.forEach((tc: any) => {
+                const regularStudents = (tempStudentsData || [])
+                    .filter((tcs: any) => tcs.temporary_class_id === tc.id)
+                    .map((tcs: any) => ({
+                        id: tcs.student_id,
+                        name: tcs.users?.name || 'Unknown Student',
+                        isOverride: false
+                    }));
+
+                const overrideStudents = (overridesData || [])
+                    .filter((o: any) => o.target_classroom_id === tc.id)
+                    .map((o: any) => ({
+                        id: o.student_id,
+                        name: o.users?.name || 'Unknown Student',
+                        isOverride: true
+                    }));
+
+                const allAllocated = [...regularStudents, ...overrideStudents];
+
+                let excusedCount = 0;
+                const studentList = allAllocated.map(s => {
+                    const status = attendanceMap[`${tc.id}_${s.id}`];
+                    if (status === 'excused') {
+                        excusedCount++;
+                    }
+                    return {
+                        ...s,
+                        status: status || null
+                    };
+                });
+
+                const startClean = tc.start_time.substring(0, 5);
+                const endClean = tc.end_time.substring(0, 5);
+
+                suggestions.push({
+                    classroomId: tc.id,
+                    classroomName: tc.title,
+                    timings: `${startClean} - ${endClean}`,
+                    isTemporary: true,
+                    excusedCount,
+                    students: studentList,
+                    startTime: tc.start_time
+                });
+            });
+
+            // Sort suggestions by startTime
+            suggestions.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
             setExcusedSuggestions(suggestions);
         } catch (err) {
             console.error('Error fetching excused suggestions:', err);
         }
-    }, [teacherProfile, classrooms]);
+    }, [teacherProfile, classrooms, allSchedules, temporaryClasses]);
 
     useEffect(() => {
         if (showMakeupModal && makeupDate) {
@@ -2560,41 +2665,74 @@ export default function AttendancePage() {
                                 <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
                                     <div className="flex items-center gap-1.5 pl-1">
                                         <Lightbulb className="w-3.5 h-3.5 text-[#ecb613]" />
-                                        <span className="block text-[10px] font-black text-slate-450 dark:text-slate-450 uppercase tracking-wider">
-                                            Suggestions (Excused absences on this date)
+                                        <span className="block text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-wider">
+                                            Suggestions (Classes running on this date)
                                         </span>
                                     </div>
                                     {excusedSuggestions.length > 0 ? (
-                                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                                        <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
                                             {excusedSuggestions.map((sug) => {
                                                 const isSelected = makeupClassroomId === sug.classroomId;
                                                 return (
                                                     <button
-                                                        key={sug.classroomId}
+                                                        key={`${sug.classroomId}-${sug.timings}`}
                                                         type="button"
                                                         onClick={() => setMakeupClassroomId(sug.classroomId)}
-                                                        className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-start justify-between gap-3 group cursor-pointer ${
+                                                        className={`w-full p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1.5 group cursor-pointer ${
                                                             isSelected
                                                                 ? 'border-[#ecb613] bg-[#ecb613]/10 dark:bg-[#ecb613]/5'
-                                                                : 'border-slate-100 dark:border-slate-850 hover:border-[#ecb613]/50 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                                                                : 'border-slate-100 dark:border-slate-800 hover:border-[#ecb613]/50 hover:bg-slate-50 dark:hover:bg-slate-800/40'
                                                         }`}
                                                     >
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2">
+                                                        <div className="flex items-center justify-between w-full">
+                                                            <div className="flex items-center gap-1.5 min-w-0">
                                                                 <p className={`text-xs font-bold truncate ${isSelected ? 'text-[#b45309] dark:text-[#ecb613]' : 'text-slate-800 dark:text-slate-200'}`}>
                                                                     {sug.classroomName}
                                                                 </p>
-                                                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                                                                    isSelected
-                                                                        ? 'bg-[#ecb613] text-slate-900'
-                                                                        : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
-                                                                }`}>
-                                                                    {sug.excusedCount} Slot{sug.excusedCount > 1 ? 's' : ''} Open
-                                                                </span>
+                                                                {sug.isTemporary && (
+                                                                    <span className="px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+                                                                        Temp
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                            <p className="text-[10px] text-slate-500 font-medium truncate mt-1">
-                                                                Excused: {sug.excusedStudents.join(', ')}
-                                                            </p>
+                                                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                                                                isSelected
+                                                                    ? 'bg-[#ecb613] text-slate-900'
+                                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-650 dark:text-slate-350'
+                                                            }`}>
+                                                                {sug.timings}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Allocated students list */}
+                                                        <div className="w-full">
+                                                            <p className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Students Enrolled ({sug.students.length}):</p>
+                                                            {sug.students.length > 0 ? (
+                                                                <div className="flex flex-wrap gap-1 mt-0.5">
+                                                                    {sug.students.map((stud: any) => {
+                                                                        const isExcused = stud.status === 'excused';
+                                                                        const isAbsent = stud.status === 'absent';
+                                                                        return (
+                                                                            <span 
+                                                                                key={stud.id} 
+                                                                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium ${
+                                                                                    isExcused 
+                                                                                        ? 'bg-rose-50 text-rose-500 line-through decoration-rose-300 dark:bg-rose-950/20 dark:text-rose-450' 
+                                                                                        : isAbsent
+                                                                                        ? 'bg-red-50 text-red-500 line-through decoration-red-300 dark:bg-red-950/20 dark:text-red-450'
+                                                                                        : 'bg-slate-100 text-slate-650 dark:bg-slate-800 dark:text-slate-350'
+                                                                                }`}
+                                                                            >
+                                                                                {stud.name}
+                                                                                {isExcused && <span className="ml-0.5 text-[8px] font-black uppercase text-rose-600 dark:text-rose-450">(Excused)</span>}
+                                                                                {isAbsent && <span className="ml-0.5 text-[8px] font-black uppercase text-red-600 dark:text-red-450">(Absent)</span>}
+                                                                            </span>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            ) : (
+                                                                <p className="text-[8px] text-slate-400 italic">No students allocated</p>
+                                                            )}
                                                         </div>
                                                     </button>
                                                 );
@@ -2602,7 +2740,7 @@ export default function AttendancePage() {
                                         </div>
                                     ) : (
                                         <p className="text-[10px] text-slate-400 dark:text-slate-500 italic pl-1">
-                                            No excused absences on this date. You can select any classroom manually from the dropdown.
+                                            No active classes running on this date. You can select any classroom manually from the dropdown.
                                         </p>
                                     )}
                                 </div>
