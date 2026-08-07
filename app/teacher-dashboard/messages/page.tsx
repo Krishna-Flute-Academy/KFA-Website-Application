@@ -728,7 +728,7 @@ function MessagesDashboardContent() {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
                         .select('id, name, profile_pic_url')
-                        .eq('role', 'student');
+                        .or('role.eq.student,role.eq.pending');
                     uniqueStudents = (studentList || []).map((s: any) => ({
                         id: s.id,
                         name: s.name || 'Unknown',
@@ -739,7 +739,7 @@ function MessagesDashboardContent() {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
                         .select('id, name, profile_pic_url')
-                        .eq('role', 'student')
+                        .or('role.eq.student,role.eq.pending')
                         .eq('teacher_id', profile.id);
                     uniqueStudents = (studentList || []).map((s: any) => ({
                         id: s.id,

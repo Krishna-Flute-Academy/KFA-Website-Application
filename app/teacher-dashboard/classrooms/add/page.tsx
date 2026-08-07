@@ -128,7 +128,7 @@ export default function CreateClassPage() {
                         level,
                         profile_pic_url
                     `)
-                    .eq('role', 'student');
+                    .or('role.eq.student,role.eq.pending');
 
                 if (studentsError) throw studentsError;
 

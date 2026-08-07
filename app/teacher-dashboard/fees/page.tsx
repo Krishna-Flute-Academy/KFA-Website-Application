@@ -136,7 +136,7 @@ export default function FeesManagementDashboard() {
                         classrooms(name)
                     )
                 `)
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             if (studentsError) throw studentsError;
 

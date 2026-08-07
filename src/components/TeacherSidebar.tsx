@@ -164,7 +164,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 const { count, error } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact' })
-                    .eq('role', 'student')
+                    .or('role.eq.student,role.eq.pending')
                     .is('teacher_id', null);
                 
                 if (error) throw error;

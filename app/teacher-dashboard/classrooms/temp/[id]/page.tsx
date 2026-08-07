@@ -150,7 +150,7 @@ export default function TempClassManagePage() {
                 const studentsQuery = supabaseAuth
                     .from('users')
                     .select('id, name, profile_pic_url')
-                    .eq('role', 'student')
+                    .or('role.eq.student,role.eq.pending')
                     .order('name');
  
                 const { data: studentsData } = profile.role === 'admin'

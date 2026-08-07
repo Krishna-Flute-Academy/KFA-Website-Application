@@ -251,7 +251,7 @@ export default function InventoryLibrary() {
                 const { count: studentCount } = await supabaseAuth
                     .from('users')
                     .select('*', { count: 'exact', head: true })
-                    .eq('role', 'student');
+                    .or('role.eq.student,role.eq.pending');
                 if (studentCount !== null) {
                     setActiveStudentsCount(studentCount);
                 }
@@ -1555,7 +1555,7 @@ export default function InventoryLibrary() {
             const { count: studentCount } = await supabaseAuth
                 .from('users')
                 .select('*', { count: 'exact', head: true })
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
             if (studentCount !== null) {
                 setActiveStudentsCount(studentCount);
             }

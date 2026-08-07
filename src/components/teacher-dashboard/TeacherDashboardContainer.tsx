@@ -312,13 +312,13 @@ export default function TeacherDashboardContainer() {
                 const { count } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .eq('role', 'student');
+                    .or('role.eq.student,role.eq.pending');
                 studentsCount = count || 0;
             } else {
                 const { count } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .eq('role', 'student')
+                    .or('role.eq.student,role.eq.pending')
                     .eq('teacher_id', userId);
                 studentsCount = count || 0;
             }
@@ -399,7 +399,7 @@ export default function TeacherDashboardContainer() {
                 const { data: allStudsForStats } = await supabaseAuth
                     .from('users')
                     .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
-                    .eq('role', 'student');
+                    .or('role.eq.student,role.eq.pending');
 
                 const { data: allPayForStats } = await supabaseAuth
                     .from('fees_payments')
@@ -695,7 +695,7 @@ export default function TeacherDashboardContainer() {
             let studentsListQuery = supabaseAuth
                 .from('users')
                 .select('id, name')
-                .eq('role', 'student')
+                .or('role.eq.student,role.eq.pending')
                 .eq('status', 'active')
                 .order('name', { ascending: true });
             if (profile.role !== 'admin') {
@@ -708,7 +708,7 @@ export default function TeacherDashboardContainer() {
             const { data: activeStudents } = await supabaseAuth
                 .from('users')
                 .select('id, name')
-                .eq('role', 'student')
+                .or('role.eq.student,role.eq.pending')
                 .eq('status', 'active');
 
             const { data: classroomStudents } = await supabaseAuth
@@ -741,7 +741,7 @@ export default function TeacherDashboardContainer() {
             const { data: allStuds } = await supabaseAuth
                 .from('users')
                 .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             const { data: allPay } = await supabaseAuth
                 .from('fees_payments')

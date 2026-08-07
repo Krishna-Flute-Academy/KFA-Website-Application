@@ -1515,7 +1515,7 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, level')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery.order('name', { ascending: true })
@@ -1549,7 +1549,7 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, level')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery.order('name', { ascending: true })
@@ -1669,7 +1669,7 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, status')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery

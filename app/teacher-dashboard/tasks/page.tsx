@@ -738,7 +738,7 @@ export default function TaskReviewPage() {
             let studentsUserQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url')
-                .eq('role', 'student');
+                .or('role.eq.student,role.eq.pending');
             
             if (!isAdmin) {
                 studentsUserQuery = studentsUserQuery.eq('teacher_id', teacherId);

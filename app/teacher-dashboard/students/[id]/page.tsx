@@ -170,7 +170,7 @@ export default function StudentProfilePage() {
                         classroom_students(classroom_id, classrooms(name))
                     `)
                     .eq('id', studentId)
-                    .eq('role', 'student')
+                    .or('role.eq.student,role.eq.pending')
                     .single();
 
                 if (userError || !userData) {
