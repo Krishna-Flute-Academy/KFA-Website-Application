@@ -114,7 +114,17 @@ const BlogSection = ({
     );
 };
 
-export function PageClient() {
+export function PageClient({ 
+    initialPosts = [], 
+    initialEvent = null, 
+    initialTestimonials = [], 
+    initialGallery = [] 
+}: { 
+    initialPosts?: BlogPost[], 
+    initialEvent?: any, 
+    initialTestimonials?: any[], 
+    initialGallery?: GalleryItem[] 
+}) {
     const searchParams = useSearchParams();
     const postFromUrl = searchParams.get('post');
 
@@ -197,7 +207,7 @@ export function PageClient() {
 
     const [visibleSections, setVisibleSections] = useState<Record<string, boolean>>({});
     const [currentView, setCurrentView] = useState<'home' | 'blog' | 'admin' | 'gallery'>('home');
-    const [recentBlogPosts, setRecentBlogPosts] = useState<BlogPost[]>([]);
+    const [recentBlogPosts, setRecentBlogPosts] = useState<BlogPost[]>(initialPosts);
     const [isAdmin, setIsAdmin] = useState(false);
     const [adminPassword, setAdminPassword] = useState('');
     const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -208,12 +218,20 @@ export function PageClient() {
     const [formPhone, setFormPhone] = useState('');
     const [formCourse, setFormCourse] = useState('Select a course');
     const [formMessage, setFormMessage] = useState('');
-    const [activeEvent, setActiveEvent] = useState<{ title: string, registration_link: string, image_url?: string, button_text?: string, description?: string } | null>(null);
+    const [activeEvent, setActiveEvent] = useState<{ title: string, registration_link: string, image_url?: string, button_text?: string, description?: string } | null>(initialEvent);
     const [showEventPopup, setShowEventPopup] = useState(false);
     const [bannerClosed, setBannerClosed] = useState(false);
-    const [testimonials, setTestimonials] = useState<any[]>([]);
-    const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
+    const [testimonials, setTestimonials] = useState<any[]>(initialTestimonials);
+    const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(initialGallery);
     const [selectedGalleryItem, setSelectedGalleryItem] = useState<GalleryItem | null>(null);
+
+    // Show event popup if there is an active event
+    useEffect(() => {
+        if (initialEvent) {
+            const timer = setTimeout(() => setShowEventPopup(true), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [initialEvent]);
 
     // While redirecting, show a spinner so nothing flashes
     if (postFromUrl) {
@@ -257,74 +275,7 @@ export function PageClient() {
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    // 2. Fetch All Data on Load — run all queries in parallel for speed
-    useEffect(() => {
-        const fetchData = async () => {
-            const [
-                { data: posts, error: postsError },
-                { data: eventData, error: eventError },
-                { data: reviews, error: reviewsError },
-                { data: gallery, error: galleryError }
-            ] = await Promise.all([
-                // A. Blog Posts
-                supabase
-                    .from('blog_posts')
-                    .select('*')
-                    .eq('published', true)
-                    .order('published_at', { ascending: false })
-                    .limit(3),
-                // B. Active Event
-                supabase
-                    .from('events')
-                    .select('title, registration_link, image_url, button_text, description')
-                    .eq('is_active', true)
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle(),
-                // C. Testimonials
-                supabase
-                    .from('testimonials')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                    .limit(3),
-                // D. Gallery Items
-                supabase
-                    .from('gallery_items')
-                    .select('*')
-                    .eq('is_active', true)
-                    .order('created_at', { ascending: false })
-            ]);
-
-            if (posts) {
-                const validPosts = posts.filter((p: any) => p && typeof p === 'object' && p.title && p.id);
-                setRecentBlogPosts(validPosts);
-            } else if (postsError) {
-                console.error('Supabase Error Details (blog_posts):', postsError);
-            }
-
-            if (eventData) {
-                setActiveEvent(eventData);
-                setTimeout(() => setShowEventPopup(true), 5000);
-            } else if (eventError) {
-                console.error('Supabase Error (events):', eventError);
-            }
-
-            if (reviews) {
-                const validReviews = (reviews as any[]).filter((r: any) => r && typeof r === 'object' && r.name && (r.content || r.message));
-                setTestimonials(validReviews);
-            } else if (reviewsError) {
-                console.error('Supabase Error (testimonials):', reviewsError);
-            }
-
-            if (gallery) {
-                const validGallery = (gallery as any[]).filter((g: any) => g && typeof g === 'object' && g.url);
-                setGalleryItems(validGallery);
-            } else if (galleryError) {
-                console.error('Supabase Error (gallery_items):', galleryError);
-            }
-        };
-        fetchData();
-    }, []);
+    // Removed Client-side Data Fetching block. Data is now fetched server-side in page.tsx!
 
     // 3. Admin Shortcut
     useEffect(() => {

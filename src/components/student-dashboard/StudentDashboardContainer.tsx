@@ -14,17 +14,17 @@ import dynamic from 'next/dynamic';
 
 const PracticeSuiteModal = dynamic(() => import('../PracticeSuiteModal'), { ssr: false });
 
-import OverviewTab from './OverviewTab';
-import CurriculumTab from './CurriculumTab';
-import TasksTab from './TasksTab';
-import MessagesTab from './MessagesTab';
-import AttendanceTab from './AttendanceTab';
-import LibraryTab from './LibraryTab';
-import ClassroomTab from './ClassroomTab';
-import FeesTab from './FeesTab';
-import PoliciesTab from './PoliciesTab';
-import AcademyPolicies from '../AcademyPolicies';
-import SettingsTab from './SettingsTab';
+const OverviewTab = dynamic(() => import('./OverviewTab'), { ssr: false });
+const CurriculumTab = dynamic(() => import('./CurriculumTab'), { ssr: false });
+const TasksTab = dynamic(() => import('./TasksTab'), { ssr: false });
+const MessagesTab = dynamic(() => import('./MessagesTab'), { ssr: false });
+const AttendanceTab = dynamic(() => import('./AttendanceTab'), { ssr: false });
+const LibraryTab = dynamic(() => import('./LibraryTab'), { ssr: false });
+const ClassroomTab = dynamic(() => import('./ClassroomTab'), { ssr: false });
+const FeesTab = dynamic(() => import('./FeesTab'), { ssr: false });
+const PoliciesTab = dynamic(() => import('./PoliciesTab'), { ssr: false });
+const AcademyPolicies = dynamic(() => import('../AcademyPolicies'), { ssr: false });
+const SettingsTab = dynamic(() => import('./SettingsTab'), { ssr: false });
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import BlogNotification from './BlogNotification';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
@@ -299,7 +299,6 @@ export default function StudentDashboardContainer() {
                 applicationServerKey: convertedVapidKey
             });
 
-            console.log('Web Push subscription active:', subscription);
 
             const { error } = await supabaseAuth
                 .from('push_subscriptions')
@@ -312,7 +311,6 @@ export default function StudentDashboardContainer() {
             if (error) {
                 console.error('Failed to save push subscription to DB:', error);
             } else {
-                console.log('Push subscription saved to DB successfully.');
             }
         } catch (e) {
             console.error('Error subscribing to web push:', e);
@@ -781,7 +779,6 @@ export default function StudentDashboardContainer() {
     // Register and update Web Push Service Worker on mount
     useEffect(() => {
         if (process.env.NODE_ENV === 'development') {
-            console.log('[Web Push] Service Worker registration skipped in development mode');
             return;
         }
 
@@ -790,7 +787,6 @@ export default function StudentDashboardContainer() {
                 try {
                     const registration = await navigator.serviceWorker.register('/sw.js');
                     await registration.update();
-                    console.log('[Web Push] Service Worker registered and updated successfully');
 
                     // If permission is already granted, verify/sync subscription in DB
                     if (Notification.permission === 'granted') {
@@ -820,7 +816,6 @@ export default function StudentDashboardContainer() {
                     filter: `user_id=eq.${profile.id}`
                 },
                 (payload) => {
-                    console.log('Realtime notification payload received:', payload);
                     if (payload.eventType === 'INSERT') {
                         const newNotif = payload.new;
                         setNotifications(prev => {
@@ -896,7 +891,6 @@ export default function StudentDashboardContainer() {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'classrooms' },
                 (payload) => {
-                    console.log('Realtime classroom payload received:', payload);
                     const updatedRoom = payload.new as any;
                     if (updatedRoom) {
                         setClassroom(prev => {
@@ -937,7 +931,6 @@ export default function StudentDashboardContainer() {
                     const isRelevant =
                         (newRecord && newRecord.student_id === userId) ||
                         (oldRecord && oldRecord.student_id === userId);
-                    console.log('Realtime classroom_students payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
@@ -953,7 +946,6 @@ export default function StudentDashboardContainer() {
                     const isRelevant =
                         (newMsg && (newMsg.sender_id === userId || newMsg.receiver_id === userId)) ||
                         (oldMsg && (oldMsg.sender_id === userId || oldMsg.receiver_id === userId));
-                    console.log('Realtime message payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant) {
                         if (payload.eventType === 'INSERT' && newMsg) {
                             setDirectMessages(prev => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg]);
@@ -998,7 +990,6 @@ export default function StudentDashboardContainer() {
                     const oldMsg = payload.old as any;
                     const targetClassroomId = newMsg?.classroom_id || oldMsg?.classroom_id;
                     const isRelevant = targetClassroomId && classroomIdsRef.current.includes(targetClassroomId);
-                    console.log('Realtime classroom message payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         setTimeout(() => {
                             if (refreshDataRef.current) refreshDataRef.current();
@@ -1011,7 +1002,6 @@ export default function StudentDashboardContainer() {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'broadcasts' },
                 (payload) => {
-                    console.log('Realtime broadcast payload received:', payload);
                     if (refreshDataRef.current) {
                         setTimeout(() => {
                             if (refreshDataRef.current) refreshDataRef.current();
@@ -1028,7 +1018,6 @@ export default function StudentDashboardContainer() {
                     const oldRecord = payload.old as any;
                     const targetClassroomId = newRecord?.classroom_id || oldRecord?.classroom_id;
                     const isRelevant = targetClassroomId && classroomIdsRef.current.includes(targetClassroomId);
-                    console.log('Realtime class_notes payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
@@ -1043,7 +1032,6 @@ export default function StudentDashboardContainer() {
                     const oldRecord = payload.old as any;
                     const targetClassroomId = newRecord?.classroom_id || oldRecord?.classroom_id;
                     const isRelevant = !targetClassroomId || classroomIdsRef.current.includes(targetClassroomId) || newRecord?.target_type === 'individual';
-                    console.log('Realtime assignments payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
@@ -1059,7 +1047,6 @@ export default function StudentDashboardContainer() {
                     const isRelevant =
                         (newRecord && newRecord.student_id === userId) ||
                         (oldRecord && oldRecord.student_id === userId);
-                    console.log('Realtime assignment_students payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
@@ -1075,7 +1062,6 @@ export default function StudentDashboardContainer() {
                     const isRelevant =
                         (newRecord && newRecord.student_id === userId) ||
                         (oldRecord && oldRecord.student_id === userId);
-                    console.log('Realtime session_student_overrides payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
@@ -1090,7 +1076,6 @@ export default function StudentDashboardContainer() {
                     const oldRecord = payload.old as any;
                     const targetClassroomId = newRecord?.classroom_id || oldRecord?.classroom_id;
                     const isRelevant = targetClassroomId && classroomIdsRef.current.includes(targetClassroomId);
-                    console.log('Realtime classroom_session_logs payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
@@ -1106,7 +1091,6 @@ export default function StudentDashboardContainer() {
                     const isRelevant =
                         (newRecord && (newRecord.student_id === userId || newRecord.student_id === 'classwide_default')) ||
                         (oldRecord && (oldRecord.student_id === userId || oldRecord.student_id === 'classwide_default'));
-                    console.log('Realtime student_topic_progress payload received:', payload, 'Is relevant:', isRelevant);
                     if (isRelevant && refreshDataRef.current) {
                         refreshDataRef.current();
                     }
