@@ -401,7 +401,7 @@ export default function OverviewTab({
                 </div>
 
                 {/* Class/Batch Card */}
-                <div className={`bg-[#FDFBF7] dark:bg-slate-900/40 border border-[#E6E1DA] dark:border-slate-800 rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm transition-all group relative overflow-hidden ${classroom
+                <div className={`bg-[#FDFBF7] border border-[#E6E1DA] rounded-3xl p-4 sm:p-5 flex items-center gap-4 text-left shadow-2xs hover:shadow-sm transition-all group relative overflow-hidden ${classroom
                     ? classroom.type === 'temporary'
                         ? 'hover:border-emerald-500/25'
                         : 'hover:border-blue-500/25'
@@ -410,8 +410,8 @@ export default function OverviewTab({
                     <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/5 rounded-full blur-xl pointer-events-none group-hover:bg-orange-500/10 transition-colors"></div>
                     <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shrink-0 ${classroom
                         ? classroom.type === 'temporary'
-                            ? 'bg-emerald-50/80 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400'
-                            : 'bg-[#E3ECF5] text-[#5383B4] dark:bg-blue-950/20 dark:text-blue-400'
+                            ? 'bg-emerald-50/80 text-emerald-600'
+                            : 'bg-[#E3ECF5] text-[#5383B4]'
                         : 'bg-[#E3ECF5] text-[#5383B4]'
                         }`}>
                         <Clock className="w-5.5 h-5.5" />
@@ -425,7 +425,7 @@ export default function OverviewTab({
                                 : 'My Batch'
                             }
                         </p>
-                        <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] dark:text-white truncate mt-0.5">
+                        <h3 className="font-extrabold text-sm sm:text-base text-[#3E3A35] truncate mt-0.5">
                             {classroom ? (
                                 <>
                                     {classroom.type === 'temporary' ? '⚡ ' : '🏫 '}
