@@ -15,12 +15,10 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    // Trailing Slash: Required for correct routing on static hosts (GitHub Pages)
-    trailingSlash: true,
+    // Vercel handles trailing slashes natively, enforcing it can cause redirect loops.
 
-    // Image Configuration: unoptimized required for static export
+    // Image Configuration: allow images from any remote host
     images: {
-        unoptimized: true,
         remotePatterns: [
             {
                 protocol: 'https',
