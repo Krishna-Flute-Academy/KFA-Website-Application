@@ -1509,6 +1509,23 @@ export default function AttendancePage() {
         }
     }, [showMakeupModal, makeupDate, fetchExcusedSuggestions]);
 
+    useEffect(() => {
+        if (!showMakeupModal || !makeupStudent || editingMakeupId) return;
+        
+        let targetClassName = classrooms.find(c => c.id === makeupClassroomId)?.name;
+        if (!targetClassName) {
+            targetClassName = temporaryClasses.find(tc => tc.id === makeupClassroomId)?.title;
+        }
+        
+        if (targetClassName && makeupDate) {
+            const missedDateClean = formatLocalDateStr(makeupStudent.date, true);
+            const targetDateClean = formatLocalDateStr(makeupDate, true);
+            setMakeupReason(
+                `Makeup for missing ${makeupStudent.classroom_name} class on ${missedDateClean}. Assigned to ${targetClassName} on ${targetDateClean}`
+            );
+        }
+    }, [makeupClassroomId, makeupDate, showMakeupModal, makeupStudent, editingMakeupId, classrooms, temporaryClasses, formatLocalDateStr]);
+
     const getDaysInMonth = (date: Date) => {
         const year = date.getFullYear();
         const month = date.getMonth();
