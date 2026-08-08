@@ -189,7 +189,7 @@ export default function StudentDirectory() {
                 const { data: teachersData } = await supabaseAuth
                     .from('users')
                     .select('id, name')
-                    .eq('role', 'teacher');
+                    .in('role', ['teacher', 'admin']);
                 
                 if (teachersData) {
                     setTeachers(teachersData);

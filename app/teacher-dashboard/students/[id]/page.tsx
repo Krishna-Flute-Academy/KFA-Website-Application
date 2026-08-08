@@ -1,6 +1,6 @@
 'use client';
  
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
 import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle, Send } from 'lucide-react';
@@ -66,6 +66,58 @@ export default function StudentProfilePage() {
     const [isSendingMessage, setIsSendingMessage] = useState(false);
 
     const [reloadTrigger, setReloadTrigger] = useState(0);
+    const [isOnline, setIsOnline] = useState(false);
+
+    const checkOnlineStatus = useCallback(async () => {
+        if (!studentId) return;
+        try {
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+            const { data: activeSessions } = await supabaseAuth
+                .from('user_sessions')
+                .select('user_id')
+                .eq('user_id', studentId)
+                .is('logout_at', null)
+                .gt('last_activity_at', fiveMinutesAgo)
+                .limit(1);
+
+            setIsOnline(!!activeSessions && activeSessions.length > 0);
+        } catch (e) {
+            console.error('Error checking online status:', e);
+        }
+    }, [studentId]);
+
+    useEffect(() => {
+        let isMounted = true;
+        
+        const evaluateStatus = () => {
+            if (isMounted) {
+                checkOnlineStatus();
+            }
+        };
+
+        evaluateStatus();
+
+        // Realtime subscription
+        const sessionsChannel = supabaseAuth
+            .channel(`realtime-sessions-student-detail-${studentId}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'user_sessions' },
+                () => {
+                    evaluateStatus();
+                }
+            )
+            .subscribe();
+
+        // Interval polling every 30 seconds
+        const timer = setInterval(evaluateStatus, 30000);
+
+        return () => {
+            isMounted = false;
+            clearInterval(timer);
+            supabaseAuth.removeChannel(sessionsChannel);
+        };
+    }, [studentId, checkOnlineStatus]);
 
     // Form states for Student Submission
     const [submitVideoUrl, setSubmitVideoUrl] = useState('');
@@ -814,7 +866,9 @@ export default function StudentProfilePage() {
                                         <span className="text-[#ecb613] text-3xl font-bold">{studentInfo.name.charAt(0)}</span>
                                     )}
                                 </div>
-                                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 border-4 border-white rounded-full"></div>
+                                {isOnline && (
+                                    <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 border-4 border-white rounded-full"></div>
+                                )}
                             </div>
                             <div>
                                 <div className="flex items-center gap-2 mb-1.5">

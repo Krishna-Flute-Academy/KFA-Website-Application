@@ -90,7 +90,7 @@ export default function AuthCallbackPage() {
                         email: googleEmail,
                         phone: session.user.user_metadata?.phone || null,
                         role: 'pending',
-                        status: 'active',
+                        status: 'pending',
                         join_date: new Date().toISOString().split('T')[0]
                     }])
                     .select('id, role, status, name')

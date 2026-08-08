@@ -92,8 +92,8 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
     NEW.email,
     NEW.raw_user_meta_data->>'phone',
-    COALESCE(NEW.raw_user_meta_data->>'role', 'student'),
-    'active',
+    COALESCE(NEW.raw_user_meta_data->>'role', 'pending'),
+    'pending',
     CURRENT_DATE
   )
   ON CONFLICT (id) DO NOTHING; -- Safe: client-side insert already ran if session was available

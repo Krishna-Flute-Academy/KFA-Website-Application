@@ -61,6 +61,7 @@ export default function RoleAllocationDashboard() {
     const [feesAmount, setFeesAmount] = useState('1500');
     const [feesClassesPaid, setFeesClassesPaid] = useState('0');
     const [feesCollectionDate, setFeesCollectionDate] = useState(String(new Date().getDate()));
+    const [joinDate, setJoinDate] = useState(new Date().toISOString().split('T')[0]);
     const [teacherClassroomIds, setTeacherClassroomIds] = useState<string[]>([]);
 
     const fetchData = async () => {
@@ -175,10 +176,31 @@ export default function RoleAllocationDashboard() {
         const currentClassroom = user.classroom_students?.[0]?.classroom_id || '';
         setSelectedClassroomId(currentClassroom);
         setExperienceLevel(user.level || 'beginner');
-        setFeesBasis(user.fees_basis || 'monthly');
-        setFeesAmount(String(user.fees_amount || '1500'));
-        setFeesClassesPaid(String(user.fees_classes_paid || '0'));
-        setFeesCollectionDate(user.fees_collection_date ? String(user.fees_collection_date) : String(new Date().getDate()));
+        const basis = user.fees_basis || 'monthly';
+        setFeesBasis(basis);
+        
+        if (user.fees_amount !== null && user.fees_amount !== undefined && Number(user.fees_amount) > 0) {
+            setFeesAmount(String(user.fees_amount));
+        } else {
+            setFeesAmount(basis === 'monthly' ? '2400' : '600');
+        }
+        
+        if (user.fees_classes_paid !== null && user.fees_classes_paid !== undefined) {
+            setFeesClassesPaid(String(user.fees_classes_paid));
+        } else {
+            setFeesClassesPaid('4');
+        }
+        
+        const initialJoinDate = user.join_date || new Date().toISOString().split('T')[0];
+        setJoinDate(initialJoinDate);
+        
+        const getDayFromDateString = (dateStr: string) => {
+            const parts = dateStr.split('-');
+            if (parts.length === 3) return String(Number(parts[2]));
+            return String(new Date().getDate());
+        };
+        const joinDateDay = getDayFromDateString(initialJoinDate);
+        setFeesCollectionDate(user.fees_collection_date ? String(user.fees_collection_date) : joinDateDay);
         
         const assignedClasses = classrooms.filter(c => c.teacher_id === user.id).map(c => c.id);
         setTeacherClassroomIds(assignedClasses);
@@ -203,7 +225,7 @@ export default function RoleAllocationDashboard() {
                 fees_amount: isStudent ? (Number(feesAmount) || 0) : null,
                 fees_classes_paid: isStudent ? (Number(feesClassesPaid) || 0) : null,
                 fees_collection_date: isStudent ? (feesCollectionDate ? Number(feesCollectionDate) : null) : null,
-                join_date: new Date().toISOString().split('T')[0]
+                join_date: isStudent ? joinDate : null
             };
 
             // 1. Update user record
@@ -400,11 +422,41 @@ export default function RoleAllocationDashboard() {
                                                         <div className="grid grid-cols-2 gap-2 text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                                             <div>
                                                                 <span className="block text-[10px] font-bold text-slate-400 uppercase">Teacher</span>
-                                                                <span className="font-semibold text-slate-700 dark:text-slate-300">{teacherName}</span>
+                                                                <span className="font-semibold text-slate-700 dark:text-slate-350">{teacherName}</span>
                                                             </div>
                                                             <div>
                                                                 <span className="block text-[10px] font-bold text-slate-400 uppercase">Batch</span>
-                                                                <span className="font-semibold text-slate-700 dark:text-slate-300">{class_name}</span>
+                                                                <span className="font-semibold text-slate-700 dark:text-slate-350">{class_name}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {(activeTab === 'students' || activeTab === 'pending') && (
+                                                        <div className="grid grid-cols-3 gap-2 text-xs p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
+                                                            <div>
+                                                                <span className="block text-[9px] font-bold text-slate-400 uppercase">Joining Date</span>
+                                                                <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] whitespace-nowrap">
+                                                                    {user.join_date ? new Date(user.join_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A'}
+                                                                </span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="block text-[9px] font-bold text-slate-400 uppercase">Billing Plan</span>
+                                                                <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] capitalize">
+                                                                    {user.fees_basis === 'monthly' ? 'Monthly' : user.fees_basis === 'class' ? 'Class-basis' : 'N/A'}
+                                                                </span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="block text-[9px] font-bold text-slate-400 uppercase">Due Date</span>
+                                                                <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] whitespace-nowrap">
+                                                                    {(() => {
+                                                                        if (user.fees_basis === 'monthly') {
+                                                                            if (user.fees_collection_date) {
+                                                                                return `${user.fees_collection_date}th`;
+                                                                            }
+                                                                        }
+                                                                        return 'N/A';
+                                                                    })()}
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     )}
@@ -450,6 +502,13 @@ export default function RoleAllocationDashboard() {
                                                     <>
                                                         <th className="px-6 py-4">Teacher</th>
                                                         <th className="px-6 py-4">Batch Class</th>
+                                                    </>
+                                                )}
+                                                {(activeTab === 'students' || activeTab === 'pending') && (
+                                                    <>
+                                                        <th className="px-6 py-4">Joining Date</th>
+                                                        <th className="px-6 py-4">Billing Plan</th>
+                                                        <th className="px-6 py-4">Due Date</th>
                                                     </>
                                                 )}
                                                 <th className="px-6 py-4">Status</th>
@@ -517,6 +576,26 @@ export default function RoleAllocationDashboard() {
                                                                     </td>
                                                                     <td className="px-6 py-4.5 text-xs font-bold text-[#b45309] dark:text-[#ecb613]">
                                                                         {class_name}
+                                                                    </td>
+                                                                </>
+                                                            )}
+                                                            {(activeTab === 'students' || activeTab === 'pending') && (
+                                                                <>
+                                                                    <td className="px-6 py-4.5 text-xs font-semibold text-slate-650 dark:text-slate-350 whitespace-nowrap">
+                                                                        {user.join_date ? new Date(user.join_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                                                                    </td>
+                                                                    <td className="px-6 py-4.5 text-xs font-semibold text-slate-650 dark:text-slate-350 capitalize">
+                                                                        {user.fees_basis === 'monthly' ? 'Monthly' : user.fees_basis === 'class' ? 'Class-basis' : 'N/A'}
+                                                                    </td>
+                                                                    <td className="px-6 py-4.5 text-xs font-semibold text-slate-650 dark:text-slate-350 whitespace-nowrap">
+                                                                        {(() => {
+                                                                            if (user.fees_basis === 'monthly') {
+                                                                                if (user.fees_collection_date) {
+                                                                                    return `${user.fees_collection_date}th of month`;
+                                                                                }
+                                                                            }
+                                                                            return 'N/A';
+                                                                        })()}
                                                                     </td>
                                                                 </>
                                                             )}
@@ -681,12 +760,43 @@ export default function RoleAllocationDashboard() {
                                             <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Billing Plan</label>
                                             <select
                                                 value={feesBasis}
-                                                onChange={e => setFeesBasis(e.target.value)}
+                                                onChange={e => {
+                                                    const plan = e.target.value;
+                                                    setFeesBasis(plan);
+                                                    if (plan === 'monthly') {
+                                                        setFeesAmount('2400');
+                                                        setFeesClassesPaid('4');
+                                                    } else if (plan === 'class') {
+                                                        setFeesAmount('600');
+                                                        setFeesClassesPaid('4');
+                                                    }
+                                                }}
                                                 className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
                                             >
                                                 <option value="monthly">Monthly Subscription</option>
                                                 <option value="class">Class-basis (Advance Booking)</option>
                                             </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 gap-4">
+                                        {/* Joining Date */}
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Joining Date</label>
+                                            <input
+                                                required={allocatedRole === 'student'}
+                                                type="date"
+                                                value={joinDate}
+                                                onChange={e => {
+                                                    const newDate = e.target.value;
+                                                    setJoinDate(newDate);
+                                                    const parts = newDate.split('-');
+                                                    if (parts.length === 3) {
+                                                        setFeesCollectionDate(String(Number(parts[2])));
+                                                    }
+                                                }}
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
+                                            />
                                         </div>
                                     </div>
 
@@ -701,6 +811,47 @@ export default function RoleAllocationDashboard() {
                                                 onChange={e => setFeesAmount(e.target.value)}
                                                 className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-bold"
                                             />
+                                            {feesBasis === 'monthly' && (
+                                                <div className="flex gap-1 mt-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFeesAmount('2000')}
+                                                        className={`px-1.5 py-0.5 text-[9px] font-black rounded border transition-colors ${
+                                                            feesAmount === '2000'
+                                                                ? 'bg-[#ecb613] text-white border-[#ecb613]'
+                                                                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-350 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                                                        }`}
+                                                    >
+                                                        ₹2,000
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFeesAmount('2400')}
+                                                        className={`px-1.5 py-0.5 text-[9px] font-black rounded border transition-colors ${
+                                                            feesAmount === '2400'
+                                                                ? 'bg-[#ecb613] text-white border-[#ecb613]'
+                                                                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-350 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                                                        }`}
+                                                    >
+                                                        ₹2,400
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {feesBasis === 'class' && (
+                                                <div className="flex gap-1 mt-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFeesAmount('600')}
+                                                        className={`px-1.5 py-0.5 text-[9px] font-black rounded border transition-colors ${
+                                                            feesAmount === '600'
+                                                                ? 'bg-[#ecb613] text-white border-[#ecb613]'
+                                                                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-350 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                                                        }`}
+                                                    >
+                                                        ₹600
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Classes Prepaid */}

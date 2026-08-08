@@ -113,7 +113,7 @@ export default function CreateClassPage() {
                 const { data: teachersData } = await supabaseAuth
                     .from('users')
                     .select('id, name')
-                    .eq('role', 'teacher')
+                    .in('role', ['teacher', 'admin'])
                     .eq('status', 'active');
                 if (teachersData) {
                     setTeachers(teachersData);
