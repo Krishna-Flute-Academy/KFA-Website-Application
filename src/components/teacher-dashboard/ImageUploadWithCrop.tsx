@@ -150,8 +150,8 @@ export default function ImageUploadWithCrop({ value, onChange, studentId }: Imag
 
             ctx.drawImage(
                 img,
-                (imgSize.initX * zoom + pan.x) * scale,
-                (imgSize.initY * zoom + pan.y) * scale,
+                (imgSize.initX + pan.x) * scale,
+                (imgSize.initY + pan.y) * scale,
                 imgSize.dispW * zoom * scale,
                 imgSize.dispH * zoom * scale
             );
@@ -274,11 +274,12 @@ export default function ImageUploadWithCrop({ value, onChange, studentId }: Imag
                                     alt="To crop"
                                     onLoad={handleImageLoad}
                                     draggable={false}
-                                    className="absolute origin-center max-w-none pointer-events-none select-none"
+                                    className="absolute max-w-none pointer-events-none select-none"
                                     style={{
                                         width: imgSize.dispW,
                                         height: imgSize.dispH,
-                                        transform: `translate(${imgSize.initX * zoom + pan.x}px, ${imgSize.initY * zoom + pan.y}px) scale(${zoom})`
+                                        transform: `translate(${imgSize.initX + pan.x}px, ${imgSize.initY + pan.y}px) scale(${zoom})`,
+                                        transformOrigin: '0 0'
                                     }}
                                 />
                                 {/* Circular overlay shadow mask */}
