@@ -131,6 +131,14 @@ export default function AttendancePage() {
     const [individualLoading, setIndividualLoading] = useState(false);
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
+    // Individual Range Report — Date-based student list
+    const [dateStudentSearchQuery, setDateStudentSearchQuery] = useState('');
+    interface DateStudentEntry { student: Student; classroom_id: string; classroom_name: string; isMakeup: boolean; }
+    const [dateStudentsData, setDateStudentsData] = useState<DateStudentEntry[]>([]);
+    const [dateStudentsLoading, setDateStudentsLoading] = useState(false);
+    // Key: `${studentId}_${classroomId}` → status
+    const [dateAttendanceMap, setDateAttendanceMap] = useState<Record<string, 'present' | 'absent' | 'late' | 'excused'>>({});
+
     // Missed Classes Report State
     const [missedLogs, setMissedLogs] = useState<any[]>([]);
     const [missedLoading, setMissedLoading] = useState(false);
@@ -752,6 +760,151 @@ export default function AttendancePage() {
         const timer = setTimeout(searchStudents, 300);
         return () => clearTimeout(timer);
     }, [searchQuery, mode, teacherProfile]);
+
+    // ── Fetch students allocated for the selected date (Individual Range mode) ──
+    const fetchDateStudents = useCallback(async () => {
+        if (!teacherProfile || activeBatchesOnSelectedDate.length === 0) {
+            setDateStudentsData([]);
+            setDateAttendanceMap({});
+            return;
+        }
+        setDateStudentsLoading(true);
+        try {
+            const isAdmin = teacherProfile.role === 'admin';
+            const entries: DateStudentEntry[] = [];
+
+            await Promise.all(activeBatchesOnSelectedDate.map(async (batch) => {
+                const batchName = batch.name;
+                const batchId = batch.id;
+                const isTemporary = batch.type === 'temporary';
+
+                if (!isTemporary) {
+                    // Permanent classroom: enrolled students
+                    const { data: permanentStudents } = await supabaseAuth
+                        .from('classroom_students')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .eq('classroom_id', batchId);
+
+                    (permanentStudents || [])
+                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile.id)
+                        .forEach((row: any) => {
+                            entries.push({
+                                student: { id: row.student_id, name: row.users?.name || 'Unknown Student', profile_pic_url: row.users?.profile_pic_url },
+                                classroom_id: batchId,
+                                classroom_name: batchName,
+                                isMakeup: false
+                            });
+                        });
+
+                    // Makeup students assigned to this classroom on this date
+                    const { data: overrideStudents } = await supabaseAuth
+                        .from('session_student_overrides')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .eq('target_classroom_id', batchId)
+                        .eq('override_date', selectedDate);
+
+                    (overrideStudents || [])
+                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile.id)
+                        .forEach((row: any) => {
+                            entries.push({
+                                student: { id: row.student_id, name: row.users?.name || 'Unknown Student', profile_pic_url: row.users?.profile_pic_url },
+                                classroom_id: batchId,
+                                classroom_name: batchName,
+                                isMakeup: true
+                            });
+                        });
+                } else {
+                    // Temporary class: only override/makeup students
+                    const { data: tempStudents } = await supabaseAuth
+                        .from('session_student_overrides')
+                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .eq('target_classroom_id', batchId)
+                        .eq('override_date', selectedDate);
+
+                    (tempStudents || [])
+                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile.id)
+                        .forEach((row: any) => {
+                            entries.push({
+                                student: { id: row.student_id, name: row.users?.name || 'Unknown Student', profile_pic_url: row.users?.profile_pic_url },
+                                classroom_id: batchId,
+                                classroom_name: batchName,
+                                isMakeup: false
+                            });
+                        });
+                }
+            }));
+
+            setDateStudentsData(entries);
+
+            // Fetch attendance for all these student+classroom combos
+            if (entries.length > 0) {
+                const classroomIds = [...new Set(entries.map(e => e.classroom_id))];
+                const studentIds = [...new Set(entries.map(e => e.student.id))];
+                const { data: attData } = await supabaseAuth
+                    .from('attendance')
+                    .select('student_id, classroom_id, status')
+                    .in('classroom_id', classroomIds)
+                    .in('student_id', studentIds)
+                    .eq('date', selectedDate);
+
+                const newMap: Record<string, 'present' | 'absent' | 'late' | 'excused'> = {};
+                (attData || []).forEach((row: any) => {
+                    newMap[`${row.student_id}_${row.classroom_id}`] = row.status;
+                });
+                setDateAttendanceMap(newMap);
+            } else {
+                setDateAttendanceMap({});
+            }
+        } catch (err) {
+            console.error('Error fetching date students:', err);
+        } finally {
+            setDateStudentsLoading(false);
+        }
+    }, [teacherProfile, selectedDate, activeBatchesOnSelectedDate]);
+
+    useEffect(() => {
+        if (mode === 'individual') {
+            fetchDateStudents();
+        }
+    }, [mode, selectedDate, fetchDateStudents]);
+
+    // Mark attendance from Individual Range date view
+    const handleMarkDateAttendance = async (
+        studentId: string,
+        classroomId: string,
+        status: 'present' | 'absent' | 'late' | 'excused'
+    ) => {
+        if (!teacherProfile) return;
+        const key = `${studentId}_${classroomId}`;
+        // Optimistic update
+        setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
+        try {
+            const { error } = await supabaseAuth
+                .from('attendance')
+                .upsert({
+                    student_id: studentId,
+                    classroom_id: classroomId,
+                    date: selectedDate,
+                    status: status.toLowerCase(),
+                    marked_by: teacherProfile.id
+                }, { onConflict: 'student_id, classroom_id, date' });
+            if (error) throw error;
+            // Also sync batchAttendanceMap if batch is expanded
+            setBatchAttendanceMap(prev => {
+                const currentBatch = prev[classroomId] || {};
+                return { ...prev, [classroomId]: { ...currentBatch, [studentId]: status } };
+            });
+        } catch (err: any) {
+            console.error('Error marking attendance:', err);
+            alert(`Failed to save attendance: ${err.message || err}`);
+            // Revert
+            setDateAttendanceMap(prev => {
+                const next = { ...prev };
+                delete next[key];
+                return next;
+            });
+        }
+    };
 
     const fetchIndividualLogs = useCallback(async () => {
         if (!selectedStudent) return;
@@ -1865,9 +2018,151 @@ export default function AttendancePage() {
 
                             {/* ── MODE 2: INDIVIDUAL RANGE HISTORY REPORT ──────────────────── */}
                             {mode === 'individual' && (
-                                <div className="space-y-4">
-                                    {/* Student Search bar */}
+                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+
+                                    {/* ── Section A: Date-based Student Roster with Attendance Marking ── */}
+                                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                                        {/* Header */}
+                                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <div>
+                                                <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                                                    <Users className="w-4 h-4 text-[#ecb613]" />
+                                                    Students on {formatLocalDateStr(selectedDate, true)}
+                                                </h4>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+                                                    {dateStudentsData.length} student{dateStudentsData.length !== 1 ? 's' : ''} allocated · select date from calendar
+                                                </p>
+                                            </div>
+                                            {/* Search within date students */}
+                                            <div className="relative min-w-0 w-full sm:w-64">
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5" />
+                                                <input
+                                                    type="text"
+                                                    value={dateStudentSearchQuery}
+                                                    onChange={(e) => setDateStudentSearchQuery(e.target.value)}
+                                                    placeholder="Search students..."
+                                                    className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-[#ecb613]/50 text-xs font-semibold outline-none transition-all placeholder:text-slate-400"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Student list body */}
+                                        {dateStudentsLoading ? (
+                                            <div className="flex flex-col items-center justify-center py-14">
+                                                <Loader2 className="w-6 h-6 animate-spin text-[#ecb613] mb-2" />
+                                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Loading students...</p>
+                                            </div>
+                                        ) : (() => {
+                                            const query = dateStudentSearchQuery.toLowerCase().trim();
+                                            const filtered = dateStudentsData.filter(e =>
+                                                !query || e.student.name.toLowerCase().includes(query)
+                                            );
+
+                                            if (dateStudentsData.length === 0) {
+                                                return (
+                                                    <div className="py-14 flex flex-col items-center justify-center text-center">
+                                                        <div className="w-14 h-14 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-3">
+                                                            <CalendarIcon className="w-7 h-7 text-slate-300" />
+                                                        </div>
+                                                        <h6 className="font-extrabold text-slate-400 tracking-tight">No batches scheduled</h6>
+                                                        <p className="text-xs text-slate-400 mt-1">Select a date with a batch from the calendar.</p>
+                                                    </div>
+                                                );
+                                            }
+
+                                            if (filtered.length === 0) {
+                                                return (
+                                                    <div className="py-10 flex flex-col items-center justify-center text-center">
+                                                        <Search className="w-7 h-7 text-slate-300 mb-2" />
+                                                        <p className="text-xs font-bold text-slate-400">No students match "{dateStudentSearchQuery}"</p>
+                                                    </div>
+                                                );
+                                            }
+
+                                            // Group by classroom
+                                            const grouped: Record<string, { name: string; entries: typeof filtered }> = {};
+                                            filtered.forEach(e => {
+                                                if (!grouped[e.classroom_id]) {
+                                                    grouped[e.classroom_id] = { name: e.classroom_name, entries: [] };
+                                                }
+                                                grouped[e.classroom_id].entries.push(e);
+                                            });
+
+                                            return (
+                                                <div className="divide-y divide-slate-100 dark:divide-slate-800/40">
+                                                    {Object.entries(grouped).map(([cid, group]) => (
+                                                        <div key={cid}>
+                                                            {/* Batch sub-header */}
+                                                            <div className="px-5 py-2.5 bg-slate-50/70 dark:bg-slate-800/40 flex items-center gap-2">
+                                                                <School className="w-3.5 h-3.5 text-[#ecb613]" />
+                                                                <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest">{group.name}</span>
+                                                                <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-wider">{group.entries.length} student{group.entries.length !== 1 ? 's' : ''}</span>
+                                                            </div>
+                                                            {/* Students */}
+                                                            <div className="divide-y divide-slate-50 dark:divide-slate-800/20">
+                                                                {group.entries.map((entry) => {
+                                                                    const attKey = `${entry.student.id}_${entry.classroom_id}`;
+                                                                    const status = dateAttendanceMap[attKey];
+                                                                    return (
+                                                                        <div
+                                                                            key={attKey}
+                                                                            className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/20 transition-colors"
+                                                                        >
+                                                                            <div className="flex items-center gap-3">
+                                                                                <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                                                                                    {entry.student.profile_pic_url ? (
+                                                                                        <img src={entry.student.profile_pic_url} alt={entry.student.name} className="w-full h-full object-cover" />
+                                                                                    ) : (
+                                                                                        <span className="text-[#ecb613] font-black text-sm">{entry.student.name.charAt(0)}</span>
+                                                                                    )}
+                                                                                </div>
+                                                                                <div>
+                                                                                    <h6 className="font-extrabold text-slate-900 dark:text-white text-sm leading-tight">{entry.student.name}</h6>
+                                                                                    {entry.isMakeup && (
+                                                                                        <span className="text-[9px] font-black text-blue-500 uppercase tracking-wider">Makeup Session</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                            {/* Attendance buttons */}
+                                                                            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-end">
+                                                                                {([
+                                                                                    { key: 'present' as const, label: 'Present', shortLabel: 'P', activeClass: 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 border-emerald-500', inactiveClass: 'border-emerald-100 text-emerald-600 dark:border-emerald-950/20' },
+                                                                                    { key: 'absent' as const, label: 'Absent', shortLabel: 'A', activeClass: 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 border-rose-500', inactiveClass: 'border-rose-100 text-rose-600 dark:border-rose-950/20' },
+                                                                                    { key: 'late' as const, label: 'Late', shortLabel: 'L', activeClass: 'bg-amber-500 text-white shadow-lg shadow-amber-500/25 border-amber-500', inactiveClass: 'border-amber-100 text-amber-600 dark:border-amber-950/20' },
+                                                                                    { key: 'excused' as const, label: 'Excused', shortLabel: 'E', activeClass: 'bg-slate-600 text-white shadow-lg shadow-slate-600/25 border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-750' }
+                                                                                ]).map(opt => {
+                                                                                    const isActive = status === opt.key;
+                                                                                    return (
+                                                                                        <button
+                                                                                            key={opt.key}
+                                                                                            onClick={() => handleMarkDateAttendance(entry.student.id, entry.classroom_id, opt.key)}
+                                                                                            className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all duration-200 ${
+                                                                                                isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800`
+                                                                                            }`}
+                                                                                        >
+                                                                                            <span className="hidden sm:inline">{opt.label}</span>
+                                                                                            <span className="sm:hidden">{opt.shortLabel}</span>
+                                                                                        </button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+
+                                    {/* ── Section B: Individual Student History Search ── */}
                                     <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                                        <div className="flex items-center gap-2 mb-0.5">
+                                            <BookOpen className="w-4 h-4 text-[#ecb613]" />
+                                            <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight text-sm">Individual History Lookup</h4>
+                                        </div>
                                         <div className="relative">
                                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                                             <input 
@@ -1909,8 +2204,8 @@ export default function AttendancePage() {
                                         )}
                                     </div>
 
-                                    {/* Report Display Panel */}
-                                    {selectedStudent ? (
+                                    {/* Report Display Panel (student history) */}
+                                    {selectedStudent && (
                                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
                                             {/* Profile Header & Custom Date Inputs */}
                                             <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2081,14 +2376,6 @@ export default function AttendancePage() {
                                                     </div>
                                                 )}
                                             </div>
-                                        </div>
-                                    ) : (
-                                        <div className="bg-white dark:bg-slate-900 p-12 rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-center">
-                                            <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-4">
-                                                <User className="w-8 h-8 text-slate-300" />
-                                            </div>
-                                            <h5 className="font-extrabold text-slate-400 tracking-tight">No student selected</h5>
-                                            <p className="text-xs text-slate-400 mt-1">Please search and select a student above to construct their range-query logs.</p>
                                         </div>
                                     )}
                                 </div>
