@@ -113,6 +113,30 @@ if (typeof window !== 'undefined') {
             return { data: { user: null }, error: err as any };
         }
     };
+ 
+    // 2.5 Wrap signOut with error handling so it always succeeds locally
+    const originalSignOut = supabaseAuth.auth.signOut.bind(supabaseAuth.auth);
+    supabaseAuth.auth.signOut = async (options?: any) => {
+        try {
+            return await originalSignOut(options);
+        } catch (err) {
+            console.warn('KFA Auth: SignOut failed on server, clearing locally:', err);
+            try {
+                return await originalSignOut({ scope: 'local' });
+            } catch (fallbackErr) {
+                console.error('KFA Auth: Fallback SignOut failed:', fallbackErr);
+                // Hard reset local tokens
+                if (typeof window !== 'undefined') {
+                    localStorage.removeItem('kfa-auth-token');
+                    localStorage.removeItem('kfa-user-role');
+                    try {
+                        sessionStorage.removeItem('kfa_user_session_id');
+                    } catch (e) {}
+                }
+                return { error: fallbackErr as any };
+            }
+        }
+    };
 
     // 3. Invalidate cache on any auth state change (sign-in, sign-out, token refresh).
     //    This ensures a newly logged-in user always gets a fresh session.
