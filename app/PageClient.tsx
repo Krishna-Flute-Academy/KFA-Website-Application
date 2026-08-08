@@ -26,6 +26,15 @@ const heroImages = [
     `/hero-image-2.jpg`,
 ];
 
+const formatDateString = (dateString: string) => {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return 'Recent';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+};
+
 // Blog Section Component
 const BlogSection = ({
     visible,
@@ -93,7 +102,7 @@ const BlogSection = ({
                                 <h3 className="text-xl lg:text-2xl font-bold text-blue-900 group-hover:text-blue-700 transition-colors line-clamp-2 whitespace-normal">{post?.title || 'Untitled Post'}</h3>
                                 <p className="text-sm md:text-base text-blue-800 leading-relaxed line-clamp-3 whitespace-normal">{post?.excerpt || ''}</p>
                                 <div className="flex items-center justify-between text-xs text-blue-600 pt-2">
-                                    <span>{post?.created_at ? new Date(post.created_at).toLocaleDateString() : 'Recent'}</span>
+                                    <span>{post?.created_at ? formatDateString(post.created_at) : 'Recent'}</span>
                                     <span className="flex items-center space-x-1"><span>{post?.view_count || 0} views</span></span>
                                 </div>
                                 <span className="flex items-center space-x-2 text-sm font-semibold text-yellow-600 group-hover:text-yellow-700 transition-colors pt-2">
