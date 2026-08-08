@@ -7,6 +7,7 @@ import { Loader2, Save, ArrowLeft } from 'lucide-react';
 import TeacherSidebar from '../../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../../src/components/TeacherHeader';
 import Link from 'next/link';
+import ImageUploadWithCrop from '../../../../../src/components/teacher-dashboard/ImageUploadWithCrop';
 
 interface Classroom {
     id: string;
@@ -276,11 +277,18 @@ export default function EditStudentPage() {
                                     Back to Profile
                                 </Link>
                             </div>
-
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+<div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                                 <div className="h-1.5 w-full bg-[#ecb613]"></div>
                                 <form className="p-10" onSubmit={handleSubmit}>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                                        <div className="space-y-2 md:col-span-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Profile Picture</label>
+                                            <ImageUploadWithCrop
+                                                value={formData.profilePicUrl}
+                                                onChange={(url) => setFormData({ ...formData, profilePicUrl: url })}
+                                                studentId={studentId}
+                                            />
+                                        </div>
                                         <div className="space-y-2">
                                             <label className="text-sm font-bold text-slate-700 block">Full Name</label>
                                             <input
@@ -324,16 +332,7 @@ export default function EditStudentPage() {
                                                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                             />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Profile Picture URL</label>
-                                            <input
-                                                type="url"
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
-                                                placeholder="https://example.com/photo.jpg"
-                                                value={formData.profilePicUrl}
-                                                onChange={(e) => setFormData({ ...formData, profilePicUrl: e.target.value })}
-                                            />
-                                        </div>
+                                        
                                         <div className="space-y-2">
                                             <label className="text-sm font-bold text-slate-700 block">Experience Level</label>
                                             <div className="relative">

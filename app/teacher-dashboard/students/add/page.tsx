@@ -7,6 +7,7 @@ import { Loader2, Plus, ArrowLeft } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
+import ImageUploadWithCrop from '../../../../src/components/teacher-dashboard/ImageUploadWithCrop';
 
 interface Classroom {
     id: string;
@@ -26,6 +27,7 @@ function generateUUID() {
 
 export default function AddStudentPage() {
     const router = useRouter();
+    const [studentId] = useState(() => generateUUID());
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string; role?: string } | null>(null);
@@ -127,7 +129,7 @@ export default function AddStudentPage() {
             const { data: userData, error: userError } = await supabaseAuth
                 .from('users')
                 .insert([{
-                    id: generateUUID(),
+                    id: studentId,
                     name: formData.fullName,
                     email: formData.email,
                     phone: formData.phone,
@@ -385,14 +387,12 @@ export default function AddStudentPage() {
                                                 </div>
                                             </>
                                         )}
-                                        <div className="space-y-2 md:col-span-2">
-                                            <label className="text-sm font-bold text-slate-700 block">Profile Picture URL</label>
-                                            <input
-                                                type="url"
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
-                                                placeholder="https://example.com/photo.jpg"
+                                                                                <div className="space-y-2 md:col-span-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Profile Picture</label>
+                                            <ImageUploadWithCrop
                                                 value={formData.profilePicUrl}
-                                                onChange={(e) => setFormData({ ...formData, profilePicUrl: e.target.value })}
+                                                onChange={(url) => setFormData({ ...formData, profilePicUrl: url })}
+                                                studentId={studentId}
                                             />
                                         </div>
                                         <div className="space-y-2 md:col-span-2">
