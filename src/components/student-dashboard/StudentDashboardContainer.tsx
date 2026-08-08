@@ -2182,21 +2182,33 @@ export default function StudentDashboardContainer() {
 
                                     let bannerType: 'overdue' | 'due' | 'warning' | 'upcoming' | null = null;
                                     let bannerTitle = '';
-                                    let bannerMessage = '';
+                                    let bannerMessage: React.ReactNode = '';
                                     let showButton = true;
+                                    let buttonText = 'Pay Now';
 
-                                    if (classesLeft <= 0) {
+                                    if (feeStatus.status === 'due' || feeStatus.status === 'overdue') {
+                                        const isDue = feeStatus.status === 'due';
+                                        bannerType = isDue ? 'due' : 'overdue';
+                                        buttonText = 'Pay Fees';
+                                        
+                                        if (classesLeft > 0) {
+                                            bannerTitle = isDue ? 'Monthly Fee Due Today' : 'Monthly Fee Overdue';
+                                            bannerMessage = (
+                                                <span className="block leading-relaxed">
+                                                    Your monthly fee is {isDue ? 'due today' : 'overdue'}. Please complete the payment to continue your classes.
+                                                    <br />
+                                                    You still have <strong className="font-black">{classesLeft} pending class{classesLeft > 1 ? 'es' : ''}</strong> from your current cycle. These classes must be completed within the applicable month and <strong className="font-black">do not extend or postpone your next fee payment date</strong>.
+                                                </span>
+                                            );
+                                        } else {
+                                            bannerTitle = isDue ? 'Monthly Fee Due Today' : 'Monthly Fee Overdue';
+                                            bannerMessage = `Your monthly fee is ${isDue ? 'due today' : 'overdue'}. Please complete the payment to continue your classes.`;
+                                        }
+                                    } else if (classesLeft <= 0) {
                                         bannerType = 'overdue';
                                         bannerTitle = 'Action Required: 4 Classes Completed';
                                         bannerMessage = 'Your 4 classes are over. Please pay your fees to continue attending.';
-                                    } else if (feeStatus.status === 'overdue') {
-                                        bannerType = 'overdue';
-                                        bannerTitle = 'Action Required: Fee Overdue';
-                                        bannerMessage = 'Your monthly fee is overdue. Please submit your fees to keep your account active.';
-                                    } else if (feeStatus.status === 'due') {
-                                        bannerType = 'due';
-                                        bannerTitle = 'Reminder: Fee Due Today';
-                                        bannerMessage = 'Your monthly fee is due today. Please make a payment to continue classes.';
+                                        buttonText = 'Pay Fees';
                                     } else if (classesLeft === 1) {
                                         bannerType = 'warning';
                                         bannerTitle = 'Reminder: 1 Class Remaining';
@@ -2206,6 +2218,7 @@ export default function StudentDashboardContainer() {
                                         bannerType = 'upcoming';
                                         bannerTitle = 'Upcoming Fee Payment';
                                         bannerMessage = `Your monthly fee is due on ${feeStatus.formattedDueDate}.`;
+                                        buttonText = 'Pay Fees';
                                     }
 
                                     if (!bannerType) return null;
@@ -2218,7 +2231,7 @@ export default function StudentDashboardContainer() {
                                     let iconColor = '';
                                     let Icon = Clock;
 
-                                    if (bannerType === 'overdue') {
+                                    if (bannerType === 'overdue' || bannerType === 'due') {
                                         bgClass = 'bg-rose-50';
                                         borderClass = 'border-rose-500';
                                         titleColor = 'text-rose-800';
@@ -2226,7 +2239,7 @@ export default function StudentDashboardContainer() {
                                         btnClass = 'bg-rose-600 hover:bg-rose-700 text-white';
                                         iconColor = 'text-rose-600 bg-rose-100';
                                         Icon = AlertTriangle;
-                                    } else if (bannerType === 'due' || bannerType === 'warning') {
+                                    } else if (bannerType === 'warning') {
                                         bgClass = 'bg-amber-50';
                                         borderClass = 'border-amber-500';
                                         titleColor = 'text-amber-800';
@@ -2245,14 +2258,14 @@ export default function StudentDashboardContainer() {
                                     }
 
                                     return (
-                                        <div className={`${bgClass} border border-l-4 ${borderClass} py-2.5 px-4 rounded-xl flex items-center justify-between gap-4 shadow-xs relative overflow-hidden`}>
+                                        <div className={`${bgClass} border border-l-4 ${borderClass} py-3 px-4 rounded-xl flex ${bannerType === 'due' || bannerType === 'overdue' ? 'items-start' : 'items-center'} justify-between gap-4 shadow-xs relative overflow-hidden`}>
                                             <div className="flex items-center gap-3 min-w-0 text-left">
                                                 <div className={`p-1.5 ${iconColor} rounded-full shrink-0 relative z-10`}>
                                                     <Icon className="w-4 h-4" />
                                                 </div>
                                                 <div className="min-w-0">
                                                     <p className={`text-xs font-bold ${titleColor} leading-none`}>{bannerTitle}</p>
-                                                    <p className={`text-[11px] mt-0.5 font-medium truncate ${msgColor}`}>
+                                                    <p className={`text-[11px] mt-0.5 font-medium ${bannerType === 'due' || bannerType === 'overdue' ? '' : 'truncate'} ${msgColor}`}>
                                                         {bannerMessage}
                                                     </p>
                                                 </div>
@@ -2262,7 +2275,7 @@ export default function StudentDashboardContainer() {
                                                     onClick={() => setActiveTab('fees')}
                                                     className={`text-[10px] font-black px-3.5 py-1.5 rounded-lg transition-all active:scale-95 shadow-xs shrink-0 inline-flex items-center gap-1 uppercase tracking-wider ${btnClass}`}
                                                 >
-                                                    Pay Now <ChevronRight className="w-3 h-3" />
+                                                    {buttonText} <ChevronRight className="w-3 h-3" />
                                                 </button>
                                             )}
                                         </div>

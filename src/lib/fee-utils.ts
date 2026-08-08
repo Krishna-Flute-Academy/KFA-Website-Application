@@ -97,10 +97,36 @@ export function getStudentFeeStatus(
     const nextDueDate = getClampedDate(year, month + 1, feesCollectionDay);
     nextDueDate.setHours(0, 0, 0, 0);
 
+    // Helper to find which due date is closest to the payment date
+    const getClosestDueDate = (pDate: Date, collectionDay: number) => {
+        const pYear = pDate.getFullYear();
+        const pMonth = pDate.getMonth();
+        
+        const options = [
+            getClampedDate(pYear, pMonth - 1, collectionDay),
+            getClampedDate(pYear, pMonth, collectionDay),
+            getClampedDate(pYear, pMonth + 1, collectionDay)
+        ];
+        
+        let closest = options[0];
+        let minDiff = Math.abs(pDate.getTime() - options[0].getTime());
+        
+        for (let i = 1; i < options.length; i++) {
+            const diff = Math.abs(pDate.getTime() - options[i].getTime());
+            if (diff < minDiff) {
+                minDiff = diff;
+                closest = options[i];
+            }
+        }
+        closest.setHours(0, 0, 0, 0);
+        return closest;
+    };
+
     const hasPaidCurr = approvedPayments.some(p => {
         const pDate = new Date(p.payment_date);
         pDate.setHours(0, 0, 0, 0);
-        return pDate > prevDueDate;
+        const closestDue = getClosestDueDate(pDate, feesCollectionDay);
+        return closestDue.getTime() === currDueDate.getTime();
     });
 
     let activeDueDate: Date;

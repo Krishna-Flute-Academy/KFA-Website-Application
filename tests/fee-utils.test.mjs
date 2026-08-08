@@ -124,3 +124,19 @@ test('handles year rollover when the next due date is in January', () => {
   assert.equal(result.formattedDueDate, '31 January');
   assert.equal(localDateString(result.dueDate), '2027-01-31');
 });
+
+test('does not advance due date to next month for a late payment of the previous cycle', () => {
+  // Collection day: 1. Today is August 8, 2026.
+  // Student paid on July 2, 2026 (1 day late for their July 1st due date).
+  // The next due date should be August 1st, 2026 (and status should be overdue since they haven't paid for August yet).
+  const result = getStudentFeeStatus(
+    'monthly',
+    1,
+    [{ payment_date: '2026-07-02' }],
+    new Date('2026-08-08T12:00:00')
+  );
+
+  assert.equal(result.status, 'overdue');
+  assert.equal(localDateString(result.dueDate), '2026-08-01');
+  assert.equal(result.formattedDueDate, '1 August');
+});
