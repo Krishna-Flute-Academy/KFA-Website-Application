@@ -24,6 +24,7 @@ interface StudentInfo {
     fees_amount?: number;
     fees_collection_date?: number | null;
     fees_classes_paid?: number;
+    status?: string;
 }
 
 interface Submission {
@@ -159,6 +160,11 @@ export default function StudentProfilePage() {
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
 
+    const [allClassrooms, setAllClassrooms] = useState<any[]>([]);
+    const [showReactivateModal, setShowReactivateModal] = useState(false);
+    const [reactivateBatchId, setReactivateBatchId] = useState('');
+    const [isReactivating, setIsReactivating] = useState(false);
+
     const formatDate = (date: Date) => {
         const d = new Date(date);
         let month = '' + (d.getMonth() + 1);
@@ -204,6 +210,10 @@ export default function StudentProfilePage() {
                 const userRole = cachedRole || profile?.role;
                 setTeacherProfile(profile ? { ...profile, role: userRole } : null);
 
+                // Fetch classrooms for reallocation
+                const { data: rooms } = await supabaseAuth.from('classrooms').select('id, name');
+                if (rooms) setAllClassrooms(rooms);
+
                 // 3. Fetch Student Details directly from users table
                 const { data: userData, error: userError } = await supabaseAuth
                     .from('users')
@@ -212,6 +222,7 @@ export default function StudentProfilePage() {
                         name,
                         email,
                         phone,
+                        status,
                         join_date, 
                         level, 
                         notes,
@@ -252,11 +263,12 @@ export default function StudentProfilePage() {
                     name: userData.name || 'Unknown',
                     email: userData.email || '',
                     phone: userData.phone || '',
+                    status: userData.status || 'active',
                     join_date: userData.join_date,
                     level: userData.level || 'beginner',
                     notes: userData.notes || '',
                     profile_pic_url: userData.profile_pic_url,
-                    batch_name: batch_name || 'Unassigned',
+                    batch_name: (userData.status === 'archived' || userData.status === 'inactive') ? (batch_name || 'KFA Learning Circle') : (batch_name || 'Unassigned'),
                     fees_basis: userData.fees_basis,
                     fees_amount: userData.fees_amount,
                     fees_collection_date: userData.fees_collection_date,
@@ -428,6 +440,115 @@ export default function StudentProfilePage() {
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/');
+    };
+
+    const handleToggleArchive = async () => {
+        if (!studentInfo) return;
+        const isArchived = studentInfo.status === 'archived' || studentInfo.status === 'inactive';
+
+        if (isArchived) {
+            const defaultRoom = allClassrooms.find(c => !c.name.toLowerCase().includes('learning circle'))?.id || allClassrooms[0]?.id || '';
+            setReactivateBatchId(defaultRoom);
+            setShowReactivateModal(true);
+            return;
+        }
+
+        if (!confirm(`Archive ${studentInfo.name}? They will be automatically assigned to KFA Learning Circle and excluded from regular active batch operations.`)) return;
+
+        try {
+            const { error: userError } = await supabaseAuth
+                .from('users')
+                .update({ status: 'inactive' })
+                .eq('id', studentId);
+
+            if (userError) {
+                console.error('User update error:', userError);
+                throw new Error(userError.message || userError.details || 'Failed to update user status');
+            }
+
+            let circleRoomId: string | null = null;
+            const { data: circleRoom } = await supabaseAuth
+                .from('classrooms')
+                .select('id')
+                .ilike('name', '%Learning Circle%')
+                .maybeSingle();
+
+            if (circleRoom) {
+                circleRoomId = circleRoom.id;
+            } else {
+                // Auto-create KFA Learning Circle classroom if not found
+                const { data: newRoom, error: createErr } = await supabaseAuth
+                    .from('classrooms')
+                    .insert([{
+                        name: 'KFA Learning Circle',
+                        type: 'learning_circle',
+                        description: 'Community & Self-Paced Learning Circle for KFA Alumni & Inactive Students',
+                        status: 'active'
+                    }])
+                    .select('id')
+                    .single();
+
+                if (createErr) console.error('Error creating KFA Learning Circle:', createErr);
+                if (newRoom) circleRoomId = newRoom.id;
+            }
+
+            if (circleRoomId) {
+                await supabaseAuth.from('classroom_students').delete().eq('student_id', studentId);
+                const { error: insertErr } = await supabaseAuth.from('classroom_students').insert([{
+                    classroom_id: circleRoomId,
+                    student_id: studentId,
+                    joined_at: new Date().toISOString()
+                }]);
+                if (insertErr) console.error('Error linking to KFA Learning Circle:', insertErr);
+            }
+
+            setReloadTrigger(prev => prev + 1);
+            alert('Student archived and moved to KFA Learning Circle!');
+        } catch (err: any) {
+            console.error('Error toggling archival state:', err);
+            alert(`Error: ${err.message || err.details || (typeof err === 'object' ? JSON.stringify(err) : String(err))}`);
+        }
+    };
+
+    const confirmReactivateStudent = async () => {
+        if (!reactivateBatchId || !studentInfo) return;
+
+        setIsReactivating(true);
+        try {
+            const { error: userErr } = await supabaseAuth
+                .from('users')
+                .update({ status: 'active' })
+                .eq('id', studentId);
+
+            if (userErr) throw userErr;
+
+            await supabaseAuth
+                .from('classroom_students')
+                .delete()
+                .eq('student_id', studentId);
+
+            const { error: roomErr } = await supabaseAuth
+                .from('classroom_students')
+                .insert([{
+                    classroom_id: reactivateBatchId,
+                    student_id: studentId,
+                    joined_at: new Date().toISOString()
+                }]);
+
+            if (roomErr) console.error('Error assigning classroom during reactivation:', roomErr);
+
+            const roomName = allClassrooms.find(c => c.id === reactivateBatchId)?.name || 'Active Batch';
+
+            setShowReactivateModal(false);
+            setReactivateBatchId('');
+            setReloadTrigger(prev => prev + 1);
+            alert(`Student ${studentInfo.name} reactivated and allocated to ${roomName}!`);
+        } catch (err: any) {
+            console.error('Error reactivating student:', err);
+            alert(`Error reactivating student: ${err.message || err.details || String(err)}`);
+        } finally {
+            setIsReactivating(false);
+        }
     };
 
     // Populate form states when selectedStudentTask changes
@@ -874,6 +995,9 @@ export default function StudentProfilePage() {
                                 <div className="flex items-center gap-2 mb-1.5">
                                     <h1 className="text-2xl font-bold text-slate-900 leading-none">{studentInfo.name}</h1>
                                     <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">ID: #{studentInfo.id.slice(0, 4).toUpperCase()}</span>
+                                    {teacherProfile?.role === 'admin' && (studentInfo.status === 'archived' || studentInfo.status === 'inactive') && (
+                                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">Archived / Inactive</span>
+                                    )}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
                                     <span className="flex items-center gap-1.5 font-medium"><Music className="size-4" /> {studentInfo.batch_name}</span>
@@ -881,7 +1005,7 @@ export default function StudentProfilePage() {
                                 </div>
                             </div>
                         </div>
-                        <div className="flex gap-3">
+                        <div className="flex gap-3 flex-wrap">
                             {teacherProfile?.role !== 'student' && (
                                 <>
                                     <button 
@@ -896,6 +1020,21 @@ export default function StudentProfilePage() {
                                     >
                                         <Edit className="size-4" /> Edit Profile
                                     </Link>
+                                    {teacherProfile?.role === 'admin' && (
+                                        <button
+                                            onClick={handleToggleArchive}
+                                            className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all text-sm flex items-center gap-2 ${
+                                                studentInfo.status === 'archived' || studentInfo.status === 'inactive'
+                                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                                    : 'bg-amber-600 hover:bg-amber-700 text-white'
+                                            }`}
+                                        >
+                                            <span className="material-symbols-outlined text-sm">
+                                                {studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'unarchive' : 'archive'}
+                                            </span>
+                                            {studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'Reactivate Student' : 'Archive Student'}
+                                        </button>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -1989,6 +2128,57 @@ export default function StudentProfilePage() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+            {/* ─── Reactivate Student Modal ─────────────────────────────────────── */}
+            {showReactivateModal && studentInfo && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6">
+                            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-4">
+                                <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-2xl">unarchive</span>
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Reactivate Student</h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                                You are reactivating <span className="font-bold text-slate-700 dark:text-slate-300">{studentInfo.name}</span>. Please select which classroom batch to allocate them to:
+                            </p>
+                            
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Target Classroom Batch</label>
+                                <select
+                                    value={reactivateBatchId}
+                                    onChange={e => setReactivateBatchId(e.target.value)}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none font-bold"
+                                >
+                                    <option value="" disabled>Select classroom batch...</option>
+                                    {allClassrooms
+                                        .filter(room => !room.name.toLowerCase().includes('learning circle'))
+                                        .map(room => (
+                                            <option key={room.id} value={room.id}>{room.name}</option>
+                                        ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                            <button 
+                                onClick={() => { setShowReactivateModal(false); setReactivateBatchId(''); }}
+                                disabled={isReactivating}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={confirmReactivateStudent}
+                                disabled={isReactivating || !reactivateBatchId}
+                                className="px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-md disabled:opacity-50 flex items-center gap-2">
+                                {isReactivating ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <span className="material-symbols-outlined text-lg">unarchive</span>
+                                )}
+                                {isReactivating ? 'Reactivating...' : 'Reactivate & Allocate'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

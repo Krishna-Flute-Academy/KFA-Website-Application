@@ -26,6 +26,7 @@ interface StudentProfile {
     fees_amount?: number | null;
     fees_classes_paid?: number | null;
     fees_collection_date?: number | null;
+    status?: string;
 }
 
 interface ClassroomInfo {
@@ -85,6 +86,7 @@ interface OverviewTabProps {
     broadcasts: Broadcast[];
     unreadAdminBroadcasts: any[];
     setActiveTab: (tab: 'overview' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library') => void;
+    onNavigateToFeed?: (feed: { type: 'category' | 'chat'; id: string; name: string }) => void;
     handleDismissAdminBroadcast: (id: string) => void;
     levelLabel: string;
     attendancePct: number | null;
@@ -114,6 +116,7 @@ export default function OverviewTab({
     broadcasts,
     unreadAdminBroadcasts,
     setActiveTab,
+    onNavigateToFeed,
     handleDismissAdminBroadcast,
     levelLabel,
     attendancePct,
@@ -245,13 +248,16 @@ export default function OverviewTab({
                                 </span>
                             </div>
                             <p className="text-xs font-bold text-slate-800 mt-0.5 truncate">
-                                {unreadAdminBroadcasts[0].subject} — <span className="font-semibold text-slate-500">{unreadAdminBroadcasts[0].content}</span>
+                                {unreadAdminBroadcasts[0].subject} — <span className="font-semibold text-slate-500">{stripHtml(unreadAdminBroadcasts[0].content)}</span>
                             </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                         <button
-                            onClick={() => setActiveTab('messages')}
+                            onClick={() => {
+                                onNavigateToFeed?.({ type: 'category', id: 'announcements', name: 'Announcements' });
+                                setActiveTab('messages');
+                            }}
                             className="text-[10px] font-black text-[#7C5E3F] hover:text-[#5c442c] transition-colors"
                         >
                             Read
@@ -355,9 +361,9 @@ export default function OverviewTab({
                                 </div>
                                 <div>
                                     <p className="text-[7px] md:text-[8px] font-bold text-white/60 uppercase tracking-wider leading-none">
-                                        {classroom.type === 'temporary' ? 'Temporary Class' : 'Active Batch'}
+                                        {profile?.status === 'archived' || profile?.status === 'inactive' ? 'Learning Circle' : classroom.type === 'temporary' ? 'Temporary Class' : 'Active Batch'}
                                     </p>
-                                    <p className="text-[10px] md:text-xs font-black mt-0.5">{classroom.name} · {classroom.teacher_name}</p>
+                                    <p className="text-[10px] md:text-xs font-black mt-0.5">{classroom.name || 'KFA Learning Circle'}{classroom.teacher_name ? ` · ${classroom.teacher_name}` : ''}</p>
                                 </div>
                             </div>
                         )}
@@ -832,11 +838,20 @@ export default function OverviewTab({
                                 <p className="text-[11px] text-slate-400 text-center py-6">No recent notices.</p>
                             ) : (
                                 dashboardBroadcasts.slice(0, 3).map((b) => (
-                                    <div key={b.id} className="text-left py-2 border-b border-[#E6E1DA]/30 last:border-0 last:pb-0 flex justify-between items-start gap-3">
+                                    <div 
+                                        key={b.id} 
+                                        onClick={() => {
+                                            const feedId = b.sender?.role === 'admin' ? 'announcements' : 'classroom';
+                                            const feedName = b.sender?.role === 'admin' ? 'Announcements' : 'Class Announcements';
+                                            onNavigateToFeed?.({ type: 'category', id: feedId, name: feedName });
+                                            setActiveTab('messages');
+                                        }}
+                                        className="text-left py-2 border-b border-[#E6E1DA]/30 last:border-0 last:pb-0 flex justify-between items-start gap-3 cursor-pointer hover:bg-[#FAF5EE]/60 px-2 py-1.5 rounded-xl transition-all"
+                                    >
                                         <div className="min-w-0 flex-1">
                                             <h4 className="font-extrabold text-[11px] text-[#3E3A35] truncate">{b.subject}</h4>
                                             <p className="text-[9px] text-[#9A958E] font-medium mt-0.5 line-clamp-1">
-                                                {b.content}
+                                                {stripHtml(b.content)}
                                             </p>
                                         </div>
                                         <span className="text-[9px] text-[#9A958E] font-bold shrink-0">

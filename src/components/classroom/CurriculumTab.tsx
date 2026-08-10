@@ -39,7 +39,7 @@ interface CurriculumTabProps {
         statusLabel: string;
     };
     setSelectedTopic: (lesson: any) => void;
-    openAllocationDrawer: (lesson: any) => void;
+    openAllocationDrawer: (type: 'level' | 'chapter' | 'topic', item: any) => void;
     livePreviewData: any;
     selectedStudentPermissions: any;
     syllabusLessons: any[];
@@ -489,6 +489,17 @@ export default function CurriculumTab({
                                                                                         >
                                                                                             <CheckCircle className="size-3.5" />
                                                                                         </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            title="Manage level pacing & student allocations"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                openAllocationDrawer('level', mod);
+                                                                                            }}
+                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                        >
+                                                                                            <Sliders className="size-3.5" />
+                                                                                        </button>
                                                                                     </div>
                                                                                 )}
 
@@ -596,6 +607,17 @@ export default function CurriculumTab({
                                                                                             title="Complete Level (Complete all chapters and topics)"
                                                                                         >
                                                                                             <CheckCircle className="size-3.5" />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            title="Manage level pacing & student allocations"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                openAllocationDrawer('level', mod);
+                                                                                            }}
+                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                        >
+                                                                                            <Sliders className="size-3.5" />
                                                                                         </button>
                                                                                     </div>
                                                                                 )}
@@ -739,6 +761,17 @@ export default function CurriculumTab({
                                                                                                             title="Complete Chapter (Complete all topics)"
                                                                                                         >
                                                                                                             <CheckCircle className="size-3" />
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            title="Manage chapter pacing & student allocations"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                openAllocationDrawer('chapter', chap);
+                                                                                                            }}
+                                                                                                            className="p-1 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                                        >
+                                                                                                            <Sliders className="size-3" />
                                                                                                         </button>
                                                                                                     </div>
                                                                                                 )}
@@ -919,7 +952,7 @@ export default function CurriculumTab({
                                                                                                     title="Manage pacing overrides"
                                                                                                     onClick={() => {
                                                                                                         if (isUpdating) return;
-                                                                                                        openAllocationDrawer(lesson);
+                                                                                                        openAllocationDrawer('topic', lesson);
                                                                                                     }}
                                                                                                     className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-855 hover:bg-[#ecb613]/10 hover:text-[#ecb613] hover:border-[#ecb613]/30 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-transparent transition-all cursor-pointer"
                                                                                                 >

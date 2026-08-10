@@ -365,6 +365,32 @@ export default function ClassroomDashboardPage({
         await handleSendClassMessageAction();
     };
 
+    const handleDeleteAnnouncement = async (broadcastId: string, subject: string, content: string) => {
+        const confirmed = window.confirm('Are you sure you want to delete this announcement? It will be removed from all Admin, Teacher, and Student dashboards.');
+        if (!confirmed) return;
+
+        try {
+            await supabaseAuth.from('broadcasts').delete().eq('id', broadcastId);
+            await supabaseAuth.from('broadcast_reads').delete().eq('broadcast_id', broadcastId);
+            await supabaseAuth.from('notifications').delete().eq('title', subject.trim()).eq('message', content.trim());
+
+            setClassBroadcasts(prev => prev.filter(b => b.id !== broadcastId));
+            setSelectedAnnouncement(null);
+            setMessageNotification({
+                type: 'success',
+                text: 'Announcement deleted successfully across all dashboards.'
+            });
+            setTimeout(() => setMessageNotification(null), 4000);
+        } catch (err: any) {
+            console.error('Failed to delete classroom announcement:', err);
+            setMessageNotification({
+                type: 'error',
+                text: `Failed to delete announcement: ${err.message || 'Error'}`
+            });
+            setTimeout(() => setMessageNotification(null), 4000);
+        }
+    };
+
     const formatDuration = (sec: number) => {
         const mins = Math.floor(sec / 60);
         const secs = sec % 60;
@@ -486,6 +512,7 @@ export default function ClassroomDashboardPage({
     // Allocation Manager Drawer states
     const [isAllocationDrawerOpen, setIsAllocationDrawerOpen] = useState(false);
     const [allocationTargetLesson, setAllocationTargetLesson] = useState<any | null>(null);
+    const [allocationTargetItemType, setAllocationTargetItemType] = useState<'level' | 'chapter' | 'topic'>('topic');
     const [allocationTargetType, setAllocationTargetType] = useState<'classwide' | 'individual'>('classwide');
     const [allocationStatus, setAllocationStatus] = useState<'locked' | 'unlocked' | 'completed'>('locked');
     const [allocationSelectedStudents, setAllocationSelectedStudents] = useState<string[]>([]);
@@ -511,29 +538,56 @@ export default function ClassroomDashboardPage({
         }
     };
 
-    const openAllocationDrawer = (lesson: any) => {
-        setAllocationTargetLesson(lesson);
+    const openAllocationDrawer = (type: 'level' | 'chapter' | 'topic', item: any) => {
+        setAllocationTargetLesson(item);
+        setAllocationTargetItemType(type);
         const targetType = 'individual';
         setAllocationTargetType(targetType);
 
+        let affectedLessonIds: string[] = [];
+        if (type === 'level') {
+            const chaptersInMod = courseChapters.filter(c => c.module_id === item.id);
+            const chapterIds = chaptersInMod.map(c => c.id);
+            const lessonsInMod = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
+            affectedLessonIds = lessonsInMod.map(l => l.id);
+        } else if (type === 'chapter') {
+            const lessonsInChap = courseLessons.filter(l => l.chapter_id === item.id);
+            affectedLessonIds = lessonsInChap.map(l => l.id);
+        } else if (type === 'topic') {
+            affectedLessonIds = [item.id];
+        }
+
         let initialStatus: 'locked' | 'unlocked' | 'completed' = 'locked';
-        const progressForLesson = studentProgress.filter(p => p.lesson_id === lesson.id);
+        const progressForLessons = studentProgress.filter(p => affectedLessonIds.includes(p.lesson_id));
         
         if (selectedStudentForCurriculum) {
-            const studentProgressRow = progressForLesson.find(p => p.student_id === selectedStudentForCurriculum.student_id);
-            if (studentProgressRow) {
-                initialStatus = studentProgressRow.status;
+            const studentProgressRows = progressForLessons.filter(p => p.student_id === selectedStudentForCurriculum.student_id);
+            if (studentProgressRows.length > 0) {
+                const hasUnlocked = studentProgressRows.some(p => p.status === 'unlocked' || p.status === 'completed');
+                const allCompleted = affectedLessonIds.length > 0 && affectedLessonIds.every(id => 
+                    studentProgressRows.some(p => p.lesson_id === id && p.status === 'completed')
+                );
+                if (allCompleted) {
+                    initialStatus = 'completed';
+                } else if (hasUnlocked) {
+                    initialStatus = 'unlocked';
+                }
             }
         }
 
         setAllocationStatus(initialStatus);
 
+        const studentStatuses = getStudentStatuses(type, item.id);
+        const allocatedOrCompletedStudents = studentStatuses
+            .filter(s => s.status === 'completed' || s.status === 'in_progress' || s.status === 'locked')
+            .map(s => s.studentId);
+
         const currentSelected = selectedStudentForCurriculum
             ? Array.from(new Set([
                 selectedStudentForCurriculum.student_id,
-                ...progressForLesson.filter(p => p.status === 'completed').map(p => p.student_id)
+                ...allocatedOrCompletedStudents
               ]))
-            : progressForLesson.filter(p => p.status === 'completed').map(p => p.student_id);
+            : allocatedOrCompletedStudents;
 
         setAllocationSelectedStudents(currentSelected);
         setIsAllocationDrawerOpen(true);
@@ -2875,7 +2929,8 @@ export default function ClassroomDashboardPage({
     const handleSaveAllocation = async () => {
         if (!allocationTargetLesson || !classroomId) return;
         setIsSavingAllocation(true);
-        const lessonId = allocationTargetLesson.id;
+        const targetId = allocationTargetLesson.id;
+        const itemType = allocationTargetItemType;
 
         const activeStudentIds = [
             ...students.map(s => s.student_id),
@@ -2895,26 +2950,47 @@ export default function ClassroomDashboardPage({
             return;
         }
 
+        let affectedLessonIds: string[] = [];
+        if (itemType === 'level') {
+            const chaptersInMod = courseChapters.filter(c => c.module_id === targetId);
+            const chapterIds = chaptersInMod.map(c => c.id);
+            const lessonsInMod = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
+            affectedLessonIds = lessonsInMod.map(l => l.id);
+        } else if (itemType === 'chapter') {
+            const lessonsInChap = courseLessons.filter(l => l.chapter_id === targetId);
+            affectedLessonIds = lessonsInChap.map(l => l.id);
+        } else if (itemType === 'topic') {
+            affectedLessonIds = [targetId];
+        }
+
+        if (affectedLessonIds.length === 0) {
+            alert('No topics found in this item.');
+            setIsSavingAllocation(false);
+            return;
+        }
+
+        const itemTypeName = itemType === 'level' ? 'level' : itemType === 'chapter' ? 'chapter' : 'topic';
+
         if (allocationStatus === 'completed') {
             if (allocationTargetType === 'classwide') {
                 targetStudentIds = targetStudentIds.filter(studentId => {
-                    const statuses = getStudentStatuses('topic', lessonId);
+                    const statuses = getStudentStatuses(itemType, targetId);
                     const match = statuses.find(s => s.studentId === studentId);
                     return match && match.status !== 'not_allocated';
                 });
 
                 if (targetStudentIds.length === 0) {
-                    alert('No students in this class have this topic allocated to them.');
+                    alert(`No students in this class have this ${itemTypeName} allocated to them.`);
                     setIsSavingAllocation(false);
                     return;
                 }
 
-                if (!window.confirm(`Are you sure you want to mark this topic complete for all ${targetStudentIds.length} allocated students?`)) {
+                if (!window.confirm(`Are you sure you want to mark this ${itemTypeName} complete for all ${targetStudentIds.length} allocated students?`)) {
                     setIsSavingAllocation(false);
                     return;
                 }
             } else {
-                if (!window.confirm(`Are you sure you want to mark this topic complete for the selected students?`)) {
+                if (!window.confirm(`Are you sure you want to mark this ${itemTypeName} complete for the selected students?`)) {
                     setIsSavingAllocation(false);
                     return;
                 }
@@ -2922,25 +2998,39 @@ export default function ClassroomDashboardPage({
         } else {
             const actionVerb = allocationStatus === 'locked' ? 'lock' : 'unlock';
             const scope = allocationTargetType === 'classwide' ? 'the entire class' : `${targetStudentIds.length} selected student(s)`;
-            if (!window.confirm(`Are you sure you want to ${actionVerb} this topic for ${scope}?`)) {
+            if (!window.confirm(`Are you sure you want to ${actionVerb} this ${itemTypeName} for ${scope}?`)) {
                 setIsSavingAllocation(false);
                 return;
             }
         }
 
         try {
-            const rows = targetStudentIds.map(studentId => {
-                const existingRow = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
-                return {
-                    student_id: studentId,
-                    classroom_id: classroomId,
-                    lesson_id: lessonId,
-                    status: allocationStatus,
-                    unlocked_by: 'manual',
-                    unlocked_at: allocationStatus !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
-                    completed_at: allocationStatus === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
-                };
+            const rows: any[] = [];
+            targetStudentIds.forEach(studentId => {
+                affectedLessonIds.forEach(lessonId => {
+                    if (allocationStatus === 'completed') {
+                        const isAlloc = getStudentStatuses('topic', lessonId).find(s => s.studentId === studentId)?.status !== 'not_allocated';
+                        if (!isAlloc) return;
+                    }
+
+                    const existingRow = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
+                    rows.push({
+                        student_id: studentId,
+                        classroom_id: classroomId,
+                        lesson_id: lessonId,
+                        status: allocationStatus,
+                        unlocked_by: 'manual',
+                        unlocked_at: allocationStatus !== 'locked' ? (existingRow?.unlocked_at || new Date().toISOString()) : null,
+                        completed_at: allocationStatus === 'completed' ? (existingRow?.completed_at || new Date().toISOString()) : null
+                    });
+                });
             });
+
+            if (rows.length === 0) {
+                alert('No student topic progress records to update.');
+                setIsSavingAllocation(false);
+                return;
+            }
 
             const { error } = await supabaseAuth
                 .from('student_topic_progress')
@@ -3826,6 +3916,14 @@ export default function ClassroomDashboardPage({
                         <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 flex-shrink-0">
                             <button
                                 type="button"
+                                onClick={() => handleDeleteAnnouncement(selectedAnnouncement.id, selectedAnnouncement.subject, selectedAnnouncement.content)}
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                                Delete Announcement
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => setSelectedAnnouncement(null)}
                                 className="px-4 py-2 border border-slate-202 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                             >
@@ -4661,10 +4759,12 @@ export default function ClassroomDashboardPage({
                                     <span className="text-[9px] font-black uppercase tracking-wider text-[#ecb613] font-mono font-semibold">Current Target</span>
                                     <div className="p-4 rounded-2xl bg-amber-500/[0.02] border border-amber-500/10 dark:bg-slate-900/60 dark:border-slate-800 space-y-1">
                                         <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-tight">
-                                            {allocationTargetLesson?.title || 'No target selected'}
+                                            {allocationTargetLesson?.title || allocationTargetLesson?.name || 'No target selected'}
                                         </h4>
-                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold leading-none">
-                                            Topic {allocationTargetLesson?.lesson_number || ''} • Level 1
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold leading-none capitalize">
+                                            {allocationTargetItemType === 'level' ? `Level ${allocationTargetLesson?.module_number || ''}` :
+                                             allocationTargetItemType === 'chapter' ? `Chapter ${allocationTargetLesson?.chapter_number || ''}` :
+                                             `Topic ${allocationTargetLesson?.lesson_number || ''}`}
                                         </p>
                                     </div>
                                 </div>
@@ -4686,7 +4786,7 @@ export default function ClassroomDashboardPage({
                                             className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer text-center ${
                                                 allocationTargetType === 'classwide'
                                                     ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-xs'
-                                                    : 'text-slate-400 hover:text-slate-650'
+                                                    : 'text-slate-400 hover:text-slate-655'
                                             }`}
                                         >
                                             Entire Class
@@ -4695,18 +4795,20 @@ export default function ClassroomDashboardPage({
                                             type="button"
                                             onClick={() => {
                                                 setAllocationTargetType('individual');
-                                                const progressForLesson = studentProgress.filter(p => p.lesson_id === allocationTargetLesson?.id);
-                                                const completedStudentIds = progressForLesson.filter(p => p.status === 'completed').map(p => p.student_id);
+                                                const studentStatuses = getStudentStatuses(allocationTargetItemType, allocationTargetLesson?.id);
+                                                const allocatedOrCompletedStudentIds = studentStatuses
+                                                    .filter(s => s.status === 'completed' || s.status === 'in_progress' || s.status === 'locked')
+                                                    .map(s => s.studentId);
                                                 setAllocationSelectedStudents(
                                                     selectedStudentForCurriculum 
-                                                        ? Array.from(new Set([selectedStudentForCurriculum.student_id, ...completedStudentIds]))
-                                                        : completedStudentIds
+                                                        ? Array.from(new Set([selectedStudentForCurriculum.student_id, ...allocatedOrCompletedStudentIds]))
+                                                        : allocatedOrCompletedStudentIds
                                                 );
                                             }}
                                             className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer text-center ${
                                                 allocationTargetType === 'individual'
                                                     ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-xs'
-                                                    : 'text-slate-400 hover:text-slate-650'
+                                                    : 'text-slate-400 hover:text-slate-655'
                                             }`}
                                         >
                                             Selected Students
@@ -4730,7 +4832,7 @@ export default function ClassroomDashboardPage({
                                     <div className="space-y-3">
                                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">Select Students</span>
                                         <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2 space-y-1 bg-slate-50/50 dark:bg-slate-900/10 custom-scrollbar">
-                                            {allocationTargetLesson && getStudentStatuses('topic', allocationTargetLesson.id).map(student => {
+                                            {allocationTargetLesson && getStudentStatuses(allocationTargetItemType, allocationTargetLesson.id).map(student => {
                                                 const isChecked = allocationSelectedStudents.includes(student.studentId);
                                                 return (
                                                     <label 
@@ -4783,10 +4885,12 @@ export default function ClassroomDashboardPage({
                                 )}
 
                                 <div className="space-y-3">
-                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">Change Topic Pacing State</span>
+                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">
+                                        Change {allocationTargetItemType === 'level' ? 'Level' : allocationTargetItemType === 'chapter' ? 'Chapter' : 'Topic'} Pacing State
+                                    </span>
                                     <div className="grid grid-cols-3 gap-2">
                                         {([
-                                            { key: 'locked', label: 'Lock Topic', border: 'border-slate-200 dark:border-slate-800', active: 'bg-slate-100 border-slate-400 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300' },
+                                            { key: 'locked', label: `Lock ${allocationTargetItemType === 'level' ? 'Level' : allocationTargetItemType === 'chapter' ? 'Chapter' : 'Topic'}`, border: 'border-slate-200 dark:border-slate-800', active: 'bg-slate-100 border-slate-400 text-slate-700 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300' },
                                             { key: 'unlocked', label: 'Unlock/Active', border: 'border-amber-200 dark:border-amber-850', active: 'bg-amber-50 border-amber-400 text-amber-700 dark:bg-amber-955/20 dark:border-amber-600 dark:text-amber-300' },
                                             { key: 'completed', label: 'Mark Complete', border: 'border-emerald-200 dark:border-emerald-850', active: 'bg-emerald-50 border-emerald-400 text-emerald-700 dark:bg-emerald-955/10 dark:border-emerald-600 dark:text-emerald-350' }
                                         ] as const).map(opt => {

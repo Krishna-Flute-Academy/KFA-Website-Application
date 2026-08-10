@@ -743,6 +743,7 @@ export default function AttendancePage() {
                     .from('users')
                     .select('id, name, profile_pic_url')
                     .or('role.eq.student,role.eq.pending')
+                    .eq('status', 'active')
                     .ilike('name', `%${searchQuery}%`);
                 
                 const { data } = teacherProfile.role === 'admin'
@@ -984,7 +985,8 @@ export default function AttendancePage() {
             const studentsQuery = supabaseAuth
                 .from('users')
                 .select('id')
-                .or('role.eq.student,role.eq.pending');
+                .or('role.eq.student,role.eq.pending')
+                .eq('status', 'active');
 
             const { data: studentsData, error: studentsErr } = teacherProfile.role === 'admin'
                 ? await studentsQuery

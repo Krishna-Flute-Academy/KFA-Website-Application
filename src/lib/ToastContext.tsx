@@ -238,9 +238,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                         </h3>
 
                         {/* Message body */}
-                        <div className="text-sm sm:text-base text-slate-300 leading-relaxed mb-6 font-medium max-h-48 overflow-y-auto pr-2 scrollbar-thin select-text">
-                            {activePopup.message}
-                        </div>
+                        <div 
+                            className="text-sm sm:text-base text-slate-300 leading-relaxed mb-6 font-medium max-h-60 overflow-y-auto pr-2 scrollbar-thin select-text text-left w-full"
+                            dangerouslySetInnerHTML={{ __html: activePopup.message }}
+                        />
 
                         {/* CTA Action button */}
                         <button

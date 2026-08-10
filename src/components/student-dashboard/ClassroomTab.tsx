@@ -425,11 +425,13 @@ export default function ClassroomTab({
                                         {classroom.type === 'temporary' ? '⚡ ' : '🏫 '}
                                         {classroom.name}
                                         <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full font-mono font-black align-middle ${
-                                            classroom.type === 'temporary' 
-                                                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20' 
-                                                : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20'
+                                            classroom.type === 'learning_circle'
+                                                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20'
+                                                : classroom.type === 'temporary' 
+                                                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20' 
+                                                    : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20'
                                         }`}>
-                                            {classroom.type === 'temporary' ? 'Temporary' : 'Permanent'}
+                                            {classroom.type === 'learning_circle' ? 'Learning Circle' : classroom.type === 'temporary' ? 'Temporary' : 'Permanent'}
                                         </span>
                                     </>
                                 ) : 'Classroom Portal'}
@@ -1057,9 +1059,10 @@ export default function ClassroomTab({
                                                         })}
                                                     </span>
                                                 </div>
-                                                <p className="text-xs text-slate-650 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                                                    {broadcast.content}
-                                                </p>
+                                                <div 
+                                                    className="text-xs text-slate-650 dark:text-slate-300 leading-relaxed overflow-x-auto"
+                                                    dangerouslySetInnerHTML={{ __html: broadcast.content }}
+                                                />
                                             </article>
                                         );
                                     })}

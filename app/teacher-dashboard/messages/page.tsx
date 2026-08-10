@@ -13,6 +13,7 @@ import {
     Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe, Eye,
     FolderPlus, Edit, MessageSquare, ArrowLeft, Trash2, CheckCheck
 } from 'lucide-react';
+import RichTextEditor from '../../../src/components/common/RichTextEditor';
 
 interface Broadcast {
     id: string;
@@ -1012,6 +1013,22 @@ function MessagesDashboardContent() {
                     }
                 }
             )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'broadcasts' },
+                (payload) => {
+                    if (payload.eventType === 'DELETE' && payload.old) {
+                        const oldId = (payload.old as any).id;
+                        setBroadcasts(prev => prev.filter(b => b.id !== oldId));
+                    } else if (payload.eventType === 'INSERT' && payload.new) {
+                        const newB = payload.new as any;
+                        setBroadcasts(prev => {
+                            if (prev.some(b => b.id === newB.id)) return prev;
+                            return [newB, ...prev];
+                        });
+                    }
+                }
+            )
             .subscribe();
         return () => {
             supabaseAuth.removeChannel(channel);
@@ -1282,6 +1299,49 @@ function MessagesDashboardContent() {
             showToast('An unexpected issue occurred while sending.', 'error');
         } finally {
             setIsSending(false);
+        }
+    };
+
+    // ── Delete Broadcast Handler ──────────────────────────────────────────────
+    const handleDeleteBroadcast = async (broadcastId: string, subject: string, content: string) => {
+        const confirmed = window.confirm('Are you sure you want to delete this announcement? It will be removed from all Admin, Teacher, and Student dashboards.');
+        if (!confirmed) return;
+
+        try {
+            // 1. Delete from broadcasts table
+            const { error: deleteBError } = await supabaseAuth
+                .from('broadcasts')
+                .delete()
+                .eq('id', broadcastId);
+
+            if (deleteBError) {
+                console.error('Error deleting broadcast row:', deleteBError);
+            }
+
+            // 2. Delete associated broadcast_reads
+            await supabaseAuth
+                .from('broadcast_reads')
+                .delete()
+                .eq('broadcast_id', broadcastId);
+
+            // 3. Delete matching notifications for target students
+            await supabaseAuth
+                .from('notifications')
+                .delete()
+                .eq('title', subject.trim())
+                .eq('message', content.trim());
+
+            // 4. Update local state & localStorage fallback
+            setBroadcasts(prev => {
+                const updated = prev.filter(b => b.id !== broadcastId);
+                localStorage.setItem('kfa_local_broadcasts', JSON.stringify(updated));
+                return updated;
+            });
+
+            showToast('Announcement deleted successfully across all dashboards.', 'success');
+        } catch (err: any) {
+            console.error('Failed to delete broadcast:', err);
+            showToast(`Failed to delete announcement: ${err.message || 'Error occurred'}`, 'error');
         }
     };
 
@@ -2204,22 +2264,12 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
 
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Message Content</label>
-                                            <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden flex flex-col bg-white dark:bg-slate-900">
-                                                {/* Mock Editor Toolbar */}
-                                                <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex gap-4 text-slate-400 dark:text-slate-500 text-xs select-none">
-                                                    <span className="font-bold cursor-pointer hover:text-slate-800 dark:text-slate-200">B</span>
-                                                    <span className="italic cursor-pointer hover:text-slate-800 dark:text-slate-200 font-serif">I</span>
-                                                    <span className="cursor-pointer hover:text-slate-800 dark:text-slate-200">List</span>
-                                                    <span className="cursor-pointer hover:text-slate-800 dark:text-slate-200">Link</span>
-                                                    <span className="cursor-pointer hover:text-slate-800 dark:text-slate-200">Img</span>
-                                                </div>
-                                                <textarea 
-                                                    className="p-4 text-xs font-semibold leading-relaxed text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:text-slate-500 resize-none h-44 outline-none border-none bg-white" 
-                                                    placeholder={messageType === 'broadcast' ? "Write your broadcast message here..." : "Write your normal replyable chat message here..."}
-                                                    value={content}
-                                                    onChange={(e) => setContent(e.target.value)}
-                                                />
-                                            </div>
+                                            <RichTextEditor 
+                                                value={content}
+                                                onChange={setContent}
+                                                placeholder={messageType === 'broadcast' ? "Write your rich broadcast message here..." : "Write your normal replyable chat message here..."}
+                                                minHeight="200px"
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -2269,7 +2319,7 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                     </span>
                                                 </div>
                                                 <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">{bc.subject}</h4>
-                                                <p className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl">{bc.content}</p>
+                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl overflow-x-auto" dangerouslySetInnerHTML={{ __html: bc.content }} />
                                                 {(bc as any).audio_attachment && (
                                                     <div className="flex items-center gap-2 mt-3 select-none">
                                                         <button 
@@ -2329,10 +2379,18 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                     <button
                                                         type="button"
                                                         onClick={() => handleLoadForResend(bc)}
-                                                        className="mt-1 text-[10px] font-extrabold text-[#ecb613] hover:text-[#d49f0e] transition-colors flex items-center gap-1 hover:underline"
+                                                        className="mt-1 text-[10px] font-extrabold text-[#ecb613] hover:text-[#d49f0e] transition-colors flex items-center gap-1 hover:underline cursor-pointer"
                                                     >
                                                         <Edit className="w-3 h-3" />
                                                         Edit & Resend
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteBroadcast(bc.id, bc.subject, bc.content)}
+                                                        className="mt-1.5 text-[10px] font-extrabold text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 transition-colors flex items-center gap-1 hover:underline cursor-pointer"
+                                                    >
+                                                        <Trash2 className="w-3 h-3" />
+                                                        Delete Announcement
                                                     </button>
                                                 </div>
                                             </div>

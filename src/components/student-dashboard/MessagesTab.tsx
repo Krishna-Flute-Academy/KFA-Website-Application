@@ -24,6 +24,11 @@ interface Classmate {
     profile_pic_url: string | null;
 }
 
+const stripHtml = (html: string) => {
+    if (!html) return '';
+    return html.replace(/<[^>]*>?/gm, '');
+};
+
 interface ClassroomInfo {
     id: string;
     name: string;
@@ -49,6 +54,7 @@ interface MessagesTabProps {
     admins?: any[];
     notifications?: any[];
     setNotifications?: React.Dispatch<React.SetStateAction<any[]>>;
+    selectedFeedProp?: { type: 'category' | 'chat'; id: string; name: string } | null;
 }
 
 export default function MessagesTab({
@@ -62,12 +68,19 @@ export default function MessagesTab({
     profile,
     admins = [],
     notifications = [],
-    setNotifications
+    setNotifications,
+    selectedFeedProp
 }: MessagesTabProps) {
     // Selection state: can be a category id or a contact object
     const [selectedFeed, setSelectedFeed] = useState<{ type: 'category' | 'chat'; id: string; name: string }>(
-        { type: 'category', id: 'classroom', name: 'Class Announcements' }
+        selectedFeedProp || { type: 'category', id: 'classroom', name: 'Class Announcements' }
     );
+
+    useEffect(() => {
+        if (selectedFeedProp) {
+            setSelectedFeed(selectedFeedProp);
+        }
+    }, [selectedFeedProp]);
     
     const [leftSearch, setLeftSearch] = useState('');
     const [rightSearch, setRightSearch] = useState('');
@@ -621,7 +634,7 @@ export default function MessagesTab({
                                                 <span className="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate">{notif.title}</span>
                                                 <span className="text-[9px] font-bold text-amber-600 shrink-0">{new Date(notif.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
                                             </div>
-                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">{notif.message}</p>
+                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">{stripHtml(notif.message)}</p>
                                         </button>
                                     );
                                 })}
@@ -682,9 +695,10 @@ export default function MessagesTab({
                                             </span>
                                         </div>
 
-                                        <p className="text-xs text-slate-655 dark:text-slate-350 leading-relaxed whitespace-pre-wrap">
-                                            {b.content}
-                                        </p>
+                                        <div 
+                                            className="text-xs text-slate-655 dark:text-slate-350 leading-relaxed overflow-x-auto"
+                                            dangerouslySetInnerHTML={{ __html: b.content }}
+                                        />
 
                                         {/* Audio Voice Note attachment */}
                                         {b.audio_attachment && (

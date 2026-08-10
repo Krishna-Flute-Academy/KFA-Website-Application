@@ -58,7 +58,7 @@ export default function StudentDirectory() {
     const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
     const [claimTeacherId, setClaimTeacherId] = useState('');
     const [selectedBatch, setSelectedBatch] = useState<string>('All Batches');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived' | 'inactive'>('active');
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
 
@@ -329,10 +329,10 @@ export default function StudentDirectory() {
                             user_id: s.id,
                             name: s.name,
                             student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
-                            batch: s.classroom_students?.[0]?.classrooms?.name || 'Unassigned',
+                            batch: (s.status === 'archived' || s.status === 'inactive') ? (s.classroom_students?.[0]?.classrooms?.name || 'KFA Learning Circle') : (s.classroom_students?.[0]?.classrooms?.name || 'Unassigned'),
                             attendance_pct: attendancePct,
                             profile_pic_url: s.profile_pic_url,
-                            status: s.status === 'active' ? 'Active' : 'Inactive',
+                            status: (s.status === 'archived' || s.status === 'inactive') ? 'Archived' : 'Active',
                             pacing_status: calculatedStatus,
                             is_online: onlineUserIds.has(s.id),
                             created_at: s.created_at,
@@ -636,23 +636,135 @@ export default function StudentDirectory() {
         }
     };
 
+    const [showReactivateModal, setShowReactivateModal] = useState<StudentData | null>(null);
+    const [reactivateBatchId, setReactivateBatchId] = useState('');
+    const [isReactivating, setIsReactivating] = useState(false);
+
     const toggleStudentStatus = async (studentId: string, currentStatus: string) => {
-        const newStatus = currentStatus === 'Active' ? 'inactive' : 'active';
-        
+        const isArchiving = currentStatus === 'Active';
+        const student = students.find(s => s.id === studentId);
+
+        if (!isArchiving) {
+            if (student) {
+                const defaultRoom = classrooms.find(c => !c.name.toLowerCase().includes('learning circle'))?.id || classrooms[0]?.id || '';
+                setReactivateBatchId(defaultRoom);
+                setShowReactivateModal(student);
+            }
+            return;
+        }
+
+        if (!confirm(`Archive ${student?.name || 'this student'}? They will be automatically assigned to KFA Learning Circle.`)) {
+            return;
+        }
+
         // Optimistic update
-        setStudents(prev => prev.map(s => s.id === studentId ? { ...s, status: newStatus === 'active' ? 'Active' : 'Inactive' } : s));
+        setStudents(prev => prev.map(s => {
+            if (s.id === studentId) {
+                return {
+                    ...s,
+                    status: 'Archived',
+                    batch: 'KFA Learning Circle'
+                };
+            }
+            return s;
+        }));
 
         try {
-            const { error } = await supabaseAuth
+            const { error: userError } = await supabaseAuth
                 .from('users')
-                .update({ status: newStatus })
+                .update({ status: 'inactive' })
                 .eq('id', studentId);
                 
-            if (error) throw error;
-        } catch (err) {
+            if (userError) throw userError;
+
+            let circleRoomId: string | null = null;
+            const { data: circleRoom } = await supabaseAuth
+                .from('classrooms')
+                .select('id')
+                .ilike('name', '%Learning Circle%')
+                .maybeSingle();
+
+            if (circleRoom) {
+                circleRoomId = circleRoom.id;
+            } else {
+                const { data: newRoom } = await supabaseAuth
+                    .from('classrooms')
+                    .insert([{
+                        name: 'KFA Learning Circle',
+                        type: 'learning_circle',
+                        description: 'Community & Self-Paced Learning Circle for KFA Alumni & Inactive Students',
+                        status: 'active'
+                    }])
+                    .select('id')
+                    .single();
+
+                if (newRoom) circleRoomId = newRoom.id;
+            }
+
+            if (circleRoomId) {
+                await supabaseAuth
+                    .from('classroom_students')
+                    .delete()
+                    .eq('student_id', studentId);
+
+                await supabaseAuth
+                    .from('classroom_students')
+                    .insert([{
+                        classroom_id: circleRoomId,
+                        student_id: studentId,
+                        joined_at: new Date().toISOString()
+                    }]);
+            }
+        } catch (err: any) {
             console.error('Error updating status:', err);
+            alert(`Error updating status: ${err.message || err.details || String(err)}`);
             // Revert on error
             setStudents(prev => prev.map(s => s.id === studentId ? { ...s, status: currentStatus } : s));
+        }
+    };
+
+    const confirmReactivateStudent = async () => {
+        if (!showReactivateModal || !reactivateBatchId) return;
+
+        setIsReactivating(true);
+        try {
+            const targetStudentId = showReactivateModal.id;
+
+            const { error: userErr } = await supabaseAuth
+                .from('users')
+                .update({ status: 'active' })
+                .eq('id', targetStudentId);
+
+            if (userErr) throw userErr;
+
+            await supabaseAuth
+                .from('classroom_students')
+                .delete()
+                .eq('student_id', targetStudentId);
+
+            const { error: roomErr } = await supabaseAuth
+                .from('classroom_students')
+                .insert([{
+                    classroom_id: reactivateBatchId,
+                    student_id: targetStudentId,
+                    joined_at: new Date().toISOString()
+                }]);
+
+            if (roomErr) console.error('Error assigning classroom during reactivation:', roomErr);
+
+            const roomName = classrooms.find(c => c.id === reactivateBatchId)?.name || 'Active Batch';
+
+            setStudents(prev => prev.map(s => s.id === targetStudentId ? { ...s, status: 'Active', batch: roomName } : s));
+
+            const studentName = showReactivateModal.name;
+            setShowReactivateModal(null);
+            setReactivateBatchId('');
+            alert(`Student ${studentName} reactivated and allocated to ${roomName}!`);
+        } catch (err: any) {
+            console.error('Error reactivating student:', err);
+            alert(`Error reactivating student: ${err.message || err.details || String(err)}`);
+        } finally {
+            setIsReactivating(false);
         }
     };
 
@@ -1019,7 +1131,11 @@ export default function StudentDirectory() {
             }
 
             if (statusFilter !== 'all') {
-                result = result.filter(s => s.status.toLowerCase() === statusFilter);
+                if (statusFilter === 'archived' || statusFilter === 'inactive') {
+                    result = result.filter(s => s.status.toLowerCase() === 'archived' || s.status.toLowerCase() === 'inactive');
+                } else {
+                    result = result.filter(s => s.status.toLowerCase() === statusFilter);
+                }
             }
         }
 
@@ -1307,6 +1423,58 @@ export default function StudentDirectory() {
                                     <span className="material-symbols-outlined text-lg">check_circle</span>
                                 )}
                                 {claimingId === showClaimModal.id ? 'Approving...' : 'Approve & Assign'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Reactivate Student Modal ─────────────────────────────────────── */}
+            {showReactivateModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6">
+                            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-4">
+                                <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-2xl">unarchive</span>
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Reactivate Student</h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                                You are reactivating <span className="font-bold text-slate-700 dark:text-slate-300">{showReactivateModal.name}</span>. Please select which classroom batch to allocate them to:
+                            </p>
+                            
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Target Classroom Batch</label>
+                                <select
+                                    value={reactivateBatchId}
+                                    onChange={e => setReactivateBatchId(e.target.value)}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none font-bold"
+                                >
+                                    <option value="" disabled>Select classroom batch...</option>
+                                    {classrooms
+                                        .filter(room => !room.name.toLowerCase().includes('learning circle'))
+                                        .map(room => (
+                                            <option key={room.id} value={room.id}>{room.name}</option>
+                                        ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                            <button 
+                                onClick={() => { setShowReactivateModal(null); setReactivateBatchId(''); }}
+                                disabled={isReactivating}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={confirmReactivateStudent}
+                                disabled={isReactivating || !reactivateBatchId}
+                                className="px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-all shadow-md disabled:opacity-50 flex items-center gap-2">
+                                {isReactivating ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <span className="material-symbols-outlined text-lg">unarchive</span>
+                                )}
+                                {isReactivating ? 'Reactivating...' : 'Reactivate & Allocate'}
                             </button>
                         </div>
                     </div>
@@ -1749,11 +1917,11 @@ export default function StudentDirectory() {
                                                     <span className="text-[10px] text-slate-400 font-bold uppercase select-none mr-2">Status:</span>
                                                     <select 
                                                         value={statusFilter} 
-                                                        onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')} 
+                                                        onChange={(e) => setStatusFilter(e.target.value as any)} 
                                                         className="text-xs font-bold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 py-1 pl-1 pr-6 cursor-pointer flex-1 outline-none">
                                                         <option value="all">All Status</option>
                                                         <option value="active">Active Only</option>
-                                                        <option value="inactive">Inactive Only</option>
+                                                        <option value="archived">Archived / Inactive</option>
                                                     </select>
                                                 </div>
                                             </div>

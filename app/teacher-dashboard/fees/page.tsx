@@ -136,7 +136,8 @@ export default function FeesManagementDashboard() {
                         classrooms(name)
                     )
                 `)
-                .or('role.eq.student,role.eq.pending');
+                .or('role.eq.student,role.eq.pending')
+                .eq('status', 'active');
 
             if (studentsError) throw studentsError;
 

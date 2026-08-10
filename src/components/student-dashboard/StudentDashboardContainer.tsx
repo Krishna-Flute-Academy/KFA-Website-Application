@@ -42,6 +42,7 @@ interface StudentProfile {
     fees_amount?: number | null;
     fees_classes_paid?: number | null;
     fees_collection_date?: number | null;
+    status?: string;
 }
 
 interface EnrichedAssignment {
@@ -227,6 +228,7 @@ export default function StudentDashboardContainer() {
     }, [courseModules, allocatedModuleIds, courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
 
     const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees' | 'policies' | 'settings'>('overview');
+    const [selectedMessagesFeed, setSelectedMessagesFeed] = useState<{ type: 'category' | 'chat'; id: string; name: string } | null>(null);
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>('metronome');
@@ -241,6 +243,12 @@ export default function StudentDashboardContainer() {
             return () => clearTimeout(timer);
         }
     }, [loading]);
+
+    useEffect(() => {
+        if ((profile?.status === 'archived' || profile?.status === 'inactive') && activeTab === 'fees') {
+            setActiveTab('overview');
+        }
+    }, [profile?.status, activeTab]);
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
@@ -391,7 +399,7 @@ export default function StudentDashboardContainer() {
                 adminsRes
             ] = await Promise.all([
                 // 1. Profile
-                supabaseAuth.from('users').select('id, name, email, phone, level, profile_pic_url, role, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date').eq('id', userId).maybeSingle(),
+                supabaseAuth.from('users').select('id, name, email, phone, level, profile_pic_url, role, status, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date').eq('id', userId).maybeSingle(),
 
                 // 2. Payments
                 supabaseAuth.from('fees_payments').select('*').eq('student_id', userId).order('payment_date', { ascending: false }),
@@ -479,6 +487,14 @@ export default function StudentDashboardContainer() {
                 if (cls) {
                     classroomId = cls.id;
                 }
+            } else if (user?.status === 'archived' || user?.status === 'inactive') {
+                cls = {
+                    id: 'kfa-learning-circle',
+                    name: 'KFA Learning Circle',
+                    description: 'Community & Self-Paced Learning Circle',
+                    type: 'learning_circle',
+                    teacher_name: 'Krishna Flute Academy'
+                };
             }
 
             // Session student overrides
@@ -1977,7 +1993,12 @@ export default function StudentDashboardContainer() {
                             { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
                             { id: 'policies', label: 'Academy Policies', icon: Scroll },
                             { id: 'settings', label: 'Profile Settings', icon: User },
-                        ].map((item) => {
+                        ].filter(item => {
+                            if (item.id === 'fees' && (profile?.status === 'archived' || profile?.status === 'inactive')) {
+                                return false;
+                            }
+                            return true;
+                        }).map((item) => {
                             const Icon = item.icon;
                             const active = activeTab === item.id;
                             const hasUnreadMessages = item.id === 'messages' && unreadMessageCount > 0;
@@ -2172,7 +2193,7 @@ export default function StudentDashboardContainer() {
                         )}
 
                         {/* Fee Notification Banner */}
-                        {feeStatus && activeTab !== 'fees' && profile && (
+                        {feeStatus && activeTab !== 'fees' && profile && profile.status !== 'archived' && profile.status !== 'inactive' && (
                             <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                 {(() => {
                                     const classesLeft = profile.fees_classes_paid || 0;
@@ -2294,6 +2315,7 @@ export default function StudentDashboardContainer() {
                                     broadcasts={broadcasts}
                                     unreadAdminBroadcasts={unreadAdminBroadcasts}
                                     setActiveTab={setActiveTab}
+                                    onNavigateToFeed={setSelectedMessagesFeed}
                                     handleDismissAdminBroadcast={handleDismissAdminBroadcast}
                                     levelLabel={levelLabel}
                                     attendancePct={attendancePct}
@@ -2394,6 +2416,7 @@ export default function StudentDashboardContainer() {
                                     admins={admins}
                                     notifications={notifications}
                                     setNotifications={setNotifications}
+                                    selectedFeedProp={selectedMessagesFeed}
                                 />
                             </div>
                         )}
@@ -2424,7 +2447,7 @@ export default function StudentDashboardContainer() {
                             </div>
                         )}
 
-                        {profile && (renderBackgroundTabs || activeTab === 'fees') && (
+                        {profile && profile.status !== 'archived' && profile.status !== 'inactive' && (renderBackgroundTabs || activeTab === 'fees') && (
                             <div style={{ display: activeTab === 'fees' ? 'block' : 'none' }}>
                                 <FeesTab
                                     profile={profile}

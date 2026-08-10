@@ -317,14 +317,16 @@ export default function TeacherDashboardContainer() {
                 const { count } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending');
+                    .or('role.eq.student,role.eq.pending')
+                    .eq('status', 'active');
                 studentsCount = count || 0;
             } else {
                 const { count } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
                     .or('role.eq.student,role.eq.pending')
-                    .eq('teacher_id', userId);
+                    .eq('teacher_id', userId)
+                    .eq('status', 'active');
                 studentsCount = count || 0;
             }
 
