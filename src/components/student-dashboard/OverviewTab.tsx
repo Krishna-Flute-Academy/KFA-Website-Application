@@ -841,8 +841,24 @@ export default function OverviewTab({
                                     <div 
                                         key={b.id} 
                                         onClick={() => {
-                                            const feedId = b.sender?.role === 'admin' ? 'announcements' : 'classroom';
-                                            const feedName = b.sender?.role === 'admin' ? 'Announcements' : 'Class Announcements';
+                                            let feedId = 'announcements';
+                                            let feedName = 'Announcements';
+                                            if (b.channel === 'custom_groups') {
+                                                feedId = 'custom_groups';
+                                                feedName = 'Group Announcements';
+                                            } else if (b.channel === 'classroom' || (!b.channel && b.sender?.role !== 'admin')) {
+                                                feedId = 'classroom';
+                                                feedName = 'Class Announcements';
+                                            } else if (b.channel === 'new_joiners') {
+                                                feedId = 'new_joiners';
+                                                feedName = 'New Joiners Notices';
+                                            } else if (b.channel === 'fee_management') {
+                                                feedId = 'fee_management';
+                                                feedName = 'Fee & Payments';
+                                            } else if (b.channel === 'voice') {
+                                                feedId = 'voice';
+                                                feedName = 'Voice Notes & Tones';
+                                            }
                                             onNavigateToFeed?.({ type: 'category', id: feedId, name: feedName });
                                             setActiveTab('messages');
                                         }}

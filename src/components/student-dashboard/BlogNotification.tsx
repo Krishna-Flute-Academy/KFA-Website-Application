@@ -13,12 +13,13 @@ interface BlogPost {
     excerpt?: string;
     featured_image?: string;
     published_at?: string | null;
+    target_url?: string;
 }
 
 interface YouTubeVideo {
     videoId: string;
     title: string;
-    published: string;
+    published?: string;
     description?: string;
     thumbnail: string;
     url: string;
@@ -26,6 +27,7 @@ interface YouTubeVideo {
 
 interface BlogNotificationProps {
     studentId: string;
+    broadcasts?: any[];
 }
 
 const BLOG_KEY  = 'kfa-student-seen-blog';
@@ -43,7 +45,7 @@ function setSeen(baseKey: string, studentId: string, data: object) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function BlogNotification({ studentId }: BlogNotificationProps) {
+export default function BlogNotification({ studentId, broadcasts }: BlogNotificationProps) {
     const [newPost,  setNewPost]  = useState<BlogPost | null>(null);
     const [newVideo, setNewVideo] = useState<YouTubeVideo | null>(null);
 
@@ -59,22 +61,56 @@ export default function BlogNotification({ studentId }: BlogNotificationProps) {
         if (!studentId) return;
 
         const fetchAll = async () => {
+            let blogBc: any = null;
+            let videoBc: any = null;
+
+            if (broadcasts && broadcasts.length > 0) {
+                blogBc = broadcasts.find((b: any) => 
+                    b.channel === 'blog' || b.recipients?.some((r: any) => r._meta && r.type === 'blog')
+                );
+                videoBc = broadcasts.find((b: any) => 
+                    b.channel === 'video' || b.recipients?.some((r: any) => r._meta && r.type === 'video')
+                );
+            }
+
             // Blog & YouTube in parallel
             const [blogResult, videoResult] = await Promise.allSettled([
-                supabase
-                    .from('blog_posts')
-                    .select('id, title, slug, excerpt, featured_image, published_at')
-                    .eq('published', true)
-                    .order('published_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle(),
-                fetch('/api/latest-youtube-video').then(r => r.ok ? r.json() : null)
+                !blogBc 
+                    ? supabase
+                        .from('blog_posts')
+                        .select('id, title, slug, excerpt, featured_image, published_at')
+                        .eq('published', true)
+                        .order('published_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle()
+                    : Promise.resolve({ data: null }),
+                !videoBc 
+                    ? fetch('/api/latest-youtube-video').then(r => r.ok ? r.json() : null)
+                    : Promise.resolve(null)
             ]);
 
             let hasNew = false;
 
             // Blog
-            if (blogResult.status === 'fulfilled' && blogResult.value.data) {
+            if (blogBc) {
+                const meta = blogBc.recipients?.find((r: any) => r._meta && r.type === 'blog') || {};
+                const post: BlogPost = {
+                    id: blogBc.id,
+                    title: blogBc.subject,
+                    slug: meta.target_url || '/blog',
+                    excerpt: blogBc.content ? blogBc.content.replace(/<[^>]*>?/gm, '') : '',
+                    featured_image: meta.image_url || undefined,
+                    target_url: meta.target_url || '/blog'
+                };
+                const seen = getSeen(BLOG_KEY, studentId);
+                if (seen.popupShown !== post.id) {
+                    setNewPost(post);
+                    hasNew = true;
+                } else if (seen.bannerDismissed !== post.id) {
+                    setShowBlogBanner(true);
+                    setNewPost(post);
+                }
+            } else if (blogResult.status === 'fulfilled' && blogResult.value.data) {
                 const post = blogResult.value.data as BlogPost;
                 const seen = getSeen(BLOG_KEY, studentId);
                 if (seen.popupShown !== post.id) {
@@ -87,7 +123,24 @@ export default function BlogNotification({ studentId }: BlogNotificationProps) {
             }
 
             // YouTube
-            if (videoResult.status === 'fulfilled' && videoResult.value?.videoId) {
+            if (videoBc) {
+                const meta = videoBc.recipients?.find((r: any) => r._meta && r.type === 'video') || {};
+                const video: YouTubeVideo = {
+                    videoId: videoBc.id,
+                    title: videoBc.subject,
+                    description: videoBc.content ? videoBc.content.replace(/<[^>]*>?/gm, '') : '',
+                    thumbnail: meta.image_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80',
+                    url: meta.target_url || 'https://www.youtube.com'
+                };
+                const seen = getSeen(VIDEO_KEY, studentId);
+                if (seen.popupShown !== video.videoId) {
+                    setNewVideo(video);
+                    hasNew = true;
+                } else if (seen.bannerDismissed !== video.videoId) {
+                    setShowVideoBanner(true);
+                    setNewVideo(video);
+                }
+            } else if (videoResult.status === 'fulfilled' && videoResult.value?.videoId) {
                 const video = videoResult.value as YouTubeVideo;
                 const seen = getSeen(VIDEO_KEY, studentId);
                 if (seen.popupShown !== video.videoId) {
@@ -106,7 +159,7 @@ export default function BlogNotification({ studentId }: BlogNotificationProps) {
         };
 
         fetchAll();
-    }, [studentId]);
+    }, [studentId, broadcasts]);
 
     // ── Mark helpers ──────────────────────────────────────────────────────────
 
@@ -149,7 +202,8 @@ export default function BlogNotification({ studentId }: BlogNotificationProps) {
         setShowBlogBanner(false);
         // If video is still new, collapse video to banner
         if (newVideo) { markVideoPopupSeen(); setShowVideoBanner(true); }
-        window.open(`/blog/${newPost.slug || newPost.id}`, '_blank');
+        const destination = newPost.target_url || (newPost.slug ? (newPost.slug.startsWith('http') || newPost.slug.startsWith('/') ? newPost.slug : `/blog/${newPost.slug}`) : '/blog');
+        window.open(destination, '_blank');
     };
 
     const watchVideo = () => {

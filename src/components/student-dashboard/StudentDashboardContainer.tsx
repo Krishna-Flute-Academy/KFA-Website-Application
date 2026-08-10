@@ -2124,7 +2124,59 @@ export default function StudentDashboardContainer() {
                                                 notifications.map((notif) => (
                                                     <div
                                                         key={notif.id}
-                                                        className={`px-4 py-2.5 hover:bg-[#FAF1E6]/50 transition-colors border-b border-[#F5EFE6] last:border-b-0 flex flex-col gap-0.5 text-left ${!notif.is_read ? 'bg-[#FAF5EE]/70 font-medium' : ''}`}
+                                                        onClick={async () => {
+                                                            setShowNotificationsDropdown(false);
+                                                            if (!notif.is_read) {
+                                                                setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+                                                                try {
+                                                                    await supabaseAuth.from('notifications').update({ is_read: true }).eq('id', notif.id);
+                                                                } catch (e) {
+                                                                    console.error('Failed to mark notification read:', e);
+                                                                }
+                                                            }
+
+                                                            const matchingBroadcast = broadcasts.find(b => notif.title === b.subject || notif.message === b.content);
+                                                            if (matchingBroadcast) {
+                                                                let feedId = 'announcements';
+                                                                let feedName = 'Announcements';
+                                                                if (matchingBroadcast.channel === 'custom_groups') {
+                                                                    feedId = 'custom_groups';
+                                                                    feedName = 'Group Announcements';
+                                                                } else if (matchingBroadcast.channel === 'classroom' || (!matchingBroadcast.channel && matchingBroadcast.sender?.role !== 'admin')) {
+                                                                    feedId = 'classroom';
+                                                                    feedName = 'Class Announcements';
+                                                                } else if (matchingBroadcast.channel === 'new_joiners') {
+                                                                    feedId = 'new_joiners';
+                                                                    feedName = 'New Joiners Notices';
+                                                                } else if (matchingBroadcast.channel === 'fee_management') {
+                                                                    feedId = 'fee_management';
+                                                                    feedName = 'Fee & Payments';
+                                                                } else if (matchingBroadcast.channel === 'voice') {
+                                                                    feedId = 'voice';
+                                                                    feedName = 'Voice Notes & Tones';
+                                                                }
+
+                                                                setSelectedMessagesFeed({ type: 'category', id: feedId, name: feedName });
+                                                                setActiveTab('messages');
+                                                                return;
+                                                            }
+
+                                                            const contactTitle = String(notif.title || '').replace(/^New Message:\s*/i, '').trim().toLowerCase();
+                                                            const contact = [
+                                                                ...(classroom?.teacher_id ? [{ id: classroom.teacher_id, name: classroom.teacher_name || 'Academy Instructor' }] : []),
+                                                                ...admins.map((a: any) => ({ id: a.id, name: a.name })),
+                                                                ...classmates.map((c: any) => ({ id: c.id, name: c.name }))
+                                                            ].find(c => c.name.toLowerCase() === contactTitle || c.name.toLowerCase().includes(contactTitle) || contactTitle.includes(c.name.toLowerCase()));
+
+                                                            if (contact) {
+                                                                setSelectedMessagesFeed({ type: 'chat', id: contact.id, name: contact.name });
+                                                                setActiveTab('messages');
+                                                                return;
+                                                            }
+
+                                                            setActiveTab('messages');
+                                                        }}
+                                                        className={`px-4 py-2.5 hover:bg-[#FAF1E6]/80 transition-colors border-b border-[#F5EFE6] last:border-b-0 flex flex-col gap-0.5 text-left cursor-pointer ${!notif.is_read ? 'bg-[#FAF5EE] font-medium' : ''}`}
                                                     >
                                                         <div className="flex justify-between items-start gap-1">
                                                             <span className={`text-xs text-[#3E3A35] ${!notif.is_read ? 'font-bold' : ''}`}>{notif.title}</span>
@@ -2685,7 +2737,7 @@ export default function StudentDashboardContainer() {
 
             {/* Blog Post Notification — popup on first login for new posts, then corner banner */}
             {profile && (
-                <BlogNotification studentId={profile.id} />
+                <BlogNotification studentId={profile.id} broadcasts={broadcasts} />
             )}
         </>
     );

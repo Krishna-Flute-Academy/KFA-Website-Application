@@ -73,7 +73,21 @@ export default function MessagesTab({
 }: MessagesTabProps) {
     // Selection state: can be a category id or a contact object
     const [selectedFeed, setSelectedFeed] = useState<{ type: 'category' | 'chat'; id: string; name: string }>(
-        selectedFeedProp || { type: 'category', id: 'classroom', name: 'Class Announcements' }
+        selectedFeedProp || (() => {
+            const firstUnread = notifications.find(n => !n.is_read);
+            if (firstUnread) {
+                const b = broadcasts.find(bc => bc.subject === firstUnread.title || bc.content === firstUnread.message);
+                if (b) {
+                    if (b.channel === 'custom_groups') return { type: 'category', id: 'custom_groups', name: 'Group Announcements' };
+                    if (b.channel === 'announcements') return { type: 'category', id: 'announcements', name: 'Announcements' };
+                    if (b.channel === 'classroom') return { type: 'category', id: 'classroom', name: 'Class Announcements' };
+                    if (b.channel === 'new_joiners') return { type: 'category', id: 'new_joiners', name: 'New Joiners Notices' };
+                    if (b.channel === 'fee_management') return { type: 'category', id: 'fee_management', name: 'Fee & Payments' };
+                    if (b.channel === 'voice') return { type: 'category', id: 'voice', name: 'Voice Notes & Tones' };
+                }
+            }
+            return { type: 'category', id: 'classroom', name: 'Class Announcements' };
+        })()
     );
 
     useEffect(() => {
@@ -624,9 +638,37 @@ export default function MessagesTab({
                                             key={notif.id}
                                             type="button"
                                             onClick={() => {
-                                                if (!contact) return;
-                                                setSelectedFeed({ type: 'chat', id: contact.id, name: contact.name });
-                                                setRightSearch('');
+                                                const matchingBroadcast = broadcasts.find(b => notif.title === b.subject || notif.message === b.content);
+                                                if (matchingBroadcast) {
+                                                    let feedId = 'announcements';
+                                                    let feedName = 'Announcements';
+                                                    if (matchingBroadcast.channel === 'custom_groups') {
+                                                        feedId = 'custom_groups';
+                                                        feedName = 'Group Announcements';
+                                                    } else if (matchingBroadcast.channel === 'classroom' || (!matchingBroadcast.channel && matchingBroadcast.sender?.role !== 'admin')) {
+                                                        feedId = 'classroom';
+                                                        feedName = 'Class Announcements';
+                                                    } else if (matchingBroadcast.channel === 'new_joiners') {
+                                                        feedId = 'new_joiners';
+                                                        feedName = 'New Joiners Notices';
+                                                    } else if (matchingBroadcast.channel === 'fee_management') {
+                                                        feedId = 'fee_management';
+                                                        feedName = 'Fee & Payments';
+                                                    } else if (matchingBroadcast.channel === 'voice') {
+                                                        feedId = 'voice';
+                                                        feedName = 'Voice Notes & Tones';
+                                                    }
+
+                                                    setSelectedFeed({ type: 'category', id: feedId, name: feedName });
+                                                    setRightSearch(matchingBroadcast.subject);
+                                                    return;
+                                                }
+
+                                                const contact = getNotificationContact(notif);
+                                                if (contact) {
+                                                    setSelectedFeed({ type: 'chat', id: contact.id, name: contact.name });
+                                                    setRightSearch('');
+                                                }
                                             }}
                                             className="min-w-0 text-left rounded-lg border border-amber-200/70 bg-white/70 dark:bg-slate-900/60 dark:border-amber-900/40 p-2.5 hover:bg-white dark:hover:bg-slate-900 transition-colors cursor-pointer"
                                         >

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } fr
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
+import { supabase } from '../../../src/lib/supabase';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { sendClassroomNotification } from '../../../src/lib/notifications';
@@ -11,7 +12,8 @@ import {
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
     Calendar, Check, Copy, Mic, Plus, Info, X, ChevronRight, Globe, Eye,
-    FolderPlus, Edit, MessageSquare, ArrowLeft, Trash2, CheckCheck
+    FolderPlus, Edit, MessageSquare, ArrowLeft, Trash2, CheckCheck,
+    BookOpen, Youtube, RefreshCw, Link2, Image as ImageIcon
 } from 'lucide-react';
 import RichTextEditor from '../../../src/components/common/RichTextEditor';
 
@@ -464,11 +466,187 @@ function MessagesDashboardContent() {
 
     const [subject, setSubject] = useState('');
     const [content, setContent] = useState('');
+    const [targetUrl, setTargetUrl] = useState('');
+    const [targetImage, setTargetImage] = useState('');
+    const [fetchingAutoData, setFetchingAutoData] = useState(false);
     const [isSending, setIsSending] = useState(false);
+
+    const fetchLatestBlogData = useCallback(async () => {
+        setFetchingAutoData(true);
+        try {
+            let post: any = null;
+            const res1 = await supabase
+                .from('blog_posts')
+                .select('id, title, slug, excerpt, content, featured_image')
+                .eq('published', true)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            if (res1.data) post = res1.data;
+
+            if (!post) {
+                const res2 = await supabaseAuth
+                    .from('blog_posts')
+                    .select('id, title, slug, excerpt, content, featured_image')
+                    .eq('published', true)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                if (res2.data) post = res2.data;
+            }
+
+            if (post) {
+                let img = (post.featured_image || '').trim();
+                if (!img && post.content) {
+                    const match = post.content.match(/<img[^>]+src=["']([^"']+)["']/i);
+                    if (match && match[1]) img = match[1];
+                }
+                setSubject(`New Blog: ${post.title}`);
+                setContent(post.excerpt || `Check out our latest blog post: ${post.title}`);
+                setTargetUrl(post.slug ? `/blog/${post.slug}` : `/blog`);
+                setTargetImage(img);
+                showToast('Auto-populated latest Blog Post cover image & data!', 'info');
+                return;
+            }
+
+            setSubject('New Academy Blog Article 📰');
+            setContent('Check out our latest blog article on flute techniques and academy news!');
+            setTargetUrl('/blog');
+            setTargetImage('');
+            showToast('No published blog post found. Pre-filled template values.', 'info');
+        } catch (err) {
+            console.warn('Failed to fetch latest blog post:', err);
+            setSubject('New Academy Blog Article 📰');
+            setContent('Check out our latest blog article on flute techniques and academy news!');
+            setTargetUrl('/blog');
+            setTargetImage('');
+            showToast('Could not fetch blog posts. Set default template values.', 'info');
+        } finally {
+            setFetchingAutoData(false);
+        }
+    }, [showToast]);
+
+    const fetchLatestVideoData = useCallback(async () => {
+        setFetchingAutoData(true);
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const res = await fetch('/api/latest-youtube-video', { signal: controller.signal }).catch(() => null);
+            clearTimeout(timeoutId);
+
+            if (res && res.ok) {
+                const video = await res.json().catch(() => null);
+                if (video?.videoId) {
+                    const thumb = video.thumbnail || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
+                    setSubject(`New Video: ${video.title}`);
+                    setContent(video.description || `Watch our latest YouTube release: ${video.title}`);
+                    setTargetUrl(video.url || `https://www.youtube.com/watch?v=${video.videoId}`);
+                    setTargetImage(thumb);
+                    showToast('Auto-populated latest YouTube Video thumbnail & data!', 'info');
+                    return;
+                }
+            }
+
+            setSubject('New Flute Video Release 🎥');
+            setContent('Check out our latest flute lesson and performance video on YouTube!');
+            setTargetUrl('https://www.youtube.com');
+            setTargetImage('https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80');
+            showToast('YouTube feed unavailable. Pre-filled template values.', 'info');
+        } catch (err) {
+            console.warn('Failed to fetch latest video:', err);
+            setSubject('New Flute Video Release 🎥');
+            setContent('Check out our latest flute lesson and performance video on YouTube!');
+            setTargetUrl('https://www.youtube.com');
+            setTargetImage('https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80');
+            showToast('Could not fetch YouTube feed. Set default values.', 'info');
+        } finally {
+            setFetchingAutoData(false);
+        }
+    }, [showToast]);
+
+    const extractYouTubeVideoId = (url: string): string | null => {
+        if (!url) return null;
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    };
+
+    const handleTargetUrlChange = async (newUrl: string) => {
+        setTargetUrl(newUrl);
+        if (!newUrl.trim()) return;
+
+        // 1. Check for YouTube link
+        const videoId = extractYouTubeVideoId(newUrl);
+        if (videoId) {
+            const hqThumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+            setTargetImage(hqThumbnail);
+
+            try {
+                const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(newUrl)}&format=json`).catch(() => null);
+                if (oembedRes && oembedRes.ok) {
+                    const oembedData = await oembedRes.json().catch(() => null);
+                    if (oembedData?.title) {
+                        setSubject(`New Video: ${oembedData.title}`);
+                    }
+                    if (oembedData?.thumbnail_url) {
+                        setTargetImage(oembedData.thumbnail_url);
+                    }
+                }
+            } catch {}
+            showToast('Auto-populated YouTube video thumbnail & title!', 'info');
+            return;
+        }
+
+        // 2. Check for Blog link
+        let blogSlug = '';
+        if (newUrl.includes('/blog/')) {
+            blogSlug = newUrl.split('/blog/')[1]?.split('?')[0]?.split('#')[0] || '';
+        } else if (!newUrl.startsWith('http') && !newUrl.startsWith('/')) {
+            blogSlug = newUrl.trim();
+        }
+
+        if (blogSlug) {
+            try {
+                let post: any = null;
+                const res1 = await supabase
+                    .from('blog_posts')
+                    .select('title, excerpt, content, featured_image')
+                    .eq('slug', blogSlug)
+                    .maybeSingle();
+                if (res1.data) post = res1.data;
+
+                if (!post) {
+                    const res2 = await supabaseAuth
+                        .from('blog_posts')
+                        .select('title, excerpt, content, featured_image')
+                        .eq('slug', blogSlug)
+                        .maybeSingle();
+                    if (res2.data) post = res2.data;
+                }
+
+                if (post) {
+                    let img = (post.featured_image || '').trim();
+                    if (!img && post.content) {
+                        const match = post.content.match(/<img[^>]+src=["']([^"']+)["']/i);
+                        if (match && match[1]) img = match[1];
+                    }
+                    if (img) setTargetImage(img);
+                    if (post.title) setSubject(`New Blog: ${post.title}`);
+                    if (post.excerpt) setContent(post.excerpt);
+                    showToast('Auto-populated Blog post cover image & details!', 'info');
+                }
+            } catch {}
+        }
+    };
 
     // Auto-populate inputs based on selected channel and template
     useEffect(() => {
-        if (activeChannel && activeChannel !== 'chatbox') {
+        if (activeChannel === 'blog') {
+            fetchLatestBlogData();
+        } else if (activeChannel === 'video') {
+            fetchLatestVideoData();
+        } else if (activeChannel && activeChannel !== 'chatbox') {
             const template = defaultTemplates[activeChannel];
             if (template) {
                 setSubject(template.subject);
@@ -477,8 +655,10 @@ function MessagesDashboardContent() {
                 setSubject('');
                 setContent('');
             }
+            setTargetUrl('');
+            setTargetImage('');
         }
-    }, [activeChannel, defaultTemplates]);
+    }, [activeChannel, defaultTemplates, fetchLatestBlogData, fetchLatestVideoData]);
 
     const handleSaveDefaultTemplate = async () => {
         if (!teacherProfile?.id || !activeChannel || activeChannel === 'chatbox') return;
@@ -1229,12 +1409,21 @@ function MessagesDashboardContent() {
         const hasGlobal = selectedRecipients.some(r => r.type === 'global');
         const classRecipients = selectedRecipients.filter(r => r.type === 'class');
         const hasMultipleClasses = classRecipients.length > 1;
-        const resolvedChannel = (hasGlobal || hasMultipleClasses) ? 'announcements' : activeChannel;
+        const resolvedChannel = (activeChannel === 'blog' || activeChannel === 'video')
+            ? activeChannel
+            : (hasGlobal || hasMultipleClasses) ? 'announcements' : activeChannel;
+
+        const payloadRecipients = [
+            ...selectedRecipients,
+            ...(targetUrl || targetImage || activeChannel === 'blog' || activeChannel === 'video'
+                ? [{ _meta: true, type: activeChannel, target_url: targetUrl.trim(), image_url: targetImage.trim() }]
+                : [])
+        ];
 
         const newBroadcast: any = {
             teacher_id: teacherProfile.id,
             channel: resolvedChannel,
-            recipients: selectedRecipients,
+            recipients: payloadRecipients,
             subject: subject.trim(),
             content: content.trim(),
             created_at: new Date().toISOString()
@@ -1397,6 +1586,35 @@ function MessagesDashboardContent() {
             showToast('An unexpected error occurred.', 'error');
         } finally {
             setIsSavingGroup(false);
+        }
+    };
+
+    const handleDeleteCustomGroup = async (groupId: string, groupName: string) => {
+        if (!window.confirm(`Are you sure you want to delete the custom group "${groupName}"?`)) {
+            return;
+        }
+
+        try {
+            if (!dbSetupErrorGroups && !groupId.startsWith('local-group-')) {
+                const { error } = await supabaseAuth
+                    .from('custom_recipient_groups')
+                    .delete()
+                    .eq('id', groupId);
+
+                if (error) {
+                    console.error('Error deleting custom group from DB:', error);
+                    showToast('Failed to delete group from database.', 'error');
+                    return;
+                }
+            }
+
+            const updated = customGroups.filter(g => g.id !== groupId);
+            setCustomGroups(updated);
+            localStorage.setItem('kfa_local_custom_groups', JSON.stringify(updated));
+            showToast(`Group "${groupName}" deleted successfully!`, 'success');
+        } catch (err) {
+            console.error('Error deleting custom group:', err);
+            showToast('Failed to delete group.', 'error');
         }
     };
 
@@ -1683,6 +1901,8 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                 <div className="space-y-2 mt-4">
                                     {[
                                         { id: 'announcements', label: 'Announcements', desc: 'Global Broadcast', icon: Megaphone, color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/20' },
+                                        { id: 'blog', label: 'New Blog Post', desc: 'Auto-populated & Custom Blog', icon: BookOpen, color: 'text-amber-600 bg-amber-50 dark:bg-amber-950/20' },
+                                        { id: 'video', label: 'New Video Release', desc: 'Auto-populated & YouTube Video', icon: Youtube, color: 'text-red-600 bg-red-50 dark:bg-red-950/20' },
                                         { id: 'classroom', label: 'Classroom Broadcast', desc: 'Section-wise targets', icon: Presentation, color: 'text-blue-500 bg-blue-50' },
                                         { id: 'custom_groups', label: 'Custom Groups', desc: 'Performers, Beginners...', icon: Users, color: 'text-indigo-500 bg-indigo-50' },
                                         { id: 'new_joiners', label: 'New Joiners', desc: 'Automated workflows', icon: Sparkles, color: 'text-emerald-500 bg-emerald-50' },
@@ -1740,27 +1960,46 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                     ) : (
                                         <div className="space-y-2 max-h-56 overflow-y-auto">
                                             {customGroups.map((grp) => (
-                                                <button 
+                                                <div 
                                                     key={grp.id}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setSelectedRecipients(grp.recipients);
-                                                        showToast(`Loaded group "${grp.name}"!`, 'info');
-                                                    }}
-                                                    className="w-full flex flex-col p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-[#0e5f59]/5 border border-slate-200 dark:border-slate-700 hover:border-[#0e5f59]/30 rounded-xl text-left transition-all group"
+                                                    className="w-full flex items-start justify-between p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-[#0e5f59]/5 border border-slate-200 dark:border-slate-700 hover:border-[#0e5f59]/30 rounded-xl text-left transition-all group/item"
                                                 >
-                                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-[#0e5f59] transition-colors">{grp.name}</span>
-                                                    {grp.description && (
-                                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5">{grp.description}</span>
-                                                    )}
-                                                    <div className="flex flex-wrap gap-1 mt-2">
-                                                        {grp.recipients.map((rec: any, idx: number) => (
-                                                            <span key={idx} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-[8px] font-bold text-slate-500 dark:text-slate-400 rounded border border-slate-200 dark:border-slate-700">
-                                                                {rec.name}
+                                                    <div 
+                                                        onClick={() => {
+                                                            setSelectedRecipients(grp.recipients);
+                                                            showToast(`Loaded group "${grp.name}"!`, 'info');
+                                                        }}
+                                                        className="flex-1 min-w-0 cursor-pointer"
+                                                    >
+                                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover/item:text-[#0e5f59] transition-colors block">
+                                                            {grp.name}
+                                                        </span>
+                                                        {grp.description && (
+                                                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium truncate mt-0.5 block">
+                                                                {grp.description}
                                                             </span>
-                                                        ))}
+                                                        )}
+                                                        <div className="flex flex-wrap gap-1 mt-2">
+                                                            {grp.recipients.map((rec: any, idx: number) => (
+                                                                <span key={idx} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-[8px] font-bold text-slate-500 dark:text-slate-400 rounded border border-slate-200 dark:border-slate-700">
+                                                                    {rec.name}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteCustomGroup(grp.id, grp.name);
+                                                        }}
+                                                        title="Delete Group"
+                                                        className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors shrink-0 ml-2 cursor-pointer"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
                                             ))}
                                         </div>
                                     )}
@@ -2249,6 +2488,79 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                 </div>
                                             </div>
                                         )}
+                                        {(activeChannel === 'blog' || activeChannel === 'video') && (
+                                            <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 p-4 rounded-2xl flex flex-col gap-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        {activeChannel === 'blog' ? (
+                                                            <BookOpen className="w-4 h-4 text-amber-500" />
+                                                        ) : (
+                                                            <Youtube className="w-4 h-4 text-red-500" />
+                                                        )}
+                                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                                                            {activeChannel === 'blog' ? 'Blog Announcement Settings' : 'Video Announcement Settings'}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={activeChannel === 'blog' ? fetchLatestBlogData : fetchLatestVideoData}
+                                                        disabled={fetchingAutoData}
+                                                        className="px-3 py-1.5 bg-white dark:bg-slate-700 hover:bg-slate-100 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                                                    >
+                                                        <RefreshCw className={`w-3.5 h-3.5 ${fetchingAutoData ? 'animate-spin' : ''}`} />
+                                                        Auto-Fetch Latest {activeChannel === 'blog' ? 'Blog' : 'Video'}
+                                                    </button>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                                            <Link2 className="w-3 h-3 text-slate-400" />
+                                                            Target Link / URL (Auto-filled, editable)
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={targetUrl}
+                                                            onChange={(e) => handleTargetUrlChange(e.target.value)}
+                                                            placeholder={activeChannel === 'blog' ? "e.g. /blog/post-slug" : "e.g. https://www.youtube.com/watch?v=..."}
+                                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                                            <ImageIcon className="w-3 h-3 text-slate-400" />
+                                                            Cover Image / Thumbnail URL
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={targetImage}
+                                                            onChange={(e) => setTargetImage(e.target.value)}
+                                                            placeholder="e.g. https://.../image.jpg"
+                                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {targetImage && (
+                                                    <div className="flex items-center gap-3 p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
+                                                        <img src={targetImage} alt="Thumbnail preview" className="w-16 h-12 rounded-lg object-cover shrink-0" />
+                                                        <div className="min-w-0 flex-1">
+                                                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
+                                                                ✓ Auto-Populated Media Thumbnail Preview
+                                                            </span>
+                                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate block mt-0.5">
+                                                                {targetUrl || 'Link attached'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                                                    💡 Students matching the selected recipients will see a "New {activeChannel === 'blog' ? 'Blog Post' : 'Video'}" dialog box & corner banner in their portal pointing to this URL.
+                                                </p>
+                                            </div>
+                                        )}
+
                                         {messageType === 'broadcast' && (
                                             <div className="flex flex-col gap-1.5">
                                                 <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Broadcast Subject</label>
@@ -2302,10 +2614,10 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                     </div>
                                 ) : (
                                     filteredBroadcasts.map((bc) => (
-                                        <div key={bc.id} className="bg-white p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-2xs hover:shadow-xs transition-shadow flex flex-col md:flex-row gap-6 justify-between items-start animate-in fade-in-50 duration-200">
-                                            <div className="flex-1 space-y-2">
-                                                <div className="flex items-center gap-3">
-                                                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#0e5f59] bg-[#0e5f59]/10 px-2.5 py-0.5 rounded-full">
+                                        <div key={bc.id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-2xs hover:shadow-xs transition-shadow flex flex-col md:flex-row gap-6 justify-between items-start animate-in fade-in-50 duration-200">
+                                            <div className="flex-1 min-w-0 space-y-2 text-left">
+                                                <div className="flex items-center gap-3 flex-wrap">
+                                                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#0e5f59] bg-[#0e5f59]/10 dark:bg-[#0e5f59]/25 dark:text-teal-400 px-2.5 py-0.5 rounded-full">
                                                         {bc.channel.replace('_', ' ')}
                                                     </span>
                                                     <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold">
@@ -2318,8 +2630,8 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                         })}
                                                     </span>
                                                 </div>
-                                                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">{bc.subject}</h4>
-                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl overflow-x-auto" dangerouslySetInnerHTML={{ __html: bc.content }} />
+                                                <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">{bc.subject}</h4>
+                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl overflow-x-auto select-text" dangerouslySetInnerHTML={{ __html: bc.content }} />
                                                 {(bc as any).audio_attachment && (
                                                     <div className="flex items-center gap-2 mt-3 select-none">
                                                         <button 
@@ -2329,7 +2641,7 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                                 audio.play();
                                                                 showToast('Playing attached flute note...', 'info');
                                                             }}
-                                                            className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 dark:bg-slate-800/40 dark:bg-slate-800 hover:bg-[#ecb613]/10 hover:text-[#ecb613] text-slate-600 dark:text-slate-400 dark:text-slate-300 text-[10px] font-bold rounded-full border border-slate-200 dark:border-slate-700 dark:border-slate-700 transition-all"
+                                                            className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 dark:bg-slate-800 hover:bg-[#ecb613]/10 hover:text-[#ecb613] text-slate-600 dark:text-slate-300 text-[10px] font-bold rounded-full border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
                                                         >
                                                             <Mic className="w-3.5 h-3.5 text-[#ecb613]" />
                                                             Play Attached Flute Note
@@ -2360,18 +2672,20 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                 )}
                                             </div>
 
-                                            <div className="shrink-0 flex flex-col gap-3 min-w-44 text-right justify-between md:h-full">
-                                                <div className="space-y-1">
-                                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">Sent To</span>
-                                                    <div className="flex flex-wrap md:justify-end gap-1.5">
-                                                        {bc.recipients.map((rec, i) => (
-                                                            <span key={i} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 text-[9px] font-bold rounded">
+                                            <div className="w-full md:w-64 lg:w-72 shrink-0 flex flex-col gap-3 justify-between text-left md:text-right border-t md:border-t-0 pt-3 md:pt-0 border-slate-100 dark:border-slate-800">
+                                                <div className="space-y-1.5">
+                                                    <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
+                                                        Sent To ({bc.recipients?.length || 0})
+                                                    </span>
+                                                    <div className="flex flex-wrap md:justify-end gap-1.5 max-h-28 overflow-y-auto custom-scrollbar p-0.5">
+                                                        {bc.recipients?.map((rec: any, i: number) => (
+                                                            <span key={i} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 text-[9px] font-bold rounded-md truncate max-w-[150px]">
                                                                 {rec.name}
                                                             </span>
                                                         ))}
                                                     </div>
                                                 </div>
-                                                <div className="flex flex-col gap-1 items-end">
+                                                <div className="flex flex-col gap-1 items-start md:items-end">
                                                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
                                                         <Globe className="w-3.5 h-3.5 text-emerald-500" />
                                                         <span>Active</span>
