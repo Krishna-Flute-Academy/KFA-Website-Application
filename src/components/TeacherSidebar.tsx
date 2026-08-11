@@ -13,11 +13,17 @@ interface TeacherSidebarProps {
 
 const isNetworkError = (error: any) => {
     if (!error) return false;
-    const msg = error.message || String(error);
-    return msg.includes('Failed to fetch') || 
-           msg.includes('Load failed') || 
-           msg.includes('NetworkError') || 
+    const msg = String(error.message || error.details || error.hint || error).toLowerCase();
+    return msg.includes('failed to fetch') || 
+           msg.includes('load failed') || 
+           msg.includes('networkerror') || 
            msg.includes('connection refused') ||
+           msg.includes('upstream') ||
+           msg.includes('timeout') ||
+           msg.includes('504') ||
+           msg.includes('502') ||
+           msg.includes('gateway') ||
+           msg.includes('abort') ||
            (error.name === 'TypeError' && msg.includes('fetch'));
 };
 
@@ -163,7 +169,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
             try {
                 const { count, error } = await supabaseAuth
                     .from('users')
-                    .select('id', { count: 'exact' })
+                    .select('id', { count: 'exact', head: true })
                     .or('role.eq.student,role.eq.pending')
                     .is('teacher_id', null);
                 
@@ -198,7 +204,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
             try {
                 const { count, error } = await supabaseAuth
                     .from('fees_payments')
-                    .select('id', { count: 'exact' })
+                    .select('id', { count: 'exact', head: true })
                     .eq('status', 'pending_approval');
                 
                 if (error) throw error;
@@ -233,7 +239,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 if (userRole === 'admin') {
                     const { count, error } = await supabaseAuth
                         .from('leave_requests')
-                        .select('id', { count: 'exact' })
+                        .select('id', { count: 'exact', head: true })
                         .eq('status', 'pending');
                     
                     if (error) throw error;
@@ -252,7 +258,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     if (roomIds.length > 0) {
                         const { count, error: countErr } = await supabaseAuth
                             .from('leave_requests')
-                            .select('id', { count: 'exact' })
+                            .select('id', { count: 'exact', head: true })
                             .eq('status', 'pending')
                             .in('classroom_id', roomIds);
                         

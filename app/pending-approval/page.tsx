@@ -8,11 +8,17 @@ import Link from 'next/link';
 
 const isNetworkError = (error: any) => {
     if (!error) return false;
-    const msg = error.message || String(error);
-    return msg.includes('Failed to fetch') || 
-           msg.includes('Load failed') || 
-           msg.includes('NetworkError') || 
+    const msg = String(error.message || error.details || error.hint || error).toLowerCase();
+    return msg.includes('failed to fetch') || 
+           msg.includes('load failed') || 
+           msg.includes('networkerror') || 
            msg.includes('connection refused') ||
+           msg.includes('upstream') ||
+           msg.includes('timeout') ||
+           msg.includes('504') ||
+           msg.includes('502') ||
+           msg.includes('gateway') ||
+           msg.includes('abort') ||
            (error.name === 'TypeError' && msg.includes('fetch'));
 };
 
