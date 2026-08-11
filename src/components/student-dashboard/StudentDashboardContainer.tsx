@@ -1880,20 +1880,44 @@ export default function StudentDashboardContainer() {
         return url;
     };
 
+    const isVideoOrBlogRelease = (item: any) => {
+        if (!item) return false;
+        const titleLower = String(item.title || item.subject || '').toLowerCase();
+        const msgLower = String(item.message || item.content || '').toLowerCase();
+        const channelLower = String(item.channel || '').toLowerCase();
+
+        if (channelLower === 'blog' || channelLower === 'video') return true;
+        if (titleLower.startsWith('new video:') || titleLower.startsWith('new blog:')) return true;
+        if (titleLower.includes('new video') || titleLower.includes('new blog') || titleLower.includes('blog article') || titleLower.includes('video release') || titleLower.includes('blog release')) return true;
+        if (msgLower.includes('new video') || msgLower.includes('new blog') || msgLower.includes('blog article') || msgLower.includes('video release') || msgLower.includes('blog release')) return true;
+
+        if (Array.isArray(item.recipients)) {
+            if (item.recipients.some((r: any) => r._meta && (r.type === 'blog' || r.type === 'video'))) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     const unreadAdminBroadcasts = useMemo(() => {
-        return broadcasts.filter(b => b.sender?.role === 'admin' && !dismissedAdminBroadcasts.includes(b.id));
+        return broadcasts.filter(b => b.sender?.role === 'admin' && !dismissedAdminBroadcasts.includes(b.id) && !isVideoOrBlogRelease(b));
     }, [broadcasts, dismissedAdminBroadcasts]);
 
     const unreadMessageCount = useMemo(() => {
         return notifications.filter(n => {
             if (n.is_read) return false;
+            if (isVideoOrBlogRelease(n)) return false;
 
             // Check if it matches an active broadcast announcement
-            const matchesBroadcast = broadcasts.some(b => n.title === b.subject || n.message === b.content);
-            if (matchesBroadcast) return true;
+            const matchingBroadcast = broadcasts.find(b => n.title === b.subject || n.message === b.content);
+            if (matchingBroadcast) {
+                if (isVideoOrBlogRelease(matchingBroadcast)) return false;
+                return true;
+            }
 
             // Check if it is a direct chat message (messages type and doesn't match a broadcast)
-            if (n.type === 'messages' && !matchesBroadcast) return true;
+            if (n.type === 'messages' && !matchingBroadcast) return true;
 
             return false;
         }).length;
@@ -2076,9 +2100,9 @@ export default function StudentDashboardContainer() {
                                     className="p-1.5 hover:bg-[#FAF5EE] rounded-full transition-colors relative focus:outline-hidden"
                                 >
                                     <span className="material-symbols-outlined text-xl text-[#5C5852]">notifications</span>
-                                    {notifications.filter(n => !n.is_read).length > 0 && (
+                                    {notifications.filter(n => !n.is_read && !isVideoOrBlogRelease(n)).length > 0 && (
                                         <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-[#d49900] text-white text-[9px] font-black leading-none shadow-sm animate-in scale-in duration-200">
-                                            {notifications.filter(n => !n.is_read).length}
+                                            {notifications.filter(n => !n.is_read && !isVideoOrBlogRelease(n)).length}
                                         </span>
                                     )}
                                 </button>
@@ -2087,7 +2111,7 @@ export default function StudentDashboardContainer() {
                                     <div className="fixed right-4 top-16 w-[calc(100vw-2rem)] max-w-[320px] sm:max-w-sm md:absolute md:-right-2 md:top-full md:mt-2 md:w-96 bg-[#FAF6F0] rounded-xl border border-[#E6E1DA] shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                                         <div className="px-4 py-2 border-b border-[#E6E1DA] flex items-center justify-between">
                                             <span className="font-bold text-sm text-[#3E3A35]">Notifications</span>
-                                            {notifications.filter(n => !n.is_read).length > 0 && (
+                                            {notifications.filter(n => !n.is_read && !isVideoOrBlogRelease(n)).length > 0 && (
                                                 <button
                                                     onClick={markAllNotificationsAsRead}
                                                     className="text-xs text-[#7C5E3F] hover:underline font-semibold"
@@ -2116,12 +2140,12 @@ export default function StudentDashboardContainer() {
                                         )}
 
                                         <div className="max-h-64 overflow-y-auto">
-                                            {notifications.length === 0 ? (
+                                            {notifications.filter(n => !isVideoOrBlogRelease(n)).length === 0 ? (
                                                 <div className="px-4 py-6 text-center text-slate-400 text-xs">
                                                     No notifications yet.
                                                 </div>
                                             ) : (
-                                                notifications.map((notif) => (
+                                                notifications.filter(n => !isVideoOrBlogRelease(n)).map((notif) => (
                                                     <div
                                                         key={notif.id}
                                                         onClick={async () => {

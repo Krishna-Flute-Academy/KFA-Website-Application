@@ -472,7 +472,7 @@ export default function ClassroomsPage() {
             // Fetch batch schedules for all classrooms
             const roomIds = (roomsData || []).map(r => r.id);
             const { data: allSchedules } = roomIds.length > 0
-                ? await supabaseAuth.from('batch_schedules').select('classroom_id, day_of_week, start_time, end_time').in('classroom_id', roomIds)
+                ? await supabaseAuth.from('batch_schedules').select('classroom_id, day_of_week, start_time, end_time').in('classroom_id', roomIds).order('day_of_week', { ascending: true }).order('start_time', { ascending: true })
                 : { data: [] };
 
             setRawSchedules(allSchedules || []);
@@ -500,21 +500,39 @@ export default function ClassroomsPage() {
                 }
             }
 
-            const roomsWithCounts = await Promise.all((roomsData || []).map(async (room) => {
-                const { count } = await supabaseAuth
+            // Fetch student names for permanent classrooms
+            const { data: permStudentsData } = roomIds.length > 0
+                ? await supabaseAuth
                     .from('classroom_students')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('classroom_id', room.id);
+                    .select('classroom_id, student_id, users!student_id(id, name, profile_pic_url)')
+                    .in('classroom_id', roomIds)
+                : { data: [] };
 
+            const studentMap: Record<string, { id: string; name: string; profile_pic_url?: string }[]> = {};
+            (permStudentsData || []).forEach((row: any) => {
+                const cid = row.classroom_id;
+                if (!studentMap[cid]) studentMap[cid] = [];
+                if (row.users) {
+                    studentMap[cid].push({
+                        id: row.users.id || row.student_id,
+                        name: row.users.name || 'Student',
+                        profile_pic_url: row.users.profile_pic_url || undefined
+                    });
+                }
+            });
+
+            const roomsWithCounts = (roomsData || []).map((room) => {
+                const roomStudents = studentMap[room.id] || [];
                 return {
                     ...room,
                     teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
                     schedule: scheduleMap[room.id] || room.schedule || 'No schedule set',
-                    student_count: count || 0,
+                    students: roomStudents,
+                    student_count: roomStudents.length,
                     status: room.status || 'Active',
                     type: room.type || 'permanent'
                 };
-            }));
+            });
 
             setClassrooms(roomsWithCounts.filter(r => r.type === 'permanent'));
 
@@ -527,13 +545,50 @@ export default function ClassroomsPage() {
             const { data: tempRoomsData } = isAdminUser
                 ? await tempQuery
                 : await tempQuery.eq('teacher_id', profile.id);
-            
-            const tempRoomsWithCounts = await Promise.all((tempRoomsData || []).map(async (room) => {
-                const { count } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('target_classroom_id', room.classroom_id);
 
+            const tempRoomIds = (tempRoomsData || []).map(r => r.classroom_id || r.id).filter(Boolean);
+            const { data: tempStudentsData } = tempRoomIds.length > 0
+                ? await supabaseAuth
+                    .from('temporary_class_students')
+                    .select('temporary_class_id, student_id, users!student_id(id, name, profile_pic_url)')
+                    .in('temporary_class_id', (tempRoomsData || []).map(r => r.id))
+                : { data: [] };
+
+            const { data: tempOverridesData } = tempRoomIds.length > 0
+                ? await supabaseAuth
+                    .from('session_student_overrides')
+                    .select('target_classroom_id, student_id, users!student_id(id, name, profile_pic_url)')
+                    .in('target_classroom_id', tempRoomIds)
+                : { data: [] };
+
+            const tempStudentMap: Record<string, { id: string; name: string; profile_pic_url?: string }[]> = {};
+            (tempStudentsData || []).forEach((row: any) => {
+                const tcid = row.temporary_class_id;
+                if (!tempStudentMap[tcid]) tempStudentMap[tcid] = [];
+                if (row.users && !tempStudentMap[tcid].some(s => s.id === (row.users.id || row.student_id))) {
+                    tempStudentMap[tcid].push({
+                        id: row.users.id || row.student_id,
+                        name: row.users.name || 'Student',
+                        profile_pic_url: row.users.profile_pic_url || undefined
+                    });
+                }
+            });
+            (tempOverridesData || []).forEach((row: any) => {
+                const targetId = row.target_classroom_id;
+                if (targetId) {
+                    if (!tempStudentMap[targetId]) tempStudentMap[targetId] = [];
+                    if (row.users && !tempStudentMap[targetId].some(s => s.id === (row.users.id || row.student_id))) {
+                        tempStudentMap[targetId].push({
+                            id: row.users.id || row.student_id,
+                            name: row.users.name || 'Student',
+                            profile_pic_url: row.users.profile_pic_url || undefined
+                        });
+                    }
+                }
+            });
+
+            const tempRoomsWithCounts = (tempRoomsData || []).map((room) => {
+                const tStudents = tempStudentMap[room.id] || tempStudentMap[room.classroom_id] || [];
                 return {
                     id: room.id,
                     name: room.title || 'Temporary Class',
@@ -544,7 +599,8 @@ export default function ClassroomsPage() {
                         return `${dayName} • ${formatTime12hr(room.start_time.slice(0,5))} - ${formatTime12hr(room.end_time.slice(0,5))}`;
                     })(),
                     teacher: room.teacher_id ? { name: teacherMap[room.teacher_id] } : null,
-                    student_count: count || 0,
+                    students: tStudents,
+                    student_count: tStudents.length,
                     status: (() => {
                         const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
                         return shadowRoom ? (shadowRoom.status || 'Active') : 'Active';
@@ -555,7 +611,7 @@ export default function ClassroomsPage() {
                     end_time: room.end_time,
                     type: 'temporary' as const
                 };
-            }));
+            });
             
             setTempClassrooms(tempRoomsWithCounts);
 
@@ -1349,9 +1405,25 @@ export default function ClassroomsPage() {
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[210px] sm:max-w-none">
-                                                                {room.student_count} Enrolled • {room.schedule || 'No schedule'}
-                                                            </p>
+                                                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex flex-col gap-0.5">
+                                                                <div className="flex flex-wrap items-center gap-1">
+                                                                    {((room as any).students || []).length > 0 ? (
+                                                                        <>
+                                                                            {((room as any).students || []).slice(0, 2).map((st: any) => (
+                                                                                <span key={st.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-950 border border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900/50">
+                                                                                    {st.name}
+                                                                                </span>
+                                                                            ))}
+                                                                            {((room as any).students || []).length > 2 && (
+                                                                                <span className="text-[9px] font-black text-slate-400">+{((room as any).students || []).length - 2} more</span>
+                                                                            )}
+                                                                        </>
+                                                                    ) : (
+                                                                        <span className="italic text-slate-400">No students enrolled</span>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-[9px] text-slate-400 font-semibold">{room.student_count} Enrolled • {room.schedule || 'No schedule'}</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider shrink-0 ${
@@ -1529,18 +1601,58 @@ export default function ClassroomsPage() {
                                                                 </div>
                                                             </div>
                                                         </td>
-                                                        <td className="px-6 py-6">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="flex -space-x-2">
-                                                                    <div className="size-8 rounded-full border-2 border-white dark:border-slate-900 bg-slate-200 bg-cover bg-center" style={{ backgroundImage: "url('https://avatar.iran.liara.run/public/boy')" }}></div>
-                                                                    <div className="size-8 rounded-full border-2 border-white dark:border-slate-900 bg-slate-200 bg-cover bg-center" style={{ backgroundImage: "url('https://avatar.iran.liara.run/public/girl')" }}></div>
-                                                                    <div className="size-8 rounded-full border-2 border-white dark:border-slate-900 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                                                                        +{room.student_count > 2 ? room.student_count - 2 : 0}
-                                                                    </div>
-                                                                </div>
-                                                                <p className="text-xs font-semibold text-slate-505 dark:text-slate-400 whitespace-nowrap">{room.student_count} Enrolled</p>
-                                                            </div>
-                                                        </td>
+                                                         <td className="px-6 py-6">
+                                                             {(() => {
+                                                                 const enrolledStudents = (room as any).students || [];
+                                                                 const count = room.student_count || enrolledStudents.length;
+
+                                                                 if (count === 0) {
+                                                                     return (
+                                                                         <div className="flex items-center gap-2">
+                                                                             <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700"></span>
+                                                                             <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 italic">No students enrolled</span>
+                                                                         </div>
+                                                                     );
+                                                                 }
+
+                                                                 return (
+                                                                     <div className="flex flex-col gap-1.5 max-w-[280px]">
+                                                                         <div className="flex flex-wrap items-center gap-1.5">
+                                                                             {enrolledStudents.slice(0, 3).map((st: any) => {
+                                                                                 const initials = st.name ? st.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() : 'S';
+                                                                                 return (
+                                                                                     <span 
+                                                                                         key={st.id} 
+                                                                                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-950 border border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900/50 shadow-xs transition-all hover:scale-105"
+                                                                                         title={st.name}
+                                                                                     >
+                                                                                         {st.profile_pic_url ? (
+                                                                                             <img src={st.profile_pic_url} alt={st.name} className="w-4 h-4 rounded-full object-cover shrink-0" />
+                                                                                         ) : (
+                                                                                             <span className="w-4 h-4 rounded-full bg-[#ecb613] text-slate-900 font-black flex items-center justify-center text-[9px] shrink-0">
+                                                                                                 {initials}
+                                                                                             </span>
+                                                                                         )}
+                                                                                         <span className="truncate max-w-[130px]">{st.name}</span>
+                                                                                     </span>
+                                                                                 );
+                                                                             })}
+                                                                             {enrolledStudents.length > 3 && (
+                                                                                 <span 
+                                                                                     className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 cursor-help"
+                                                                                     title={enrolledStudents.slice(3).map((s: any) => s.name).join(', ')}
+                                                                                 >
+                                                                                     +{enrolledStudents.length - 3} more
+                                                                                 </span>
+                                                                             )}
+                                                                         </div>
+                                                                         <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                                                             {count} Enrolled Student{count !== 1 ? 's' : ''}
+                                                                         </span>
+                                                                     </div>
+                                                                 );
+                                                             })()}
+                                                         </td>
                                                         <td className="px-6 py-6">
                                                              {activeView === 'today' ? (
                                                                  <div className="flex flex-col bg-slate-50 dark:bg-slate-805/60 p-2 rounded-lg border border-slate-100 dark:border-slate-800 min-w-[150px] text-left">
@@ -1569,7 +1681,7 @@ export default function ClassroomsPage() {
                                                                  </div>
                                                              ) : (
                                                                  <div className="flex flex-col gap-1.5 min-w-[150px]">
-                                                                     {rawSchedules.filter(s => s.classroom_id === room.id).map((sched, sIdx) => {
+                                                                     {rawSchedules.filter(s => s.classroom_id === room.id).sort((a, b) => a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time)).map((sched, sIdx) => {
                                                                          const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][sched.day_of_week];
                                                                          const start = formatTime12hr(sched.start_time.slice(0, 5));
                                                                          const end = formatTime12hr(sched.end_time.slice(0, 5));

@@ -7,6 +7,7 @@ import { Loader2, Save, ArrowLeft } from 'lucide-react';
 import TeacherSidebar from '../../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../../src/components/TeacherHeader';
 import Link from 'next/link';
+import { sortClassroomsByDayAndTime } from '../../../../../src/lib/classroomSort';
 import ImageUploadWithCrop from '../../../../../src/components/teacher-dashboard/ImageUploadWithCrop';
 
 interface Classroom {
@@ -408,7 +409,7 @@ export default function EditStudentPage() {
                                                     }}
                                                 >
                                                     <option value="">Unassigned</option>
-                                                    {classrooms.map(room => (
+                                                    {sortClassroomsByDayAndTime(classrooms).map(room => (
                                                         <option key={room.id} value={room.id}>{room.name}</option>
                                                     ))}
                                                 </select>

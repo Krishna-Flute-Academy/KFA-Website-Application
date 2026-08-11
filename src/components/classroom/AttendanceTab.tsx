@@ -14,6 +14,7 @@ interface AttendanceTabProps {
     attendanceLoading: boolean;
     isSavingAttendanceMap: Record<string, boolean>;
     handleMarkClassroomAttendance: (studentId: string, status: string) => Promise<void>;
+    handleUnmarkClassroomAttendance?: (studentId: string) => Promise<void>;
     formatLocalDate: (dateStr: string) => Date;
 }
 
@@ -25,6 +26,7 @@ export default function AttendanceTab({
     attendanceLoading,
     isSavingAttendanceMap,
     handleMarkClassroomAttendance,
+    handleUnmarkClassroomAttendance,
     formatLocalDate
 }: AttendanceTabProps) {
     const activeRecords = Object.values(attendanceRecords);
@@ -46,7 +48,7 @@ export default function AttendanceTab({
                     </div>
                     <div>
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">Class Attendance</h3>
-                        <p className="text-sm text-slate-505 dark:text-slate-400">Mark or update student attendance for your class.</p>
+                        <p className="text-sm text-slate-505 dark:text-slate-400">Mark or update student attendance for your class. Double-click marked status to unmark.</p>
                     </div>
                 </div>
                 
@@ -150,7 +152,13 @@ export default function AttendanceTab({
                             return (
                                 <div 
                                     key={student.id} 
-                                    className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-all group"
+                                    onDoubleClick={() => {
+                                        if (status && handleUnmarkClassroomAttendance) {
+                                            handleUnmarkClassroomAttendance(student.student_id);
+                                        }
+                                    }}
+                                    title={status ? "Double-click marked section to unmark attendance" : undefined}
+                                    className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-all group select-none"
                                 >
                                     <div className="flex items-center gap-4">
                                         <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border-2 border-slate-50 dark:border-slate-700 shadow-inner group-hover:scale-105 transition-transform relative shrink-0">
@@ -185,7 +193,19 @@ export default function AttendanceTab({
                                                 <button
                                                     key={opt.key}
                                                     disabled={isSaving}
-                                                    onClick={() => handleMarkClassroomAttendance(student.student_id, opt.key)}
+                                                    title={isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleMarkClassroomAttendance(student.student_id, opt.key);
+                                                    }}
+                                                    onDoubleClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (handleUnmarkClassroomAttendance) {
+                                                            handleUnmarkClassroomAttendance(student.student_id);
+                                                        } else {
+                                                            handleMarkClassroomAttendance(student.student_id, opt.key);
+                                                        }
+                                                    }}
                                                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
                                                         isActive 
                                                             ? opt.activeBg

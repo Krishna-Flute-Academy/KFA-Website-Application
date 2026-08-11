@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
+import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 
 interface StudentData {
     id: string;
@@ -1384,7 +1385,7 @@ export default function StudentDirectory() {
                                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                 >
                                     <option value="" disabled>Choose a batch...</option>
-                                    {classrooms.map(room => (
+                                    {sortClassroomsByDayAndTime(classrooms).map(room => (
                                         <option key={room.id} value={room.id}>{room.name}</option>
                                     ))}
                                 </select>
@@ -1533,7 +1534,7 @@ export default function StudentDirectory() {
                                                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
                                             >
                                                 <option value="">No Batch (Unassigned)</option>
-                                                {classrooms.map(room => (
+                                                {sortClassroomsByDayAndTime(classrooms).map(room => (
                                                     <option key={room.id} value={room.id}>{room.name}</option>
                                                 ))}
                                             </select>

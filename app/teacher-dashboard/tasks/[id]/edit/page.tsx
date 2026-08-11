@@ -11,6 +11,7 @@ import {
 import TeacherSidebar from '../../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../../src/components/TeacherHeader';
 import Link from 'next/link';
+import { sortClassroomsByDayAndTime } from '../../../../../src/lib/classroomSort';
 
 interface Classroom {
     id: string;
@@ -546,7 +547,7 @@ export default function EditTaskPage() {
                                                     onChange={(e) => setSelectedClassroom(e.target.value)}
                                                 >
                                                     <option value="all">All Students (Student Directory)</option>
-                                                    {classrooms.map(cls => (
+                                                     {sortClassroomsByDayAndTime(classrooms).map(cls => (
                                                         <option key={cls.id} value={cls.id}>{cls.name}</option>
                                                     ))}
                                                 </select>

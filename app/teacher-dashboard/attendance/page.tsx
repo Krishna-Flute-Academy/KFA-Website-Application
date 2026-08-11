@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
+import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 import { 
     Loader2, 
     Calendar as CalendarIcon, 
@@ -65,6 +66,7 @@ interface BatchItem {
     name: string;
     type: 'permanent' | 'temporary';
     time: string;
+    startTime?: string;
 }
 
 interface AttendanceLog {
@@ -277,21 +279,24 @@ export default function AttendancePage() {
                 const loadedClassrooms = classesData || [];
                 setClassrooms(loadedClassrooms);
 
-                // 2. Fetch all batch schedules in parallel
+                // 2. Fetch all batch schedules in parallel (ordered by time ascending)
                 if (loadedClassrooms.length > 0) {
                     const roomIds = loadedClassrooms.map(c => c.id);
                     const { data: schedulesData } = await supabaseAuth
                         .from('batch_schedules')
                         .select('*')
-                        .in('classroom_id', roomIds);
+                        .in('classroom_id', roomIds)
+                        .order('day_of_week', { ascending: true })
+                        .order('start_time', { ascending: true });
                     
                     setAllSchedules(schedulesData || []);
                 }
 
-                // 3. Fetch all temporary classes
+                // 3. Fetch all temporary classes (ordered by time ascending)
                 const tempClassesQuery = supabaseAuth
                     .from('temporary_classes')
-                    .select('*');
+                    .select('*')
+                    .order('start_time', { ascending: true });
                 const { data: tempClassesData } = isAdmin
                     ? await tempClassesQuery
                     : await tempClassesQuery.eq('teacher_id', session.user.id);
@@ -318,7 +323,7 @@ export default function AttendancePage() {
         checkAuthAndLoad();
     }, [router]);
 
-    // Active batches scheduled on the selected date
+    // Active batches scheduled on the selected date (sorted in time ascending order)
     const activeBatchesOnSelectedDate = useMemo((): BatchItem[] => {
         if (!selectedDate) return [];
         const dateObj = new Date(selectedDate);
@@ -333,7 +338,8 @@ export default function AttendancePage() {
                     id: s.classroom_id,
                     name: room?.name || 'Classroom',
                     type: 'permanent' as const,
-                    time: `${formatTime12hr(s.start_time.slice(0, 5))} - ${formatTime12hr(s.end_time.slice(0, 5))}`
+                    time: `${formatTime12hr(s.start_time.slice(0, 5))} - ${formatTime12hr(s.end_time.slice(0, 5))}`,
+                    startTime: s.start_time
                 };
             });
 
@@ -343,10 +349,13 @@ export default function AttendancePage() {
                 id: tc.classroom_id || tc.id,
                 name: tc.title || 'Temporary Session',
                 type: 'temporary' as const,
-                time: `${formatTime12hr(tc.start_time.slice(0, 5))} - ${formatTime12hr(tc.end_time.slice(0, 5))}`
+                time: `${formatTime12hr(tc.start_time.slice(0, 5))} - ${formatTime12hr(tc.end_time.slice(0, 5))}`,
+                startTime: tc.start_time
             }));
 
-        return [...activePermanent, ...activeTemporary];
+        const combined = [...activePermanent, ...activeTemporary];
+        combined.sort((a, b) => (a.startTime || '00:00:00').localeCompare(b.startTime || '00:00:00'));
+        return combined;
     }, [selectedDate, allSchedules, classrooms, temporaryClasses]);
 
     // Helper to calculate dot indicators for the calendar month
@@ -620,6 +629,66 @@ export default function AttendancePage() {
         }
     };
 
+    // Unmark attendance inside expanded batch
+    const handleUnmarkBatchAttendance = async (batchId: string, studentId: string) => {
+        if (!teacherProfile) return;
+
+        const isAdmin = teacherProfile.role === 'admin';
+        if (!isAdmin) {
+            const isOwnClass = temporaryClasses.some(tc => tc.id === batchId) ||
+                               classrooms.some(c => c.id === batchId);
+            if (!isOwnClass) {
+                alert("You are not authorized to unmark attendance for this class.");
+                return;
+            }
+        }
+
+        const prevStatus = batchAttendanceMap[batchId]?.[studentId];
+
+        // Optimistically update
+        setBatchAttendanceMap(prev => {
+            const currentBatch = { ...(prev[batchId] || {}) };
+            delete currentBatch[studentId];
+            return { ...prev, [batchId]: currentBatch };
+        });
+
+        try {
+            const { error } = await supabaseAuth
+                .from('attendance')
+                .delete()
+                .eq('student_id', studentId)
+                .eq('classroom_id', batchId)
+                .eq('date', selectedDate);
+
+            if (error) throw error;
+
+            if (prevStatus) {
+                setBatchSummaries(prev => {
+                    const batchSummary = prev[batchId] || { present: 0, absent: 0, late: 0, excused: 0, total: 0 };
+                    const nextSummary = {
+                        ...batchSummary,
+                        present: prevStatus === 'present' ? Math.max(0, batchSummary.present - 1) : batchSummary.present,
+                        absent: prevStatus === 'absent' ? Math.max(0, batchSummary.absent - 1) : batchSummary.absent,
+                        late: prevStatus === 'late' ? Math.max(0, batchSummary.late - 1) : batchSummary.late,
+                        excused: prevStatus === 'excused' ? Math.max(0, batchSummary.excused - 1) : batchSummary.excused,
+                    };
+                    return { ...prev, [batchId]: nextSummary };
+                });
+            }
+
+            fetchMissedReport();
+        } catch (err: any) {
+            console.error('Error unmarking attendance:', err);
+            alert(`Failed to unmark attendance: ${err.message || err}`);
+            if (prevStatus) {
+                setBatchAttendanceMap(prev => ({
+                    ...prev,
+                    [batchId]: { ...(prev[batchId] || {}), [studentId]: prevStatus }
+                }));
+            }
+        }
+    };
+
     // Quick Mark inside expanded batch
     const handleMarkBatchAttendance = async (
         batchId: string, 
@@ -636,6 +705,12 @@ export default function AttendancePage() {
                 alert("You are not authorized to mark attendance for this class.");
                 return;
             }
+        }
+
+        // If status is already selected, unmark it
+        if (batchAttendanceMap[batchId]?.[studentId] === status) {
+            await handleUnmarkBatchAttendance(batchId, studentId);
+            return;
         }
 
         // Optimistically update
@@ -869,6 +944,44 @@ export default function AttendancePage() {
         }
     }, [mode, selectedDate, fetchDateStudents]);
 
+    // Unmark attendance from Individual Range date view
+    const handleUnmarkDateAttendance = async (studentId: string, classroomId: string) => {
+        if (!teacherProfile) return;
+        const key = `${studentId}_${classroomId}`;
+        const prevStatus = dateAttendanceMap[key];
+
+        // Optimistically remove from state
+        setDateAttendanceMap(prev => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+        });
+
+        try {
+            const { error } = await supabaseAuth
+                .from('attendance')
+                .delete()
+                .eq('student_id', studentId)
+                .eq('classroom_id', classroomId)
+                .eq('date', selectedDate);
+
+            if (error) throw error;
+
+            // Sync batchAttendanceMap if expanded
+            setBatchAttendanceMap(prev => {
+                const currentBatch = { ...(prev[classroomId] || {}) };
+                delete currentBatch[studentId];
+                return { ...prev, [classroomId]: currentBatch };
+            });
+        } catch (err: any) {
+            console.error('Error unmarking attendance:', err);
+            alert(`Failed to unmark attendance: ${err.message || err}`);
+            if (prevStatus) {
+                setDateAttendanceMap(prev => ({ ...prev, [key]: prevStatus }));
+            }
+        }
+    };
+
     // Mark attendance from Individual Range date view
     const handleMarkDateAttendance = async (
         studentId: string,
@@ -877,6 +990,10 @@ export default function AttendancePage() {
     ) => {
         if (!teacherProfile) return;
         const key = `${studentId}_${classroomId}`;
+        if (dateAttendanceMap[key] === status) {
+            await handleUnmarkDateAttendance(studentId, classroomId);
+            return;
+        }
         // Optimistic update
         setDateAttendanceMap(prev => ({ ...prev, [key]: status }));
         try {
@@ -1956,7 +2073,13 @@ export default function AttendancePage() {
                                                                     return (
                                                                         <div 
                                                                             key={student.id} 
-                                                                            className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                                                                            onDoubleClick={() => {
+                                                                                if (status) {
+                                                                                    handleUnmarkBatchAttendance(batch.id, student.id);
+                                                                                }
+                                                                            }}
+                                                                            title={status ? "Double-click marked section to unmark attendance" : undefined}
+                                                                            className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs select-none"
                                                                         >
                                                                             <div className="flex items-center gap-3">
                                                                                 <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden">
@@ -1980,8 +2103,16 @@ export default function AttendancePage() {
                                                                                     return (
                                                                                         <button
                                                                                             key={opt.key}
-                                                                                            onClick={() => handleMarkBatchAttendance(batch.id, student.id, opt.key)}
-                                                                                            className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all duration-200 ${
+                                                                                            title={isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleMarkBatchAttendance(batch.id, student.id, opt.key);
+                                                                                            }}
+                                                                                            onDoubleClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUnmarkBatchAttendance(batch.id, student.id);
+                                                                                            }}
+                                                                                            className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all duration-200 cursor-pointer ${
                                                                                                 isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800`
                                                                                             }`}
                                                                                         >
@@ -2090,9 +2221,17 @@ export default function AttendancePage() {
                                                 grouped[e.classroom_id].entries.push(e);
                                             });
 
+                                            const sortedGrouped = Object.entries(grouped).sort(([cidA], [cidB]) => {
+                                                const batchA = activeBatchesOnSelectedDate.find(b => b.id === cidA);
+                                                const batchB = activeBatchesOnSelectedDate.find(b => b.id === cidB);
+                                                const timeA = batchA?.startTime || '00:00:00';
+                                                const timeB = batchB?.startTime || '00:00:00';
+                                                return timeA.localeCompare(timeB);
+                                            });
+
                                             return (
                                                 <div className="divide-y divide-slate-100 dark:divide-slate-800/40">
-                                                    {Object.entries(grouped).map(([cid, group]) => (
+                                                    {sortedGrouped.map(([cid, group]) => (
                                                         <div key={cid}>
                                                             {/* Batch sub-header */}
                                                             <div className="px-5 py-2.5 bg-slate-50/70 dark:bg-slate-800/40 flex items-center gap-2">
@@ -2108,7 +2247,13 @@ export default function AttendancePage() {
                                                                     return (
                                                                         <div
                                                                             key={attKey}
-                                                                            className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/20 transition-colors"
+                                                                            onDoubleClick={() => {
+                                                                                if (status) {
+                                                                                    handleUnmarkDateAttendance(entry.student.id, entry.classroom_id);
+                                                                                }
+                                                                            }}
+                                                                            title={status ? "Double-click marked section to unmark attendance" : undefined}
+                                                                            className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/20 transition-colors select-none"
                                                                         >
                                                                             <div className="flex items-center gap-3">
                                                                                 <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
@@ -2137,8 +2282,16 @@ export default function AttendancePage() {
                                                                                     return (
                                                                                         <button
                                                                                             key={opt.key}
-                                                                                            onClick={() => handleMarkDateAttendance(entry.student.id, entry.classroom_id, opt.key)}
-                                                                                            className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all duration-200 ${
+                                                                                            title={isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleMarkDateAttendance(entry.student.id, entry.classroom_id, opt.key);
+                                                                                            }}
+                                                                                            onDoubleClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleUnmarkDateAttendance(entry.student.id, entry.classroom_id);
+                                                                                            }}
+                                                                                            className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all duration-200 cursor-pointer ${
                                                                                                 isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800`
                                                                                             }`}
                                                                                         >
@@ -2944,7 +3097,7 @@ export default function AttendancePage() {
                                         onChange={(e) => setMakeupClassroomId(e.target.value)}
                                         className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/40 outline-none transition-all"
                                     >
-                                        {classrooms.map(room => (
+                                        {sortClassroomsByDayAndTime(classrooms).map(room => (
                                             <option key={room.id} value={room.id}>{room.name}</option>
                                         ))}
                                     </select>

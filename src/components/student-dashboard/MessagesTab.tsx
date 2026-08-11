@@ -225,16 +225,40 @@ export default function MessagesTab({
     const teacherName = classroom?.teacher_name || 'Academy Instructor';
     const showTeacherInSearch = leftSearch === '' || teacherName.toLowerCase().includes(leftSearch.toLowerCase());
 
+    const isVideoOrBlogRelease = (item: any) => {
+        if (!item) return false;
+        const titleLower = String(item.title || item.subject || '').toLowerCase();
+        const msgLower = String(item.message || item.content || '').toLowerCase();
+        const channelLower = String(item.channel || '').toLowerCase();
+
+        if (channelLower === 'blog' || channelLower === 'video') return true;
+        if (titleLower.startsWith('new video:') || titleLower.startsWith('new blog:')) return true;
+        if (titleLower.includes('new video') || titleLower.includes('new blog') || titleLower.includes('blog article') || titleLower.includes('video release') || titleLower.includes('blog release')) return true;
+        if (msgLower.includes('new video') || msgLower.includes('new blog') || msgLower.includes('blog article') || msgLower.includes('video release') || msgLower.includes('blog release')) return true;
+
+        if (Array.isArray(item.recipients)) {
+            if (item.recipients.some((r: any) => r._meta && (r.type === 'blog' || r.type === 'video'))) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     const unreadMessageNotifications = useMemo(() => {
         return notifications.filter(n => {
             if (n.is_read) return false;
+            if (isVideoOrBlogRelease(n)) return false;
             
             // Check if it matches an active broadcast announcement
-            const matchesBroadcast = broadcasts.some(b => n.title === b.subject || n.message === b.content);
-            if (matchesBroadcast) return true;
+            const matchingBroadcast = broadcasts.find(b => n.title === b.subject || n.message === b.content);
+            if (matchingBroadcast) {
+                if (isVideoOrBlogRelease(matchingBroadcast)) return false;
+                return true;
+            }
 
             // Check if it is a direct chat message (messages type and doesn't match a broadcast)
-            if (n.type === 'messages' && !matchesBroadcast) return true;
+            if (n.type === 'messages' && !matchingBroadcast) return true;
 
             return false;
         });
@@ -263,33 +287,25 @@ export default function MessagesTab({
     };
 
     const getUnreadCountForCategory = (catId: string) => {
-        const catBroadcasts = broadcasts.filter(b => {
+        return unreadMessageNotifications.filter(n => {
+            const b = broadcasts.find(bc => n.title === bc.subject || n.message === bc.content);
+            if (!b) return false;
             if (catId === 'announcements') {
                 return b.channel === 'announcements' || (!b.channel && b.sender?.role === 'admin');
-            } else if (catId === 'classroom') {
-                return b.channel === 'classroom' || (!b.channel && b.sender?.role !== 'admin');
-            } else if (catId === 'custom_groups') {
-                return b.channel === 'custom_groups';
-            } else if (catId === 'new_joiners') {
-                return b.channel === 'new_joiners';
-            } else if (catId === 'fee_management') {
-                return b.channel === 'fee_management';
-            } else if (catId === 'voice') {
-                return !!b.audio_attachment;
             }
+            if (catId === 'classroom') {
+                return b.channel === 'classroom' || (!b.channel && b.sender?.role !== 'admin');
+            }
+            if (catId === 'custom_groups') return b.channel === 'custom_groups';
+            if (catId === 'new_joiners') return b.channel === 'new_joiners';
+            if (catId === 'fee_management') return b.channel === 'fee_management';
+            if (catId === 'voice') return !!b.audio_attachment;
             return false;
-        });
-
-        return catBroadcasts.filter(b => {
-            return notifications.some(n => 
-                !n.is_read && 
-                (n.type === 'reminder' || n.type === 'messages') &&
-                (n.title === b.subject || n.message === b.content)
-            );
         }).length;
     };
 
     const isBroadcastUnread = (b: any) => {
+        if (isVideoOrBlogRelease(b)) return false;
         return notifications.some(n => 
             !n.is_read && 
             (n.type === 'reminder' || n.type === 'messages') &&
@@ -300,6 +316,8 @@ export default function MessagesTab({
     // Filter broadcasts based on right panel search and selected category
     const filteredBroadcasts = useMemo(() => {
         return broadcasts.filter(b => {
+            if (isVideoOrBlogRelease(b)) return false;
+
             // Category check
             if (selectedFeed.id === 'announcements') {
                 if (b.channel !== 'announcements' && !(!b.channel && b.sender?.role === 'admin')) return false;

@@ -8,6 +8,7 @@ import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sendClassroomNotification } from '../../../src/lib/notifications';
+import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 
 interface Classroom {
     id: string;
@@ -2433,7 +2434,7 @@ export default function TaskReviewPage() {
                                             onChange={(e) => setCreateSelectedClassroom(e.target.value)}
                                         >
                                             <option value="all">All Students (Student Directory)</option>
-                                            {createClassrooms.map(cls => (
+                                            {sortClassroomsByDayAndTime(createClassrooms).map(cls => (
                                                 <option key={cls.id} value={cls.id}>{cls.name}</option>
                                             ))}
                                         </select>

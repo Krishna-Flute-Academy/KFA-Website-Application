@@ -226,7 +226,17 @@ export default function MeetingPage() {
 
     // ── Attendance helpers ────────────────────────────────────────────────────
     const markStudent = (studentId: string, status: AttendanceStatus) => {
-        setStudents(prev => prev.map(s => s.id === studentId ? { ...s, attendance: status } : s));
+        setStudents(prev => prev.map(s => {
+            if (s.id === studentId) {
+                const nextStatus = s.attendance === status ? null : status;
+                return { ...s, attendance: nextStatus };
+            }
+            return s;
+        }));
+    };
+
+    const unmarkStudent = (studentId: string) => {
+        setStudents(prev => prev.map(s => s.id === studentId ? { ...s, attendance: null } : s));
     };
 
     const markAllPresent = () => {
@@ -249,19 +259,36 @@ export default function MeetingPage() {
         if (!teacherProfile || !allMarked) return;
         setSavingAttendance(true);
         try {
-            const rows = students.map(s => ({
-                student_id: s.id,
-                classroom_id: classroomId,
-                date: sessionDate,
-                status: (s.attendance || 'present').toLowerCase(),
-                marked_by: teacherProfile.id,
-            }));
+            const rowsToUpsert = students
+                .filter(s => s.attendance !== null)
+                .map(s => ({
+                    student_id: s.id,
+                    classroom_id: classroomId,
+                    date: sessionDate,
+                    status: s.attendance!.toLowerCase(),
+                    marked_by: teacherProfile.id,
+                }));
 
-            const { error } = await supabaseAuth
-                .from('attendance')
-                .upsert(rows, { onConflict: 'student_id, classroom_id, date' });
+            const nullStudentIds = students
+                .filter(s => s.attendance === null)
+                .map(s => s.id);
 
-            if (error) throw error;
+            if (rowsToUpsert.length > 0) {
+                const { error } = await supabaseAuth
+                    .from('attendance')
+                    .upsert(rowsToUpsert, { onConflict: 'student_id, classroom_id, date' });
+
+                if (error) throw error;
+            }
+
+            if (nullStudentIds.length > 0) {
+                await supabaseAuth
+                    .from('attendance')
+                    .delete()
+                    .in('student_id', nullStudentIds)
+                    .eq('classroom_id', classroomId)
+                    .eq('date', sessionDate);
+            }
 
             // Mark classroom as live in DB via RPC
             const { error: liveError } = await supabaseAuth.rpc('start_classroom_session', {
@@ -519,7 +546,16 @@ export default function MeetingPage() {
                             <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[400px] overflow-y-auto pr-1">
                                 {students.map((student) => (
                                     <div key={student.id} className="py-4 first:pt-0 last:pb-0">
-                                        <div className="flex items-center justify-between gap-4 flex-wrap md:flex-nowrap">
+                                        <div 
+                                            key={student.id} 
+                                            onDoubleClick={() => {
+                                                if (student.attendance) {
+                                                    unmarkStudent(student.id);
+                                                }
+                                            }}
+                                            title={student.attendance ? "Double-click marked section to unmark attendance" : undefined}
+                                            className="flex items-center justify-between gap-4 flex-wrap md:flex-nowrap select-none"
+                                        >
                                             <div className="flex items-center gap-3">
                                                 <div className="w-9 h-9 rounded-full bg-[#ecb613]/10 flex items-center justify-center border-2 border-white shadow-sm dark:border-slate-800 flex-shrink-0">
                                                     {student.profile_pic_url ? (
@@ -548,8 +584,16 @@ export default function MeetingPage() {
                                                     return (
                                                         <button
                                                             key={opt.key}
-                                                            onClick={() => markStudent(student.id, opt.key)}
-                                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all duration-200 ${
+                                                            title={isActive ? "Double-click or click to unmark attendance" : `Mark as ${opt.label}`}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                markStudent(student.id, opt.key);
+                                                            }}
+                                                            onDoubleClick={(e) => {
+                                                                e.stopPropagation();
+                                                                unmarkStudent(student.id);
+                                                            }}
+                                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all duration-200 cursor-pointer ${
                                                                 isActive 
                                                                     ? opt.activeBg
                                                                     : `border ${opt.border} bg-white dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200`

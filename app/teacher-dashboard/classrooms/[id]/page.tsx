@@ -1532,8 +1532,47 @@ export default function ClassroomDashboardPage({
     }, [activeTab, fetchSessionLogs]);
 
     // ── Mark Classroom Attendance Handler ──────────────────────────────────────
+    const handleUnmarkClassroomAttendance = async (studentId: string) => {
+        if (!classroomId || !teacherProfile) return;
+
+        const prevStatus = attendanceRecords[studentId];
+
+        // Optimistically remove from state
+        setAttendanceRecords(prev => {
+            const next = { ...prev };
+            delete next[studentId];
+            return next;
+        });
+        setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
+
+        try {
+            const { error } = await supabaseAuth
+                .from('attendance')
+                .delete()
+                .eq('student_id', studentId)
+                .eq('classroom_id', classroomId)
+                .eq('date', attendanceDate);
+
+            if (error) throw error;
+        } catch (err: any) {
+            console.error('Error unmarking attendance:', err);
+            alert(`Failed to unmark attendance: ${err.message || err}`);
+            if (prevStatus) {
+                setAttendanceRecords(prev => ({ ...prev, [studentId]: prevStatus }));
+            }
+        } finally {
+            setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: false }));
+        }
+    };
+
     const handleMarkClassroomAttendance = async (studentId: string, status: string) => {
         if (!classroomId || !teacherProfile) return;
+
+        // If clicking the already selected status, unmark it
+        if (attendanceRecords[studentId] === status) {
+            await handleUnmarkClassroomAttendance(studentId);
+            return;
+        }
 
         // Optimistically update status
         setAttendanceRecords(prev => ({ ...prev, [studentId]: status as any }));
@@ -4240,6 +4279,7 @@ export default function ClassroomDashboardPage({
                             attendanceLoading={attendanceLoading}
                             isSavingAttendanceMap={isSavingAttendanceMap}
                             handleMarkClassroomAttendance={handleMarkClassroomAttendance}
+                            handleUnmarkClassroomAttendance={handleUnmarkClassroomAttendance}
                             formatLocalDate={formatLocalDate}
                         />
                     )}

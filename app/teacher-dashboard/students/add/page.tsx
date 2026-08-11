@@ -8,6 +8,7 @@ import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import ImageUploadWithCrop from '../../../../src/components/teacher-dashboard/ImageUploadWithCrop';
+import { sortClassroomsByDayAndTime } from '../../../../src/lib/classroomSort';
 
 interface Classroom {
     id: string;
@@ -288,7 +289,7 @@ export default function AddStudentPage() {
                                                     }}
                                                 >
                                                     <option value="" disabled>Select an active batch...</option>
-                                                    {classrooms.map(room => (
+                                                    {sortClassroomsByDayAndTime(classrooms).map(room => (
                                                         <option key={room.id} value={room.id}>{room.name}</option>
                                                     ))}
                                                 </select>

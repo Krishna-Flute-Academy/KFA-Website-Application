@@ -7,6 +7,7 @@ import { Loader2, Users, ShieldAlert, Award, Calendar, Coins, UserCheck, ArrowRi
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { useToast } from '../../../src/lib/ToastContext';
+import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 
 interface UserProfile {
     id: string;
@@ -139,8 +140,8 @@ export default function RoleAllocationDashboard() {
 
     const filteredClassrooms = React.useMemo(() => {
         const activeRooms = classrooms.filter(c => c.status === 'active');
-        if (!selectedTeacherId) return activeRooms;
-        return activeRooms.filter(c => c.teacher_id === selectedTeacherId);
+        const targetRooms = selectedTeacherId ? activeRooms.filter(c => c.teacher_id === selectedTeacherId) : activeRooms;
+        return sortClassroomsByDayAndTime(targetRooms);
     }, [classrooms, selectedTeacherId]);
 
     const filteredUsers = React.useMemo(() => {
@@ -432,13 +433,7 @@ export default function RoleAllocationDashboard() {
                                                     )}
                                                     
                                                     {(activeTab === 'students' || activeTab === 'pending') && (
-                                                        <div className="grid grid-cols-3 gap-2 text-xs p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
-                                                            <div>
-                                                                <span className="block text-[9px] font-bold text-slate-400 uppercase">Joining Date</span>
-                                                                <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] whitespace-nowrap">
-                                                                    {user.join_date ? new Date(user.join_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A'}
-                                                                </span>
-                                                            </div>
+                                                        <div className="grid grid-cols-2 gap-2 text-xs p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
                                                             <div>
                                                                 <span className="block text-[9px] font-bold text-slate-400 uppercase">Billing Plan</span>
                                                                 <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] capitalize">
@@ -495,24 +490,23 @@ export default function RoleAllocationDashboard() {
                                     <table className="w-full border-collapse text-left">
                                         <thead>
                                             <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/20">
-                                                <th className="px-6 py-4">User</th>
-                                                <th className="px-6 py-4">Contact Details</th>
-                                                <th className="px-6 py-4">Current Role</th>
+                                                <th className="px-4 py-3.5 text-left whitespace-nowrap">User</th>
+                                                <th className="px-4 py-3.5 text-left whitespace-nowrap">Contact Details</th>
+                                                <th className="px-4 py-3.5 text-left whitespace-nowrap">Current Role</th>
                                                 {activeTab === 'students' && (
                                                     <>
-                                                        <th className="px-6 py-4">Teacher</th>
-                                                        <th className="px-6 py-4">Batch Class</th>
+                                                        <th className="px-4 py-3.5 text-left whitespace-nowrap">Teacher</th>
+                                                        <th className="px-4 py-3.5 text-left whitespace-nowrap">Batch Class</th>
                                                     </>
                                                 )}
                                                 {(activeTab === 'students' || activeTab === 'pending') && (
                                                     <>
-                                                        <th className="px-6 py-4">Joining Date</th>
-                                                        <th className="px-6 py-4">Billing Plan</th>
-                                                        <th className="px-6 py-4">Due Date</th>
+                                                        <th className="px-4 py-3.5 text-left whitespace-nowrap">Billing Plan</th>
+                                                        <th className="px-4 py-3.5 text-left whitespace-nowrap">Due Date</th>
                                                     </>
                                                 )}
-                                                <th className="px-6 py-4">Status</th>
-                                                <th className="px-6 py-4 text-right">Actions</th>
+                                                <th className="px-4 py-3.5 text-left whitespace-nowrap">Status</th>
+                                                <th className="px-4 py-3.5 text-right whitespace-nowrap">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -527,35 +521,35 @@ export default function RoleAllocationDashboard() {
                                                     return (
                                                         <tr key={user.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
                                                             {/* User Profile */}
-                                                            <td className="px-6 py-4.5">
+                                                            <td className="px-4 py-4 min-w-[180px]">
                                                                 <div className="flex items-center gap-3">
-                                                                    <div className="size-9 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800">
+                                                                    <div className="size-8 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800 shrink-0">
                                                                         <span>{user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}</span>
                                                                     </div>
-                                                                    <div>
-                                                                        <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">{user.name || 'Unassigned Name'}</p>
-                                                                        <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-wide">ID: {user.id.slice(0, 8)}</p>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug break-words">{user.name || 'Unassigned Name'}</p>
+                                                                        <p className="text-[9px] font-mono font-bold text-slate-400 mt-0.5 uppercase tracking-wide">ID: {user.id.slice(0, 8)}</p>
                                                                     </div>
                                                                 </div>
                                                             </td>
 
                                                             {/* Contact Details */}
-                                                            <td className="px-6 py-4.5 space-y-1">
-                                                                <p className="text-xs text-slate-700 dark:text-slate-350 flex items-center gap-1.5 font-medium">
-                                                                    <Mail className="size-3.5 text-slate-400" />
-                                                                    {user.email}
+                                                            <td className="px-4 py-4 min-w-[200px] space-y-0.5">
+                                                                <p className="text-xs text-slate-700 dark:text-slate-350 flex items-center gap-1.5 font-medium truncate" title={user.email}>
+                                                                    <Mail className="size-3.5 text-slate-400 shrink-0" />
+                                                                    <span className="truncate">{user.email}</span>
                                                                 </p>
                                                                 {user.phone && (
-                                                                    <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                                                                        <Phone className="size-3.5 text-slate-400" />
-                                                                        {user.phone}
+                                                                    <p className="text-[11px] text-slate-400 flex items-center gap-1.5 font-medium">
+                                                                        <Phone className="size-3.5 text-slate-400 shrink-0" />
+                                                                        <span>{user.phone}</span>
                                                                     </p>
                                                                 )}
                                                             </td>
 
                                                             {/* Current Role */}
-                                                            <td className="px-6 py-4.5">
-                                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
+                                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider inline-block whitespace-nowrap ${
                                                                     user.role === 'admin'
                                                                         ? 'bg-red-50 dark:bg-red-950/20 text-red-600 border border-red-100 dark:border-red-900/30'
                                                                         : user.role === 'teacher'
@@ -571,23 +565,20 @@ export default function RoleAllocationDashboard() {
                                                             {/* Student Specific Fields */}
                                                             {activeTab === 'students' && (
                                                                 <>
-                                                                    <td className="px-6 py-4.5 text-xs font-semibold text-slate-600 dark:text-slate-350">
+                                                                    <td className="px-4 py-4 text-xs font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                                                                         {teacherName}
                                                                     </td>
-                                                                    <td className="px-6 py-4.5 text-xs font-bold text-[#b45309] dark:text-[#ecb613]">
+                                                                    <td className="px-4 py-4 text-xs font-extrabold text-[#b45309] dark:text-[#ecb613] min-w-[150px] leading-snug">
                                                                         {class_name}
                                                                     </td>
                                                                 </>
                                                             )}
                                                             {(activeTab === 'students' || activeTab === 'pending') && (
                                                                 <>
-                                                                    <td className="px-6 py-4.5 text-xs font-semibold text-slate-650 dark:text-slate-350 whitespace-nowrap">
-                                                                        {user.join_date ? new Date(user.join_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
-                                                                    </td>
-                                                                    <td className="px-6 py-4.5 text-xs font-semibold text-slate-650 dark:text-slate-350 capitalize">
+                                                                    <td className="px-4 py-4 text-xs font-semibold text-slate-650 dark:text-slate-350 capitalize whitespace-nowrap">
                                                                         {user.fees_basis === 'monthly' ? 'Monthly' : user.fees_basis === 'class' ? 'Class-basis' : 'N/A'}
                                                                     </td>
-                                                                    <td className="px-6 py-4.5 text-xs font-semibold text-slate-650 dark:text-slate-350 whitespace-nowrap">
+                                                                    <td className="px-4 py-4 text-xs font-semibold text-slate-650 dark:text-slate-350 whitespace-nowrap">
                                                                         {(() => {
                                                                             if (user.fees_basis === 'monthly') {
                                                                                 if (user.fees_collection_date) {
@@ -601,8 +592,8 @@ export default function RoleAllocationDashboard() {
                                                             )}
 
                                                             {/* Status Badge */}
-                                                            <td className="px-6 py-4.5">
-                                                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${
                                                                     user.status === 'active'
                                                                         ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30'
                                                                         : 'bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30'
@@ -613,11 +604,11 @@ export default function RoleAllocationDashboard() {
                                                             </td>
 
                                                             {/* Actions */}
-                                                            <td className="px-6 py-4.5 text-right">
+                                                            <td className="px-4 py-4 text-right whitespace-nowrap">
                                                                 <div className="flex items-center justify-end gap-2">
                                                                     <button
                                                                         onClick={() => openAllocationModal(user)}
-                                                                        className="px-3 py-1.5 text-xs font-bold bg-[#ecb613] hover:bg-[#ecb613]/90 text-white rounded-lg shadow-sm shadow-[#ecb613]/10 hover:shadow transition-all active:scale-[0.97] flex items-center gap-1"
+                                                                        className="px-3 py-1.5 text-xs font-black bg-[#ecb613] hover:bg-[#d49900] text-slate-950 rounded-xl shadow-xs transition-all active:scale-[0.97] inline-flex items-center gap-1.5 shrink-0"
                                                                     >
                                                                         <UserCheck className="size-3.5" />
                                                                         <span>{user.role === 'pending' ? 'Allocate' : 'Edit Allocation'}</span>
@@ -625,7 +616,7 @@ export default function RoleAllocationDashboard() {
                                                                     {user.role !== 'admin' && (
                                                                         <button
                                                                             onClick={() => handleDeleteUser(user.id, user.name || user.email)}
-                                                                            className="p-1.5 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-450 rounded-lg transition-all shadow-xs"
+                                                                            className="p-1.5 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-450 rounded-lg transition-all shadow-xs shrink-0"
                                                                             title="Delete User"
                                                                         >
                                                                             <Trash2 className="size-3.5" />
@@ -891,7 +882,7 @@ export default function RoleAllocationDashboard() {
                                         <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Assign Classrooms</label>
                                         <p className="text-xs text-slate-500 mb-3">Select the classrooms/batches taught by this instructor:</p>
                                         <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-900/20 custom-scrollbar">
-                                            {classrooms.map(classroom => {
+                                            {sortClassroomsByDayAndTime(classrooms).map(classroom => {
                                                 const isAssignedToThis = teacherClassroomIds.includes(classroom.id);
                                                 const assignedTeacher = teachers.find(t => t.id === classroom.teacher_id);
                                                 const isAssignedToOther = classroom.teacher_id && classroom.teacher_id !== selectedUser.id;
