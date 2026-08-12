@@ -36,8 +36,23 @@ export default function SettingsTab({ profile, refreshData }: SettingsTabProps) 
     const handleSaveProfile = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!profile?.id) return;
-        if (!name.trim()) {
-            setMessage({ text: 'Name is required.', type: 'error' });
+
+        const cleanName = name.trim();
+        const cleanPhone = phone.trim();
+        const digitsOnly = cleanPhone.replace(/\D/g, '');
+
+        if (!cleanName || cleanName.length < 2 || cleanName.toLowerCase() === 'new student') {
+            setMessage({ text: 'Full Name is a mandatory required field.', type: 'error' });
+            return;
+        }
+
+        if (!cleanPhone || digitsOnly.length < 10) {
+            setMessage({ text: 'Phone Number is a mandatory required field. Please enter a valid 10-digit phone number.', type: 'error' });
+            return;
+        }
+
+        if (!profile.profile_pic_url) {
+            setMessage({ text: 'Profile Photo is a mandatory required field. Please upload a profile photo.', type: 'error' });
             return;
         }
 
@@ -48,8 +63,8 @@ export default function SettingsTab({ profile, refreshData }: SettingsTabProps) 
             const { error } = await supabaseAuth
                 .from('users')
                 .update({
-                    name: name.trim(),
-                    phone: phone.trim() || null
+                    name: cleanName,
+                    phone: cleanPhone
                 })
                 .eq('id', profile.id);
 
@@ -163,7 +178,9 @@ export default function SettingsTab({ profile, refreshData }: SettingsTabProps) 
                 {/* Photo Upload Column */}
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col items-center justify-between text-center gap-6">
                     <div className="flex flex-col items-center">
-                        <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest block mb-4">Profile Photo</span>
+                        <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest block mb-4">
+                            Profile Photo <span className="text-rose-500 font-bold ml-0.5">*</span>
+                        </span>
                         
                         <div className="relative group">
                             <div className="w-32 h-32 rounded-3xl bg-slate-50 dark:bg-slate-950 flex items-center justify-center overflow-hidden border-2 border-slate-200 dark:border-slate-800 shadow-inner transition-transform group-hover:scale-102">
@@ -187,7 +204,7 @@ export default function SettingsTab({ profile, refreshData }: SettingsTabProps) 
                     <div className="w-full">
                         <label className="w-full min-h-[40px] px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-[#202c33] dark:hover:bg-[#2a3942] text-slate-800 dark:text-[#e9edef] rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 cursor-pointer transition-all border border-slate-200 dark:border-slate-800 shadow-2xs">
                             <Upload className="w-4 h-4 text-slate-500 shrink-0" />
-                            <span>Upload Photo</span>
+                            <span>Upload Photo *</span>
                             <input 
                                 type="file" 
                                 onChange={handlePhotoUpload} 
@@ -197,7 +214,7 @@ export default function SettingsTab({ profile, refreshData }: SettingsTabProps) 
                             />
                         </label>
                         <p className="text-[9.5px] text-slate-450 dark:text-[#8696a0] font-semibold mt-2.5 leading-relaxed">
-                            Supports JPG, PNG or WebP. Max size 5MB.
+                            Supports JPG, PNG or WebP. Max size 5MB. Mandatory field.
                         </p>
                     </div>
                 </div>
@@ -209,7 +226,9 @@ export default function SettingsTab({ profile, refreshData }: SettingsTabProps) 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Name Input */}
                         <div className="space-y-2">
-                            <label htmlFor="name-input" className="text-xs font-extrabold text-slate-600 dark:text-[#8696a0] uppercase tracking-wider block">Full Name</label>
+                            <label htmlFor="name-input" className="text-xs font-extrabold text-slate-600 dark:text-[#8696a0] uppercase tracking-wider block">
+                                Full Name <span className="text-rose-500 font-bold ml-0.5">*</span>
+                            </label>
                             <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#1f2c34] border border-slate-200/80 dark:border-slate-800 rounded-xl px-3.5 py-1.5 focus-within:border-[#ecb613] dark:focus-within:border-amber-500 transition-colors shadow-3xs">
                                 <User className="w-4 h-4 text-slate-400 shrink-0" />
                                 <input
@@ -220,13 +239,16 @@ export default function SettingsTab({ profile, refreshData }: SettingsTabProps) 
                                     placeholder="Enter your full name"
                                     className="flex-1 bg-transparent border-none outline-none text-xs sm:text-sm font-semibold text-slate-800 dark:text-[#e9edef] placeholder:text-slate-450"
                                     disabled={loading}
+                                    required
                                 />
                             </div>
                         </div>
 
                         {/* Phone Input */}
                         <div className="space-y-2">
-                            <label htmlFor="phone-input" className="text-xs font-extrabold text-slate-600 dark:text-[#8696a0] uppercase tracking-wider block">Phone Number</label>
+                            <label htmlFor="phone-input" className="text-xs font-extrabold text-slate-600 dark:text-[#8696a0] uppercase tracking-wider block">
+                                Phone Number <span className="text-rose-500 font-bold ml-0.5">*</span>
+                            </label>
                             <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#1f2c34] border border-slate-200/80 dark:border-slate-800 rounded-xl px-3.5 py-1.5 focus-within:border-[#ecb613] dark:focus-within:border-amber-500 transition-colors shadow-3xs">
                                 <Phone className="w-4 h-4 text-slate-400 shrink-0" />
                                 <input
@@ -237,6 +259,7 @@ export default function SettingsTab({ profile, refreshData }: SettingsTabProps) 
                                     placeholder="Enter your phone number"
                                     className="flex-1 bg-transparent border-none outline-none text-xs sm:text-sm font-semibold text-slate-800 dark:text-[#e9edef] placeholder:text-slate-450"
                                     disabled={loading}
+                                    required
                                 />
                             </div>
                         </div>
