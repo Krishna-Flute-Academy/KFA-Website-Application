@@ -28,6 +28,7 @@ const SettingsTab = dynamic(() => import('./SettingsTab'), { ssr: false });
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import BlogNotification from './BlogNotification';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
+import ProfileCompletionModal from '../common/ProfileCompletionModal';
 
 interface StudentProfile {
     id: string;
@@ -256,6 +257,7 @@ export default function StudentDashboardContainer() {
     const [submitVideoUrl, setSubmitVideoUrl] = useState('');
     const [submitAudioBlob, setSubmitAudioBlob] = useState<Blob | null>(null);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
+    const [showProfileModal, setShowProfileModal] = useState(false);
 
     // Fee Notification State
     const feeStatus = useMemo(() => {
@@ -444,6 +446,16 @@ export default function StudentDashboardContainer() {
             const user = userRes.data;
             if (!user || user.role === 'teacher') { router.push('/'); return; }
             setProfile(user);
+
+            const isNameIncomplete = !user.name || user.name.trim().toLowerCase() === 'new student';
+            const isPhoneIncomplete = !user.phone || user.phone.trim().replace(/\D/g, '').length < 10;
+            const isPhotoIncomplete = !user.profile_pic_url;
+
+            if (isNameIncomplete || isPhoneIncomplete || isPhotoIncomplete) {
+                setShowProfileModal(true);
+            } else {
+                setShowProfileModal(false);
+            }
             setPayments(payRes.data || []);
             setAttendance(attRes.data || []);
             setNotifications(notifRes.data || []);
@@ -2761,7 +2773,20 @@ export default function StudentDashboardContainer() {
 
             {/* Blog Post Notification — popup on first login for new posts, then corner banner */}
             {profile && (
-                <BlogNotification studentId={profile.id} broadcasts={broadcasts} />
+                <>
+                    <BlogNotification studentId={profile.id} broadcasts={broadcasts} />
+                    <ProfileCompletionModal
+                        isOpen={showProfileModal}
+                        userId={profile.id}
+                        initialName={profile.name || ''}
+                        initialPhone={profile.phone || ''}
+                        initialPic={profile.profile_pic_url || ''}
+                        onComplete={(updated) => {
+                            setProfile(prev => prev ? { ...prev, name: updated.name, phone: updated.phone, profile_pic_url: updated.profile_pic_url } : null);
+                            setShowProfileModal(false);
+                        }}
+                    />
+                </>
             )}
         </>
     );

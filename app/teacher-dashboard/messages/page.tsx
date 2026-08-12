@@ -80,7 +80,7 @@ const INITIAL_MOCK_BROADCASTS: Broadcast[] = [
 function MessagesDashboardContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const paramStudentId = searchParams.get('studentId');
+    const paramStudentId = searchParams.get('studentId') || searchParams.get('chat');
     const paramStudentName = searchParams.get('studentName');
     const lastProcessedStudentIdRef = useRef<string | null>(null);
 
@@ -452,14 +452,18 @@ function MessagesDashboardContent() {
     const [selectedRecipients, setSelectedRecipients] = useState<Array<{ id: string; name: string; type: 'class' | 'student' | 'global' | 'custom' }>>([]);
 
     useEffect(() => {
-        if (paramStudentId && paramStudentName && lastProcessedStudentIdRef.current !== paramStudentId) {
-            setSelectedRecipients([
-                {
-                    id: paramStudentId,
-                    name: decodeURIComponent(paramStudentName),
-                    type: 'student'
-                }
-            ]);
+        if (paramStudentId && lastProcessedStudentIdRef.current !== paramStudentId) {
+            setActiveChannel('chatbox');
+            setActiveChatStudentId(paramStudentId);
+            if (paramStudentName) {
+                setSelectedRecipients([
+                    {
+                        id: paramStudentId,
+                        name: decodeURIComponent(paramStudentName),
+                        type: 'student'
+                    }
+                ]);
+            }
             lastProcessedStudentIdRef.current = paramStudentId;
         }
     }, [paramStudentId, paramStudentName]);
@@ -1290,6 +1294,13 @@ function MessagesDashboardContent() {
         return Array.from(studentIds);
     };
 
+    const totalUnreadChatboxMessages = useMemo(() => {
+        if (!teacherProfile?.id) return 0;
+        return directMessages.filter(m => 
+            m.receiver_id === teacherProfile.id && m.status !== 'read'
+        ).length;
+    }, [directMessages, teacherProfile?.id]);
+
     const chatContacts = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
         const localQuery = studentSearchQuery.trim().toLowerCase();
@@ -1298,12 +1309,18 @@ function MessagesDashboardContent() {
                 (m.sender_id === student.id && m.receiver_id === teacherProfile?.id) ||
                 (m.sender_id === teacherProfile?.id && m.receiver_id === student.id)
             );
+            const unreadCount = threadMsgs.filter(m => 
+                m.sender_id === student.id && 
+                m.receiver_id === teacherProfile?.id && 
+                m.status !== 'read'
+            ).length;
             const lastMsg = threadMsgs.length > 0 ? threadMsgs[threadMsgs.length - 1] : null;
             return {
                 ...student,
                 lastMessage: lastMsg ? lastMsg.message_text : 'No messages yet',
                 lastMessageAt: lastMsg ? new Date(lastMsg.created_at) : null,
-                threadMessages: threadMsgs
+                threadMessages: threadMsgs,
+                unreadCount
             };
         });
 
@@ -1312,7 +1329,7 @@ function MessagesDashboardContent() {
             filtered = filtered.filter(contact => 
                 contact.name.toLowerCase().includes(query) ||
                 contact.lastMessage.toLowerCase().includes(query) ||
-                contact.threadMessages.some(m => m.message_text.toLowerCase().includes(query))
+                contact.threadMessages.some((m: any) => m.message_text.toLowerCase().includes(query))
             );
         }
         if (localQuery) {
@@ -1322,6 +1339,10 @@ function MessagesDashboardContent() {
         }
 
         return filtered.sort((a, b) => {
+            // First priority: contacts with unread messages sort to top
+            if (a.unreadCount !== b.unreadCount) {
+                return b.unreadCount - a.unreadCount;
+            }
             if (!a.lastMessageAt && !b.lastMessageAt) return 0;
             if (!a.lastMessageAt) return 1;
             if (!b.lastMessageAt) return -1;
@@ -1910,6 +1931,7 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                         { id: 'chatbox', label: 'Student Chatbox', desc: 'Normal/Direct Messages', icon: MessageSquare, color: 'text-teal-500 bg-teal-50 dark:bg-teal-950/20' },
                                     ].filter(channel => teacherProfile?.role === 'admin' || channel.id === 'chatbox').map((channel) => {
                                         const isSelected = activeChannel === channel.id;
+                                        const hasUnread = channel.id === 'chatbox' && totalUnreadChatboxMessages > 0;
                                         return (
                                             <button 
                                                 key={channel.id}
@@ -1920,17 +1942,29 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                 className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all border text-left ${
                                                     isSelected 
                                                         ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 shadow-sm ring-1 ring-stone-150' 
-                                                        : 'bg-white border-transparent hover:bg-slate-50/50 dark:bg-slate-950/20'
+                                                        : hasUnread 
+                                                            ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 shadow-xs ring-1 ring-emerald-400/40'
+                                                            : 'bg-white border-transparent hover:bg-slate-50/50 dark:bg-slate-950/20'
                                                 }`}
                                             >
-                                                <div className={`p-2.5 rounded-lg shrink-0 ${channel.color}`}>
+                                                <div className={`p-2.5 rounded-lg shrink-0 relative ${channel.color}`}>
                                                     <channel.icon className="w-5 h-5" />
+                                                    {hasUnread && (
+                                                        <span className="absolute -top-1 -right-1 block h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-ping" />
+                                                    )}
                                                 </div>
-                                                <div className="min-w-0">
-                                                    <h5 className="text-sm font-bold text-slate-800 dark:text-slate-250">{channel.label}</h5>
+                                                <div className="min-w-0 flex-1">
+                                                    <h5 className={`text-sm ${hasUnread ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-800 dark:text-slate-250'}`}>
+                                                        {channel.label}
+                                                    </h5>
                                                     <p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5">{channel.desc}</p>
                                                 </div>
-                                                <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 ml-auto shrink-0" />
+                                                {hasUnread && (
+                                                    <span className="bg-emerald-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow-xs shrink-0 animate-pulse">
+                                                        {totalUnreadChatboxMessages} New
+                                                    </span>
+                                                )}
+                                                <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 ml-1 shrink-0" />
                                             </button>
                                         );
                                     })}
@@ -2045,6 +2079,7 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                         <div className="flex-1 overflow-y-auto divide-y divide-slate-50 dark:divide-slate-850 custom-scrollbar">
                                             {chatContacts.map(contact => {
                                                 const isActive = activeChatStudentId === contact.id;
+                                                const hasUnread = (contact.unreadCount || 0) > 0;
                                                 return (
                                                     <button
                                                         key={contact.id}
@@ -2055,10 +2090,12 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                             setShowTemplateMenu(false);
                                                             setShowSaveTemplateForm(false);
                                                         }}
-                                                        className={`w-full px-5 py-4 flex gap-3 items-center transition-colors text-left cursor-pointer ${
+                                                        className={`w-full px-5 py-4 flex gap-3 items-center transition-all text-left cursor-pointer relative border-l-4 ${
                                                             isActive
-                                                                ? 'bg-teal-50/45 dark:bg-slate-800/40 text-slate-900 dark:text-white font-extrabold'
-                                                                : 'hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
+                                                                ? 'bg-teal-50/50 dark:bg-slate-800/60 text-slate-900 dark:text-white font-extrabold border-l-teal-600'
+                                                                : hasUnread
+                                                                    ? 'bg-emerald-50/80 dark:bg-emerald-950/40 text-slate-900 dark:text-white border-l-emerald-500 font-bold'
+                                                                    : 'hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300 border-l-transparent'
                                                         }`}
                                                     >
                                                         {/* Avatar Circle */}
@@ -2075,20 +2112,32 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                                     {contact.name?.charAt(0) || 'S'}
                                                                 </div>
                                                             )}
+                                                            {hasUnread && (
+                                                                <span className="absolute -top-0.5 -right-0.5 block h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-bounce" />
+                                                            )}
                                                             {contact.is_online && (
                                                                 <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
                                                             )}
                                                         </div>
                                                         <div className="min-w-0 flex-1 flex flex-col">
                                                             <div className="flex justify-between items-baseline gap-1">
-                                                                <span className="font-extrabold text-xs truncate">{contact.name}</span>
-                                                                {contact.lastMessageAt && (
-                                                                    <span className="text-[9px] text-slate-400 shrink-0 font-medium">
-                                                                        {contact.lastMessageAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                    </span>
-                                                                )}
+                                                                <span className={`text-xs truncate ${hasUnread ? 'font-black text-slate-900 dark:text-white' : 'font-extrabold'}`}>
+                                                                    {contact.name}
+                                                                </span>
+                                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                                    {contact.lastMessageAt && (
+                                                                        <span className={`text-[9px] ${hasUnread ? 'text-emerald-700 dark:text-emerald-400 font-bold' : 'text-slate-400 font-medium'}`}>
+                                                                            {contact.lastMessageAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                        </span>
+                                                                    )}
+                                                                    {hasUnread && (
+                                                                        <span className="bg-emerald-500 text-white text-[10px] font-black rounded-full px-2 py-0.5 shadow-xs">
+                                                                            {contact.unreadCount}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                            <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate block mt-0.5 font-medium">
+                                                            <span className={`text-[10px] truncate block mt-0.5 ${hasUnread ? 'text-slate-900 dark:text-slate-100 font-bold' : 'text-slate-400 dark:text-slate-500 font-medium'}`}>
                                                                 {contact.lastMessage}
                                                             </span>
                                                         </div>

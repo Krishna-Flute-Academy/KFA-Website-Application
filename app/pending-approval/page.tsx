@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../src/lib/supabase-auth';
 import { Clock, LogOut, Music, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import ProfileCompletionModal from '../../src/components/common/ProfileCompletionModal';
 
 const isNetworkError = (error: any) => {
     if (!error) return false;
@@ -26,6 +27,9 @@ export default function PendingApprovalPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [userEmail, setUserEmail] = useState('');
+    const [userId, setUserId] = useState('');
+    const [userProfile, setUserProfile] = useState<{ name: string; phone: string; profile_pic_url: string } | null>(null);
+    const [showProfileModal, setShowProfileModal] = useState(false);
 
     useEffect(() => {
         const checkStatus = async () => {
@@ -36,23 +40,44 @@ export default function PendingApprovalPage() {
                     return;
                 }
 
+                setUserId(session.user.id);
                 setUserEmail(session.user.email || '');
 
-                // Re-fetch role to check if it has been updated
+                // Fetch full profile details to check completeness
                 const { data: userData, error } = await supabaseAuth
                     .from('users')
-                    .select('role')
+                    .select('id, role, name, phone, profile_pic_url')
                     .eq('id', session.user.id)
                     .maybeSingle();
 
                 if (error) throw error;
 
-                if (userData && userData.role && userData.role !== 'pending') {
-                    const normalizedRole = userData.role.toLowerCase();
-                    if (normalizedRole === 'admin' || normalizedRole === 'teacher') {
-                        router.push('/teacher-dashboard');
-                    } else if (normalizedRole === 'student') {
-                        router.push('/student-dashboard');
+                if (userData) {
+                    setUserProfile({
+                        name: userData.name || '',
+                        phone: userData.phone || '',
+                        profile_pic_url: userData.profile_pic_url || session.user.user_metadata?.picture || session.user.user_metadata?.avatar_url || ''
+                    });
+
+                    const isNameIncomplete = !userData.name || userData.name.trim().toLowerCase() === 'new student';
+                    const isPhoneIncomplete = !userData.phone || userData.phone.trim().replace(/\D/g, '').length < 10;
+                    const isPhotoIncomplete = !userData.profile_pic_url && !session.user.user_metadata?.picture && !session.user.user_metadata?.avatar_url;
+
+                    if (isNameIncomplete || isPhoneIncomplete || isPhotoIncomplete) {
+                        setShowProfileModal(true);
+                    } else {
+                        setShowProfileModal(false);
+                    }
+
+                    if (userData.role && userData.role !== 'pending') {
+                        const normalizedRole = userData.role.toLowerCase();
+                        if (normalizedRole === 'admin' || normalizedRole === 'teacher') {
+                            router.push('/teacher-dashboard');
+                        } else if (normalizedRole === 'student') {
+                            router.push('/student-dashboard');
+                        }
+                    } else {
+                        setLoading(false);
                     }
                 } else {
                     setLoading(false);
@@ -134,6 +159,20 @@ export default function PendingApprovalPage() {
                     <LogOut className="w-5 h-5" />
                     <span>Sign Out</span>
                 </button>
+
+                {userId && (
+                    <ProfileCompletionModal
+                        isOpen={showProfileModal}
+                        userId={userId}
+                        initialName={userProfile?.name || ''}
+                        initialPhone={userProfile?.phone || ''}
+                        initialPic={userProfile?.profile_pic_url || ''}
+                        onComplete={(updated) => {
+                            setUserProfile(updated);
+                            setShowProfileModal(false);
+                        }}
+                    />
+                )}
             </div>
         </div>
     );

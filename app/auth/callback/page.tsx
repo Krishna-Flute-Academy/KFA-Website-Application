@@ -81,7 +81,7 @@ export default function AuthCallbackPage() {
 
             if (!existingUser) {
                 // Self-healing: if the database trigger didn't run, create the profile row now.
-                // This is allowed by RLS policies for authenticated users.
+                const googlePic = session.user.user_metadata?.picture || session.user.user_metadata?.avatar_url || null;
                 const { data: newUser, error: insertError } = await supabaseAuth
                     .from('users')
                     .insert([{
@@ -89,6 +89,7 @@ export default function AuthCallbackPage() {
                         name: googleName || googleEmail.split('@')[0] || 'New Student',
                         email: googleEmail,
                         phone: session.user.user_metadata?.phone || null,
+                        profile_pic_url: googlePic,
                         role: 'pending',
                         status: 'pending',
                         join_date: new Date().toISOString().split('T')[0]
