@@ -2091,6 +2091,13 @@ export default function StudentDashboardContainer() {
         return broadcasts.filter(b => b.sender?.role === 'admin' && !dismissedAdminBroadcasts.includes(b.id) && !isVideoOrBlogRelease(b));
     }, [broadcasts, dismissedAdminBroadcasts]);
 
+    const activeFeeReminderNotification = useMemo(() => {
+        return notifications.find(n => 
+            !n.is_read && 
+            (n.type === 'fee_reminder' || n.type === 'fees' || n.title?.toLowerCase().includes('fees due') || n.title?.toLowerCase().includes('billing reminder'))
+        );
+    }, [notifications]);
+
     const unreadMessageCount = useMemo(() => {
         return notifications.filter(n => {
             if (n.is_read) return false;
@@ -2718,6 +2725,8 @@ export default function StudentDashboardContainer() {
                                 <FeesTab
                                     profile={profile}
                                     payments={payments}
+                                    notifications={notifications}
+                                    directMessages={directMessages}
                                     refreshData={refreshData}
                                 />
                             </div>
@@ -2982,6 +2991,74 @@ export default function StudentDashboardContainer() {
                         }}
                     />
                 </>
+            )}
+
+            {/* ─── Fee Reminder Login Popup Modal ─────────────────────────────────────── */}
+            {activeFeeReminderNotification && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-amber-200 dark:border-amber-900/50 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 p-6 text-white text-center relative overflow-hidden">
+                            <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none" />
+                            <div className="size-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mx-auto mb-3 shadow-inner">
+                                <span className="material-symbols-outlined text-3xl text-white">payments</span>
+                            </div>
+                            <span className="inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/20 text-white mb-1 backdrop-blur-xs">
+                                Fee Payment Reminder
+                            </span>
+                            <h3 className="text-xl font-display font-black tracking-tight">{activeFeeReminderNotification.title}</h3>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 space-y-4 text-center">
+                            <p className="text-sm font-medium text-slate-600 dark:text-slate-300 leading-relaxed">
+                                {activeFeeReminderNotification.message}
+                            </p>
+
+                            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-150 dark:border-amber-900/30 rounded-2xl p-4 text-left flex items-start gap-3">
+                                <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                                <div className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
+                                    <strong>Important Note:</strong> You can pay or report your fee payment directly in your portal to keep your classes and learning materials active.
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="pt-2 flex flex-col gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const notifId = activeFeeReminderNotification.id;
+                                        setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
+                                        setActiveTab('fees');
+                                        await supabaseAuth
+                                            .from('notifications')
+                                            .update({ is_read: true })
+                                            .eq('id', notifId);
+                                    }}
+                                    className="w-full py-3.5 px-4 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-black rounded-xl text-sm shadow-md shadow-[#ecb613]/25 transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider"
+                                >
+                                    <span>Pay / Report Fees Now</span>
+                                    <ChevronRight className="size-4" />
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const notifId = activeFeeReminderNotification.id;
+                                        setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
+                                        await supabaseAuth
+                                            .from('notifications')
+                                            .update({ is_read: true })
+                                            .eq('id', notifId);
+                                    }}
+                                    className="w-full py-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                                >
+                                    Dismiss / Remind Me Later
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </>
     );

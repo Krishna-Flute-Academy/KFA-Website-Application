@@ -6,10 +6,12 @@ import { getStudentFeeStatus, calculateClassesAdded } from '../../lib/fee-utils'
 interface FeesTabProps {
     profile: any;
     payments: any[];
+    notifications?: any[];
+    directMessages?: any[];
     refreshData: () => void;
 }
 
-export default function FeesTab({ profile, payments, refreshData }: FeesTabProps) {
+export default function FeesTab({ profile, payments, notifications = [], directMessages = [], refreshData }: FeesTabProps) {
     const [isReporting, setIsReporting] = useState(false);
     const [amount, setAmount] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('UPI');
@@ -23,6 +25,43 @@ export default function FeesTab({ profile, payments, refreshData }: FeesTabProps
     
     // Sort payments by date descending
     const sortedPayments = [...payments].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    // Combine notifications and messages related to fee reminders
+    const feeReminders = React.useMemo(() => {
+        const notifReminders = (notifications || []).filter(n =>
+            n.type === 'fee_reminder' ||
+            n.type === 'fees' ||
+            (n.title && n.title.toLowerCase().includes('fees due')) ||
+            (n.title && n.title.toLowerCase().includes('billing reminder'))
+        );
+
+        const msgReminders = (directMessages || []).filter(m =>
+            m.message_text && (
+                m.message_text.toLowerCase().includes('fee due reminder') ||
+                m.message_text.toLowerCase().includes('fee payment is due') ||
+                m.message_text.toLowerCase().includes('prepaid classes balance')
+            )
+        ).map(m => ({
+            id: m.id,
+            title: 'Fee Payment Message',
+            message: m.message_text,
+            created_at: m.created_at,
+            type: 'fee_reminder'
+        }));
+
+        const combined = [...notifReminders, ...msgReminders];
+        const unique = new Map();
+        combined.forEach(item => {
+            const textKey = (item.message || item.message_text || '').trim();
+            if (textKey && !unique.has(textKey)) {
+                unique.set(textKey, item);
+            }
+        });
+
+        return Array.from(unique.values()).sort((a, b) => 
+            new Date(b.created_at || b.sent_at || 0).getTime() - new Date(a.created_at || a.sent_at || 0).getTime()
+        );
+    }, [notifications, directMessages]);
 
     const handleReportPayment = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -162,6 +201,54 @@ export default function FeesTab({ profile, payments, refreshData }: FeesTabProps
                             </button>
                         )}
                     </div>
+
+                    {/* Fee Billing Reminders & Messages Card */}
+                    {feeReminders.length > 0 && (
+                        <div className="bg-white rounded-3xl p-6 md:p-8 shadow-xl shadow-slate-200/40 border border-amber-200/80 relative overflow-hidden">
+                            <div className="flex items-center justify-between gap-3 mb-4">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600">
+                                        <span className="material-symbols-outlined text-xl">payments</span>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 text-sm">Reminders & Messages</h3>
+                                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Official Fee Billing Messages</p>
+                                    </div>
+                                </div>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800">
+                                    {feeReminders.length}
+                                </span>
+                            </div>
+
+                            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                                {feeReminders.map((reminder, idx) => (
+                                    <div key={reminder.id || idx} className="p-4 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 rounded-2xl space-y-2">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500 text-white">
+                                                Fee Due Reminder
+                                            </span>
+                                            <span className="text-[10px] font-semibold text-slate-400">
+                                                {new Date(reminder.created_at || reminder.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-relaxed">
+                                            {reminder.message_text || reminder.message || reminder.content}
+                                        </p>
+                                        {!isReporting && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsReporting(true)}
+                                                className="mt-1 text-[11px] font-black text-amber-700 hover:text-amber-900 underline flex items-center gap-1 cursor-pointer"
+                                            >
+                                                <span>Report Payment Now</span>
+                                                <span className="material-symbols-outlined text-xs">arrow_forward</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right Column: Dynamic Form or History */}

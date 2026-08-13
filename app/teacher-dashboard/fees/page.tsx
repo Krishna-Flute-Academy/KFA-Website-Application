@@ -450,34 +450,49 @@ export default function FeesManagementDashboard() {
         }
     };
 
-    // Send Reminder Notification (Simulated)
+    // Send Reminder Notification & Direct Message to Student
     const handleSendReminder = async (student: StudentFeesData, type: 'due_date' | 'classes_completed') => {
         try {
-            // 1. Insert record in fees_notifications
+            const senderId = teacherProfile?.id;
+            const reminderMessage = type === 'classes_completed' 
+                ? 'Fee Due Reminder: Your prepaid classes balance is complete. Please submit your fee payment to continue attending classes.' 
+                : 'Fee Due Reminder: Your monthly fee payment is due. Please submit your fee payment to continue attending classes.';
+
+            // 1. Insert record in fees_notifications for history logs
             const { error } = await supabaseAuth
                 .from('fees_notifications')
                 .insert([{
                     student_id: student.id,
                     notification_type: type,
-                    channel: 'email',
+                    channel: 'in_app',
                     status: 'sent'
                 }]);
 
             if (error) throw error;
 
-            // Also insert notification in public.notifications for the student
+            // 2. Send Direct Message to student (stored in messages table)
+            if (senderId) {
+                await supabaseAuth.from('messages').insert({
+                    sender_id: senderId,
+                    receiver_id: student.id,
+                    message_text: reminderMessage,
+                    status: 'sent',
+                    created_at: new Date().toISOString()
+                });
+            }
+
+            // 3. Insert notification in public.notifications for student header notification & Fee tab alert
             await supabaseAuth.from('notifications').insert({
                 user_id: student.id,
-                title: type === 'classes_completed' ? 'Fees Due: Classes Completed' : 'Fees Due: Payment Reminder',
-                message: type === 'classes_completed' 
-                    ? 'Your prepaid classes are completed. Please submit your fee payment.' 
-                    : `Your monthly fee payment is due. Please submit your fee payment.`,
+                title: type === 'classes_completed' ? 'Fees Due: Prepaid Classes Completed' : 'Fees Due: Monthly Billing Reminder',
+                message: reminderMessage,
+                type: 'fee_reminder',
                 is_read: false
             });
 
             setAlertMessage({ 
                 type: 'success', 
-                text: `Reminder notification sent successfully to ${student.name} (${student.email}) via Email!` 
+                text: `Fee reminder and message sent successfully to ${student.name}! Stored in student's Fee & Payments section.` 
             });
 
             // If history modal is currently open, refresh notifications list
@@ -491,7 +506,7 @@ export default function FeesManagementDashboard() {
             }
         } catch (err: any) {
             console.error('Error sending reminder:', err);
-            setAlertMessage({ type: 'error', text: `Failed to log reminder: ${err.message}` });
+            setAlertMessage({ type: 'error', text: `Failed to send reminder: ${err.message}` });
         }
     };
 

@@ -319,7 +319,7 @@ export default function MessagesTab({
 
     // Filter broadcasts based on right panel search and selected category
     const filteredBroadcasts = useMemo(() => {
-        return broadcasts.filter(b => {
+        let list = broadcasts.filter(b => {
             if (isVideoOrBlogRelease(b)) return false;
 
             // Category check
@@ -332,7 +332,7 @@ export default function MessagesTab({
             } else if (selectedFeed.id === 'new_joiners') {
                 if (b.channel !== 'new_joiners') return false;
             } else if (selectedFeed.id === 'fee_management') {
-                if (b.channel !== 'fee_management') return false;
+                if (b.channel !== 'fee_management' && !(b.subject && b.subject.toLowerCase().includes('fee'))) return false;
             } else if (selectedFeed.id === 'voice') {
                 if (!b.audio_attachment) return false;
             }
@@ -345,7 +345,51 @@ export default function MessagesTab({
             
             return matchesSearch;
         });
-    }, [broadcasts, selectedFeed, rightSearch]);
+
+        // For Fee & Payments category, also append direct fee reminder messages & notifications if not already present
+        if (selectedFeed.id === 'fee_management') {
+            const feeDirectMsgs = directMessages.filter(m => 
+                m.message_text && (
+                    m.message_text.toLowerCase().includes('fee due reminder') ||
+                    m.message_text.toLowerCase().includes('fee payment is due') ||
+                    m.message_text.toLowerCase().includes('prepaid classes balance')
+                )
+            ).map(m => ({
+                id: m.id,
+                channel: 'fee_management',
+                subject: 'Fee Due Billing Reminder',
+                content: m.message_text,
+                created_at: m.created_at,
+                sender: { name: 'Academy Management', role: 'admin' }
+            }));
+
+            const feeNotifs = notifications.filter(n =>
+                (n.type === 'fee_reminder' || n.type === 'fees' || String(n.title || '').toLowerCase().includes('fees due'))
+            ).map(n => ({
+                id: n.id,
+                channel: 'fee_management',
+                subject: n.title || 'Fee Due Billing Reminder',
+                content: n.message,
+                created_at: n.created_at,
+                sender: { name: 'Academy Management', role: 'admin' }
+            }));
+
+            const combined = [...list, ...feeDirectMsgs, ...feeNotifs];
+            const uniqueMap = new Map();
+            combined.forEach(item => {
+                const key = (item.content || '').trim();
+                if (key && !uniqueMap.has(key)) {
+                    uniqueMap.set(key, item);
+                }
+            });
+
+            return Array.from(uniqueMap.values()).sort((a, b) => 
+                new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+            );
+        }
+
+        return list;
+    }, [broadcasts, selectedFeed, rightSearch, directMessages, notifications]);
 
     // Active direct messages for the selected chat partner
     const activeChatThread = useMemo(() => {
