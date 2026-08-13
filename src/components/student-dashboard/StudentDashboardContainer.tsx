@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import {
@@ -25,10 +25,12 @@ const FeesTab = dynamic(() => import('./FeesTab'), { ssr: false });
 const PoliciesTab = dynamic(() => import('./PoliciesTab'), { ssr: false });
 const AcademyPolicies = dynamic(() => import('../AcademyPolicies'), { ssr: false });
 const SettingsTab = dynamic(() => import('./SettingsTab'), { ssr: false });
+const MentorHubTab = dynamic(() => import('./MentorHubTab'), { ssr: false });
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import BlogNotification from './BlogNotification';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
 import ProfileCompletionModal from '../common/ProfileCompletionModal';
+import { INITIAL_MODULES } from '../../../app/teacher-dashboard/inventory/initial-data';
 
 interface StudentProfile {
     id: string;
@@ -194,21 +196,31 @@ export default function StudentDashboardContainer() {
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
 
     const allocatedModuleIds = useMemo(() => {
-        return new Set(studentAllocations.map(a => a.module_id).filter(Boolean));
-    }, [studentAllocations]);
+        const direct = studentAllocations.map(a => a.module_id).filter(Boolean);
+        const fromAssignments = (assignments || [])
+            .filter((a: any) => a.inventory_ref_type === 'module' && a.inventory_ref_id)
+            .map((a: any) => a.inventory_ref_id);
+        return new Set([...direct, ...fromAssignments]);
+    }, [studentAllocations, assignments]);
 
     const allocatedChapterIds = useMemo(() => {
         const direct = studentAllocations.map(a => a.chapter_id).filter(Boolean);
         const fromModules = courseChapters.filter(c => allocatedModuleIds.has(c.module_id)).map(c => c.id);
-        return new Set([...direct, ...fromModules]);
-    }, [studentAllocations, courseChapters, allocatedModuleIds]);
+        const fromAssignments = (assignments || [])
+            .filter((a: any) => a.inventory_ref_type === 'chapter' && a.inventory_ref_id)
+            .map((a: any) => a.inventory_ref_id);
+        return new Set([...direct, ...fromModules, ...fromAssignments]);
+    }, [studentAllocations, courseChapters, allocatedModuleIds, assignments]);
 
     const allocatedLessonIds = useMemo(() => {
         const direct = studentAllocations.map(a => a.lesson_id).filter(Boolean);
         const fromChapters = courseLessons.filter(l => allocatedChapterIds.has(l.chapter_id)).map(l => l.id);
-        const fromProgress = studentProgress.map(p => p.lesson_id);
-        return new Set([...direct, ...fromChapters, ...fromProgress]);
-    }, [studentAllocations, courseLessons, allocatedChapterIds, studentProgress]);
+        const fromAssignments = (assignments || [])
+            .filter((a: any) => a.inventory_ref_type === 'lesson' && a.inventory_ref_id)
+            .map((a: any) => a.inventory_ref_id);
+        const fromProgress = studentProgress.filter(p => p.status !== 'locked').map(p => p.lesson_id);
+        return new Set([...direct, ...fromChapters, ...fromAssignments, ...fromProgress]);
+    }, [studentAllocations, courseLessons, allocatedChapterIds, assignments, studentProgress]);
 
     const allocatedLessons = useMemo(() => {
         return courseLessons.filter(l => allocatedLessonIds.has(l.id));
@@ -228,11 +240,107 @@ export default function StudentDashboardContainer() {
         );
     }, [courseModules, allocatedModuleIds, courseChapters, allocatedChapterIds, courseLessons, allocatedLessonIds]);
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees' | 'policies' | 'settings'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees' | 'policies' | 'settings' | 'mentor_hub'>('overview');
     const [selectedMessagesFeed, setSelectedMessagesFeed] = useState<{ type: 'category' | 'chat'; id: string; name: string } | null>(null);
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>('metronome');
+
+    // Mentorship states
+    const [mentorInfo, setMentorInfo] = useState<any | null>(null);
+    const [menteesList, setMenteesList] = useState<any[]>([]);
+    const [menteeSubmissions, setMenteeSubmissions] = useState<any[]>([]);
+
+    const fetchMentorshipData = async (userId: string) => {
+        try {
+            const { data: mentorPair } = await supabaseAuth
+                .from('student_mentors')
+                .select('mentor:users!student_mentors_mentor_id_fkey(id, name, email, level, profile_pic_url)')
+                .eq('student_id', userId)
+                .maybeSingle();
+
+            if (mentorPair?.mentor) {
+                const m = Array.isArray(mentorPair.mentor) ? mentorPair.mentor[0] : mentorPair.mentor;
+                setMentorInfo(m);
+            } else {
+                setMentorInfo(null);
+            }
+
+            const { data: menteesPairs } = await supabaseAuth
+                .from('student_mentors')
+                .select('student_id, student:users!student_mentors_student_id_fkey(id, name, email, level, profile_pic_url)')
+                .eq('mentor_id', userId);
+
+            if (menteesPairs && menteesPairs.length > 0) {
+                const mList = menteesPairs.map((p: any) => {
+                    const s = Array.isArray(p.student) ? p.student[0] : p.student;
+                    return {
+                        id: p.student_id,
+                        student_id: p.student_id,
+                        name: s?.name || 'Student',
+                        email: s?.email || '',
+                        level: s?.level || 'Beginner',
+                        profile_pic_url: s?.profile_pic_url || null
+                    };
+                });
+                setMenteesList(mList);
+
+                const menteeIds = mList.map(m => m.student_id);
+                const { data: subData } = await supabaseAuth
+                    .from('assignment_students')
+                    .select(`
+                        id,
+                        assignment_id,
+                        student_id,
+                        status,
+                        score,
+                        proficiency_level,
+                        feedback_text,
+                        video_url,
+                        submitted_at,
+                        reviewed_at,
+                        reviewed_by,
+                        assignments:assignment_id(title, description, due_date),
+                        student:users!assignment_students_student_id_fkey(name, email, level, profile_pic_url)
+                    `)
+                    .in('student_id', menteeIds)
+                    .order('submitted_at', { ascending: false });
+
+                if (subData) {
+                    const formattedSubs = subData.map((row: any) => {
+                        const assign = Array.isArray(row.assignments) ? row.assignments[0] : row.assignments;
+                        const st = Array.isArray(row.student) ? row.student[0] : row.student;
+                        return {
+                            id: row.id,
+                            assignment_id: row.assignment_id,
+                            student_id: row.student_id,
+                            student_name: st?.name || 'Student',
+                            student_email: st?.email || '',
+                            student_level: st?.level || '',
+                            student_pic: st?.profile_pic_url || null,
+                            assignment_title: assign?.title || 'Assignment',
+                            assignment_description: assign?.description || '',
+                            due_date: assign?.due_date || null,
+                            status: row.status || 'pending',
+                            score: row.score,
+                            proficiency_level: row.proficiency_level,
+                            feedback_text: row.feedback_text,
+                            video_url: row.video_url,
+                            submitted_at: row.submitted_at,
+                            reviewed_at: row.reviewed_at,
+                            reviewed_by: row.reviewed_by
+                        };
+                    });
+                    setMenteeSubmissions(formattedSubs);
+                }
+            } else {
+                setMenteesList([]);
+                setMenteeSubmissions([]);
+            }
+        } catch (e) {
+            console.error('Error fetching mentorship details:', e);
+        }
+    };
 
     // Defer rendering of non-active tabs to prevent main-thread blocking on initial load
     const [renderBackgroundTabs, setRenderBackgroundTabs] = useState(false);
@@ -460,7 +568,23 @@ export default function StudentDashboardContainer() {
             setAttendance(attRes.data || []);
             setNotifications(notifRes.data || []);
             setCourseModules(modulesRes.data || []);
-            setCourseChapters(chaptersRes.data || []);
+            const normalizedChapters = (chaptersRes.data || []).map((chap: any) => {
+                if ((modulesRes.data || []).some((m: any) => m.id === chap.module_id)) {
+                    return chap;
+                }
+                const initMod = INITIAL_MODULES.find(im => im.id === chap.module_id);
+                if (initMod) {
+                    const matchingModule = (modulesRes.data || []).find((m: any) => 
+                        m.module_number === initMod.module_number ||
+                        m.title?.toLowerCase() === initMod.title?.toLowerCase()
+                    );
+                    if (matchingModule) {
+                        return { ...chap, module_id: matchingModule.id };
+                    }
+                }
+                return chap;
+            });
+            setCourseChapters(normalizedChapters);
             setCourseLessons(lessonsRes.data || []);
             setStudentProgress(progressRes.data || []);
             const rawMessages = messagesRes.data || [];
@@ -592,9 +716,10 @@ export default function StudentDashboardContainer() {
                 allClassroomIds.length > 0
                     ? supabaseAuth.from('classroom_inventory_allocation')
                         .select('*')
-                        .in('classroom_id', allClassroomIds)
-                        .or(`allocated_to_student_id.eq.${userId},allocated_to_student_id.is.null`)
-                    : Promise.resolve({ data: [] })
+                        .or(`allocated_to_student_id.eq.${userId},and(classroom_id.in.(${allClassroomIds.join(',')}),allocated_to_student_id.is.null)`)
+                    : supabaseAuth.from('classroom_inventory_allocation')
+                        .select('*')
+                        .eq('allocated_to_student_id', userId)
             ];
 
             const [
@@ -780,6 +905,9 @@ export default function StudentDashboardContainer() {
 
             // Classroom messages (Reversed for chronological order)
             setClassroomMessages([...(cmRes.data || [])].reverse());
+
+            // Fetch mentorship pairs and mentee task submissions
+            await fetchMentorshipData(userId);
 
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
@@ -1814,13 +1942,62 @@ export default function StudentDashboardContainer() {
     };
 
     // Helpers
-    const getLessonStatus = (lessonId: string, chapterId: string, moduleId?: string): 'locked' | 'unlocked' | 'completed' => {
-        const progress = studentProgress.find(p => p.lesson_id === lessonId);
-        if (progress) {
-            return progress.status as 'locked' | 'unlocked' | 'completed';
-        }
-        return 'locked';
-    };
+    const lessonStatusMap = useMemo(() => {
+        const statusMap = new Map<string, 'locked' | 'unlocked' | 'completed'>();
+        
+        // 1. Explicit status overrides from student_topic_progress
+        studentProgress.forEach(p => {
+            if (p.lesson_id && p.status) {
+                statusMap.set(p.lesson_id, p.status as 'locked' | 'unlocked' | 'completed');
+            }
+        });
+
+        // 2. Sequential auto-unlock for allocated modules/chapters
+        courseModules.forEach(mod => {
+            const chaps = courseChapters
+                .filter(c => c.module_id === mod.id)
+                .sort((a, b) => a.chapter_number - b.chapter_number);
+            
+            const levelLessons = courseLessons
+                .filter(l => chaps.some(c => c.id === l.chapter_id))
+                .sort((a, b) => {
+                    const chapA = chaps.find(c => c.id === a.chapter_id)!;
+                    const chapB = chaps.find(c => c.id === b.chapter_id)!;
+                    if (chapA.chapter_number !== chapB.chapter_number) {
+                        return chapA.chapter_number - chapB.chapter_number;
+                    }
+                    return a.lesson_number - b.lesson_number;
+                });
+
+            for (let i = 0; i < levelLessons.length; i++) {
+                const lesson = levelLessons[i];
+                const currentStatus = statusMap.get(lesson.id);
+
+                // If explicitly set in student_topic_progress, keep it
+                if (currentStatus) continue;
+
+                // Check if this lesson is allocated
+                const isAllocated = allocatedLessonIds.has(lesson.id);
+                if (!isAllocated) continue;
+
+                if (i === 0) {
+                    statusMap.set(lesson.id, 'unlocked');
+                } else {
+                    const prevLesson = levelLessons[i - 1];
+                    const prevStatus = statusMap.get(prevLesson.id);
+                    if (prevStatus === 'completed') {
+                        statusMap.set(lesson.id, 'unlocked');
+                    }
+                }
+            }
+        });
+
+        return statusMap;
+    }, [studentProgress, courseModules, courseChapters, courseLessons, allocatedLessonIds]);
+
+    const getLessonStatus = useCallback((lessonId: string, chapterId: string, moduleId?: string): 'locked' | 'unlocked' | 'completed' => {
+        return lessonStatusMap.get(lessonId) || 'locked';
+    }, [lessonStatusMap]);
 
     const attendanceStats = useMemo(() => ({
         total: attendance.length,
@@ -1844,10 +2021,8 @@ export default function StudentDashboardContainer() {
     }, [profile]);
 
     const totalAllocatedLessons = useMemo(() => {
-        return allocatedLessons.filter(l =>
-            getLessonStatus(l.id, l.chapter_id) !== 'locked'
-        ).length;
-    }, [allocatedLessons, studentProgress]);
+        return allocatedLessons.length;
+    }, [allocatedLessons]);
 
     const completedLessonsCount = useMemo(() => {
         return studentProgress.filter(p => p.status === 'completed').length;
@@ -2027,6 +2202,7 @@ export default function StudentDashboardContainer() {
                             { id: 'attendance', label: 'Attendance logs', icon: Calendar },
                             { id: 'library', label: 'Tools', icon: FileText },
                             { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
+                            ...(profile?.role === 'mentor' || menteesList.length > 0 ? [{ id: 'mentor_hub', label: 'Mentor Hub', icon: Sparkles }] : []),
                             { id: 'policies', label: 'Academy Policies', icon: Scroll },
                             { id: 'settings', label: 'Profile Settings', icon: User },
                         ].filter(item => {
@@ -2416,9 +2592,9 @@ export default function StudentDashboardContainer() {
                                     classmates={classmates}
                                     studentAllocations={studentAllocations}
                                     studentProgress={studentProgress}
-                                    courseLessons={courseLessons}
-                                    courseChapters={courseChapters}
-                                    courseModules={courseModules}
+                                    courseLessons={allocatedLessons}
+                                    courseChapters={allocatedChapters}
+                                    courseModules={allocatedModules}
                                     attendance={attendance}
 
                                 />
@@ -2505,6 +2681,8 @@ export default function StudentDashboardContainer() {
                                     notifications={notifications}
                                     setNotifications={setNotifications}
                                     selectedFeedProp={selectedMessagesFeed}
+                                    mentorInfo={mentorInfo}
+                                    mentees={menteesList}
                                 />
                             </div>
                         )}
@@ -2554,6 +2732,23 @@ export default function StudentDashboardContainer() {
                         {(renderBackgroundTabs || activeTab === 'settings') && (
                             <div style={{ display: activeTab === 'settings' ? 'block' : 'none' }}>
                                 <SettingsTab profile={profile} refreshData={refreshData} />
+                            </div>
+                        )}
+
+                        {(renderBackgroundTabs || activeTab === 'mentor_hub') && (
+                            <div style={{ display: activeTab === 'mentor_hub' ? 'block' : 'none' }}>
+                                <MentorHubTab
+                                    profile={profile}
+                                    mentees={menteesList}
+                                    submissions={menteeSubmissions}
+                                    onRefreshSubmissions={async () => {
+                                        if (profile?.id) await fetchMentorshipData(profile.id);
+                                    }}
+                                    onNavigateToChat={(studentId, studentName) => {
+                                        setSelectedMessagesFeed({ type: 'chat', id: studentId, name: studentName });
+                                        setActiveTab('messages');
+                                    }}
+                                />
                             </div>
                         )}
                     </main>

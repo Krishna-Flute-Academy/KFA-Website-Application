@@ -69,7 +69,7 @@ export default function InventoryLibrary() {
     
     // Auth & Status States
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     
     // Core Data States
@@ -167,7 +167,7 @@ export default function InventoryLibrary() {
                 }
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email, role')
+                    .select('id, name, email, phone, role, profile_pic_url')
                     .eq('id', session.user.id)
                     .single();
 
@@ -176,7 +176,7 @@ export default function InventoryLibrary() {
                     return;
                 }
 
-                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
                 
                 // Load Curriculum details dynamically from live Supabase tables
                 await loadDatabaseData();
@@ -251,7 +251,7 @@ export default function InventoryLibrary() {
                 const { count: studentCount } = await supabaseAuth
                     .from('users')
                     .select('*', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending');
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor');
                 if (studentCount !== null) {
                     setActiveStudentsCount(studentCount);
                 }
@@ -1555,7 +1555,7 @@ export default function InventoryLibrary() {
             const { count: studentCount } = await supabaseAuth
                 .from('users')
                 .select('*', { count: 'exact', head: true })
-                .or('role.eq.student,role.eq.pending');
+                .or('role.eq.student,role.eq.pending,role.eq.mentor');
             if (studentCount !== null) {
                 setActiveStudentsCount(studentCount);
             }
@@ -1713,6 +1713,8 @@ export default function InventoryLibrary() {
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 <TeacherHeader 
                     title="Curriculum & Inventory Manager" 
+                    avatarUrl={teacherProfile?.profile_pic_url}
+                    userName={teacherProfile?.name}
                     searchQuery={searchQuery}
                     onSearchChange={setSearchQuery}
                     placeholder="Search levels, chapters, topics or files..."

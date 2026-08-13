@@ -13,6 +13,8 @@ interface StudentData {
     id: string;
     user_id: string;
     name: string;
+    email?: string;
+    role?: string;
     profile_pic_url?: string;
     student_id_formatted: string;
     batch: string;
@@ -44,7 +46,7 @@ interface Classroom {
 export default function StudentDirectory() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; id: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [students, setStudents] = useState<StudentData[]>([]);
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     const [stats, setStats] = useState({
@@ -163,7 +165,7 @@ export default function StudentDirectory() {
                 // 2. Verify Teacher/Admin Role & Get Profile
                 const { data: profile, error: profileError } = await supabaseAuth
                     .from('users')
-                    .select('name, email, role')
+                    .select('name, email, phone, role, profile_pic_url')
                     .eq('id', userId)
                     .single();
 
@@ -172,7 +174,7 @@ export default function StudentDirectory() {
                     return;
                 }
 
-                setTeacherProfile({ id: userId, name: profile.name, email: profile.email, role: profile.role });
+                setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
                 const isAdminUser = profile.role === 'admin';
 
                 // 3. Fetch classrooms
@@ -244,12 +246,14 @@ export default function StudentDirectory() {
                     assignmentsMap.get(a.student_id)!.push({ status: a.status, score: a.score ? Number(a.score) : null });
                 });
 
-                // 4. Fetch Students directly from users table
+                // 4. Fetch Students directly from users table (including mentors who are senior students)
                 const studentsQuery = supabaseAuth
                     .from('users')
                     .select(`
                         id,
                         name,
+                        email,
+                        role,
                         status,
                         profile_pic_url,
                         created_at,
@@ -259,7 +263,7 @@ export default function StudentDirectory() {
                             classrooms(name)
                         )
                     `)
-                    .eq('role', 'student');
+                    .in('role', ['student', 'mentor']);
 
                 const { data: studentsData, error: studentsError } = isAdminUser
                     ? await studentsQuery
@@ -329,6 +333,8 @@ export default function StudentDirectory() {
                             id: s.id,
                             user_id: s.id,
                             name: s.name,
+                            email: s.email,
+                            role: s.role,
                             student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
                             batch: (s.status === 'archived' || s.status === 'inactive') ? (s.classroom_students?.[0]?.classrooms?.name || 'KFA Learning Circle') : (s.classroom_students?.[0]?.classrooms?.name || 'Unassigned'),
                             attendance_pct: attendancePct,
@@ -1153,10 +1159,22 @@ export default function StudentDirectory() {
 
         if (searchQuery.trim() !== '') {
             const lowerQuery = searchQuery.toLowerCase();
-            result = result.filter(s => 
+            const matchesSearch = (s: StudentData) => 
                 s.name.toLowerCase().includes(lowerQuery) || 
-                s.student_id_formatted.toLowerCase().includes(lowerQuery)
-            );
+                s.student_id_formatted.toLowerCase().includes(lowerQuery) ||
+                (s.email && s.email.toLowerCase().includes(lowerQuery)) ||
+                (s.phone && s.phone.toLowerCase().includes(lowerQuery)) ||
+                (s.batch && s.batch.toLowerCase().includes(lowerQuery)) ||
+                (s.teacher_name && s.teacher_name.toLowerCase().includes(lowerQuery));
+
+            const filteredTabResult = result.filter(matchesSearch);
+
+            // If searching on Unassigned/Recent tab yields 0 matches, search across ALL students so assigned students aren't hidden
+            if (filteredTabResult.length === 0) {
+                return students.filter(matchesSearch);
+            }
+
+            return filteredTabResult;
         }
 
         return result;
@@ -1756,6 +1774,8 @@ export default function StudentDirectory() {
                 <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
                     <TeacherHeader 
                         title="Student Directory" 
+                        avatarUrl={teacherProfile?.profile_pic_url}
+                        userName={teacherProfile?.name}
                         searchQuery={searchQuery}
                         onSearchChange={setSearchQuery}
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}

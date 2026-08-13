@@ -81,7 +81,7 @@ interface AttendanceLog {
 export default function AttendancePage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     
     // UI State
     const [mode, setMode] = useState<'class' | 'individual' | 'missed' | 'leaves'>('class');
@@ -254,7 +254,7 @@ export default function AttendancePage() {
 
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email, role')
+                    .select('id, name, email, phone, role, profile_pic_url')
                     .eq('id', session.user.id)
                     .single();
 
@@ -265,7 +265,7 @@ export default function AttendancePage() {
 
                 const cachedRole = typeof window !== 'undefined' ? localStorage.getItem('kfa-user-role') : null;
                 const userRole = cachedRole || profile.role;
-                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: userRole });
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, phone: profile.phone, role: userRole, profile_pic_url: profile.profile_pic_url });
                 const isAdmin = userRole === 'admin';
                 
                 // 1. Fetch classrooms
@@ -817,7 +817,7 @@ export default function AttendancePage() {
                 const studentsQuery = supabaseAuth
                     .from('users')
                     .select('id, name, profile_pic_url')
-                    .or('role.eq.student,role.eq.pending')
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
                     .eq('status', 'active')
                     .ilike('name', `%${searchQuery}%`);
                 
@@ -1102,7 +1102,7 @@ export default function AttendancePage() {
             const studentsQuery = supabaseAuth
                 .from('users')
                 .select('id')
-                .or('role.eq.student,role.eq.pending')
+                .or('role.eq.student,role.eq.pending,role.eq.mentor')
                 .eq('status', 'active');
 
             const { data: studentsData, error: studentsErr } = teacherProfile.role === 'admin'
@@ -1834,6 +1834,8 @@ export default function AttendancePage() {
             <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                 <TeacherHeader 
                     title="Attendance" 
+                    avatarUrl={teacherProfile?.profile_pic_url}
+                    userName={teacherProfile?.name}
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 

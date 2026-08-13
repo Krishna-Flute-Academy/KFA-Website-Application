@@ -62,18 +62,7 @@ function LoginContent() {
             return;
         }
 
-        // Auto-promote admin email
-        if (data.user && data.user.email?.toLowerCase() === 'pransai.verse@gmail.com') {
-            await supabaseAuth
-                .from('users')
-                .update({ role: 'admin', status: 'active' })
-                .eq('id', data.user.id);
-        }
-
-        let userRole =
-            data.user?.email?.toLowerCase() === 'pransai.verse@gmail.com'
-                ? 'admin'
-                : data.user?.user_metadata?.role;
+        let userRole = data.user?.user_metadata?.role;
 
         // Always prefer the role stored in the public.users table
         if (data.user) {

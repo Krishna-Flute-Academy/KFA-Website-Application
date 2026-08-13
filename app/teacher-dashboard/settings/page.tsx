@@ -106,6 +106,8 @@ export default function TeacherSettingsPage() {
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 <TeacherHeader 
                     title="Profile Settings" 
+                    avatarUrl={teacherProfile?.profile_pic_url}
+                    userName={teacherProfile?.name}
                     backLink={basePath}
                 />
 

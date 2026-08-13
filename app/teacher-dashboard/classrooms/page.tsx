@@ -72,7 +72,7 @@ interface Classroom {
 export default function ClassroomsPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     const [tempClassrooms, setTempClassrooms] = useState<Classroom[]>([]);
     const [activeView, setActiveView] = useState<'today' | 'permanent' | 'temporary' | 'all' | 'inactive'>('today');
@@ -435,7 +435,7 @@ export default function ClassroomsPage() {
 
             const { data: profile } = await supabaseAuth
                 .from('users')
-                .select('id, name, email, role')
+                .select('id, name, email, phone, role, profile_pic_url')
                 .eq('id', session.user.id)
                 .single();
             setTeacherProfile(profile);
@@ -911,6 +911,8 @@ export default function ClassroomsPage() {
                 {/* TopAppBar */}
                 <TeacherHeader 
                     title="Classrooms" 
+                    avatarUrl={teacherProfile?.profile_pic_url}
+                    userName={teacherProfile?.name}
                     searchQuery={searchQuery}
                     onSearchChange={setSearchQuery}
                     placeholder="Search classes..."

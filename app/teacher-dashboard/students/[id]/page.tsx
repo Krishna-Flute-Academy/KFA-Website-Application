@@ -3,11 +3,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle, Send } from 'lucide-react';
+import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle, Send, Lock, Unlock, Search } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { getStudentFeeStatus } from '../../../../src/lib/fee-utils';
+import { INITIAL_MODULES } from '../../inventory/initial-data';
+
+const stripHtml = (html: string) => {
+    if (!html) return '';
+    const clean = html.replace(/<[^>]*>?/gm, ' ');
+    return clean.replace(/\s+/g, ' ').trim();
+};
 
 interface StudentInfo {
     id: string;
@@ -155,10 +162,13 @@ export default function StudentProfilePage() {
     const [courseChapters, setCourseChapters] = useState<any[]>([]);
     const [courseLessons, setCourseLessons] = useState<any[]>([]);
     const [studentProgress, setStudentProgress] = useState<any[]>([]);
+    const [studentAllocations, setStudentAllocations] = useState<any[]>([]);
     const [assignments, setAssignments] = useState<any[]>([]);
     const [isUpdatingProgress, setIsUpdatingProgress] = useState<string | null>(null);
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+
+
 
     const [allClassrooms, setAllClassrooms] = useState<any[]>([]);
     const [showReactivateModal, setShowReactivateModal] = useState(false);
@@ -232,10 +242,10 @@ export default function StudentProfilePage() {
                         fees_collection_date,
                         fees_classes_paid,
                         teacher_id,
-                        classroom_students(classroom_id, classrooms(name))
+                        classroom_students(classroom_id, classrooms(name, type))
                     `)
                     .eq('id', studentId)
-                    .or('role.eq.student,role.eq.pending')
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
                     .single();
 
                 if (userError || !userData) {
@@ -251,10 +261,16 @@ export default function StudentProfilePage() {
                     return;
                 }
 
-                const studentClassroomRef = userData.classroom_students?.[0] as any;
-                const studentClassroom = studentClassroomRef?.classrooms;
+                // Resolve student's permanent allocated classroom
+                const studentRooms = userData.classroom_students || [];
+                const permRoomRef = studentRooms.find((cs: any) => {
+                    const room = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
+                    return room?.type !== 'temporary';
+                }) || studentRooms[0];
+
+                const studentClassroom = permRoomRef?.classrooms as any;
                 const batch_name = Array.isArray(studentClassroom) ? studentClassroom[0]?.name : studentClassroom?.name;
-                const studentClassroomId = studentClassroomRef?.classroom_id || null;
+                const studentClassroomId = permRoomRef?.classroom_id || null;
                 setClassroomId(studentClassroomId);
 
                 setStudentInfo({
@@ -283,32 +299,56 @@ export default function StudentProfilePage() {
                     .order('payment_date', { ascending: false });
                 setPayments(payData || []);
 
+                // Fetch static course curriculum data for all students
+                const { data: dbModulesData } = await supabaseAuth
+                    .from('course_modules')
+                    .select('*')
+                    .order('module_number', { ascending: true });
+                const { data: dbChaptersData } = await supabaseAuth
+                    .from('course_chapters')
+                    .select('*')
+                    .order('chapter_number', { ascending: true });
+                const { data: dbLessonsData } = await supabaseAuth
+                    .from('course_lessons')
+                    .select('*')
+                    .order('lesson_number', { ascending: true });
+
+                const normalizedChapters = (dbChaptersData || []).map((chap: any) => {
+                    if ((dbModulesData || []).some((m: any) => m.id === chap.module_id)) {
+                        return chap;
+                    }
+                    const initMod = INITIAL_MODULES.find(im => im.id === chap.module_id);
+                    if (initMod) {
+                        const matchingModule = (dbModulesData || []).find((m: any) => 
+                            m.module_number === initMod.module_number ||
+                            m.title?.toLowerCase() === initMod.title?.toLowerCase()
+                        );
+                        if (matchingModule) {
+                            return { ...chap, module_id: matchingModule.id };
+                        }
+                    }
+                    return chap;
+                });
+
+                setCourseModules(dbModulesData || []);
+                setCourseChapters(normalizedChapters);
+                setCourseLessons(dbLessonsData || []);
+
+                // Fetch student progress overrides
+                const { data: progressData } = await supabaseAuth
+                    .from('student_topic_progress')
+                    .select('*')
+                    .eq('student_id', studentId);
+                setStudentProgress(progressData || []);
+
+                // Fetch inventory allocations for this student or classroom
+                const { data: allocsData } = await supabaseAuth
+                    .from('classroom_inventory_allocation')
+                    .select('*')
+                    .or(`allocated_to_student_id.eq.${studentId}${studentClassroomId ? `,and(classroom_id.eq.${studentClassroomId},allocated_to_student_id.is.null)` : ''}`);
+                setStudentAllocations(allocsData || []);
+
                 if (studentClassroomId) {
-                    // Fetch static course curriculum data
-                    const { data: dbModulesData } = await supabaseAuth
-                        .from('course_modules')
-                        .select('*')
-                        .order('module_number', { ascending: true });
-                    const { data: dbChaptersData } = await supabaseAuth
-                        .from('course_chapters')
-                        .select('*')
-                        .order('chapter_number', { ascending: true });
-                    const { data: dbLessonsData } = await supabaseAuth
-                        .from('course_lessons')
-                        .select('*')
-                        .order('lesson_number', { ascending: true });
-
-                    setCourseModules(dbModulesData || []);
-                    setCourseChapters(dbChaptersData || []);
-                    setCourseLessons(dbLessonsData || []);
-
-                    // Fetch student progress overrides
-                    const { data: progressData } = await supabaseAuth
-                        .from('student_topic_progress')
-                        .select('*')
-                        .eq('student_id', studentId);
-                    setStudentProgress(progressData || []);
-                    
                     // Fetch classroom assignments to check sequential unlocks/visual indicator permissions
                     const { data: assignmentsData } = await supabaseAuth
                         .from('assignments')
@@ -704,11 +744,53 @@ export default function StudentProfilePage() {
         const visibleChapters = new Set<string>();
         const unlockedLessons = new Set<string>();
         const completedLessons = new Set<string>();
+        const allocatedModules = new Set<string>();
+        const allocatedChapters = new Set<string>();
+        const allocatedLessons = new Set<string>();
+
+
+
+        // Process studentAllocations (classroom_inventory_allocation)
+        for (const a of studentAllocations) {
+            if (a.module_id) {
+                allocatedModules.add(a.module_id);
+                visibleModules.add(a.module_id);
+                const chaps = courseChapters.filter(c => c.module_id === a.module_id);
+                chaps.forEach(c => {
+                    allocatedChapters.add(c.id);
+                    visibleChapters.add(c.id);
+                    const chapLessons = courseLessons.filter(l => l.chapter_id === c.id);
+                    chapLessons.forEach(l => {
+                        allocatedLessons.add(l.id);
+                    });
+                });
+            }
+            if (a.chapter_id) {
+                allocatedChapters.add(a.chapter_id);
+                visibleChapters.add(a.chapter_id);
+                const chap = courseChapters.find(c => c.id === a.chapter_id);
+                if (chap) visibleModules.add(chap.module_id);
+                const chapLessons = courseLessons.filter(l => l.chapter_id === a.chapter_id);
+                chapLessons.forEach(l => {
+                    allocatedLessons.add(l.id);
+                });
+            }
+            if (a.lesson_id) {
+                allocatedLessons.add(a.lesson_id);
+                const lesson = courseLessons.find(l => l.id === a.lesson_id);
+                if (lesson) {
+                    visibleChapters.add(lesson.chapter_id);
+                    const chap = courseChapters.find(c => c.id === lesson.chapter_id);
+                    if (chap) visibleModules.add(chap.module_id);
+                }
+            }
+        }
 
         // Process active assignments in Supabase
         for (const asg of assignments) {
             // Level-level assignment (module)
             if (asg.inventory_ref_type === 'module' && asg.inventory_ref_id) {
+                allocatedModules.add(asg.inventory_ref_id);
                 visibleModules.add(asg.inventory_ref_id);
                 const chaps = courseChapters
                     .filter(c => c.module_id === asg.inventory_ref_id)
@@ -736,6 +818,7 @@ export default function StudentProfilePage() {
 
             // Chapter-level assignment
             if (asg.inventory_ref_type === 'chapter' && asg.inventory_ref_id) {
+                allocatedChapters.add(asg.inventory_ref_id);
                 const chap = courseChapters.find(c => c.id === asg.inventory_ref_id);
                 if (chap) {
                     visibleModules.add(chap.module_id);
@@ -751,6 +834,7 @@ export default function StudentProfilePage() {
 
             // Topic-level assignment (lesson)
             if (asg.inventory_ref_type === 'lesson' && asg.inventory_ref_id) {
+                allocatedLessons.add(asg.inventory_ref_id);
                 const lesson = courseLessons.find(l => l.id === asg.inventory_ref_id);
                 if (lesson) {
                     const chap = courseChapters.find(c => c.id === lesson.chapter_id);
@@ -825,26 +909,53 @@ export default function StudentProfilePage() {
             }
         });
 
-        return { visibleModules, visibleChapters, unlockedLessons, completedLessons };
-    }, [assignments, courseModules, courseChapters, courseLessons, studentProgress]);
+        return { visibleModules, visibleChapters, unlockedLessons, completedLessons, allocatedModules, allocatedChapters, allocatedLessons };
+    }, [assignments, courseModules, courseChapters, courseLessons, studentProgress, studentAllocations]);
 
-    const handleProgressChange = async (lessonId: string, newStatus: 'locked' | 'unlocked' | 'completed') => {
-        if (!classroomId) return;
-        setIsUpdatingProgress(lessonId);
+    const handleProgressChange = async (
+        targetType: 'level' | 'chapter' | 'topic',
+        targetId: string,
+        newStatus: 'locked' | 'unlocked' | 'completed'
+    ) => {
+        setIsUpdatingProgress(targetId);
         try {
+            let lessonIdsToUpdate: string[] = [];
+
+            if (targetType === 'topic') {
+                lessonIdsToUpdate = [targetId];
+            } else if (targetType === 'chapter') {
+                lessonIdsToUpdate = courseLessons
+                    .filter(l => l.chapter_id === targetId)
+                    .map(l => l.id);
+            } else if (targetType === 'level') {
+                const chapIds = new Set(
+                    courseChapters
+                        .filter(c => c.module_id === targetId)
+                        .map(c => c.id)
+                );
+                lessonIdsToUpdate = courseLessons
+                    .filter(l => chapIds.has(l.chapter_id))
+                    .map(l => l.id);
+            }
+
+            if (lessonIdsToUpdate.length === 0) return;
+
+            const recordsToUpsert = lessonIdsToUpdate.map(lId => ({
+                student_id: studentId,
+                classroom_id: classroomId || null,
+                lesson_id: lId,
+                status: newStatus,
+                unlocked_by: 'manual',
+                unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
+                completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+            }));
+
             const { error } = await supabaseAuth
                 .from('student_topic_progress')
-                .upsert({
-                    student_id: studentId,
-                    classroom_id: classroomId,
-                    lesson_id: lessonId,
-                    status: newStatus,
-                    unlocked_by: 'manual',
-                    unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
-                    completed_at: newStatus === 'completed' ? new Date().toISOString() : null
-                }, {
+                .upsert(recordsToUpsert, {
                     onConflict: 'student_id,lesson_id'
                 });
+
             if (error) throw error;
 
             const { data: progressData } = await supabaseAuth
@@ -854,7 +965,7 @@ export default function StudentProfilePage() {
             setStudentProgress(progressData || []);
         } catch (err) {
             console.error('Error updating progress:', err);
-            alert('Failed to update progress. Make sure the database schema is migrated!');
+            alert('Failed to update progress!');
         } finally {
             setIsUpdatingProgress(null);
         }
@@ -1142,234 +1253,283 @@ export default function StudentProfilePage() {
                                     <div className="absolute right-4 top-4 opacity-[0.06] select-none pointer-events-none">
                                         <Award className="w-64 h-64 text-white animate-pulse" />
                                     </div>
-                                    <div className="max-w-3xl relative z-10 space-y-3">
+                                    <div className="max-w-3xl relative z-10 space-y-4">
                                         <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#ef4444] rounded-full text-[9px] text-white font-black tracking-widest uppercase leading-none shadow-sm">
                                             <Award className="size-3" />
                                             <span>Individualized Pacing Portal</span>
                                         </div>
-                                        <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none text-white font-sans drop-shadow-sm">
-                                            Curriculum Pacing Controls — {studentInfo.name}
-                                        </h1>
-                                        <p className="text-xs md:text-sm text-teal-50/90 font-medium leading-relaxed">
-                                            Manage lock overrides, sequential unlocking, and complete manual bypasses for this student. Red badges signify core allocations, gold checkmarks highlight completed topics, and locked panels prevent student view access.
-                                        </p>
+                                        <div>
+                                            <h1 className="text-2xl md:text-3.5xl font-black tracking-tight leading-none text-white font-sans drop-shadow-sm">
+                                                Curriculum Pacing — {studentInfo.name}
+                                            </h1>
+                                            <p className="text-xs md:text-sm text-teal-50/90 font-medium leading-relaxed mt-2">
+                                                Manage topic lock overrides, track lesson progress, and adjust topic pacing for this student.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
 
-                                {!classroomId ? (
-                                    <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
-                                        <Music className="size-12 text-slate-300 mx-auto mb-4" />
-                                        <h4 className="font-bold text-slate-900">Classroom Unassigned</h4>
-                                        <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto">This student must be enrolled in an active classroom to manage their curriculum progress pathway.</p>
-                                    </div>
-                                ) : courseModules.length === 0 ? (
+                                {courseModules.length === 0 ? (
                                     <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
                                         <Loader2 className="w-8 h-8 animate-spin text-[#ecb613] mx-auto mb-4" />
                                         <h4 className="font-bold text-slate-900">Loading learning modules...</h4>
                                     </div>
-                                ) : (
-                                    <div className="space-y-8">
-                                        {courseModules.filter(mod => computedPermissions.visibleModules.has(mod.id)).length === 0 ? (
-                                            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
-                                                <Award className="size-12 text-slate-300 mx-auto mb-4" />
-                                                <h4 className="font-bold text-slate-900">No curriculum content unlocked or completed yet</h4>
-                                                <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto font-medium">This student does not have any active allocations or unlocked curriculum progress path items.</p>
+                                ) : (() => {
+                                    const allocatedCourseModules = courseModules.filter(mod => computedPermissions.allocatedModules.has(mod.id));
+
+                                    if (allocatedCourseModules.length === 0) {
+                                        return (
+                                            <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center shadow-xs">
+                                                <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                                                <h4 className="font-extrabold text-slate-800 text-base">No Allocated Curriculum Modules</h4>
+                                                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                                                    No level inventory has been allocated to this student yet. Allocate levels from the Classroom dashboard to manage topic pacing for this student.
+                                                </p>
                                             </div>
-                                        ) : (
-                                            courseModules
-                                                .filter(mod => computedPermissions.visibleModules.has(mod.id))
-                                                .map(mod => {
-                                                    const modChapters = courseChapters
-                                                        .filter(c => c.module_id === mod.id && computedPermissions.visibleChapters.has(c.id))
-                                                        .sort((a,b) => a.chapter_number - b.chapter_number);
-                                                    const isModExpanded = expandedModules[mod.id] !== false;
-                                                    const isModVisible = true;
-                                                    
-                                                    return (
-                                                        <div key={mod.id} className="rounded-3xl border transition-all duration-300 bg-white shadow-sm overflow-hidden border-slate-200/80 dark:border-slate-800">
-                                                    {/* Module Title Bar */}
-                                                    <div 
-                                                        onClick={() => setExpandedModules(prev => ({ ...prev, [mod.id]: !isModExpanded }))}
-                                                        className="px-6 py-5 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between gap-4 cursor-pointer select-none hover:bg-slate-100/80 transition-colors"
-                                                    >
-                                                        <div className="flex items-center gap-4">
-                                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border font-extrabold text-sm ${
-                                                                isModVisible 
-                                                                    ? 'bg-[#ecb613]/10 border-[#ecb613]/30 text-[#d97706]' 
-                                                                    : 'bg-slate-100 border-slate-200 text-slate-400'
-                                                            }`}>
-                                                                L{mod.module_number}
+                                        );
+                                    }
+
+                                    return (
+                                        <div className="space-y-6">
+                                            {allocatedCourseModules.map(mod => {
+                                                const modChapters = courseChapters
+                                                    .filter(c => c.module_id === mod.id)
+                                                    .sort((a,b) => a.chapter_number - b.chapter_number);
+                                                const isModExpanded = expandedModules[mod.id] !== false;
+                                                
+                                                return (
+                                                    <div key={mod.id} className="rounded-3xl border transition-all duration-300 bg-white shadow-sm overflow-hidden border-slate-200/80 dark:border-slate-800">
+                                                        {/* Module Title Bar */}
+                                                        <div 
+                                                            onClick={() => setExpandedModules(prev => ({ ...prev, [mod.id]: !isModExpanded }))}
+                                                            className="px-6 py-5 bg-slate-50/60 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer select-none hover:bg-slate-100/80 transition-colors"
+                                                        >
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-10 h-10 rounded-xl flex items-center justify-center border font-extrabold text-sm shrink-0 bg-[#ecb613]/10 border-[#ecb613]/30 text-[#d97706]">
+                                                                    L{mod.module_number}
+                                                                </div>
+                                                                <div>
+                                                                    <h3 className="font-extrabold text-base text-slate-900">{mod.title}</h3>
+                                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                                                                        {modChapters.length} Chapters • Level {mod.module_number}
+                                                                    </span>
+                                                                </div>
                                                             </div>
-                                                            <div>
-                                                                <h3 className="font-extrabold text-base text-slate-900">{mod.title}</h3>
-                                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
-                                                                    {isModVisible ? 'Visible to Student' : 'Hidden / Locked'}
-                                                                </span>
+
+                                                            {/* Level Action Controls */}
+                                                            <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={isUpdatingProgress === mod.id}
+                                                                    onClick={() => handleProgressChange('level', mod.id, 'locked')}
+                                                                    className="px-2.5 py-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 cursor-pointer flex items-center gap-1 transition-all"
+                                                                    title="Lock entire Level for student"
+                                                                >
+                                                                    <Lock className="w-3 h-3" />
+                                                                    <span>Lock Level</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={isUpdatingProgress === mod.id}
+                                                                    onClick={() => handleProgressChange('level', mod.id, 'unlocked')}
+                                                                    className="px-2.5 py-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider bg-amber-500 hover:bg-amber-600 text-white shadow-xs cursor-pointer flex items-center gap-1 transition-all"
+                                                                    title="Unlock entire Level for student"
+                                                                >
+                                                                    <Unlock className="w-3 h-3" />
+                                                                    <span>Unlock Level</span>
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={isUpdatingProgress === mod.id}
+                                                                    onClick={() => handleProgressChange('level', mod.id, 'completed')}
+                                                                    className="px-2.5 py-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer flex items-center gap-1 transition-all"
+                                                                    title="Mark entire Level as Complete"
+                                                                >
+                                                                    <CheckCircle className="w-3 h-3" />
+                                                                    <span>Level Done</span>
+                                                                </button>
+                                                                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-slate-400 border border-slate-200 shrink-0 ml-1">
+                                                                    {isModExpanded ? (
+                                                                        <ChevronRight className="w-4 h-4 rotate-90 transition-transform" />
+                                                                    ) : (
+                                                                        <ChevronRight className="w-4 h-4 transition-transform" />
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-[10px] font-bold text-slate-400 font-mono bg-slate-100 px-2.5 py-1 rounded-full">
-                                                                {modChapters.length} Chapters
-                                                            </span>
-                                                            <div className="w-8 h-8 rounded-lg bg-white/80 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 transition-colors shrink-0">
-                                                                {isModExpanded ? (
-                                                                    <ChevronUp className="size-4" />
+
+                                                        {/* Module Content */}
+                                                        {isModExpanded && (
+                                                            <div className="p-6 space-y-4 bg-slate-50/20">
+                                                                {modChapters.length === 0 ? (
+                                                                    <p className="text-xs text-slate-400 py-2">No chapters published in this level.</p>
                                                                 ) : (
-                                                                    <ChevronDown className="size-4" />
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                                    modChapters.map(chap => {
+                                                                        const chapLessons = courseLessons
+                                                                            .filter(l => l.chapter_id === chap.id)
+                                                                            .sort((a,b) => a.lesson_number - b.lesson_number);
+                                                                        const isChapExpanded = expandedChapters[chap.id] !== false;
+                                                                        const completedCount = chapLessons.filter(l => computedPermissions.completedLessons.has(l.id)).length;
+                                                                        
+                                                                        return (
+                                                                            <div key={chap.id} className="border border-slate-200/80 rounded-2xl bg-white overflow-hidden shadow-xs">
+                                                                                {/* Chapter Header Bar */}
+                                                                                <div 
+                                                                                    onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapExpanded }))}
+                                                                                    className="px-5 py-4 bg-slate-50/40 hover:bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none transition-colors border-b border-slate-100"
+                                                                                >
+                                                                                    <div className="flex items-center gap-3">
+                                                                                        <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 font-extrabold text-xs flex items-center justify-center shrink-0">
+                                                                                            Ch{chap.chapter_number}
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <h4 className="text-sm font-extrabold text-slate-800 leading-tight">{chap.title}</h4>
+                                                                                            <p className="text-[10px] text-slate-400 mt-0.5 font-bold font-mono uppercase tracking-wider">
+                                                                                                {completedCount} / {chapLessons.length} COMPLETED
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    </div>
 
-                                                    {/* Module Chapters accordions */}
-                                                    {isModExpanded && (
-                                                        <div className="p-6 space-y-4">
-                                                        {modChapters.length === 0 ? (
-                                                            <p className="text-xs text-slate-400 italic text-center py-4">No chapters created for this level.</p>
-                                                        ) : (
-                                                            modChapters.map(chap => {
-                                                                const isChapExpanded = !!expandedChapters[chap.id];
-                                                                const isChapVisible = true;
-                                                                const chapLessons = courseLessons
-                                                                    .filter(l => l.chapter_id === chap.id && (computedPermissions.unlockedLessons.has(l.id) || computedPermissions.completedLessons.has(l.id)))
-                                                                    .sort((a,b) => a.lesson_number - b.lesson_number);
-                                                                const completedCount = chapLessons.filter(l => computedPermissions.completedLessons.has(l.id)).length;
-                                                                
-                                                                return (
-                                                                    <div key={chap.id} className="rounded-2xl border transition-all border-slate-200 hover:border-slate-300">
-                                                                        {/* Chapter Accordion Header */}
-                                                                        <div 
-                                                                            onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapExpanded }))}
-                                                                            className="px-5 py-4 bg-slate-50/20 hover:bg-slate-50/50 transition-all flex items-center justify-between cursor-pointer select-none"
-                                                                        >
-                                                                            <div className="flex items-center gap-4 text-left">
-                                                                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs font-mono border ${
-                                                                                    isChapVisible
-                                                                                        ? 'bg-[#ecb613]/10 border-[#ecb613]/25 text-[#d97706]'
-                                                                                        : 'bg-slate-100 border-slate-150 text-slate-400'
-                                                                                }`}>
-                                                                                    Ch{chap.chapter_number}
+                                                                                    {/* Chapter Action Controls */}
+                                                                                    <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            disabled={isUpdatingProgress === chap.id}
+                                                                                            onClick={() => handleProgressChange('chapter', chap.id, 'locked')}
+                                                                                            className="px-2 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer flex items-center gap-1 transition-all"
+                                                                                            title="Lock Chapter"
+                                                                                        >
+                                                                                            <Lock className="w-3 h-3 text-slate-400" />
+                                                                                            <span>Lock</span>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            disabled={isUpdatingProgress === chap.id}
+                                                                                            onClick={() => handleProgressChange('chapter', chap.id, 'unlocked')}
+                                                                                            className="px-2 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 cursor-pointer flex items-center gap-1 transition-all"
+                                                                                            title="Unlock Chapter"
+                                                                                        >
+                                                                                            <Unlock className="w-3 h-3 text-amber-600" />
+                                                                                            <span>Unlock</span>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            disabled={isUpdatingProgress === chap.id}
+                                                                                            onClick={() => handleProgressChange('chapter', chap.id, 'completed')}
+                                                                                            className="px-2 py-1 rounded-lg text-[9px] font-extrabold uppercase tracking-wider bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 cursor-pointer flex items-center gap-1 transition-all"
+                                                                                            title="Mark Chapter Complete"
+                                                                                        >
+                                                                                            <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                                                                            <span>Done</span>
+                                                                                        </button>
+                                                                                        <div className="w-6 h-6 rounded-md bg-white flex items-center justify-center text-slate-400 border border-slate-200 shrink-0 ml-1">
+                                                                                            {isChapExpanded ? (
+                                                                                                <ChevronRight className="w-3.5 h-3.5 rotate-90 transition-transform" />
+                                                                                            ) : (
+                                                                                                <ChevronRight className="w-3.5 h-3.5 transition-transform" />
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
                                                                                 </div>
-                                                                                <div>
-                                                                                    <h4 className="text-sm font-extrabold text-slate-800 leading-tight">{chap.title}</h4>
-                                                                                    <p className="text-[10px] text-slate-400 mt-1 font-bold font-mono uppercase tracking-wider">
-                                                                                        {completedCount} / {chapLessons.length} COMPLETED
-                                                                                    </p>
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className="flex items-center gap-2">
-                                                                                <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 mr-2 font-mono">
-                                                                                    Unlocked
-                                                                                </span>
-                                                                                <div className="w-8 h-8 rounded-lg bg-slate-100/80 flex items-center justify-center text-slate-400">
-                                                                                    {isChapExpanded ? (
-                                                                                        <Award className="size-4 rotate-180 transition-all text-amber-500" />
-                                                                                    ) : (
-                                                                                        <Award className="size-4 transition-all text-slate-400" />
-                                                                                    )}
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
 
-                                                                        {/* Chapter Topics grid */}
-                                                                        {isChapExpanded && (
-                                                                            <div className="p-5 bg-white border-t border-slate-150 space-y-4">
-                                                                                {chapLessons.length === 0 ? (
-                                                                                    <p className="text-xs text-slate-400 italic text-center py-4">No topics created in this chapter.</p>
-                                                                                ) : (
-                                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                                                        {chapLessons.map(lesson => {
-                                                                                            const isUnlocked = computedPermissions.unlockedLessons.has(lesson.id);
-                                                                                            const isCompleted = computedPermissions.completedLessons.has(lesson.id);
-                                                                                            const isUpdating = isUpdatingProgress === lesson.id;
-                                                                                            
-                                                                                            let statusLabel = "Locked";
-                                                                                            let cardBorder = "border-slate-150 bg-slate-50/30 opacity-70";
-                                                                                            if (isCompleted) {
-                                                                                                statusLabel = "Completed";
-                                                                                                cardBorder = "border-emerald-500 bg-emerald-50/10 shadow-xs";
-                                                                                            } else if (isUnlocked) {
-                                                                                                statusLabel = "Unlocked";
-                                                                                                cardBorder = "border-[#ecb613] bg-amber-500/[0.03] shadow-xs";
-                                                                                            }
+                                                                                {/* Chapter Lessons Grid */}
+                                                                                {isChapExpanded && (
+                                                                                    <div className="p-4 bg-white">
+                                                                                        {chapLessons.length === 0 ? (
+                                                                                            <p className="text-xs text-slate-400 text-center py-4">No topics in this chapter.</p>
+                                                                                        ) : (
+                                                                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                                                                {chapLessons.map(lesson => {
+                                                                                                    const isUnlocked = computedPermissions.unlockedLessons.has(lesson.id);
+                                                                                                    const isCompleted = computedPermissions.completedLessons.has(lesson.id);
+                                                                                                    const isUpdating = isUpdatingProgress === lesson.id;
+                                                                                                    
+                                                                                                    const statusLabel = isCompleted ? 'Completed' : (isUnlocked ? 'Unlocked' : 'Locked');
+                                                                                                    
+                                                                                                    return (
+                                                                                                        <div key={lesson.id} className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                                                                                                            isCompleted 
+                                                                                                                ? 'bg-emerald-50/40 border-emerald-200/80' 
+                                                                                                                : (isUnlocked ? 'bg-amber-50/30 border-amber-200/80' : 'bg-slate-50/40 border-slate-200/80')
+                                                                                                        }`}>
+                                                                                                            <div>
+                                                                                                                <div className="flex items-center justify-between gap-2 mb-1">
+                                                                                                                    <span className={`text-[10px] font-black uppercase tracking-wider ${
+                                                                                                                        isCompleted 
+                                                                                                                            ? 'text-emerald-600' 
+                                                                                                                            : (isUnlocked ? 'text-amber-600' : 'text-slate-400')
+                                                                                                                    }`}>
+                                                                                                                        Topic {lesson.lesson_number} • {statusLabel}
+                                                                                                                    </span>
+                                                                                                                    {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                                                </div>
+                                                                                                                <h5 className="font-extrabold text-sm text-slate-800 leading-tight truncate">{lesson.title}</h5>
+                                                                                                                {lesson.description && (
+                                                                                                                    <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed font-semibold">
+                                                                                                                        {stripHtml(lesson.description)}
+                                                                                                                    </p>
+                                                                                                                )}
+                                                                                                            </div>
 
-                                                                                            return (
-                                                                                                <div key={lesson.id} className={`rounded-xl p-4 border flex flex-col justify-between gap-4 transition-all hover:shadow-sm ${cardBorder}`}>
-                                                                                                    <div className="space-y-1">
-                                                                                                        <div className="flex items-center justify-between gap-4">
-                                                                                                            <span className={`text-[9px] font-black uppercase tracking-wider font-mono ${
-                                                                                                                isCompleted 
-                                                                                                                    ? 'text-emerald-600' 
-                                                                                                                    : (isUnlocked ? 'text-amber-600' : 'text-slate-400')
-                                                                                                            }`}>
-                                                                                                                Topic {lesson.lesson_number} • {statusLabel}
-                                                                                                            </span>
-                                                                                                            {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                                            {/* Interactive overrides panel */}
+                                                                                                            <div className="flex items-center gap-1.5 border-t border-slate-100 pt-3 select-none">
+                                                                                                                <button
+                                                                                                                    type="button"
+                                                                                                                    disabled={isUpdating}
+                                                                                                                    onClick={() => handleProgressChange('topic', lesson.id, 'locked')}
+                                                                                                                    className={`flex-1 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                                                                                                        !isUnlocked && !isCompleted
+                                                                                                                            ? 'bg-slate-800 text-white shadow-xs'
+                                                                                                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+                                                                                                                    }`}
+                                                                                                                >
+                                                                                                                    Lock
+                                                                                                                </button>
+                                                                                                                <button
+                                                                                                                    type="button"
+                                                                                                                    disabled={isUpdating}
+                                                                                                                    onClick={() => handleProgressChange('topic', lesson.id, 'unlocked')}
+                                                                                                                    className={`flex-1 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                                                                                                        isUnlocked && !isCompleted
+                                                                                                                            ? 'bg-[#ecb613] text-white shadow-xs'
+                                                                                                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+                                                                                                                    }`}
+                                                                                                                >
+                                                                                                                    Unlock
+                                                                                                                </button>
+                                                                                                                <button
+                                                                                                                    type="button"
+                                                                                                                    disabled={isUpdating}
+                                                                                                                    onClick={() => handleProgressChange('topic', lesson.id, 'completed')}
+                                                                                                                    className={`flex-1 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                                                                                                        isCompleted
+                                                                                                                            ? 'bg-emerald-600 text-white shadow-xs'
+                                                                                                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+                                                                                                                    }`}
+                                                                                                                >
+                                                                                                                    Done
+                                                                                                                </button>
+                                                                                                            </div>
                                                                                                         </div>
-                                                                                                        <h5 className="font-extrabold text-sm text-slate-800 leading-tight truncate">{lesson.title}</h5>
-                                                                                                        {lesson.description && (
-                                                                                                            <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed font-semibold">{lesson.description}</p>
-                                                                                                        )}
-                                                                                                    </div>
-
-                                                                                                    {/* Interactive overrides panel */}
-                                                                                                    <div className="flex items-center gap-1.5 border-t border-slate-100 pt-3 select-none">
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            disabled={isUpdating}
-                                                                                                            onClick={() => handleProgressChange(lesson.id, 'locked')}
-                                                                                                            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                                                                                                                !isUnlocked && !isCompleted
-                                                                                                                    ? 'bg-slate-800 text-white shadow-xs'
-                                                                                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
-                                                                                                            }`}
-                                                                                                        >
-                                                                                                            Lock
-                                                                                                        </button>
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            disabled={isUpdating}
-                                                                                                            onClick={() => handleProgressChange(lesson.id, 'unlocked')}
-                                                                                                            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                                                                                                                isUnlocked && !isCompleted
-                                                                                                                    ? 'bg-[#ecb613] text-white shadow-xs'
-                                                                                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
-                                                                                                            }`}
-                                                                                                        >
-                                                                                                            Unlock
-                                                                                                        </button>
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            disabled={isUpdating}
-                                                                                                            onClick={() => handleProgressChange(lesson.id, 'completed')}
-                                                                                                            className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                                                                                                                isCompleted
-                                                                                                                    ? 'bg-emerald-600 text-white shadow-xs'
-                                                                                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
-                                                                                                            }`}
-                                                                                                        >
-                                                                                                            Done
-                                                                                                        </button>
-                                                                                                    </div>
-                                                                                                </div>
-                                                                                            );
-                                                                                        })}
+                                                                                                    );
+                                                                                                })}
+                                                                                            </div>
+                                                                                        )}
                                                                                     </div>
                                                                                 )}
                                                                             </div>
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            })
+                                                                        );
+                                                                    })
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        }))}
-                                    </div>
-                                )}
-                            </section>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })()}
+                        </section>
                         )}
 
                         {/* Profile Info Section */}
@@ -2182,6 +2342,8 @@ export default function StudentProfilePage() {
                     </div>
                 </div>
             )}
+
+
         </div>
     );
 }

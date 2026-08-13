@@ -11,7 +11,8 @@ interface TeacherHeaderProps {
     placeholder?: string;
     showSettings?: boolean;
     showAvatar?: boolean;
-    avatarUrl?: string;
+    avatarUrl?: string | null;
+    userName?: string;
     backLink?: string;
     children?: React.ReactNode;
 }
@@ -22,8 +23,9 @@ export default function TeacherHeader({
     onSearchChange,
     placeholder = "Search students or tasks...",
     showSettings = false,
-    showAvatar = false,
-    avatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
+    showAvatar = true,
+    avatarUrl,
+    userName,
     backLink,
     children
 }: TeacherHeaderProps) {
@@ -238,13 +240,30 @@ export default function TeacherHeader({
 
                     {/* User profile picture if showAvatar is enabled */}
                     {showAvatar && (
-                        <div className="size-9 sm:size-10 rounded-full overflow-hidden border-2 border-amber-500/20 shadow-sm cursor-pointer hover:border-amber-500/50 transition-all select-none">
-                            <img 
-                                src={avatarUrl} 
-                                alt="User profile" 
-                                className="w-full h-full object-cover" 
-                            />
-                        </div>
+                        <Link 
+                            href="/teacher-dashboard/settings"
+                            className="flex items-center gap-2 group"
+                            title="Profile Settings"
+                        >
+                            <div className="size-9 sm:size-10 rounded-full overflow-hidden border-2 border-amber-500/20 shadow-sm cursor-pointer group-hover:border-amber-500/60 transition-all select-none bg-amber-500/10 flex items-center justify-center shrink-0">
+                                {avatarUrl ? (
+                                    <img 
+                                        src={avatarUrl} 
+                                        alt={userName || "User profile"} 
+                                        className="w-full h-full object-cover" 
+                                    />
+                                ) : (
+                                    <span className="text-xs font-black text-amber-600 dark:text-amber-400">
+                                        {userName ? userName.charAt(0).toUpperCase() : 'U'}
+                                    </span>
+                                )}
+                            </div>
+                            {userName && (
+                                <span className="hidden lg:inline-block text-xs font-bold text-slate-700 dark:text-slate-200 group-hover:text-[#b45309] dark:group-hover:text-[#ecb613] transition-colors truncate max-w-[120px]">
+                                    {userName}
+                                </span>
+                            )}
+                        </Link>
                     )}
                 </div>
             </div>

@@ -1071,11 +1071,29 @@ export default function ClassroomDashboardPage({
                         dbLessonsData = INITIAL_LESSONS;
                     }
                 }
+                // Normalize courseChapters module_id to match dbModulesData module IDs
+                const normalizedChapters = (dbChaptersData || []).map((chap: any) => {
+                    if (dbModulesData.some((m: any) => m.id === chap.module_id)) {
+                        return chap;
+                    }
+                    const initMod = INITIAL_MODULES.find(im => im.id === chap.module_id);
+                    if (initMod) {
+                        const matchingModule = dbModulesData.find((m: any) => 
+                            m.module_number === initMod.module_number ||
+                            m.title?.toLowerCase() === initMod.title?.toLowerCase()
+                        );
+                        if (matchingModule) {
+                            return { ...chap, module_id: matchingModule.id };
+                        }
+                    }
+                    return chap;
+                });
+
                 if (dbModulesData.length === INITIAL_MODULES.length) {
                     setCategories(INITIAL_CATEGORIES);
                 }
                 setCourseModules(dbModulesData);
-                setCourseChapters(dbChaptersData);
+                setCourseChapters(normalizedChapters);
                 setCourseLessons(dbLessonsData);
 
                 // 4. Fetch Home Classroom IDs of all students (so we can get curriculum allocations)
@@ -1145,10 +1163,17 @@ export default function ClassroomDashboardPage({
                     // Fetch classroom allocations
                     (async () => {
                         try {
-                            const { data: curriculumData, error: curriculumError } = await supabaseAuth
-                                .from('classroom_inventory_allocation')
-                                .select('*')
-                                .in('classroom_id', classroomIds);
+                            const allocQuery = studentIds.length > 0
+                                ? supabaseAuth
+                                    .from('classroom_inventory_allocation')
+                                    .select('*')
+                                    .or(`classroom_id.in.(${classroomIds.join(',')}),allocated_to_student_id.in.(${studentIds.join(',')})`)
+                                : supabaseAuth
+                                    .from('classroom_inventory_allocation')
+                                    .select('*')
+                                    .in('classroom_id', classroomIds);
+
+                            const { data: curriculumData, error: curriculumError } = await allocQuery;
                             if (!curriculumError && curriculumData) {
                                 setClassroomInventoryAllocations(curriculumData);
                             } else if (curriculumError) {
@@ -1610,7 +1635,7 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, level')
-                .or('role.eq.student,role.eq.pending');
+                .or('role.eq.student,role.eq.pending,role.eq.mentor');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery.order('name', { ascending: true })
@@ -1644,7 +1669,7 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, level')
-                .or('role.eq.student,role.eq.pending');
+                .or('role.eq.student,role.eq.pending,role.eq.mentor');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery.order('name', { ascending: true })
@@ -1764,7 +1789,7 @@ export default function ClassroomDashboardPage({
             const usersQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url, status')
-                .or('role.eq.student,role.eq.pending');
+                .or('role.eq.student,role.eq.pending,role.eq.mentor');
 
             const { data, error } = teacherProfile.role === 'admin'
                 ? await usersQuery
@@ -4663,9 +4688,9 @@ export default function ClassroomDashboardPage({
                                                                         ) : (
                                                                             modChapters.map(chap => {
                                                                                 const isChapImporting = importingItemId === chap.id;
-                                                                                const isChapAllocated = curriculumTab === 'individual' && selectedStudentForCurriculum
-                                                                                    ? classroomInventoryAllocations.some(a => a.chapter_id === chap.id && a.allocated_to_student_id === selectedStudentForCurriculum.student_id)
-                                                                                    : classroomInventoryAllocations.some(a => a.chapter_id === chap.id);
+                                                                                const isChapAllocated = isAllocated || (curriculumTab === 'individual' && selectedStudentForCurriculum
+                                                                                    ? classroomInventoryAllocations.some(a => a.chapter_id === chap.id && (a.allocated_to_student_id === selectedStudentForCurriculum.student_id || !a.allocated_to_student_id))
+                                                                                    : classroomInventoryAllocations.some(a => a.chapter_id === chap.id));
                                                                                 const chapLessons = courseLessons.filter(l => l.chapter_id === chap.id);
 
                                                                                 return (

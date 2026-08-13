@@ -6,6 +6,7 @@ import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { Loader2, Users, ShieldAlert, Award, Calendar, Coins, UserCheck, ArrowRight, ShieldCheck, Mail, Phone, BookOpen, Trash2 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
+import TeacherMentorManagement from '../../../src/components/teacher-dashboard/TeacherMentorManagement';
 import { useToast } from '../../../src/lib/ToastContext';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 
@@ -40,12 +41,12 @@ export default function RoleAllocationDashboard() {
     const router = useRouter();
     const { showToast } = useToast();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [usersList, setUsersList] = useState<UserProfile[]>([]);
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     
     // Tabs & Filters
-    const [activeTab, setActiveTab] = useState<'pending' | 'teachers' | 'students' | 'admins'>('pending');
+    const [activeTab, setActiveTab] = useState<'pending' | 'teachers' | 'students' | 'admins' | 'mentors'>('pending');
     const [searchQuery, setSearchQuery] = useState('');
     
     // Modal states
@@ -80,7 +81,7 @@ export default function RoleAllocationDashboard() {
             // 2. Fetch Teacher Profile
             const { data: profile, error: profileError } = await supabaseAuth
                 .from('users')
-                .select('name, email, role')
+                .select('name, email, phone, role, profile_pic_url')
                 .eq('id', userId)
                 .single();
 
@@ -89,7 +90,7 @@ export default function RoleAllocationDashboard() {
                 return;
             }
 
-            setTeacherProfile({ id: userId, name: profile.name, email: profile.email, role: profile.role });
+            setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
 
             // 3. Fetch All Users with Classroom Student relationships
             const { data: usersData, error: usersError } = await supabaseAuth
@@ -325,6 +326,8 @@ export default function RoleAllocationDashboard() {
                 <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                     <TeacherHeader 
                         title="Role Allocation" 
+                        avatarUrl={teacherProfile?.profile_pic_url}
+                        userName={teacherProfile?.name}
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 
@@ -345,6 +348,7 @@ export default function RoleAllocationDashboard() {
                                     <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 w-full md:w-auto overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
                                         {[
                                             { id: 'pending', label: 'Pending approval', count: usersList.filter(u => u.role === 'pending' || u.status === 'pending').length },
+                                            { id: 'mentors', label: 'Mentors & Pairing', count: usersList.filter(u => u.role === 'mentor').length },
                                             { id: 'teachers', label: 'Teachers', count: usersList.filter(u => u.role === 'teacher' && u.status !== 'pending').length },
                                             { id: 'students', label: 'Students', count: usersList.filter(u => u.role === 'student' && u.status !== 'pending').length },
                                             { id: 'admins', label: 'Admins', count: usersList.filter(u => u.role === 'admin' && u.status !== 'pending').length }
@@ -384,14 +388,20 @@ export default function RoleAllocationDashboard() {
                                     </div>
                                 </div>
 
-                                {/* Mobile Cards View */}
-                                <div className="block lg:hidden divide-y divide-slate-100 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
-                                    {filteredUsers.length > 0 ? (
-                                        filteredUsers.map(user => {
-                                            const classroomData = user.classroom_students?.[0]?.classrooms;
-                                            const class_name = Array.isArray(classroomData)
-                                                ? (classroomData[0] as any)?.name || 'Not assigned'
-                                                : (classroomData as any)?.name || 'Not assigned';
+                                {activeTab === 'mentors' ? (
+                                    <div className="p-2">
+                                        <TeacherMentorManagement />
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Mobile Cards View */}
+                                        <div className="block lg:hidden divide-y divide-slate-100 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
+                                            {filteredUsers.length > 0 ? (
+                                                filteredUsers.map(user => {
+                                                    const classroomData = user.classroom_students?.[0]?.classrooms;
+                                                    const class_name = Array.isArray(classroomData)
+                                                        ? (classroomData[0] as any)?.name || 'Not assigned'
+                                                        : (classroomData as any)?.name || 'Not assigned';
                                             const teacherName = teachers.find(t => t.id === user.teacher_id)?.name || 'Not assigned';
                                             
                                             return (
@@ -638,6 +648,8 @@ export default function RoleAllocationDashboard() {
                                         </tbody>
                                     </table>
                                 </div>
+                            </>
+                        )}
                             </div>
                         </div>
                     </div>

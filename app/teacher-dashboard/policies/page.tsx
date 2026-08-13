@@ -11,7 +11,7 @@ import AcademyPolicies from '../../../src/components/AcademyPolicies';
 export default function TeacherPoliciesPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id?: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id?: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
 
     // Initial Fetch & Auth Verify
     useEffect(() => {
@@ -24,7 +24,7 @@ export default function TeacherPoliciesPage() {
                 }
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email, role')
+                    .select('id, name, email, phone, role, profile_pic_url')
                     .eq('id', session.user.id)
                     .single();
 
@@ -33,7 +33,7 @@ export default function TeacherPoliciesPage() {
                     return;
                 }
 
-                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
             } catch (error) {
                 console.error('Error verifying auth:', error);
                 router.push('/');
@@ -58,6 +58,8 @@ export default function TeacherPoliciesPage() {
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 <TeacherHeader 
                     title="Academy Policies & Guidelines" 
+                    avatarUrl={teacherProfile?.profile_pic_url}
+                    userName={teacherProfile?.name}
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 

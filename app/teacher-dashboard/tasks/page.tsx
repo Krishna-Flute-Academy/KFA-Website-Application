@@ -54,7 +54,7 @@ interface TaskSubmission {
 export default function TaskReviewPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id?: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
     const [filteredSubmissions, setFilteredSubmissions] = useState<TaskSubmission[]>([]);
     const [selectedSub, setSelectedSub] = useState<TaskSubmission | null>(null);
@@ -469,7 +469,7 @@ export default function TaskReviewPage() {
 
             const { data: profile } = await supabaseAuth
                 .from('users')
-                .select('name, email, role, profile_pic_url')
+                .select('id, name, email, phone, role, profile_pic_url')
                 .eq('id', session.user.id)
                 .single();
 
@@ -479,7 +479,7 @@ export default function TaskReviewPage() {
             }
 
             const isAdmin = profile.role === 'admin';
-            setTeacherProfile({ name: profile.name, email: profile.email, role: profile.role });
+            setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
             await fetchSubmissions(session.user.id, isAdmin);
             await loadCreationData(session.user.id, isAdmin);
             setLoading(false);
@@ -739,7 +739,7 @@ export default function TaskReviewPage() {
             let studentsUserQuery = supabaseAuth
                 .from('users')
                 .select('id, name, profile_pic_url')
-                .or('role.eq.student,role.eq.pending');
+                .or('role.eq.student,role.eq.pending,role.eq.mentor');
             
             if (!isAdmin) {
                 studentsUserQuery = studentsUserQuery.eq('teacher_id', teacherId);
@@ -1650,6 +1650,8 @@ export default function TaskReviewPage() {
             <main className={`flex-1 flex flex-col min-w-0 ${isPopup ? 'hidden' : ''}`}>
                 <TeacherHeader 
                     title="Task Review" 
+                    avatarUrl={teacherProfile?.profile_pic_url}
+                    userName={teacherProfile?.name}
                     searchQuery={searchQuery}
                     onSearchChange={setSearchQuery}
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}

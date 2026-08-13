@@ -86,7 +86,7 @@ function MessagesDashboardContent() {
 
     // ── Global states ──────────────────────────────────────────────────────────
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [dbSetupError, setDbSetupError] = useState(false);
     const [dbChecking, setDbChecking] = useState(true);
     const [sqlCopied, setSqlCopied] = useState(false);
@@ -872,7 +872,7 @@ function MessagesDashboardContent() {
 
                 const { data: profile } = await supabaseAuth
                     .from('users')
-                    .select('id, name, email, role')
+                    .select('id, name, email, phone, role, profile_pic_url')
                     .eq('id', session.user.id)
                     .single();
 
@@ -881,7 +881,7 @@ function MessagesDashboardContent() {
                     return;
                 }
 
-                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
+                setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
 
                 if (!profile) return;
 
@@ -913,7 +913,7 @@ function MessagesDashboardContent() {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
                         .select('id, name, profile_pic_url')
-                        .or('role.eq.student,role.eq.pending');
+                        .or('role.eq.student,role.eq.pending,role.eq.mentor');
                     uniqueStudents = (studentList || []).map((s: any) => ({
                         id: s.id,
                         name: s.name || 'Unknown',
@@ -924,7 +924,7 @@ function MessagesDashboardContent() {
                     const { data: studentList } = await supabaseAuth
                         .from('users')
                         .select('id, name, profile_pic_url')
-                        .or('role.eq.student,role.eq.pending')
+                        .or('role.eq.student,role.eq.pending,role.eq.mentor')
                         .eq('teacher_id', profile.id);
                     uniqueStudents = (studentList || []).map((s: any) => ({
                         id: s.id,
@@ -1803,6 +1803,8 @@ CREATE POLICY "Allow all broadcasts" ON public.broadcasts FOR ALL USING (true) W
                 <main className="flex-1 flex flex-col h-screen overflow-hidden">
                     <TeacherHeader 
                         title="Messages & Broadcasts" 
+                        avatarUrl={teacherProfile?.profile_pic_url}
+                        userName={teacherProfile?.name}
                         searchQuery={searchQuery}
                         onSearchChange={setSearchQuery}
                         placeholder="Search messages, students, or broadcasts..."

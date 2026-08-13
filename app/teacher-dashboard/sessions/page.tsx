@@ -27,7 +27,7 @@ export default function UserSessionsDashboard() {
     const router = useRouter();
     const { showToast } = useToast();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [sessions, setSessions] = useState<SessionLog[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterOnline, setFilterOnline] = useState<'all' | 'online' | 'offline'>('all');
@@ -113,7 +113,7 @@ export default function UserSessionsDashboard() {
                 const userId = session.user.id;
                 const { data: profile, error: profileError } = await supabaseAuth
                     .from('users')
-                    .select('name, email, role')
+                    .select('name, email, phone, role, profile_pic_url')
                     .eq('id', userId)
                     .single();
 
@@ -123,7 +123,7 @@ export default function UserSessionsDashboard() {
                 }
 
                 if (isMounted) {
-                    setTeacherProfile({ id: userId, name: profile.name, email: profile.email, role: profile.role });
+                    setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
                     await fetchSessions();
                 }
             } catch (err) {
@@ -424,6 +424,8 @@ export default function UserSessionsDashboard() {
                 <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                     <TeacherHeader 
                         title="Login Sessions" 
+                        avatarUrl={teacherProfile?.profile_pic_url}
+                        userName={teacherProfile?.name}
                         backLink="/admin-dashboard/"
                     />
 

@@ -46,7 +46,7 @@ interface NotificationRecord {
 export default function FeesManagementDashboard() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string; profile_pic_url?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [students, setStudents] = useState<StudentFeesData[]>([]);
     const [payments, setPayments] = useState<PaymentRecord[]>([]);
     
@@ -107,7 +107,7 @@ export default function FeesManagementDashboard() {
             // 2. Fetch Teacher Profile
             const { data: profile, error: profileError } = await supabaseAuth
                 .from('users')
-                .select('name, email, role, profile_pic_url')
+                .select('name, email, phone, role, profile_pic_url')
                 .eq('id', userId)
                 .single();
 
@@ -116,7 +116,7 @@ export default function FeesManagementDashboard() {
                 return;
             }
 
-            setTeacherProfile({ id: userId, name: profile.name, email: profile.email, role: profile.role, profile_pic_url: profile.profile_pic_url });
+            setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
 
             // 3. Fetch Students with Fees columns
             const { data: studentsData, error: studentsError } = await supabaseAuth
@@ -136,7 +136,7 @@ export default function FeesManagementDashboard() {
                         classrooms(name)
                     )
                 `)
-                .or('role.eq.student,role.eq.pending')
+                .or('role.eq.student,role.eq.pending,role.eq.mentor')
                 .eq('status', 'active');
 
             if (studentsError) throw studentsError;
@@ -585,6 +585,8 @@ export default function FeesManagementDashboard() {
                 <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
                     <TeacherHeader 
                         title="Fees Management" 
+                        avatarUrl={teacherProfile?.profile_pic_url}
+                        userName={teacherProfile?.name}
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 

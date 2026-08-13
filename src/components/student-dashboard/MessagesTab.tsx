@@ -55,6 +55,8 @@ interface MessagesTabProps {
     notifications?: any[];
     setNotifications?: React.Dispatch<React.SetStateAction<any[]>>;
     selectedFeedProp?: { type: 'category' | 'chat'; id: string; name: string } | null;
+    mentorInfo?: any;
+    mentees?: any[];
 }
 
 export default function MessagesTab({
@@ -69,7 +71,9 @@ export default function MessagesTab({
     admins = [],
     notifications = [],
     setNotifications,
-    selectedFeedProp
+    selectedFeedProp,
+    mentorInfo,
+    mentees = []
 }: MessagesTabProps) {
     // Selection state: can be a category id or a contact object
     const [selectedFeed, setSelectedFeed] = useState<{ type: 'category' | 'chat'; id: string; name: string }>(
@@ -466,6 +470,97 @@ export default function MessagesTab({
                     <div>
                         <span className="text-[10px] font-black text-slate-400 dark:text-slate-505 uppercase tracking-widest block mb-2 font-mono">Direct Messages</span>
                         <div className="space-y-1.5">
+                            {/* Mentor Contact (If student has an assigned mentor) */}
+                            {mentorInfo && (() => {
+                                const showMentorInSearch = leftSearch === '' || mentorInfo.name.toLowerCase().includes(leftSearch.toLowerCase());
+                                if (!showMentorInSearch) return null;
+                                const unreadCount = getUnreadCountForContact(mentorInfo.id, mentorInfo.name);
+                                return (
+                                    <button
+                                        onClick={() => {
+                                            setSelectedFeed({ type: 'chat', id: mentorInfo.id, name: mentorInfo.name });
+                                            setRightSearch('');
+                                        }}
+                                        className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
+                                            selectedFeed.type === 'chat' && selectedFeed.id === mentorInfo.id
+                                                ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
+                                                : unreadCount > 0
+                                                    ? 'border-amber-300 bg-amber-50/30 text-[#7C5E3F] dark:border-amber-900/40 dark:bg-amber-950/10'
+                                                    : 'border-amber-200/60 bg-amber-50/30 dark:border-amber-900/30 hover:bg-amber-50/70 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center border border-amber-500/30 shrink-0 font-extrabold text-xs">
+                                                {mentorInfo.profile_pic_url ? (
+                                                    <img src={mentorInfo.profile_pic_url} alt={mentorInfo.name} className="w-full h-full object-cover rounded-lg" />
+                                                ) : (
+                                                    mentorInfo.name.charAt(0)
+                                                )}
+                                            </div>
+                                            <div className="min-w-0 text-left">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <h4 className="font-extrabold text-xs leading-none">{mentorInfo.name}</h4>
+                                                    <span className="text-[7.5px] font-black bg-amber-600 text-white px-1.5 py-0.2 rounded uppercase tracking-wider shrink-0">Your Mentor</span>
+                                                </div>
+                                                <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 truncate">{mentorInfo.email}</p>
+                                            </div>
+                                        </div>
+                                        {unreadCount > 0 ? (
+                                            <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[9px] font-black shrink-0">{unreadCount}</span>
+                                        ) : (
+                                            <MessageSquare className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                        )}
+                                    </button>
+                                );
+                            })()}
+
+                            {/* Mentees Contacts (If logged-in user is a mentor) */}
+                            {mentees.length > 0 && mentees.map((mentee) => {
+                                const showMenteeInSearch = leftSearch === '' || mentee.name.toLowerCase().includes(leftSearch.toLowerCase());
+                                if (!showMenteeInSearch) return null;
+                                const unreadCount = getUnreadCountForContact(mentee.student_id, mentee.name);
+                                const active = selectedFeed.type === 'chat' && selectedFeed.id === mentee.student_id;
+
+                                return (
+                                    <button
+                                        key={mentee.id}
+                                        onClick={() => {
+                                            setSelectedFeed({ type: 'chat', id: mentee.student_id, name: mentee.name });
+                                            setRightSearch('');
+                                        }}
+                                        className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
+                                            active
+                                                ? 'border-[#7C5E3F] bg-[#FAF5EE] text-[#7C5E3F] dark:border-amber-400 dark:bg-slate-800 dark:text-amber-400 shadow-2xs'
+                                                : unreadCount > 0
+                                                    ? 'border-amber-300 bg-amber-50/30 text-[#7C5E3F] dark:border-amber-900/40 dark:bg-amber-950/10'
+                                                    : 'border-slate-100/50 hover:border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-850/50 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center border border-amber-500/20 shrink-0 font-extrabold text-xs">
+                                                {mentee.profile_pic_url ? (
+                                                    <img src={mentee.profile_pic_url} alt={mentee.name} className="w-full h-full object-cover rounded-lg" />
+                                                ) : (
+                                                    mentee.name.charAt(0)
+                                                )}
+                                            </div>
+                                            <div className="min-w-0 text-left">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <h4 className="font-extrabold text-xs leading-none">{mentee.name}</h4>
+                                                    <span className="text-[7.5px] font-black bg-blue-600 text-white px-1.5 py-0.2 rounded uppercase tracking-wider shrink-0">Mentee</span>
+                                                </div>
+                                                <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 truncate">{mentee.email}</p>
+                                            </div>
+                                        </div>
+                                        {unreadCount > 0 ? (
+                                            <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-amber-500 text-white text-[9px] font-black shrink-0">{unreadCount}</span>
+                                        ) : (
+                                            <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+
                             {/* Teacher Contact */}
                             {classroom?.teacher_id && showTeacherInSearch && (() => {
                                 const unreadCount = getUnreadCountForContact(classroom.teacher_id!, teacherName);

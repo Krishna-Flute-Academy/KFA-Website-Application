@@ -91,9 +91,13 @@ export default function CurriculumTab({
         ? classroom.description.replace(/\[delivery_format:(online|offline)\]/g, '').trim()
         : '';
 
-    // Filter and search logic
+    // Filter out locked lessons (hide locked topics/chapters/modules from student view)
+    const unlockedLessons = useMemo(() => {
+        return courseLessons.filter(l => getLessonStatus(l.id, l.chapter_id) !== 'locked');
+    }, [courseLessons, getLessonStatus]);
+
     const filteredLessons = useMemo(() => {
-        let base = courseLessons;
+        let base = unlockedLessons;
         if (searchQuery.trim()) {
             base = base.filter(l => 
                 l.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -101,18 +105,14 @@ export default function CurriculumTab({
             );
         }
         return base;
-    }, [courseLessons, searchQuery]);
+    }, [unlockedLessons, searchQuery]);
 
     const filteredChapters = useMemo(() => {
-        return courseChapters
-            .filter(chapter => {
-                const chapterLessons = filteredLessons.filter(l => l.chapter_id === chapter.id);
-                if (searchQuery.trim()) {
-                    return chapterLessons.length > 0;
-                }
-                return chapterLessons.some(l => getLessonStatus(l.id, chapter.id) !== 'locked');
-            });
-    }, [courseChapters, filteredLessons, searchQuery]);
+        return courseChapters.filter(chapter => {
+            const chapterLessons = filteredLessons.filter(l => l.chapter_id === chapter.id);
+            return chapterLessons.length > 0;
+        });
+    }, [courseChapters, filteredLessons]);
 
     const filteredModules = useMemo(() => {
         return courseModules.filter(module => {
@@ -172,7 +172,7 @@ export default function CurriculumTab({
                                 />
                             </div>
                             <div className="bg-amber-500/10 text-amber-700 text-[10px] sm:text-xs font-extrabold px-2.5 sm:px-3 py-1.5 rounded-full shrink-0 text-center">
-                                Completed: {completedLessonsCount} / {totalAllocatedLessons || courseLessons.length}
+                                Completed: {completedLessonsCount} / {totalAllocatedLessons}
                             </div>
                         </div>
                     </div>
@@ -229,9 +229,7 @@ export default function CurriculumTab({
                                                         ) : (
                                                             chapters.map((chapter) => {
                                                                 const isChapExpanded = searchQuery.trim() !== '' ? true : !!expandedChapters[chapter.id];
-                                                                const lessons = filteredLessons
-                                                                    .filter(l => l.chapter_id === chapter.id)
-                                                                    .filter(l => searchQuery.trim() !== '' || getLessonStatus(l.id, l.chapter_id, module.id) !== 'locked');
+                                                                const lessons = filteredLessons.filter(l => l.chapter_id === chapter.id);
 
                                                                 return (
                                                                     <div key={chapter.id} className="border border-slate-100 rounded-xl overflow-hidden">

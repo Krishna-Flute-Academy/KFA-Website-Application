@@ -158,7 +158,7 @@ export default function TeacherDashboardContainer() {
         await supabaseAuth.auth.signOut();
         router.push('/');
     };
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     
     // Core metrics
     const [stats, setStats] = useState({ 
@@ -221,6 +221,28 @@ export default function TeacherDashboardContainer() {
 
     const isAdmin = teacherProfile?.role === 'admin';
 
+    // Mandatory Profile Prompt state for Admin/Teacher
+    const [showProfilePromptModal, setShowProfilePromptModal] = useState(false);
+    const [profilePromptPhone, setProfilePromptPhone] = useState('');
+    const [profilePromptPicUrl, setProfilePromptPicUrl] = useState('');
+    const [isUploadingPromptPic, setIsUploadingPromptPic] = useState(false);
+    const [isSavingProfilePrompt, setIsSavingProfilePrompt] = useState(false);
+    const [profilePromptError, setProfilePromptError] = useState('');
+
+    useEffect(() => {
+        if (teacherProfile && (teacherProfile.role === 'admin' || teacherProfile.role === 'teacher')) {
+            const hasNoPic = !teacherProfile.profile_pic_url;
+            const hasNoPhone = !teacherProfile.phone || teacherProfile.phone.trim().replace(/\D/g, '').length < 10;
+            if (hasNoPic || hasNoPhone) {
+                setProfilePromptPhone(teacherProfile.phone || '');
+                setProfilePromptPicUrl(teacherProfile.profile_pic_url || '');
+                setShowProfilePromptModal(true);
+            } else {
+                setShowProfilePromptModal(false);
+            }
+        }
+    }, [teacherProfile]);
+
     
     // SWR Cache Saver
     useEffect(() => {
@@ -251,7 +273,7 @@ export default function TeacherDashboardContainer() {
             // 1. Profile
             const { data: profile } = await supabaseAuth
                 .from('users')
-                .select('id, name, email, role')
+                .select('id, name, email, phone, role, profile_pic_url')
                 .eq('id', userId)
                 .single();
 
@@ -317,14 +339,14 @@ export default function TeacherDashboardContainer() {
                 const { count } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending')
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
                     .eq('status', 'active');
                 studentsCount = count || 0;
             } else {
                 const { count } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending')
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
                     .eq('teacher_id', userId)
                     .eq('status', 'active');
                 studentsCount = count || 0;
@@ -406,7 +428,7 @@ export default function TeacherDashboardContainer() {
                 const { data: allStudsForStats } = await supabaseAuth
                     .from('users')
                     .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
-                    .or('role.eq.student,role.eq.pending');
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor');
 
                 const { data: allPayForStats } = await supabaseAuth
                     .from('fees_payments')
@@ -702,7 +724,7 @@ export default function TeacherDashboardContainer() {
             let studentsListQuery = supabaseAuth
                 .from('users')
                 .select('id, name')
-                .or('role.eq.student,role.eq.pending')
+                .or('role.eq.student,role.eq.pending,role.eq.mentor')
                 .eq('status', 'active')
                 .order('name', { ascending: true });
             if (profile.role !== 'admin') {
@@ -715,7 +737,7 @@ export default function TeacherDashboardContainer() {
             const { data: activeStudents } = await supabaseAuth
                 .from('users')
                 .select('id, name')
-                .or('role.eq.student,role.eq.pending')
+                .or('role.eq.student,role.eq.pending,role.eq.mentor')
                 .eq('status', 'active');
 
             const { data: classroomStudents } = await supabaseAuth
@@ -748,7 +770,7 @@ export default function TeacherDashboardContainer() {
             const { data: allStuds } = await supabaseAuth
                 .from('users')
                 .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
-                .or('role.eq.student,role.eq.pending');
+                .or('role.eq.student,role.eq.pending,role.eq.mentor');
 
             const { data: allPay } = await supabaseAuth
                 .from('fees_payments')
@@ -1190,7 +1212,11 @@ export default function TeacherDashboardContainer() {
                 <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
                 <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
-                    <TeacherHeader title={isAdmin ? "Admin-dashboard" : "Dashboard Overview"} />
+                    <TeacherHeader 
+                        title={isAdmin ? "Admin-dashboard" : "Dashboard Overview"} 
+                        avatarUrl={teacherProfile?.profile_pic_url}
+                        userName={teacherProfile?.name}
+                    />
 
                     <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 w-full flex-1">
                         {/* Stats Widgets */}
@@ -1562,6 +1588,162 @@ export default function TeacherDashboardContainer() {
                                 {noteForm.id ? 'Update Note' : 'Save Note'}
                             </button>
                         </form>
+                    </div>
+                </>
+            )}
+
+            {/* Mandatory Profile Completion Modal */}
+            {showProfilePromptModal && (
+                <>
+                    <div className="fixed inset-0 bg-black/65 z-[200] backdrop-blur-sm" />
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] max-w-[460px] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[210] p-6 sm:p-8 animate-in fade-in zoom-in duration-200 text-left">
+                        <div className="flex flex-col items-center text-center mb-6">
+                            <div className="size-14 rounded-2xl bg-amber-500/10 text-[#d97706] dark:text-amber-400 flex items-center justify-center mb-3 border border-amber-500/20">
+                                <span className="material-symbols-outlined text-3xl">account_circle</span>
+                            </div>
+                            <h3 className="font-extrabold text-lg text-slate-900 dark:text-white">Profile Photo & Phone Required</h3>
+                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                                As an {isAdmin ? 'Administrator' : 'Instructor'} at Krishna Flute Academy, you must upload your profile photo and provide a valid phone number.
+                            </p>
+                        </div>
+
+                        {profilePromptError && (
+                            <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-2">
+                                <span className="material-symbols-outlined text-base shrink-0">error</span>
+                                <span className="leading-snug">{profilePromptError}</span>
+                            </div>
+                        )}
+
+                        <div className="space-y-5">
+                            {/* Photo Upload */}
+                            <div className="flex flex-col items-center justify-center p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700/60">
+                                <div className="size-24 rounded-2xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden border-2 border-amber-500/30 mb-3 relative shadow-inner">
+                                    {profilePromptPicUrl ? (
+                                        <img src={profilePromptPicUrl} alt="Preview" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span className="material-symbols-outlined text-4xl text-slate-400">person</span>
+                                    )}
+                                    {isUploadingPromptPic && (
+                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white backdrop-blur-3xs">
+                                            <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                                        </div>
+                                    )}
+                                </div>
+                                <label className="px-4 py-2.5 bg-[#ecb613] hover:bg-amber-500 text-slate-950 rounded-xl text-xs font-black cursor-pointer transition-all flex items-center gap-1.5 shadow-sm active:scale-95">
+                                    <span className="material-symbols-outlined text-base">upload</span>
+                                    <span>{profilePromptPicUrl ? 'Change Profile Photo *' : 'Upload Profile Photo *'}</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        disabled={isUploadingPromptPic}
+                                        onChange={async (e) => {
+                                            const file = e.target.files?.[0];
+                                            if (!file || !teacherProfile?.id) return;
+                                            const fileExt = file.name.split('.').pop()?.toLowerCase();
+                                            if (!['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(fileExt || '')) {
+                                                setProfilePromptError('Please upload a valid image file (JPG, PNG, WebP).');
+                                                return;
+                                            }
+                                            if (file.size > 5 * 1024 * 1024) {
+                                                setProfilePromptError('Image size should be less than 5MB.');
+                                                return;
+                                            }
+                                            setIsUploadingPromptPic(true);
+                                            setProfilePromptError('');
+                                            try {
+                                                const filePath = `avatars/${teacherProfile.id}-${Date.now()}.${fileExt}`;
+                                                const { error: uploadErr } = await supabaseAuth.storage
+                                                    .from('gallery')
+                                                    .upload(filePath, file, { cacheControl: '3600', upsert: true });
+                                                if (uploadErr) throw uploadErr;
+                                                const { data: { publicUrl } } = supabaseAuth.storage.from('gallery').getPublicUrl(filePath);
+                                                
+                                                // Save pic URL to state & database immediately
+                                                const { error: dbErr } = await supabaseAuth
+                                                    .from('users')
+                                                    .update({ profile_pic_url: publicUrl })
+                                                    .eq('id', teacherProfile.id);
+                                                if (dbErr) throw dbErr;
+
+                                                setProfilePromptPicUrl(publicUrl);
+                                                showToast('Photo uploaded & saved successfully!', 'success');
+                                            } catch (err: any) {
+                                                console.error('Error uploading photo:', err);
+                                                setProfilePromptError(err.message || 'Failed to upload photo.');
+                                            } finally {
+                                                setIsUploadingPromptPic(false);
+                                            }
+                                        }}
+                                    />
+                                </label>
+                                <p className="text-[10px] text-slate-400 font-semibold mt-2">Supports JPG, PNG, WebP. Max size 5MB. Mandatory field.</p>
+                            </div>
+
+                            {/* Phone Input */}
+                            <div className="space-y-1.5">
+                                <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                                    Phone Number <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 focus-within:border-amber-500 transition-colors shadow-2xs">
+                                    <span className="material-symbols-outlined text-slate-400 text-lg select-none">call</span>
+                                    <input
+                                        type="tel"
+                                        value={profilePromptPhone}
+                                        onChange={(e) => setProfilePromptPhone(e.target.value)}
+                                        placeholder="Enter 10-digit phone number"
+                                        className="w-full bg-transparent border-none outline-none text-sm font-semibold text-slate-800 dark:text-white placeholder:text-slate-400"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Save Button */}
+                            <button
+                                onClick={async () => {
+                                    if (!profilePromptPicUrl) {
+                                        setProfilePromptError('Profile Photo is a mandatory required field. Please upload your profile photo.');
+                                        return;
+                                    }
+                                    const cleanPhone = profilePromptPhone.trim();
+                                    const digits = cleanPhone.replace(/\D/g, '');
+                                    if (!cleanPhone || digits.length < 10) {
+                                        setProfilePromptError('Phone Number is mandatory. Please enter a valid 10-digit phone number.');
+                                        return;
+                                    }
+                                    setIsSavingProfilePrompt(true);
+                                    setProfilePromptError('');
+                                    try {
+                                        const { error } = await supabaseAuth
+                                            .from('users')
+                                            .update({
+                                                profile_pic_url: profilePromptPicUrl,
+                                                phone: cleanPhone
+                                            })
+                                            .eq('id', teacherProfile!.id);
+                                        if (error) throw error;
+                                        showToast('Profile details updated successfully!', 'success');
+                                        setShowProfilePromptModal(false);
+                                        await loadDashboardData();
+                                    } catch (err: any) {
+                                        console.error('Error saving profile prompt:', err);
+                                        setProfilePromptError(err.message || 'Failed to save profile.');
+                                    } finally {
+                                        setIsSavingProfilePrompt(false);
+                                    }
+                                }}
+                                disabled={isSavingProfilePrompt || isUploadingPromptPic}
+                                className="w-full py-3.5 bg-[#ecb613] hover:bg-amber-500 text-slate-950 font-black rounded-xl transition-all shadow-md shadow-amber-500/20 text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 active:scale-98"
+                            >
+                                {isSavingProfilePrompt ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span>Saving Profile...</span>
+                                    </>
+                                ) : (
+                                    <span>Save & Complete Profile</span>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </>
             )}

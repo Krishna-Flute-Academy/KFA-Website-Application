@@ -7,7 +7,7 @@ import { supabaseAuth } from '../lib/supabase-auth';
 import { supabase } from '../lib/supabase';
 
 interface TeacherSidebarProps {
-    teacherProfile: { id?: string; name: string; email: string; role?: string } | null;
+    teacherProfile: { id?: string; name: string; email: string; role?: string; phone?: string | null; profile_pic_url?: string | null } | null;
     handleLogout: () => void;
 }
 
@@ -170,7 +170,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 const { count, error } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending')
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
                     .is('teacher_id', null);
                 
                 if (error) throw error;
@@ -571,15 +571,21 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 </button>
 
                 <div className="mt-4 flex items-center gap-3 px-3 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 shadow-xs">
-                    <div className="size-10 rounded-full overflow-hidden border border-amber-500/10">
-                        <img 
-                            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" 
-                            alt="Teacher profile" 
-                            className="w-full h-full object-cover" 
-                        />
+                    <div className="size-10 rounded-full overflow-hidden border border-amber-500/20 bg-amber-500/10 flex items-center justify-center shrink-0">
+                        {teacherProfile?.profile_pic_url ? (
+                            <img 
+                                src={teacherProfile.profile_pic_url} 
+                                alt={teacherProfile.name || 'User profile'} 
+                                className="w-full h-full object-cover" 
+                            />
+                        ) : (
+                            <span className="text-sm font-black text-amber-600 dark:text-amber-400">
+                                {teacherProfile?.name ? teacherProfile.name.charAt(0).toUpperCase() : 'U'}
+                            </span>
+                        )}
                     </div>
                     <div className="overflow-hidden min-w-0">
-                        <p className="text-sm font-black truncate text-slate-900 dark:text-white">{teacherProfile?.name || 'Krishna Gopal'}</p>
+                        <p className="text-sm font-black truncate text-slate-900 dark:text-white">{teacherProfile?.name || 'User'}</p>
                         <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                             {userRole === 'admin' ? 'Administrator' : 'Instructor'}
                         </p>
