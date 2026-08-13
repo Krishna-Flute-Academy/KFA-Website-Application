@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check } from 'lucide-react';
+import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check, Trash2 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { getStudentFeeStatus, calculateClassesAdded } from '../../../src/lib/fee-utils';
@@ -64,6 +64,7 @@ export default function FeesManagementDashboard() {
     const [historyLoading, setHistoryLoading] = useState(false);
     const [studentPayments, setStudentPayments] = useState<PaymentRecord[]>([]);
     const [studentNotifications, setStudentNotifications] = useState<NotificationRecord[]>([]);
+    const [isDeletingPayment, setIsDeletingPayment] = useState<string | null>(null);
 
     // Payment Form State
     const [paymentAmount, setPaymentAmount] = useState('');
@@ -574,6 +575,54 @@ export default function FeesManagementDashboard() {
         } catch (err: any) {
             console.error('Error rejecting payment:', err);
             setAlertMessage({ type: 'error', text: `Failed to reject payment: ${err.message}` });
+        }
+    };
+
+    const handleDeletePayment = async (pay: PaymentRecord) => {
+        if (!selectedStudent) return;
+
+        const confirmMsg = `Are you sure you want to remove this fee payment record of ₹${pay.amount}? This will delete the payment record and deduct ${pay.classes_added || 0} classes from ${selectedStudent.name}'s balance.`;
+        if (!window.confirm(confirmMsg)) return;
+
+        setIsDeletingPayment(pay.id);
+        try {
+            // 1. Delete payment record from fees_payments
+            const { error: deleteError } = await supabaseAuth
+                .from('fees_payments')
+                .delete()
+                .eq('id', pay.id);
+
+            if (deleteError) throw deleteError;
+
+            // 2. Adjust student balance in users table (deduct classes added by this payment)
+            const currentClasses = selectedStudent.fees_classes_paid || 0;
+            const classesToDeduct = pay.status === 'rejected' ? 0 : (pay.classes_added || 0);
+            const newClassesPaid = Math.max(0, currentClasses - classesToDeduct);
+
+            const { error: userUpdateError } = await supabaseAuth
+                .from('users')
+                .update({ fees_classes_paid: newClassesPaid })
+                .eq('id', selectedStudent.id);
+
+            if (userUpdateError) throw userUpdateError;
+
+            // 3. Update local state
+            setSelectedStudent(prev => prev ? { ...prev, fees_classes_paid: newClassesPaid } : null);
+            setStudentPayments(prev => prev.filter(p => p.id !== pay.id));
+            setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, fees_classes_paid: newClassesPaid } : s));
+
+            setAlertMessage({
+                type: 'success',
+                text: `Fee record (₹${pay.amount}) removed successfully and ${classesToDeduct} classes deducted.`
+            });
+
+            // 4. Refresh global data
+            fetchData();
+        } catch (err: any) {
+            console.error('Error removing fee payment record:', err);
+            setAlertMessage({ type: 'error', text: `Failed to remove payment record: ${err.message || err}` });
+        } finally {
+            setIsDeletingPayment(null);
         }
     };
 
@@ -1213,12 +1262,12 @@ export default function FeesManagementDashboard() {
                                 <div className="space-y-6">
                                     {/* Payments Section */}
                                     <div>
-                                        <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                                            <DollarSign className="size-4 text-emerald-600" />
-                                            Recorded Payments ({studentPayments.length})
-                                        </h4>
-                                        
-                                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                                         <h4 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                             <DollarSign className="size-4 text-emerald-600" />
+                                             Recorded Payments ({studentPayments.length})
+                                         </h4>
+                                         
+                                         <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                                             {studentPayments.length > 0 ? (
                                                 studentPayments.map(pay => (
                                                     <div key={pay.id} className={`p-3 border rounded-xl flex items-center justify-between text-xs transition-all ${
@@ -1256,16 +1305,44 @@ export default function FeesManagementDashboard() {
                                                                     >
                                                                         Approve
                                                                     </button>
+                                                                    <button
+                                                                        disabled={isDeletingPayment === pay.id}
+                                                                        onClick={() => handleDeletePayment(pay)}
+                                                                        title="Remove/Delete this fee payment record"
+                                                                        className="p-1 px-2 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/30 dark:hover:bg-rose-900/50 transition-colors flex items-center gap-1 text-[10px] font-bold"
+                                                                    >
+                                                                        {isDeletingPayment === pay.id ? (
+                                                                            <Loader2 className="size-3 animate-spin text-rose-600" />
+                                                                        ) : (
+                                                                            <Trash2 className="size-3" />
+                                                                        )}
+                                                                        <span>Remove</span>
+                                                                    </button>
                                                                 </div>
                                                             ) : (
-                                                                <>
-                                                                    {pay.status !== 'rejected' && (
-                                                                        <p className="font-bold text-slate-700 dark:text-slate-300">+{pay.classes_added} classes</p>
-                                                                    )}
-                                                                    <p className="text-[9px] text-slate-400 mt-1">
-                                                                        Paid on {new Date(pay.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                                    </p>
-                                                                </>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="text-right">
+                                                                        {pay.status !== 'rejected' && (
+                                                                            <p className="font-bold text-slate-700 dark:text-slate-300">+{pay.classes_added} classes</p>
+                                                                        )}
+                                                                        <p className="text-[9px] text-slate-400 mt-0.5">
+                                                                            Paid on {new Date(pay.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                        </p>
+                                                                    </div>
+                                                                    <button
+                                                                        disabled={isDeletingPayment === pay.id}
+                                                                        onClick={() => handleDeletePayment(pay)}
+                                                                        title="Remove/Delete this fee payment record"
+                                                                        className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/30 dark:hover:bg-rose-900/50 transition-colors flex items-center gap-1 text-[10px] font-bold cursor-pointer"
+                                                                    >
+                                                                        {isDeletingPayment === pay.id ? (
+                                                                            <Loader2 className="size-3.5 animate-spin text-rose-600" />
+                                                                        ) : (
+                                                                            <Trash2 className="size-3.5" />
+                                                                        )}
+                                                                        <span>Remove</span>
+                                                                    </button>
+                                                                </div>
                                                             )}
                                                         </div>
                                                     </div>
