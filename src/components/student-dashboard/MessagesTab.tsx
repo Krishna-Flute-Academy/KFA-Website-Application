@@ -184,7 +184,11 @@ export default function MessagesTab({
                     });
 
                     const matchingNotifs = notificationsRef.current.filter(n => {
-                        if (n.is_read || (n.type !== 'reminder' && n.type !== 'messages')) return false;
+                        if (n.is_read) return false;
+                        if (selectedFeed.id === 'fee_management') {
+                            return n.type === 'fee_reminder' || n.type === 'fees' || String(n.title || '').toLowerCase().includes('fees due') || String(n.title || '').toLowerCase().includes('billing reminder');
+                        }
+                        if (n.type !== 'reminder' && n.type !== 'messages') return false;
                         return catBroadcasts.some(b => n.title === b.subject || n.message === b.content);
                     });
 
@@ -215,7 +219,6 @@ export default function MessagesTab({
         { id: 'classroom', name: 'Class Announcements', icon: MessageSquare, desc: 'Batch notices from your teacher' },
         { id: 'custom_groups', name: 'Group Announcements', icon: Users, desc: 'Notices for your specific groups' },
         { id: 'new_joiners', name: 'New Joiners Notices', icon: Sparkles, desc: 'Onboarding and welcome guides' },
-        { id: 'fee_management', name: 'Fee & Payments', icon: CreditCard, desc: 'Fee reminders and payment receipts' },
         { id: 'voice', name: 'Voice Notes & Tones', icon: FileAudio, desc: 'Voice instructions and flute backing tracks' }
     ];
 
@@ -291,6 +294,20 @@ export default function MessagesTab({
     };
 
     const getUnreadCountForCategory = (catId: string) => {
+        if (catId === 'fee_management') {
+            const broadcastCount = unreadMessageNotifications.filter(n => {
+                const b = broadcasts.find(bc => n.title === bc.subject || n.message === bc.content);
+                return b && b.channel === 'fee_management';
+            }).length;
+
+            const feeNotifCount = notifications.filter(n =>
+                !n.is_read &&
+                (n.type === 'fee_reminder' || n.type === 'fees' || String(n.title || '').toLowerCase().includes('fees due') || String(n.title || '').toLowerCase().includes('billing reminder'))
+            ).length;
+
+            return broadcastCount + feeNotifCount;
+        }
+
         return unreadMessageNotifications.filter(n => {
             const b = broadcasts.find(bc => n.title === bc.subject || n.message === bc.content);
             if (!b) return false;
@@ -302,7 +319,6 @@ export default function MessagesTab({
             }
             if (catId === 'custom_groups') return b.channel === 'custom_groups';
             if (catId === 'new_joiners') return b.channel === 'new_joiners';
-            if (catId === 'fee_management') return b.channel === 'fee_management';
             if (catId === 'voice') return !!b.audio_attachment;
             return false;
         }).length;

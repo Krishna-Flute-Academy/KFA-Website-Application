@@ -245,6 +245,27 @@ export default function StudentDashboardContainer() {
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>('metronome');
+    const [snoozedFeeNotifIds, setSnoozedFeeNotifIds] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const activeSnoozes: string[] = [];
+            const now = Date.now();
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('kfa_fee_snooze_')) {
+                    const expiry = Number(localStorage.getItem(key));
+                    const notifId = key.replace('kfa_fee_snooze_', '');
+                    if (expiry && now < expiry) {
+                        activeSnoozes.push(notifId);
+                    } else if (key) {
+                        localStorage.removeItem(key);
+                    }
+                }
+            }
+            setSnoozedFeeNotifIds(activeSnoozes);
+        }
+    }, []);
 
     // Mentorship states
     const [mentorInfo, setMentorInfo] = useState<any | null>(null);
@@ -2094,9 +2115,11 @@ export default function StudentDashboardContainer() {
     const activeFeeReminderNotification = useMemo(() => {
         return notifications.find(n => 
             !n.is_read && 
-            (n.type === 'fee_reminder' || n.type === 'fees' || n.title?.toLowerCase().includes('fees due') || n.title?.toLowerCase().includes('billing reminder'))
+            !snoozedFeeNotifIds.includes(n.id) &&
+            !n.title?.toLowerCase().includes('approved') &&
+            (n.type === 'fee_reminder' || n.title?.toLowerCase().includes('fees due') || n.title?.toLowerCase().includes('billing reminder') || n.title?.toLowerCase().includes('classes completed'))
         );
-    }, [notifications]);
+    }, [notifications, snoozedFeeNotifIds]);
 
     const unreadMessageCount = useMemo(() => {
         return notifications.filter(n => {
@@ -2368,8 +2391,8 @@ export default function StudentDashboardContainer() {
                                                                     feedId = 'new_joiners';
                                                                     feedName = 'New Joiners Notices';
                                                                 } else if (matchingBroadcast.channel === 'fee_management') {
-                                                                    feedId = 'fee_management';
-                                                                    feedName = 'Fee & Payments';
+                                                                    setActiveTab('fees');
+                                                                    return;
                                                                 } else if (matchingBroadcast.channel === 'voice') {
                                                                     feedId = 'voice';
                                                                     feedName = 'Voice Notes & Tones';
@@ -2487,19 +2510,19 @@ export default function StudentDashboardContainer() {
                                             bannerTitle = isDue ? 'Monthly Fee Due Today' : 'Monthly Fee Overdue';
                                             bannerMessage = (
                                                 <span className="block leading-relaxed">
-                                                    Your monthly fee is {isDue ? 'due today' : 'overdue'}. Please complete the payment to continue your classes.
+                                                    Your monthly fee is {isDue ? 'due today' : 'overdue'}. Please submit your fee payment.
                                                     <br />
                                                     You still have <strong className="font-black">{classesLeft} pending class{classesLeft > 1 ? 'es' : ''}</strong> from your current cycle. These classes must be completed within the applicable month and <strong className="font-black">do not extend or postpone your next fee payment date</strong>.
                                                 </span>
                                             );
                                         } else {
                                             bannerTitle = isDue ? 'Monthly Fee Due Today' : 'Monthly Fee Overdue';
-                                            bannerMessage = `Your monthly fee is ${isDue ? 'due today' : 'overdue'}. Please complete the payment to continue your classes.`;
+                                            bannerMessage = `Your monthly fee is ${isDue ? 'due today' : 'overdue'}. Please submit your fee payment.`;
                                         }
                                     } else if (classesLeft <= 0) {
                                         bannerType = 'overdue';
                                         bannerTitle = 'Action Required: 4 Classes Completed';
-                                        bannerMessage = 'Your 4 classes are over. Please pay your fees to continue attending.';
+                                        bannerMessage = 'Your 4 classes are complete. Please submit your fee payment.';
                                         buttonText = 'Pay Fees';
                                     } else if (classesLeft === 1) {
                                         bannerType = 'warning';
@@ -3018,7 +3041,7 @@ export default function StudentDashboardContainer() {
                             <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-150 dark:border-amber-900/30 rounded-2xl p-4 text-left flex items-start gap-3">
                                 <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                                 <div className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
-                                    <strong>Important Note:</strong> You can pay or report your fee payment directly in your portal to keep your classes and learning materials active.
+                                    <strong>Important Note:</strong> You can submit or report your fee payment directly in your portal.
                                 </div>
                             </div>
 
@@ -3028,6 +3051,9 @@ export default function StudentDashboardContainer() {
                                     type="button"
                                     onClick={async () => {
                                         const notifId = activeFeeReminderNotification.id;
+                                        if (typeof window !== 'undefined') {
+                                            localStorage.removeItem(`kfa_fee_snooze_${notifId}`);
+                                        }
                                         setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
                                         setActiveTab('fees');
                                         await supabaseAuth
@@ -3043,17 +3069,18 @@ export default function StudentDashboardContainer() {
 
                                 <button
                                     type="button"
-                                    onClick={async () => {
+                                    onClick={() => {
                                         const notifId = activeFeeReminderNotification.id;
-                                        setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
-                                        await supabaseAuth
-                                            .from('notifications')
-                                            .update({ is_read: true })
-                                            .eq('id', notifId);
+                                        const snoozeExpiry = Date.now() + 24 * 60 * 60 * 1000;
+                                        if (typeof window !== 'undefined') {
+                                            localStorage.setItem(`kfa_fee_snooze_${notifId}`, String(snoozeExpiry));
+                                        }
+                                        setSnoozedFeeNotifIds(prev => [...prev, notifId]);
                                     }}
-                                    className="w-full py-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                                    className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                                 >
-                                    Dismiss / Remind Me Later
+                                    <Clock className="size-3.5" />
+                                    <span>Remind Me Later (Snooze 24 hrs)</span>
                                 </button>
                             </div>
                         </div>

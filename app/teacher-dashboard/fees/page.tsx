@@ -453,13 +453,14 @@ export default function FeesManagementDashboard() {
     // Send Reminder Notification & Direct Message to Student
     const handleSendReminder = async (student: StudentFeesData, type: 'due_date' | 'classes_completed') => {
         try {
-            const senderId = teacherProfile?.id;
+            const currentUser = (await supabaseAuth.auth.getUser()).data.user;
+            const senderId = teacherProfile?.id || currentUser?.id;
             const reminderMessage = type === 'classes_completed' 
-                ? 'Fee Due Reminder: Your prepaid classes balance is complete. Please submit your fee payment to continue attending classes.' 
-                : 'Fee Due Reminder: Your monthly fee payment is due. Please submit your fee payment to continue attending classes.';
+                ? 'Fee Due Reminder: Your prepaid classes balance is complete. Please submit your fee payment.' 
+                : 'Fee Due Reminder: Your monthly fee payment is due. Please submit your fee payment.';
 
             // 1. Insert record in fees_notifications for history logs
-            const { error } = await supabaseAuth
+            const { error: logErr } = await supabaseAuth
                 .from('fees_notifications')
                 .insert([{
                     student_id: student.id,
@@ -468,27 +469,29 @@ export default function FeesManagementDashboard() {
                     status: 'sent'
                 }]);
 
-            if (error) throw error;
+            if (logErr) throw logErr;
 
             // 2. Send Direct Message to student (stored in messages table)
             if (senderId) {
-                await supabaseAuth.from('messages').insert({
+                const { error: msgErr } = await supabaseAuth.from('messages').insert({
                     sender_id: senderId,
                     receiver_id: student.id,
                     message_text: reminderMessage,
                     status: 'sent',
                     created_at: new Date().toISOString()
                 });
+                if (msgErr) throw msgErr;
             }
 
             // 3. Insert notification in public.notifications for student header notification & Fee tab alert
-            await supabaseAuth.from('notifications').insert({
+            const { error: notifErr } = await supabaseAuth.from('notifications').insert({
                 user_id: student.id,
                 title: type === 'classes_completed' ? 'Fees Due: Prepaid Classes Completed' : 'Fees Due: Monthly Billing Reminder',
                 message: reminderMessage,
-                type: 'fee_reminder',
+                type: 'fees',
                 is_read: false
             });
+            if (notifErr) throw notifErr;
 
             setAlertMessage({ 
                 type: 'success', 
@@ -505,8 +508,9 @@ export default function FeesManagementDashboard() {
                 setStudentNotifications(notificationsData || []);
             }
         } catch (err: any) {
-            console.error('Error sending reminder:', err);
-            setAlertMessage({ type: 'error', text: `Failed to send reminder: ${err.message}` });
+            const errDetail = err?.message || err?.details || err?.error_description || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+            console.error('Error sending reminder:', errDetail, err);
+            setAlertMessage({ type: 'error', text: `Failed to send reminder: ${errDetail}` });
         }
     };
 
@@ -539,13 +543,12 @@ export default function FeesManagementDashboard() {
                 setSelectedStudent({ ...selectedStudent, fees_classes_paid: newClassesPaid });
             }
 
-            // Also insert notification for the student to confirm approval and classes credited
-            await supabaseAuth.from('notifications').insert({
-                user_id: studentId,
-                title: 'Fee Payment Approved',
-                message: `Your reported payment of ₹${amount.toLocaleString('en-IN')} has been approved. ${classesToAdd} classes have been credited to your balance.`,
-                is_read: false
-            });
+            // Auto-mark previous fee due reminders as read for this student upon payment approval
+            await supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', studentId)
+                .or('type.eq.fee_reminder,type.eq.fees');
 
             setAlertMessage({ type: 'success', text: `Payment approved and balance updated.` });
             

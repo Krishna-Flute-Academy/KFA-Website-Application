@@ -39,7 +39,7 @@ const QUICK_TEMPLATES = [
         name: 'Monthly Fee Reminder',
         icon: Clock,
         subject: 'Tuition Fee Invoice Ready 💳',
-        content: 'Hi there, this is a gentle reminder that your tuition fee invoice for this month is ready for processing. Please check your billing dashboard to make a payment and avoid class disruptions.'
+        content: 'Hi there, this is a gentle reminder that your tuition fee invoice for this month is ready for processing. Please check your billing dashboard to submit your fee payment.'
     },
     {
         id: 'cancel',

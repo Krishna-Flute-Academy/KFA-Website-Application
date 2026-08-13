@@ -85,7 +85,7 @@ interface OverviewTabProps {
     assignments: EnrichedAssignment[];
     broadcasts: Broadcast[];
     unreadAdminBroadcasts: any[];
-    setActiveTab: (tab: 'overview' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library') => void;
+    setActiveTab: (tab: 'overview' | 'classroom' | 'curriculum' | 'tasks' | 'messages' | 'attendance' | 'library' | 'fees' | 'policies' | 'settings' | 'mentor_hub') => void;
     onNavigateToFeed?: (feed: { type: 'category' | 'chat'; id: string; name: string }) => void;
     handleDismissAdminBroadcast: (id: string) => void;
     levelLabel: string;
@@ -853,8 +853,8 @@ export default function OverviewTab({
                                                 feedId = 'new_joiners';
                                                 feedName = 'New Joiners Notices';
                                             } else if (b.channel === 'fee_management') {
-                                                feedId = 'fee_management';
-                                                feedName = 'Fee & Payments';
+                                                setActiveTab('fees');
+                                                return;
                                             } else if (b.channel === 'voice') {
                                                 feedId = 'voice';
                                                 feedName = 'Voice Notes & Tones';
