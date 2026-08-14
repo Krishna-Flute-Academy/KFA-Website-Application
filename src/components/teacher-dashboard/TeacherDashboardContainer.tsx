@@ -427,8 +427,9 @@ export default function TeacherDashboardContainer() {
                 // Fetch due students count by running the calculation locally
                 const { data: allStudsForStats } = await supabaseAuth
                     .from('users')
-                    .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
-                    .or('role.eq.student,role.eq.pending,role.eq.mentor');
+                    .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid, status, classroom_students(classrooms(name))')
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
+                    .eq('status', 'active');
 
                 const { data: allPayForStats } = await supabaseAuth
                     .from('fees_payments')
@@ -437,6 +438,17 @@ export default function TeacherDashboardContainer() {
                 let localDueCount = 0;
                 if (allStudsForStats) {
                     for (const student of allStudsForStats) {
+                        const stLower = (student.status || '').toLowerCase();
+                        if (stLower === 'archived' || stLower === 'inactive') continue;
+
+                        const studentClassroomRef = (student as any).classroom_students?.[0];
+                        const studentClassroom = studentClassroomRef?.classrooms;
+                        const batch_name = Array.isArray(studentClassroom) 
+                            ? studentClassroom[0]?.name 
+                            : studentClassroom?.name;
+
+                        if (batch_name && String(batch_name).toLowerCase().includes('learning circle')) continue;
+
                         if (Number(student.fees_amount) > 0) {
                             const studentPayments = (allPayForStats || []).filter(p => p.student_id === student.id);
                             const classesCompleted = (student.fees_classes_paid || 0) <= 0;
@@ -769,8 +781,9 @@ export default function TeacherDashboardContainer() {
             // 10. Fetch pending Payments & calculate Due Students for priority widget
             const { data: allStuds } = await supabaseAuth
                 .from('users')
-                .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid')
-                .or('role.eq.student,role.eq.pending,role.eq.mentor');
+                .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid, status, classroom_students(classrooms(name))')
+                .or('role.eq.student,role.eq.pending,role.eq.mentor')
+                .eq('status', 'active');
 
             const { data: allPay } = await supabaseAuth
                 .from('fees_payments')
@@ -781,6 +794,17 @@ export default function TeacherDashboardContainer() {
 
             if (allStuds) {
                 for (const student of allStuds) {
+                    const stLower = (student.status || '').toLowerCase();
+                    if (stLower === 'archived' || stLower === 'inactive') continue;
+
+                    const studentClassroomRef = (student as any).classroom_students?.[0];
+                    const studentClassroom = studentClassroomRef?.classrooms;
+                    const batch_name = Array.isArray(studentClassroom) 
+                        ? studentClassroom[0]?.name 
+                        : studentClassroom?.name;
+
+                    if (batch_name && String(batch_name).toLowerCase().includes('learning circle')) continue;
+
                     const studentPayments = (allPay || []).filter(p => p.student_id === student.id);
                     
                     const hasPendingApproval = studentPayments.some(p => p.status === 'pending_approval');

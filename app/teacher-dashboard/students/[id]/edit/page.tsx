@@ -351,7 +351,8 @@ export default function EditStudentPage() {
                                                     }}
                                                 >
                                                     <option value="active">Active</option>
-                                                    <option value="archived">Archived / Inactive</option>
+                                                    <option value="inactive">Inactive</option>
+                                                    <option value="archived">Archived</option>
                                                 </select>
                                                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                             </div>

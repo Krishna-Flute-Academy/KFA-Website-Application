@@ -1107,7 +1107,9 @@ export default function StudentProfilePage() {
                                     <h1 className="text-2xl font-bold text-slate-900 leading-none">{studentInfo.name}</h1>
                                     <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">ID: #{studentInfo.id.slice(0, 4).toUpperCase()}</span>
                                     {teacherProfile?.role === 'admin' && (studentInfo.status === 'archived' || studentInfo.status === 'inactive') && (
-                                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">Archived / Inactive</span>
+                                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                            {studentInfo.status === 'archived' ? 'Archived' : 'Inactive'}
+                                        </span>
                                     )}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">

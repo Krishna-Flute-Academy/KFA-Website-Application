@@ -133,6 +133,7 @@ export default function FeesManagementDashboard() {
                     fees_collection_date,
                     fees_classes_paid,
                     profile_pic_url,
+                    status,
                     classroom_students(
                         classrooms(name)
                     )
@@ -143,27 +144,43 @@ export default function FeesManagementDashboard() {
             if (studentsError) throw studentsError;
 
             if (studentsData) {
-                const formatted: StudentFeesData[] = studentsData.map((s: any) => {
-                    const studentClassroomRef = s.classroom_students?.[0] as any;
-                    const studentClassroom = studentClassroomRef?.classrooms;
-                    const batch_name = Array.isArray(studentClassroom) 
-                        ? studentClassroom[0]?.name 
-                        : studentClassroom?.name;
+                const formatted: StudentFeesData[] = studentsData
+                    .filter((s: any) => {
+                        const stLower = (s.status || '').toLowerCase();
+                        if (stLower === 'archived' || stLower === 'inactive') return false;
 
-                    return {
-                        id: s.id,
-                        name: s.name,
-                        email: s.email || '',
-                        phone: s.phone || '',
-                        profile_pic_url: s.profile_pic_url,
-                        join_date: s.join_date || s.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-                        fees_basis: s.fees_basis || 'monthly',
-                        fees_amount: Number(s.fees_amount) || 0,
-                        fees_collection_date: s.fees_collection_date,
-                        fees_classes_paid: Number(s.fees_classes_paid) || 0,
-                        batch_name: batch_name || 'Unassigned'
-                    };
-                });
+                        const studentClassroomRef = s.classroom_students?.[0] as any;
+                        const studentClassroom = studentClassroomRef?.classrooms;
+                        const batch_name = Array.isArray(studentClassroom) 
+                            ? studentClassroom[0]?.name 
+                            : studentClassroom?.name;
+
+                        if (batch_name && String(batch_name).toLowerCase().includes('learning circle')) {
+                            return false;
+                        }
+                        return true;
+                    })
+                    .map((s: any) => {
+                        const studentClassroomRef = s.classroom_students?.[0] as any;
+                        const studentClassroom = studentClassroomRef?.classrooms;
+                        const batch_name = Array.isArray(studentClassroom) 
+                            ? studentClassroom[0]?.name 
+                            : studentClassroom?.name;
+
+                        return {
+                            id: s.id,
+                            name: s.name,
+                            email: s.email || '',
+                            phone: s.phone || '',
+                            profile_pic_url: s.profile_pic_url,
+                            join_date: s.join_date || s.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+                            fees_basis: s.fees_basis || 'monthly',
+                            fees_amount: Number(s.fees_amount) || 0,
+                            fees_collection_date: s.fees_collection_date,
+                            fees_classes_paid: Number(s.fees_classes_paid) || 0,
+                            batch_name: batch_name || 'Unassigned'
+                        };
+                    });
                 setStudents(formatted);
             }
 
