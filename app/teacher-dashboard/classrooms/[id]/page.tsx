@@ -2299,8 +2299,8 @@ export default function ClassroomDashboardPage({
         itemId: string
     ) => {
         const activeRoster = [
-            ...students.map(s => ({ student_id: s.student_id, name: s.name, profile_pic_url: s.profile_pic_url })),
-            ...sessionOverrides.map(o => ({ student_id: o.student_id, name: o.name, profile_pic_url: o.profile_pic_url || null }))
+            ...students.map(s => ({ student_id: s.student_id, name: s.name || 'Student', profile_pic_url: s.profile_pic_url || null })),
+            ...sessionOverrides.map(o => ({ student_id: o.student_id, name: o.name || o.users?.name || 'Student', profile_pic_url: o.profile_pic_url || o.users?.profile_pic_url || null }))
         ];
 
         return activeRoster.map(student => {
@@ -2385,7 +2385,7 @@ export default function ClassroomDashboardPage({
 
             return {
                 studentId,
-                name: student.name,
+                name: student.name || 'Student',
                 profilePic: student.profile_pic_url,
                 status
             };
@@ -3725,9 +3725,9 @@ export default function ClassroomDashboardPage({
                                         >
                                             <div className="w-10 h-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm flex-shrink-0">
                                                 {s.profile_pic_url ? (
-                                                    <img src={s.profile_pic_url} alt={s.name} className="w-full h-full object-cover" />
+                                                    <img src={s.profile_pic_url} alt={s.name || 'Student'} className="w-full h-full object-cover" />
                                                 ) : (
-                                                    <span className="text-sm font-bold text-[#ecb613]">{s.name.charAt(0)}</span>
+                                                    <span className="text-sm font-bold text-[#ecb613]">{(s.name || 'S').charAt(0)}</span>
                                                 )}
                                             </div>
                                             <div className="flex-1 min-w-0 text-left">
@@ -4460,7 +4460,7 @@ export default function ClassroomDashboardPage({
                                 <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
                                     <div className="space-y-3 text-left">
                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">1. Lesson Overview</h4>
-                                        <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                                        <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold leading-relaxed tutorial-content max-w-none">
                                             {selectedTopic.description ? (
                                                 <div dangerouslySetInnerHTML={{ __html: selectedTopic.description }} />
                                             ) : (
@@ -4907,9 +4907,9 @@ export default function ClassroomDashboardPage({
                                                         <div className="flex items-center gap-2.5">
                                                             <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-300 dark:border-slate-700">
                                                                 {student.profilePic ? (
-                                                                    <img src={student.profilePic} alt={student.name} className="w-full h-full object-cover" />
+                                                                    <img src={student.profilePic} alt={student.name || 'Student'} className="w-full h-full object-cover" />
                                                                 ) : (
-                                                                    <span className="text-[10px] font-black text-slate-500">{student.name.charAt(0)}</span>
+                                                                    <span className="text-[10px] font-black text-slate-500">{(student.name || 'S').charAt(0)}</span>
                                                                 )}
                                                             </div>
                                                             <div className="flex flex-col text-left">
@@ -5238,9 +5238,9 @@ export default function ClassroomDashboardPage({
                                                         <div className="flex items-center gap-2.5 min-w-0">
                                                             <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
                                                                 {s.profile_pic_url ? (
-                                                                    <img src={s.profile_pic_url} alt={s.name} className="w-full h-full object-cover" />
+                                                                    <img src={s.profile_pic_url} alt={s.name || 'Student'} className="w-full h-full object-cover" />
                                                                 ) : (
-                                                                    <span className="text-[10px] font-bold text-slate-500">{s.name.charAt(0)}</span>
+                                                                    <span className="text-[10px] font-bold text-slate-500">{(s.name || 'S').charAt(0)}</span>
                                                                 )}
                                                             </div>
                                                             <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{s.name}</span>

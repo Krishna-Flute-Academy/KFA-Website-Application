@@ -407,6 +407,60 @@ export default function StudentDashboardContainer() {
     const [excuseDate, setExcuseDate] = useState('');
     const [excuseReason, setExcuseReason] = useState('');
     const [isSubmittingExcuse, setIsSubmittingExcuse] = useState(false);
+    const [excuseError, setExcuseError] = useState<string | null>(null);
+    const [myLeaveRequests, setMyLeaveRequests] = useState<any[]>([]);
+
+    const fetchStudentLeaveRequests = useCallback(async () => {
+        const studentId = profile?.id;
+        if (!studentId) return;
+        try {
+            const { data, error } = await supabaseAuth
+                .from('leave_requests')
+                .select(`
+                    id,
+                    student_id,
+                    classroom_id,
+                    class_date,
+                    reason,
+                    status,
+                    created_at,
+                    classrooms!classroom_id(name)
+                `)
+                .eq('student_id', studentId)
+                .order('created_at', { ascending: false });
+
+            if (error) console.error('Error fetching student leave requests:', error);
+            else setMyLeaveRequests(data || []);
+        } catch (err) {
+            console.error('Error fetching student leave requests:', err);
+        }
+    }, [profile?.id]);
+
+    useEffect(() => {
+        const studentId = profile?.id;
+        if (!studentId) return;
+        fetchStudentLeaveRequests();
+
+        const channel = supabaseAuth
+            .channel(`student_leave_requests_realtime_${studentId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'leave_requests',
+                    filter: `student_id=eq.${studentId}`
+                },
+                () => {
+                    fetchStudentLeaveRequests();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(channel);
+        };
+    }, [profile?.id, fetchStudentLeaveRequests]);
 
     // Track dismissed admin broadcasts in local storage to toggle highlights
     const [dismissedAdminBroadcasts, setDismissedAdminBroadcasts] = useState<string[]>([]);
@@ -1834,38 +1888,68 @@ export default function StudentDashboardContainer() {
 
         const dateStr = excuseDate.trim();
         if (!dateStr) {
-            alert('Please select a date!');
+            setExcuseError('Please select an absence date!');
             return;
         }
 
-        // Rule check: strictly 24 hours before the scheduled class time
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const selectedClassDate = new Date(year, month - 1, day);
-        const dayOfWeek = selectedClassDate.getDay();
-
-        let classStartTime = '09:00:00'; // Default fallback
+        setExcuseError(null);
         setIsSubmittingExcuse(true);
 
         try {
-            if (classroom.type === 'temporary') {
-                const { data: tempClass } = await supabaseAuth
-                    .from('temporary_classes')
-                    .select('start_time')
-                    .eq('id', classroom.id)
-                    .maybeSingle();
-                if (tempClass?.start_time) {
-                    classStartTime = tempClass.start_time;
-                }
-            } else {
-                const { data: scheds } = await supabaseAuth
+            // Get student's active classroom IDs
+            const currentAllIds = classroomIdsRef.current.length > 0
+                ? classroomIdsRef.current
+                : [classroom.id].filter(id => id && id !== 'synthetic-classroom');
+
+            // 1. Fetch permanent batch schedules for student's classrooms on dayOfWeek
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const selectedClassDate = new Date(year, month - 1, day);
+            const dayOfWeek = selectedClassDate.getDay();
+
+            const { data: permSchedules } = currentAllIds.length > 0
+                ? await supabaseAuth
                     .from('batch_schedules')
-                    .select('start_time')
-                    .eq('classroom_id', classroom.id)
-                    .eq('day_of_week', dayOfWeek);
-                if (scheds && scheds.length > 0) {
-                    scheds.sort((a, b) => a.start_time.localeCompare(b.start_time));
-                    classStartTime = scheds[0].start_time;
-                }
+                    .select('classroom_id, day_of_week, start_time')
+                    .in('classroom_id', currentAllIds)
+                    .eq('day_of_week', dayOfWeek)
+                : { data: [] };
+
+            // 2. Fetch temporary classes for dateStr
+            const { data: tempClasses } = await supabaseAuth
+                .from('temporary_classes')
+                .select('id, classroom_id, class_date, start_time')
+                .eq('class_date', dateStr);
+
+            // Filter temp classes relevant to this student
+            const studentTempClasses = (tempClasses || []).filter(tc => 
+                currentAllIds.includes(tc.classroom_id) || currentAllIds.includes(tc.id)
+            );
+
+            // 3. Fetch session student overrides (makeup classes) for student on dateStr
+            const { data: sessionOverrides } = await supabaseAuth
+                .from('session_student_overrides')
+                .select('id, target_classroom_id, override_date')
+                .eq('student_id', profile.id)
+                .eq('override_date', dateStr);
+
+            const matchingPermSched = (permSchedules || [])[0];
+            const matchingTempClass = (studentTempClasses || [])[0];
+            const matchingOverride = (sessionOverrides || [])[0];
+
+            const hasClassOnDate = Boolean(matchingPermSched || matchingTempClass || matchingOverride);
+
+            if (!hasClassOnDate) {
+                setExcuseError(`Leave can only be requested for dates on which you have a scheduled class (Permanent or Temporary). You have no class scheduled on ${dateStr}.`);
+                setIsSubmittingExcuse(false);
+                return;
+            }
+
+            // Determine class start time for 24-hour advance check
+            let classStartTime = '09:00:00';
+            if (matchingTempClass?.start_time) {
+                classStartTime = matchingTempClass.start_time;
+            } else if (matchingPermSched?.start_time) {
+                classStartTime = matchingPermSched.start_time;
             }
 
             const [hours, minutes] = classStartTime.split(':').map(Number);
@@ -1876,7 +1960,7 @@ export default function StudentDashboardContainer() {
             const diffHours = diffMs / (1000 * 60 * 60);
 
             if (diffHours < 24) {
-                alert('Leaves must be requested at least 24 hours before the scheduled class time. For same-day or urgent absences, please contact your teacher or admin directly.');
+                setExcuseError('Leaves must be requested at least 24 hours before the scheduled class time. For same-day or urgent absences, please contact your teacher or admin directly.');
                 setIsSubmittingExcuse(false);
                 return;
             }
@@ -1944,13 +2028,15 @@ export default function StudentDashboardContainer() {
             alert('Leave request submitted successfully! Your teacher will review and approve/reject it.');
 
             await refreshData();
+            await fetchStudentLeaveRequests();
 
             setExcuseDate('');
             setExcuseReason('');
+            setExcuseError(null);
             setShowExcuseModal(false);
         } catch (err: any) {
             console.error('Error submitting leave request:', err);
-            alert(`Failed to submit leave request: ${err.message}`);
+            setExcuseError(`Failed to submit leave request: ${err.message}`);
         } finally {
             setIsSubmittingExcuse(false);
         }
@@ -2722,12 +2808,15 @@ export default function StudentDashboardContainer() {
                                 <AttendanceTab
                                     attendanceStats={attendanceStats}
                                     mergedLogs={mergedLogs}
+                                    myLeaveRequests={myLeaveRequests}
                                     showExcuseModal={showExcuseModal}
                                     setShowExcuseModal={setShowExcuseModal}
                                     excuseDate={excuseDate}
                                     setExcuseDate={setExcuseDate}
                                     excuseReason={excuseReason}
                                     setExcuseReason={setExcuseReason}
+                                    excuseError={excuseError}
+                                    setExcuseError={setExcuseError}
                                     isSubmittingExcuse={isSubmittingExcuse}
                                     handleSubmitExcuse={handleSubmitExcuse}
                                 />

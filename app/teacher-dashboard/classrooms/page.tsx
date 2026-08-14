@@ -68,6 +68,84 @@ interface Classroom {
     live_session_started_at?: string | null;
 }
 
+const DAY_ORDER: Record<string, number> = {
+    'monday': 1, 'mon': 1,
+    'tuesday': 2, 'tue': 2,
+    'wednesday': 3, 'wed': 3,
+    'thursday': 4, 'thu': 4,
+    'friday': 5, 'fri': 5,
+    'saturday': 6, 'sat': 6,
+    'sunday': 7, 'sun': 7
+};
+
+function parseSlotNumber(name: string): number {
+    if (!name) return 99;
+    const match = name.match(/slot\s*(\d+)/i);
+    return match ? parseInt(match[1], 10) : 99;
+}
+
+function parseTimeFromName(name: string): string | null {
+    if (!name) return null;
+    const match = name.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    if (!match) return null;
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2] || '0', 10);
+    const ampm = match[3].toLowerCase();
+    if (ampm === 'pm' && hours < 12) hours += 12;
+    if (ampm === 'am' && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function getClassroomSortKeys(room: any, rawSchedules: any[]) {
+    // 1. Try rawSchedules first
+    const targetId = room.id || room.classroom_id;
+    const schedules = rawSchedules.filter(s => s.classroom_id === targetId || (room.id && s.classroom_id === room.id));
+    if (schedules.length > 0) {
+        const sortedScheds = [...schedules].sort((a, b) => {
+            const dayA = a.day_of_week === 0 ? 7 : a.day_of_week;
+            const dayB = b.day_of_week === 0 ? 7 : b.day_of_week;
+            if (dayA !== dayB) return dayA - dayB;
+            return (a.start_time || '').localeCompare(b.start_time || '');
+        });
+        const first = sortedScheds[0];
+        const dayVal = first.day_of_week === 0 ? 7 : first.day_of_week;
+        return {
+            dayOrder: dayVal,
+            timeStr: (first.start_time || parseTimeFromName(room.name || '') || '99:99').slice(0, 5),
+            slotNum: parseSlotNumber(room.name || '')
+        };
+    }
+
+    // 2. If temporary class with class_date
+    if ((room as any).class_date) {
+        const d = parseClassDate((room as any).class_date);
+        const dayVal = d ? (d.getDay() === 0 ? 7 : d.getDay()) : 99;
+        return {
+            dayOrder: dayVal,
+            timeStr: ((room as any).start_time || parseTimeFromName(room.name || '') || '99:99').slice(0, 5),
+            slotNum: parseSlotNumber(room.name || '')
+        };
+    }
+
+    // 3. Fallback: Parse day, slot, and time from room.name
+    const nameLower = (room.name || '').toLowerCase();
+    let dayVal = 99;
+    for (const [dayName, orderVal] of Object.entries(DAY_ORDER)) {
+        if (nameLower.includes(dayName)) {
+            dayVal = orderVal;
+            break;
+        }
+    }
+
+    const slotNum = parseSlotNumber(room.name || '');
+    const parsedTime = parseTimeFromName(room.name || '');
+
+    return {
+        dayOrder: dayVal,
+        timeStr: parsedTime || '99:99',
+        slotNum: slotNum
+    };
+}
 
 export default function ClassroomsPage() {
     const router = useRouter();
@@ -754,9 +832,13 @@ export default function ClassroomsPage() {
 
         const combined = [...activePermanent, ...activeTemporary] as any[];
         combined.sort((a, b) => {
-            const timeA = a.start_time || '00:00:00';
-            const timeB = b.start_time || '00:00:00';
-            return timeA.localeCompare(timeB);
+            const timeA = (a.start_time || parseTimeFromName(a.name) || '00:00:00').slice(0, 5);
+            const timeB = (b.start_time || parseTimeFromName(b.name) || '00:00:00').slice(0, 5);
+            if (timeA !== timeB) return timeA.localeCompare(timeB);
+            const slotA = parseSlotNumber(a.name);
+            const slotB = parseSlotNumber(b.name);
+            if (slotA !== slotB) return slotA - slotB;
+            return (a.name || '').localeCompare(b.name || '');
         });
         return combined;
     }, [rawSchedules, classrooms, tempClassrooms]);
@@ -894,13 +976,29 @@ export default function ClassroomsPage() {
         );
     }
 
-    // Sort active ongoing classes above all others
+    // Sort classrooms: active ongoing classes first, then by Day of Week, Start Time, Slot Number, and Name
     displayedClassrooms = [...displayedClassrooms].sort((a, b) => {
         const isOngoingA = activeSession && activeSession.classroomId === a.id;
         const isOngoingB = activeSession && activeSession.classroomId === b.id;
         if (isOngoingA && !isOngoingB) return -1;
         if (!isOngoingA && isOngoingB) return 1;
-        return 0;
+
+        const infoA = getClassroomSortKeys(a, rawSchedules);
+        const infoB = getClassroomSortKeys(b, rawSchedules);
+
+        if (infoA.dayOrder !== infoB.dayOrder) {
+            return infoA.dayOrder - infoB.dayOrder;
+        }
+
+        if (infoA.timeStr !== infoB.timeStr) {
+            return infoA.timeStr.localeCompare(infoB.timeStr);
+        }
+
+        if (infoA.slotNum !== infoB.slotNum) {
+            return infoA.slotNum - infoB.slotNum;
+        }
+
+        return (a.name || '').localeCompare(b.name || '');
     });
 
     return (

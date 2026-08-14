@@ -130,18 +130,18 @@ export default function CurriculumTab({
                         }
 
                         return (
-                            <div key={student.studentId} className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-955 border border-slate-150 dark:border-slate-855 hover:border-slate-300 dark:hover:border-slate-700 transition-all select-none">
-                                <div className="flex items-center gap-2">
-                                     <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 dark:border-slate-800 flex items-center justify-center shrink-0">
+                            <div key={student.studentId} className="flex items-center justify-between gap-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-955 border border-slate-150 dark:border-slate-855 hover:border-slate-300 dark:hover:border-slate-700 transition-all select-none min-w-0">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                     <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-100 border border-slate-200 dark:border-slate-800 flex items-center justify-center shrink-0">
                                          {student.profilePic ? (
-                                             <img src={student.profilePic} alt={student.name} className="w-full h-full object-cover" />
+                                             <img src={student.profilePic} alt={student.name || 'Student'} className="w-full h-full object-cover" />
                                          ) : (
-                                             <span className="text-[10px] font-black text-slate-400">{student.name.charAt(0)}</span>
+                                             <span className="text-[10px] font-black text-slate-400">{(student.name || 'S').charAt(0)}</span>
                                          )}
                                      </div>
-                                     <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate max-w-[140px] sm:max-w-[160px]">{student.name}</span>
+                                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate min-w-0">{student.name || 'Student'}</span>
                                 </div>
-                                <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-md border font-mono tracking-wider ${textClass}`}>
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border font-mono tracking-wider shrink-0 whitespace-nowrap ${textClass}`}>
                                     {statusBadge}
                                 </span>
                             </div>

@@ -390,7 +390,7 @@ export default function CurriculumTab({
 
                                         {selectedTopic.description && (
                                             <div 
-                                                className="text-xs text-slate-500 leading-relaxed prose prose-sm dark:prose-invert max-w-none"
+                                                className="text-xs text-slate-500 leading-relaxed tutorial-content max-w-none"
                                                 dangerouslySetInnerHTML={{ __html: selectedTopic.description }}
                                             />
                                         )}

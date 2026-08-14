@@ -546,11 +546,13 @@ export default function AttendancePage() {
     };
 
     const fetchLeaveRequests = useCallback(async (loadedRooms = classrooms) => {
-        if (loadedRooms.length === 0) return;
+        if (!teacherProfile) return;
         setLeavesLoading(true);
         try {
+            const isAdmin = teacherProfile.role === 'admin';
             const roomIds = loadedRooms.map(c => c.id);
-            const { data: leaves, error } = await supabaseAuth
+
+            let query = supabaseAuth
                 .from('leave_requests')
                 .select(`
                     id,
@@ -560,15 +562,19 @@ export default function AttendancePage() {
                     reason,
                     status,
                     created_at,
-                    users!student_id(name, email, profile_pic_url, teacher_id),
-                    classrooms!classroom_id(name)
+                    users!student_id(id, name, email, profile_pic_url, teacher_id),
+                    classrooms!classroom_id(id, name)
                 `)
-                .in('classroom_id', roomIds)
                 .order('created_at', { ascending: false });
+
+            if (!isAdmin && roomIds.length > 0) {
+                query = query.in('classroom_id', roomIds);
+            }
+
+            const { data: leaves, error } = await query;
             if (error) throw error;
             
-            const isAdmin = teacherProfile?.role === 'admin';
-            const filteredLeaves = (leaves || []).filter((l: any) => isAdmin || l.users?.teacher_id === teacherProfile?.id);
+            const filteredLeaves = (leaves || []).filter((l: any) => isAdmin || l.users?.teacher_id === teacherProfile.id);
             setLeaveRequests(filteredLeaves);
         } catch (err) {
             console.error('Error fetching leave requests:', err);
@@ -577,11 +583,32 @@ export default function AttendancePage() {
         }
     }, [classrooms, teacherProfile]);
 
-    // Fetch leave requests when teacherProfile or classrooms load
+    // Fetch leave requests when teacherProfile loads, with Realtime updates
     useEffect(() => {
-        if (teacherProfile) {
-            fetchLeaveRequests();
-        }
+        if (!teacherProfile) return;
+        fetchLeaveRequests();
+
+        const channel = supabaseAuth
+            .channel('realtime_attendance_leave_requests_channel')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'leave_requests' },
+                () => {
+                    fetchLeaveRequests();
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'attendance' },
+                () => {
+                    fetchLeaveRequests();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(channel);
+        };
     }, [teacherProfile, fetchLeaveRequests]);
 
     const handleApproveLeave = async (request: any) => {

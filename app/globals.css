@@ -56,8 +56,8 @@ body {
 
 .tiptap p,
 .prose p {
-    margin-top: 1.25em;
-    margin-bottom: 1.25em;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
 }
 
 /* Tighter vertical spacing for paragraphs/items inside lists */
@@ -87,6 +87,198 @@ body {
 .tiptap [style*="text-align: justify"],
 .prose [style*="text-align: justify"] {
     text-align: justify;
+}
+
+/* ==========================================================================
+   Tutorial & Curriculum Typography System (Compact, Justified, Brand-Aligned)
+   ========================================================================== */
+
+.tutorial-content,
+.prose-tutorial,
+.prose.tutorial-content {
+    color: #334155;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    max-width: 100%;
+}
+
+:is(.dark .tutorial-content, .dark .prose-tutorial) {
+    color: #cbd5e1;
+}
+
+/* Force override of pasted external inline styles (font family, huge font sizes) */
+.tutorial-content *,
+.prose-tutorial * {
+    font-family: inherit !important;
+}
+
+/* Headings: Compact, Elegant, Brand Color Aligned */
+.tutorial-content h1,
+.tutorial-content h1 *,
+.prose-tutorial h1,
+.prose-tutorial h1 * {
+    font-size: 1.15rem !important;
+    font-weight: 800 !important;
+    line-height: 1.35 !important;
+    color: #4A3525 !important;
+    margin-top: 0.85rem !important;
+    margin-bottom: 0.35rem !important;
+    letter-spacing: -0.01em !important;
+}
+
+:is(.dark .tutorial-content h1, .dark .tutorial-content h1 *, .dark .prose-tutorial h1, .dark .prose-tutorial h1 *) {
+    color: #fde68a !important;
+}
+
+.tutorial-content h2,
+.tutorial-content h2 *,
+.prose-tutorial h2,
+.prose-tutorial h2 * {
+    font-size: 1.05rem !important;
+    font-weight: 700 !important;
+    line-height: 1.35 !important;
+    color: #5A4230 !important;
+    margin-top: 0.75rem !important;
+    margin-bottom: 0.3rem !important;
+    letter-spacing: -0.01em !important;
+}
+
+:is(.dark .tutorial-content h2, .dark .tutorial-content h2 *, .dark .prose-tutorial h2, .dark .prose-tutorial h2 *) {
+    color: #fef08a !important;
+}
+
+.tutorial-content h3,
+.tutorial-content h3 *,
+.prose-tutorial h3,
+.prose-tutorial h3 * {
+    font-size: 0.95rem !important;
+    font-weight: 700 !important;
+    line-height: 1.4 !important;
+    color: #6E523C !important;
+    margin-top: 0.65rem !important;
+    margin-bottom: 0.25rem !important;
+}
+
+:is(.dark .tutorial-content h3, .dark .tutorial-content h3 *, .dark .prose-tutorial h3, .dark .prose-tutorial h3 *) {
+    color: #fef9c3 !important;
+}
+
+.tutorial-content h4,
+.tutorial-content h4 *,
+.prose-tutorial h4,
+.prose-tutorial h4 * {
+    font-size: 0.875rem !important;
+    font-weight: 700 !important;
+    line-height: 1.4 !important;
+    color: #7C5E3F !important;
+    margin-top: 0.55rem !important;
+    margin-bottom: 0.2rem !important;
+}
+
+/* Body Paragraphs: Justified text alignment & compact vertical spacing */
+.tutorial-content p,
+.prose-tutorial p {
+    font-size: 0.875rem !important;
+    line-height: 1.6 !important;
+    margin-top: 0.35rem !important;
+    margin-bottom: 0.45rem !important;
+    text-align: justify !important;
+    text-justify: inter-word !important;
+}
+
+.tutorial-content span,
+.prose-tutorial span {
+    text-align: inherit;
+}
+
+/* Lists: Compact spacing & justified alignment */
+.tutorial-content ul,
+.prose-tutorial ul {
+    list-style-type: disc !important;
+    padding-left: 1.25rem !important;
+    margin-top: 0.3rem !important;
+    margin-bottom: 0.45rem !important;
+}
+
+.tutorial-content ol,
+.prose-tutorial ol {
+    list-style-type: decimal !important;
+    padding-left: 1.25rem !important;
+    margin-top: 0.3rem !important;
+    margin-bottom: 0.45rem !important;
+}
+
+.tutorial-content li,
+.prose-tutorial li {
+    font-size: 0.875rem !important;
+    line-height: 1.5 !important;
+    margin-top: 0.15rem !important;
+    margin-bottom: 0.15rem !important;
+    text-align: justify !important;
+}
+
+.tutorial-content li p,
+.prose-tutorial li p {
+    margin-top: 0.05rem !important;
+    margin-bottom: 0.05rem !important;
+    text-align: justify !important;
+}
+
+/* Blockquotes: Styled warm quote boxes */
+.tutorial-content blockquote,
+.prose-tutorial blockquote {
+    border-left: 3px solid #7C5E3F !important;
+    background-color: #FAF6F0 !important;
+    padding: 0.45rem 0.8rem !important;
+    border-radius: 0 0.65rem 0.65rem 0 !important;
+    margin-top: 0.55rem !important;
+    margin-bottom: 0.55rem !important;
+    font-style: italic !important;
+    font-size: 0.825rem !important;
+    color: #5A4230 !important;
+}
+
+:is(.dark .tutorial-content blockquote, .dark .prose-tutorial blockquote) {
+    background-color: rgba(124, 94, 63, 0.15) !important;
+    border-left-color: #d97706 !important;
+    color: #fde68a !important;
+}
+
+/* Code & Pre blocks inside tutorials */
+.tutorial-content pre,
+.prose-tutorial pre {
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+    padding: 0.65rem 0.85rem !important;
+    border-radius: 0.65rem !important;
+    font-size: 0.8rem !important;
+    overflow-x: auto !important;
+    margin-top: 0.45rem !important;
+    margin-bottom: 0.45rem !important;
+}
+
+.tutorial-content code,
+.prose-tutorial code {
+    background-color: rgba(124, 94, 63, 0.1) !important;
+    color: #7C5E3F !important;
+    padding: 0.12rem 0.3rem !important;
+    border-radius: 0.3rem !important;
+    font-size: 0.825rem !important;
+}
+
+:is(.dark .tutorial-content code, .dark .prose-tutorial code) {
+    background-color: rgba(251, 191, 36, 0.15) !important;
+    color: #fde68a !important;
+}
+
+/* Images & Tables */
+.tutorial-content img,
+.prose-tutorial img {
+    max-width: 100% !important;
+    height: auto !important;
+    border-radius: 0.65rem !important;
+    margin: 0.5rem auto !important;
 }
 
 /* Table styling fixes */

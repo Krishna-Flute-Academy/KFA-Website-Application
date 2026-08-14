@@ -9,7 +9,11 @@ import {
     ChevronRight, 
     CalendarDays, 
     Filter, 
-    RotateCcw 
+    RotateCcw,
+    AlertCircle,
+    Clock,
+    CheckCircle2,
+    XCircle 
 } from 'lucide-react';
 
 interface AttendanceTabProps {
@@ -21,12 +25,15 @@ interface AttendanceTabProps {
         total: number;
     };
     mergedLogs: any[];
+    myLeaveRequests?: any[];
     showExcuseModal: boolean;
     setShowExcuseModal: (show: boolean) => void;
     excuseDate: string;
     setExcuseDate: (date: string) => void;
     excuseReason: string;
     setExcuseReason: (reason: string) => void;
+    excuseError?: string | null;
+    setExcuseError?: (err: string | null) => void;
     isSubmittingExcuse: boolean;
     handleSubmitExcuse: (e: React.FormEvent) => Promise<void>;
 }
@@ -37,12 +44,15 @@ interface AttendanceTabProps {
 export default function AttendanceTab({
     attendanceStats,
     mergedLogs,
+    myLeaveRequests = [],
     showExcuseModal,
     setShowExcuseModal,
     excuseDate,
     setExcuseDate,
     excuseReason,
     setExcuseReason,
+    excuseError,
+    setExcuseError,
     isSubmittingExcuse,
     handleSubmitExcuse
 }: AttendanceTabProps) {
@@ -233,6 +243,87 @@ export default function AttendanceTab({
                                 </button>
                             )}
                         </div>
+                    </div>
+
+                    {/* Applied Leave Requests Section */}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                            <div>
+                                <h4 className="font-extrabold text-slate-800 dark:text-white text-sm">
+                                    My Applied Leave Requests
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    Track status of leave requests submitted for your scheduled classes
+                                </p>
+                            </div>
+                            <button 
+                                type="button"
+                                onClick={() => setShowExcuseModal(true)}
+                                className="px-3.5 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-300 border border-amber-200/80 dark:border-amber-900/30 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+                            >
+                                + Request Leave
+                            </button>
+                        </div>
+
+                        {myLeaveRequests && myLeaveRequests.length > 0 ? (
+                            <div className="space-y-3">
+                                {myLeaveRequests.map((req: any) => {
+                                    const isPending = req.status === 'pending';
+                                    const isApproved = req.status === 'approved';
+                                    const isRejected = req.status === 'rejected';
+
+                                    return (
+                                        <div 
+                                            key={req.id} 
+                                            className="p-4 bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                                        >
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-bold text-xs text-slate-900 dark:text-white">
+                                                        📅 {new Date(req.class_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                                    </span>
+                                                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-200/60 dark:bg-slate-700 px-2 py-0.5 rounded-md">
+                                                        {req.classrooms?.name || 'Classroom'}
+                                                    </span>
+                                                </div>
+                                                {req.reason && (
+                                                    <p className="text-xs text-slate-600 dark:text-slate-300 italic">
+                                                        "{req.reason}"
+                                                    </p>
+                                                )}
+                                                <p className="text-[10px] text-slate-400">
+                                                    Submitted on {new Date(req.created_at).toLocaleDateString()} at {new Date(req.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                            </div>
+
+                                            <div className="shrink-0 flex items-center">
+                                                {isPending && (
+                                                    <span className="px-3 py-1 bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300/60 dark:border-amber-800/50 text-xs font-bold rounded-xl flex items-center gap-1.5">
+                                                        <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 animate-pulse" /> Pending Review
+                                                    </span>
+                                                )}
+                                                {isApproved && (
+                                                    <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800/50 text-xs font-bold rounded-xl flex items-center gap-1.5">
+                                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Leave Approved (Excused)
+                                                    </span>
+                                                )}
+                                                {isRejected && (
+                                                    <span className="px-3 py-1 bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300/60 dark:border-rose-800/50 text-xs font-bold rounded-xl flex items-center gap-1.5">
+                                                        <XCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> Leave Rejected
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="p-6 text-center bg-slate-50/50 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                    You haven't requested any class leaves yet.
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     {/* Date Filters Form */}
@@ -535,6 +626,7 @@ export default function AttendanceTab({
                                     setShowExcuseModal(false);
                                     setExcuseDate('');
                                     setExcuseReason('');
+                                    if (setExcuseError) setExcuseError(null);
                                 }} 
                                 className="p-1 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
                             >
@@ -554,10 +646,23 @@ export default function AttendanceTab({
                                     type="date"
                                     required
                                     value={excuseDate}
-                                    onChange={(e) => setExcuseDate(e.target.value)}
+                                    onChange={(e) => {
+                                        setExcuseDate(e.target.value);
+                                        if (setExcuseError) setExcuseError(null);
+                                    }}
                                     className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#7C5E3F]/20 outline-none transition-all"
                                 />
+                                <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 p-2 rounded-lg border border-amber-200/60 dark:border-amber-900/30 mt-1">
+                                    📌 Leaves can only be requested for dates on which you have a scheduled class (Permanent or Temporary), at least 24 hours in advance.
+                                </p>
                             </div>
+
+                            {excuseError && (
+                                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-xl flex items-start gap-2.5 text-rose-700 dark:text-rose-300 text-xs font-semibold leading-relaxed animate-in fade-in duration-150">
+                                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                                    <span>{excuseError}</span>
+                                </div>
+                            )}
 
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-[#7C5E3F] uppercase tracking-wider pl-1">Reason / Notes</label>
@@ -578,6 +683,7 @@ export default function AttendanceTab({
                                         setShowExcuseModal(false);
                                         setExcuseDate('');
                                         setExcuseReason('');
+                                        if (setExcuseError) setExcuseError(null);
                                     }}
                                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-655 dark:text-slate-300 text-xs font-bold rounded-xl transition-all cursor-pointer"
                                 >
