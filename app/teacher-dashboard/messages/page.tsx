@@ -818,22 +818,96 @@ function MessagesDashboardContent() {
     }, [activeChatStudentId]);
 
     const markMessagesAsRead = async (studentId: string) => {
-        if (!teacherProfile?.id) return;
+        if (!teacherProfile?.id || !studentId) return;
         try {
-            const { error } = await supabaseAuth
-                .from('messages')
-                .update({ status: 'read' })
-                .eq('sender_id', studentId)
-                .eq('receiver_id', teacherProfile.id);
-            if (error) throw error;
+            const unreadIds = directMessages
+                .filter(m => (m.sender_id === studentId || m.sender_id?.trim().toLowerCase() === studentId?.trim().toLowerCase()) && m.status !== 'read')
+                .map(m => m.id);
 
             setDirectMessages(prev => prev.map(m => 
-                (m.sender_id === studentId && m.receiver_id === teacherProfile.id)
+                (m.sender_id === studentId || m.sender_id?.trim().toLowerCase() === studentId?.trim().toLowerCase())
                     ? { ...m, status: 'read' }
                     : m
             ));
+
+            if (typeof window !== 'undefined' && unreadIds.length > 0) {
+                try {
+                    const stored = localStorage.getItem('kfa_read_message_ids');
+                    const existing: string[] = stored ? JSON.parse(stored) : [];
+                    const updated = Array.from(new Set([...existing, ...unreadIds]));
+                    localStorage.setItem('kfa_read_message_ids', JSON.stringify(updated));
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            if (unreadIds.length > 0) {
+                const { error: idErr } = await supabaseAuth
+                    .from('messages')
+                    .update({ status: 'read' })
+                    .in('id', unreadIds);
+                if (idErr) console.warn('Failed to update messages by ID:', idErr);
+            }
+
+            await supabaseAuth
+                .from('messages')
+                .update({ status: 'read' })
+                .or(`sender_id.eq.${studentId},receiver_id.eq.${studentId}`)
+                .neq('status', 'read');
+
+            await supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', teacherProfile.id)
+                .eq('type', 'messages')
+                .eq('is_read', false);
+
         } catch (err) {
             console.error('Failed to mark messages as read:', err);
+        }
+    };
+
+    const markAllMessagesAsRead = async () => {
+        if (!teacherProfile?.id) return;
+        try {
+            const allUnreadIds = directMessages
+                .filter(m => m.status !== 'read')
+                .map(m => m.id);
+
+            setDirectMessages(prev => prev.map(m => ({ ...m, status: 'read' })));
+
+            if (typeof window !== 'undefined' && allUnreadIds.length > 0) {
+                try {
+                    const stored = localStorage.getItem('kfa_read_message_ids');
+                    const existing: string[] = stored ? JSON.parse(stored) : [];
+                    const updated = Array.from(new Set([...existing, ...allUnreadIds]));
+                    localStorage.setItem('kfa_read_message_ids', JSON.stringify(updated));
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            if (allUnreadIds.length > 0) {
+                await supabaseAuth
+                    .from('messages')
+                    .update({ status: 'read' })
+                    .in('id', allUnreadIds);
+            }
+
+            await supabaseAuth
+                .from('messages')
+                .update({ status: 'read' })
+                .neq('status', 'read');
+
+            await supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', teacherProfile.id)
+                .eq('type', 'messages')
+                .eq('is_read', false);
+
+        } catch (err) {
+            console.error('Failed to mark all messages as read:', err);
         }
     };
 
@@ -845,8 +919,17 @@ function MessagesDashboardContent() {
     }, [directMessages, activeChatStudentId, activeChannel]);
 
     useEffect(() => {
-        if (activeChannel === 'chatbox' && activeChatStudentId) {
-            markMessagesAsRead(activeChatStudentId);
+        if (activeChannel === 'chatbox') {
+            if (activeChatStudentId) {
+                markMessagesAsRead(activeChatStudentId);
+            } else if (chatContacts.length > 0) {
+                const firstUnread = chatContacts.find(c => (c.unreadCount || 0) > 0);
+                const targetStudent = firstUnread || chatContacts[0];
+                if (targetStudent?.id) {
+                    setActiveChatStudentId(targetStudent.id);
+                    markMessagesAsRead(targetStudent.id);
+                }
+            }
         }
     }, [activeChatStudentId, activeChannel, directMessages.length]);
 
@@ -1079,17 +1162,35 @@ function MessagesDashboardContent() {
 
                 // 6. Fetch Direct Messages
                 try {
-                    const { data: dbDirectMessages } = await supabaseAuth
+                    let msgQuery = supabaseAuth
                         .from('messages')
                         .select('*')
-                        .or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`)
                         .order('created_at', { ascending: true });
+
+                    if (!isAdmin) {
+                        msgQuery = msgQuery.or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`);
+                    }
+
+                    const { data: dbDirectMessages } = await msgQuery;
                     const allowedStudentIds = new Set(uniqueStudents.map(s => s.id));
+
+                    let readMsgIds = new Set<string>();
+                    if (typeof window !== 'undefined') {
+                        try {
+                            const stored = localStorage.getItem('kfa_read_message_ids');
+                            if (stored) {
+                                readMsgIds = new Set(JSON.parse(stored));
+                            }
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    }
+
                     const rawMessages = (dbDirectMessages || []).filter(m => 
                         isAdmin || 
                         allowedStudentIds.has(m.sender_id) || 
                         allowedStudentIds.has(m.receiver_id)
-                    );
+                    ).map(m => (readMsgIds.has(m.id) ? { ...m, status: 'read' } : m));
                     setDirectMessages(rawMessages);
 
                     // Mark incoming messages as delivered when loaded
@@ -1294,24 +1395,15 @@ function MessagesDashboardContent() {
         return Array.from(studentIds);
     };
 
-    const totalUnreadChatboxMessages = useMemo(() => {
-        if (!teacherProfile?.id) return 0;
-        return directMessages.filter(m => 
-            m.receiver_id === teacherProfile.id && m.status !== 'read'
-        ).length;
-    }, [directMessages, teacherProfile?.id]);
-
     const chatContacts = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
         const localQuery = studentSearchQuery.trim().toLowerCase();
         const list = students.map(student => {
             const threadMsgs = directMessages.filter(m => 
-                (m.sender_id === student.id && m.receiver_id === teacherProfile?.id) ||
-                (m.sender_id === teacherProfile?.id && m.receiver_id === student.id)
+                m.sender_id === student.id || m.receiver_id === student.id
             );
             const unreadCount = threadMsgs.filter(m => 
                 m.sender_id === student.id && 
-                m.receiver_id === teacherProfile?.id && 
                 m.status !== 'read'
             ).length;
             const lastMsg = threadMsgs.length > 0 ? threadMsgs[threadMsgs.length - 1] : null;
@@ -1349,6 +1441,10 @@ function MessagesDashboardContent() {
             return b.lastMessageAt.getTime() - a.lastMessageAt.getTime();
         });
     }, [students, directMessages, teacherProfile?.id, searchQuery, studentSearchQuery]);
+
+    const totalUnreadChatboxMessages = useMemo(() => {
+        return chatContacts.reduce((sum, contact) => sum + (contact.unreadCount || 0), 0);
+    }, [chatContacts]);
 
     // ── Save Broadcast Handler ─────────────────────────────────────────────────
     const handleSendBroadcast = async (e: React.FormEvent) => {
@@ -2065,6 +2161,15 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex-shrink-0 space-y-3">
                                             <div className="flex justify-between items-center">
                                                 <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">Students</h4>
+                                                {totalUnreadChatboxMessages > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={markAllMessagesAsRead}
+                                                        className="text-[10px] font-bold text-teal-600 dark:text-teal-400 hover:underline cursor-pointer"
+                                                    >
+                                                        Mark all read
+                                                    </button>
+                                                )}
                                             </div>
                                             {/* Local Student Search */}
                                             <div className="relative">
@@ -2088,6 +2193,7 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                         type="button"
                                                         onClick={() => {
                                                             setActiveChatStudentId(contact.id);
+                                                            markMessagesAsRead(contact.id);
                                                             setChatInput('');
                                                             setShowTemplateMenu(false);
                                                             setShowSaveTemplateForm(false);

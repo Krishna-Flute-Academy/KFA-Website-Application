@@ -54,6 +54,7 @@ interface MessagesTabProps {
     admins?: any[];
     notifications?: any[];
     setNotifications?: React.Dispatch<React.SetStateAction<any[]>>;
+    onMarkMessagesAsRead?: (contactId: string) => void;
     selectedFeedProp?: { type: 'category' | 'chat'; id: string; name: string } | null;
     mentorInfo?: any;
     mentees?: any[];
@@ -71,6 +72,7 @@ export default function MessagesTab({
     admins = [],
     notifications = [],
     setNotifications,
+    onMarkMessagesAsRead,
     selectedFeedProp,
     mentorInfo,
     mentees = []
@@ -120,9 +122,14 @@ export default function MessagesTab({
     // Mark student incoming messages & corresponding notifications as read when active chat thread is opened
     useEffect(() => {
         if (selectedFeed.type === 'chat' && profile?.id) {
+            // Instantly mark local messages as read so UI removes yellow background & blinking New badges immediately
+            if (onMarkMessagesAsRead) {
+                onMarkMessagesAsRead(selectedFeed.id);
+            }
+
             const timer = setTimeout(async () => {
                 try {
-                    // Mark messages as read
+                    // Mark messages as read in database
                     const { error } = await supabaseAuth
                         .from('messages')
                         .update({ status: 'read' })
@@ -132,30 +139,36 @@ export default function MessagesTab({
                     if (error) throw error;
 
                     // Mark notifications as read using the ref to avoid dependency resets
+                    const cleanFeedName = selectedFeed.name.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').replace(/[-–—].*$/, '').trim();
                     const contactNotifs = notificationsRef.current.filter(n => {
                         if (n.is_read || n.type !== 'messages') return false;
                         const contact = getNotificationContact(n);
-                        if (contact?.id) return contact.id === selectedFeed.id;
-                        return String(n.title || '').toLowerCase().includes(selectedFeed.name.toLowerCase());
+                        if (contact?.id && contact.id === selectedFeed.id) return true;
+                        const cleanNotifTitle = String(n.title || '').toLowerCase().replace(/^new message:\s*/i, '').replace(/^new message from\s*/i, '').replace(/\s*\(.*?\)\s*/g, '').trim();
+                        return cleanFeedName.includes(cleanNotifTitle) || cleanNotifTitle.includes(cleanFeedName);
                     });
 
-                    if (contactNotifs.length > 0) {
+                    const notifIdsToMark = contactNotifs.length > 0
+                        ? contactNotifs.map(n => n.id)
+                        : notificationsRef.current.filter(n => !n.is_read && n.type === 'messages').map(n => n.id);
+
+                    if (notifIdsToMark.length > 0) {
                         const { error: notifError } = await supabaseAuth
                             .from('notifications')
                             .update({ is_read: true })
-                            .in('id', contactNotifs.map(n => n.id));
+                            .in('id', notifIdsToMark);
                         if (notifError) throw notifError;
 
                         if (setNotifications) {
                             setNotifications(prev => prev.map(n => 
-                                contactNotifs.some(cn => cn.id === n.id) ? { ...n, is_read: true } : n
+                                notifIdsToMark.includes(n.id) ? { ...n, is_read: true } : n
                             ));
                         }
                     }
                 } catch (e) {
                     console.error('Failed to mark student messages & notifications as read:', e);
                 }
-            }, 1000); // 1.0 second delay is plenty and feels responsive
+            }, 300);
 
             return () => clearTimeout(timer);
         }
@@ -280,16 +293,25 @@ export default function MessagesTab({
     }, [admins, classmates, classroom?.teacher_id, teacherName]);
 
     const getNotificationContact = (notification: any) => {
-        const title = String(notification.title || '').replace(/^New Message:\s*/i, '').trim().toLowerCase();
-        return contactDirectory.find(contact => contact.name.toLowerCase() === title || contact.name.toLowerCase().includes(title) || title.includes(contact.name.toLowerCase()));
+        const title = String(notification.title || '').replace(/^New Message:\s*/i, '').replace(/^New Message from\s*/i, '').trim().toLowerCase();
+        return contactDirectory.find(contact => {
+            const cleanContactName = contact.name.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim();
+            const cleanTitle = title.replace(/\s*\(.*?\)\s*/g, '').trim();
+            return cleanContactName === cleanTitle || cleanContactName.includes(cleanTitle) || cleanTitle.includes(cleanContactName);
+        });
     };
 
     const getUnreadCountForContact = (contactId: string, contactName: string) => {
+        const unreadDirect = directMessages.filter(m => m.sender_id === contactId && m.receiver_id === profile?.id && m.status !== 'read').length;
+        if (unreadDirect > 0) return unreadDirect;
+
         return unreadMessageNotifications.filter(n => {
             if (n.type !== 'messages') return false;
             const contact = getNotificationContact(n);
             if (contact?.id) return contact.id === contactId;
-            return String(n.title || '').toLowerCase().includes(contactName.toLowerCase());
+            const cleanNotifTitle = String(n.title || '').toLowerCase().replace(/^new message:\s*/i, '').replace(/\s*\(.*?\)\s*/g, '').trim();
+            const cleanName = contactName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim();
+            return cleanName.includes(cleanNotifTitle) || cleanNotifTitle.includes(cleanName);
         }).length;
     };
 

@@ -68,6 +68,8 @@ interface ClassroomTabProps {
     isSendingClassroomMessage?: boolean;
     onSendClassroomMessage?: (messageText: string) => Promise<void>;
     onSelectAssignment?: (asg: any) => void;
+    hasUnreadClassroomMessages?: boolean;
+    onMarkClassroomChatAsRead?: () => void;
 }
 
 export default function ClassroomTab({
@@ -86,7 +88,9 @@ export default function ClassroomTab({
     classroomMessages = [],
     isSendingClassroomMessage = false,
     onSendClassroomMessage,
-    onSelectAssignment
+    onSelectAssignment,
+    hasUnreadClassroomMessages = false,
+    onMarkClassroomChatAsRead
 }: ClassroomTabProps) {
     const [subTab, setSubTab] = useState<'calendar' | 'logs' | 'notes' | 'assignments' | 'messages'>('calendar');
     const [messageTab, setMessageTab] = useState<'broadcasts' | 'chat'>('broadcasts');
@@ -103,6 +107,19 @@ export default function ClassroomTab({
         return (assignments || []).filter(a => a.classroom_id === classroom.id);
     }, [assignments, classroom?.id]);
 
+    // Track read broadcast IDs for classroom announcements
+    const [readBroadcastIds, setReadBroadcastIds] = useState<Set<string>>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const stored = localStorage.getItem('kfa_read_classroom_broadcast_ids');
+                if (stored) return new Set(JSON.parse(stored));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        return new Set();
+    });
+
     const classroomBroadcasts = useMemo(() => {
         if (!classroom?.id || !broadcasts) return [];
         return broadcasts
@@ -111,6 +128,44 @@ export default function ClassroomTab({
             )
             .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }, [broadcasts, classroom?.id]);
+
+    const hasUnreadBroadcasts = useMemo(() => {
+        if (classroomBroadcasts.length === 0) return false;
+        return classroomBroadcasts.some((b: any) => !readBroadcastIds.has(b.id));
+    }, [classroomBroadcasts, readBroadcastIds]);
+
+    // Smart auto-selection of inner messageTab when clicking Messages & Discussion subTab
+    useEffect(() => {
+        if (subTab === 'messages') {
+            if (hasUnreadClassroomMessages) {
+                setMessageTab('chat');
+            } else if (hasUnreadBroadcasts) {
+                setMessageTab('broadcasts');
+            }
+        }
+    }, [subTab, hasUnreadClassroomMessages, hasUnreadBroadcasts]);
+
+    // Mark active inner tab as read
+    useEffect(() => {
+        if (subTab === 'messages') {
+            if (messageTab === 'chat' && onMarkClassroomChatAsRead) {
+                onMarkClassroomChatAsRead();
+            } else if (messageTab === 'broadcasts' && classroomBroadcasts.length > 0) {
+                const ids = classroomBroadcasts.map((b: any) => b.id);
+                setReadBroadcastIds(prev => {
+                    const updated = new Set([...Array.from(prev), ...ids]);
+                    if (typeof window !== 'undefined') {
+                        try {
+                            localStorage.setItem('kfa_read_classroom_broadcast_ids', JSON.stringify(Array.from(updated)));
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    }
+                    return updated;
+                });
+            }
+        }
+    }, [subTab, messageTab, classroomMessages.length, classroomBroadcasts, onMarkClassroomChatAsRead]);
 
     const classroomChatParticipants = useMemo(() => {
         const teacher = classroom?.teacher_id
@@ -480,7 +535,7 @@ export default function ClassroomTab({
                         { id: 'calendar', label: 'Class Calendar', icon: Calendar },
                         { id: 'assignments', label: 'Assignments', icon: BookOpen },
                         { id: 'notes', label: 'Class Notes', icon: FileText },
-                        { id: 'messages', label: 'Messages & Discussion', icon: MessageSquare },
+                        { id: 'messages', label: 'Messages & Discussion', icon: MessageSquare, hasUnread: hasUnreadClassroomMessages },
                         { id: 'logs', label: 'Presence Logs', icon: Clock }
                     ].map(tab => {
                         const Icon = tab.icon;
@@ -488,15 +543,29 @@ export default function ClassroomTab({
                         return (
                             <button
                                 key={tab.id}
-                                onClick={() => setSubTab(tab.id as any)}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                onClick={() => {
+                                    if (tab.id === 'messages') {
+                                        if (hasUnreadClassroomMessages) {
+                                            setMessageTab('chat');
+                                        } else if (hasUnreadBroadcasts) {
+                                            setMessageTab('broadcasts');
+                                        }
+                                    }
+                                    setSubTab(tab.id as any);
+                                }}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
                                     active 
                                         ? 'bg-[#FAF5EE] text-[#7C5E3F] border border-[#FAF5EE] dark:bg-slate-800 dark:text-amber-400 dark:border-slate-700 shadow-2xs'
-                                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
+                                        : tab.hasUnread
+                                            ? 'bg-amber-500/10 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-500/30 font-extrabold animate-pulse'
+                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
                                 }`}
                             >
                                 <Icon className="w-4 h-4 shrink-0" />
-                                {tab.label}
+                                <span>{tab.label}</span>
+                                {tab.hasUnread && (
+                                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                                )}
                             </button>
                         );
                     })}
@@ -987,8 +1056,8 @@ export default function ClassroomTab({
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-4 shadow-xs">
                         <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-50 dark:bg-slate-950/40 p-1 border border-slate-100 dark:border-slate-800">
                             {[
-                                { id: 'broadcasts' as const, label: 'Broadcast Messages', icon: Megaphone },
-                                { id: 'chat' as const, label: 'Chat', icon: MessageSquare }
+                                { id: 'broadcasts' as const, label: 'Broadcast Messages', icon: Megaphone, hasUnread: hasUnreadBroadcasts },
+                                { id: 'chat' as const, label: 'Chat Section', icon: MessageSquare, hasUnread: hasUnreadClassroomMessages }
                             ].map((tab) => {
                                 const Icon = tab.icon;
                                 const active = messageTab === tab.id;
@@ -996,15 +1065,27 @@ export default function ClassroomTab({
                                     <button
                                         key={tab.id}
                                         type="button"
-                                        onClick={() => setMessageTab(tab.id)}
-                                        className={`min-h-[44px] px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                                        onClick={() => {
+                                            setMessageTab(tab.id);
+                                            if (tab.id === 'chat' && onMarkClassroomChatAsRead) {
+                                                onMarkClassroomChatAsRead();
+                                            }
+                                        }}
+                                        className={`min-h-[44px] px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer relative ${
                                             active
                                                 ? 'bg-white dark:bg-slate-900 text-[#7C5E3F] dark:text-amber-400 shadow-2xs border border-slate-200 dark:border-slate-700'
-                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 border border-transparent'
+                                                : tab.hasUnread
+                                                    ? 'bg-amber-500/15 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-500/40 font-extrabold animate-pulse shadow-xs'
+                                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 border border-transparent'
                                         }`}
                                     >
                                         <Icon className="w-4 h-4 shrink-0" />
                                         <span className="truncate">{tab.label}</span>
+                                        {tab.hasUnread && (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[8px] font-black bg-amber-500 text-white animate-pulse shrink-0">
+                                                New
+                                            </span>
+                                        )}
                                     </button>
                                 );
                             })}

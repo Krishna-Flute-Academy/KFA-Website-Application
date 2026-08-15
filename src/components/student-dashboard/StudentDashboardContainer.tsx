@@ -26,6 +26,7 @@ const PoliciesTab = dynamic(() => import('./PoliciesTab'), { ssr: false });
 const AcademyPolicies = dynamic(() => import('../AcademyPolicies'), { ssr: false });
 const SettingsTab = dynamic(() => import('./SettingsTab'), { ssr: false });
 const MentorHubTab = dynamic(() => import('./MentorHubTab'), { ssr: false });
+import SubmitTaskModal from './SubmitTaskModal';
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import BlogNotification from './BlogNotification';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
@@ -1218,10 +1219,13 @@ export default function StudentDashboardContainer() {
                 { event: '*', schema: 'public', table: 'classroom_messages' },
                 (payload) => {
                     const newMsg = payload.new as any;
-                    const oldMsg = payload.old as any;
-                    const targetClassroomId = newMsg?.classroom_id || oldMsg?.classroom_id;
-                    const isRelevant = targetClassroomId && classroomIdsRef.current.includes(targetClassroomId);
-                    if (isRelevant && refreshDataRef.current) {
+                    if (newMsg) {
+                        setClassroomMessages(prev => {
+                            if (prev.some(m => m.id === newMsg.id)) return prev;
+                            return [...prev, newMsg];
+                        });
+                    }
+                    if (refreshDataRef.current) {
                         setTimeout(() => {
                             if (refreshDataRef.current) refreshDataRef.current();
                         }, 500);
@@ -2207,24 +2211,130 @@ export default function StudentDashboardContainer() {
         );
     }, [notifications, snoozedFeeNotifIds]);
 
+    const [readClassroomMsgIds, setReadClassroomMsgIds] = useState<Set<string>>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const stored = localStorage.getItem('kfa_read_classroom_msg_ids');
+                if (stored) return new Set(JSON.parse(stored));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        return new Set();
+    });
+
+    const handleMarkClassroomChatAsRead = useCallback(() => {
+        if (!classroomMessages || classroomMessages.length === 0) return;
+        const unreadIds = classroomMessages
+            .filter((m: any) => m.sender_id !== profile?.id)
+            .map((m: any) => m.id);
+
+        if (unreadIds.length === 0) return;
+
+        setReadClassroomMsgIds(prev => {
+            const updated = new Set([...Array.from(prev), ...unreadIds]);
+            if (typeof window !== 'undefined') {
+                try {
+                    localStorage.setItem('kfa_read_classroom_msg_ids', JSON.stringify(Array.from(updated)));
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+            return updated;
+        });
+
+        if (profile?.id) {
+            setNotifications(prev => prev.map(n => {
+                if (n.is_read || (n.type !== 'classroom' && !n.title?.includes('New Message in'))) return n;
+                return { ...n, is_read: true };
+            }));
+
+            supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', profile.id)
+                .eq('type', 'classroom')
+                .eq('is_read', false)
+                .then(() => {});
+        }
+    }, [classroomMessages, profile?.id]);
+
+    const unreadClassroomChatCount = useMemo(() => {
+        if (!profile?.id || !classroomMessages || classroomMessages.length === 0) return 0;
+
+        return classroomMessages.filter((m: any) => {
+            if (m.sender_id === profile.id) return false;
+            return !readClassroomMsgIds.has(m.id);
+        }).length;
+    }, [classroomMessages, profile?.id, readClassroomMsgIds]);
+
+    const [readClassroomBroadcastIds, setReadClassroomBroadcastIds] = useState<Set<string>>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const stored = localStorage.getItem('kfa_read_classroom_broadcast_ids');
+                if (stored) return new Set(JSON.parse(stored));
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        return new Set();
+    });
+
+    const unreadClassroomBroadcastCount = useMemo(() => {
+        if (!classroom?.id || !broadcasts || broadcasts.length === 0) return 0;
+
+        const classBroadcasts = broadcasts.filter((b: any) =>
+            b.recipients?.some((r: any) => r.type === 'class' && r.id === classroom.id)
+        );
+
+        return classBroadcasts.filter((b: any) => !readClassroomBroadcastIds.has(b.id)).length;
+    }, [broadcasts, classroom?.id, readClassroomBroadcastIds]);
+
+    const unreadClassroomTotalCount = useMemo(() => {
+        const chatCount = unreadClassroomChatCount;
+        const broadcastCount = unreadClassroomBroadcastCount;
+        const notifCount = notifications.filter(n => !n.is_read && (n.type === 'classroom' || n.title?.toLowerCase().includes('new message in'))).length;
+
+        const sum = chatCount + broadcastCount;
+        if (sum > 0) return sum;
+        if (notifCount > 0) return notifCount;
+        return 0;
+    }, [unreadClassroomChatCount, unreadClassroomBroadcastCount, notifications]);
+
+    const handleMarkMessagesAsRead = useCallback((contactId: string) => {
+        if (!profile?.id || !contactId) return;
+
+        setDirectMessages(prev => prev.map(m =>
+            (m.sender_id === contactId && m.receiver_id === profile.id && m.status !== 'read')
+                ? { ...m, status: 'read' }
+                : m
+        ));
+
+        setNotifications(prev => prev.map(n => {
+            if (n.is_read || n.type !== 'messages') return n;
+            return { ...n, is_read: true };
+        }));
+    }, [profile?.id]);
+
     const unreadMessageCount = useMemo(() => {
-        return notifications.filter(n => {
+        const unreadDirectCount = directMessages.filter(m => m.receiver_id === profile?.id && m.status !== 'read').length;
+
+        const unreadBroadcastCount = notifications.filter(n => {
             if (n.is_read) return false;
             if (isVideoOrBlogRelease(n)) return false;
+            if (n.type === 'messages') return false;
 
-            // Check if it matches an active broadcast announcement
             const matchingBroadcast = broadcasts.find(b => n.title === b.subject || n.message === b.content);
             if (matchingBroadcast) {
                 if (isVideoOrBlogRelease(matchingBroadcast)) return false;
                 return true;
             }
 
-            // Check if it is a direct chat message (messages type and doesn't match a broadcast)
-            if (n.type === 'messages' && !matchingBroadcast) return true;
-
             return false;
         }).length;
-    }, [notifications, broadcasts]);
+
+        return unreadDirectCount + unreadBroadcastCount;
+    }, [notifications, broadcasts, directMessages, profile?.id]);
 
     if (loading) {
         return (
@@ -2329,7 +2439,13 @@ export default function StudentDashboardContainer() {
                         }).map((item) => {
                             const Icon = item.icon;
                             const active = activeTab === item.id;
-                            const hasUnreadMessages = item.id === 'messages' && unreadMessageCount > 0;
+                            const isClassroomItem = item.id === 'classroom';
+                            const isMessagesItem = item.id === 'messages';
+
+                            const hasClassroomUnread = isClassroomItem && unreadClassroomTotalCount > 0;
+                            const hasDirectUnread = isMessagesItem && unreadMessageCount > 0;
+                            const hasUnreadItem = hasClassroomUnread || hasDirectUnread;
+
                             return (
                                 <button
                                     key={item.id}
@@ -2337,14 +2453,25 @@ export default function StudentDashboardContainer() {
                                         setActiveTab(item.id as any);
                                         setMobileSidebarOpen(false);
                                     }}
-                                    className={`w-full flex items-center gap-3 py-3 transition-all relative ${active
-                                            ? 'bg-[#FAF5EE] text-[#7C5E3F] font-black border-l-4 border-[#7C5E3F] pl-3.5 pr-4 rounded-r-2xl'
-                                            : hasUnreadMessages
-                                                ? 'bg-[#FAF5EE]/45 text-[#7C5E3F] font-bold border-l-4 border-amber-400/80 pl-3.5 pr-4 rounded-r-2xl shadow-3xs'
+                                    className={`w-full flex items-center gap-3 py-3 transition-all relative ${
+                                        active
+                                            ? hasClassroomUnread
+                                                ? 'bg-amber-500/15 text-amber-900 font-black border-l-4 border-amber-500 pl-3.5 pr-4 rounded-r-2xl shadow-xs'
+                                                : 'bg-[#FAF5EE] text-[#7C5E3F] font-black border-l-4 border-[#7C5E3F] pl-3.5 pr-4 rounded-r-2xl'
+                                            : hasUnreadItem
+                                                ? 'bg-amber-500/15 text-amber-900 font-bold border-l-4 border-amber-500 pl-3.5 pr-4 rounded-r-2xl shadow-xs animate-pulse'
                                                 : 'text-[#5C5852] hover:bg-[#FAF5EE]/50 hover:text-[#7C5E3F] px-4 rounded-xl'
-                                        }`}
+                                    }`}
                                 >
-                                    <Icon className={`w-[22px] h-[22px] shrink-0 ${active ? 'text-[#7C5E3F]' : hasUnreadMessages ? 'text-amber-500' : 'text-slate-400'}`} />
+                                    <Icon className={`w-[22px] h-[22px] shrink-0 ${
+                                        hasClassroomUnread
+                                            ? 'text-amber-600 animate-bounce'
+                                            : active
+                                                ? 'text-[#7C5E3F]'
+                                                : hasDirectUnread
+                                                    ? 'text-amber-500'
+                                                    : 'text-slate-400'
+                                    }`} />
                                     <span className="text-sm font-semibold">{item.label}</span>
                                     {item.id === 'tasks' && assignments.filter(a => a.status === 'pending').length > 0 && (
                                         <span className="ml-auto w-5 h-5 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center shrink-0 animate-in scale-in duration-200">
@@ -2354,6 +2481,11 @@ export default function StudentDashboardContainer() {
                                     {item.id === 'classroom' && classroom?.is_live && (
                                         <span className="ml-auto px-2 py-0.5 text-[8px] font-black uppercase bg-red-500 text-white rounded-full animate-pulse tracking-wide shadow-xs shrink-0 select-none">
                                             Live
+                                        </span>
+                                    )}
+                                    {item.id === 'classroom' && !classroom?.is_live && unreadClassroomTotalCount > 0 && (
+                                        <span className="ml-auto w-5 h-5 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center shrink-0 animate-in scale-in duration-200 shadow-2xs">
+                                            {unreadClassroomTotalCount}
                                         </span>
                                     )}
                                     {item.id === 'messages' && unreadMessageCount > 0 && (
@@ -2735,7 +2867,12 @@ export default function StudentDashboardContainer() {
                                     classroomMessages={classroomMessages.filter(message => message.classroom_id === classroom?.id)}
                                     isSendingClassroomMessage={isSendingClassroomMessage}
                                     onSendClassroomMessage={handleSendClassroomMessage}
-                                    onSelectAssignment={setSelectedAssignment}
+                                    onSelectAssignment={(asg) => {
+                                        setSelectedAssignment(asg);
+                                        setSubmitVideoUrl(asg?.video_url || '');
+                                    }}
+                                    hasUnreadClassroomMessages={unreadClassroomChatCount > 0}
+                                    onMarkClassroomChatAsRead={handleMarkClassroomChatAsRead}
                                 />
                             </div>
                         )}
@@ -2796,6 +2933,7 @@ export default function StudentDashboardContainer() {
                                     admins={admins}
                                     notifications={notifications}
                                     setNotifications={setNotifications}
+                                    onMarkMessagesAsRead={handleMarkMessagesAsRead}
                                     selectedFeedProp={selectedMessagesFeed}
                                     mentorInfo={mentorInfo}
                                     mentees={menteesList}
@@ -3175,6 +3313,21 @@ export default function StudentDashboardContainer() {
                         </div>
                     </div>
                 </div>
+            )}
+            {/* Submit Task Modal */}
+            {Boolean(selectedAssignment) && (
+                <SubmitTaskModal
+                    selectedAssignment={selectedAssignment}
+                    setSelectedAssignment={setSelectedAssignment}
+                    submitVideoUrl={submitVideoUrl}
+                    setSubmitVideoUrl={setSubmitVideoUrl}
+                    submissionType={submissionType}
+                    setSubmissionType={setSubmissionType}
+                    submitAudioBlob={submitAudioBlob}
+                    setSubmitAudioBlob={setSubmitAudioBlob}
+                    isSubmittingTask={isSubmittingTask}
+                    handleSubmitTask={handleSubmitTask}
+                />
             )}
         </>
     );

@@ -287,6 +287,34 @@ export default function ClassroomDashboardPage({
                 });
 
             if (error) throw error;
+
+            // Notify enrolled students in notifications table so their Bell Icon highlights
+            try {
+                const { data: enrolledStudents } = await supabaseAuth
+                    .from('classroom_students')
+                    .select('student_id')
+                    .eq('classroom_id', classroomId);
+
+                if (enrolledStudents && enrolledStudents.length > 0) {
+                    const targetStudentIds = enrolledStudents
+                        .map((s: any) => s.student_id)
+                        .filter((sid: string) => sid && sid !== teacherProfile.id);
+
+                    if (targetStudentIds.length > 0) {
+                        const notifPayloads = targetStudentIds.map((sid: string) => ({
+                            user_id: sid,
+                            type: 'classroom',
+                            title: `New Message in ${classroom?.name || 'Classroom'}`,
+                            message: `${teacherProfile.name || 'Instructor'}: ${messageText.trim().slice(0, 100)}`,
+                            is_read: false
+                        }));
+                        await supabaseAuth.from('notifications').insert(notifPayloads);
+                    }
+                }
+            } catch (notifErr) {
+                console.warn('Failed to insert notifications for classroom chat:', notifErr);
+            }
+
             await fetchClassroomMessages();
         } finally {
             setIsSendingClassroomMessage(false);

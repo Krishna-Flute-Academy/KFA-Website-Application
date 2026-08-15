@@ -776,14 +776,14 @@ export default function ClassroomsPage() {
         // Apply search query
         if (searchQuery.trim() !== '') {
             const lowerQ = searchQuery.toLowerCase();
-            filteredPerm = filteredPerm.filter(room => 
+            const matchRoom = (room: any) => 
                 room.name.toLowerCase().includes(lowerQ) || 
-                (room.description && room.description.toLowerCase().includes(lowerQ))
-            );
-            filteredTemp = filteredTemp.filter(room => 
-                room.name.toLowerCase().includes(lowerQ) || 
-                (room.description && room.description.toLowerCase().includes(lowerQ))
-            );
+                (room.description && room.description.toLowerCase().includes(lowerQ)) ||
+                (room.teacher && room.teacher.name && room.teacher.name.toLowerCase().includes(lowerQ)) ||
+                (room.students && room.students.some((s: any) => s.name && s.name.toLowerCase().includes(lowerQ)));
+
+            filteredPerm = filteredPerm.filter(matchRoom);
+            filteredTemp = filteredTemp.filter(matchRoom);
         }
 
         const activePermIds = new Set(filteredPerm.map(c => c.id));
@@ -873,7 +873,9 @@ export default function ClassroomsPage() {
             const lowerQ = searchQuery.toLowerCase();
             filtered = filtered.filter(room => 
                 room.name.toLowerCase().includes(lowerQ) || 
-                (room.description && room.description.toLowerCase().includes(lowerQ))
+                (room.description && room.description.toLowerCase().includes(lowerQ)) ||
+                (room.teacher && room.teacher.name && room.teacher.name.toLowerCase().includes(lowerQ)) ||
+                (room.students && room.students.some((s: any) => s.name && s.name.toLowerCase().includes(lowerQ)))
             );
         }
 
@@ -972,7 +974,9 @@ export default function ClassroomsPage() {
         const lowerQ = searchQuery.toLowerCase();
         displayedClassrooms = displayedClassrooms.filter(room => 
             room.name.toLowerCase().includes(lowerQ) || 
-            (room.description && room.description.toLowerCase().includes(lowerQ))
+            (room.description && room.description.toLowerCase().includes(lowerQ)) ||
+            (room.teacher && room.teacher.name && room.teacher.name.toLowerCase().includes(lowerQ)) ||
+            (room.students && room.students.some((s: any) => s.name && s.name.toLowerCase().includes(lowerQ)))
         );
     }
 
@@ -1093,7 +1097,7 @@ export default function ClassroomsPage() {
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#fef3c7]" 
-                                    placeholder="Find by name..." 
+                                    placeholder="Search classroom, teacher, or student name..." 
                                     type="text"
                                 />
                             </div>
