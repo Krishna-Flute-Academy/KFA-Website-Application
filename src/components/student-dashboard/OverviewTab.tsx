@@ -273,6 +273,34 @@ export default function OverviewTab({
                 </div>
             )}
 
+            {/* Class Credit Expired / Advance Fee Payment Required Banner */}
+            {(profile?.fees_classes_paid === undefined || profile?.fees_classes_paid === null || profile?.fees_classes_paid <= 0) && (
+                <div className="bg-red-50 border-2 border-red-200/80 rounded-2xl p-4 sm:p-5 text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300 shadow-sm">
+                    <div className="flex items-start gap-3.5 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-red-100 border border-red-200 flex items-center justify-center text-red-600 shrink-0 mt-0.5 sm:mt-0">
+                            <AlertCircle className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className="bg-red-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
+                                    Prepaid Credit Expired
+                                </span>
+                            </div>
+                            <p className="text-xs sm:text-sm font-bold text-slate-800 leading-relaxed">
+                                This is a quick note to let you know that your prepaid class credits have now expired. To keep your learning momentum going and book your next session, please complete the fee payment in advance.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setActiveTab('fees')}
+                        className="w-full sm:w-auto text-xs bg-red-600 hover:bg-red-700 text-white font-extrabold px-5 py-2.5 rounded-xl transition-all active:scale-95 shadow-md shrink-0 uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                        <span>Pay & Book Class</span>
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+
             {/* Pending Tasks Alert Banner */}
             {assignments.filter(a => a.status === 'pending').length > 0 && (
                 <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl py-2.5 px-4 text-left flex items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300">

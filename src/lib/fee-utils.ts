@@ -10,13 +10,21 @@ export interface FeeStatusDetails {
 
 /**
  * Calculates how many classes a student should get based on the amount they paid
- * relative to the standard monthly fee (which covers 4 classes).
+ * relative to their configured fee structure (monthly vs per-class).
  */
-export function calculateClassesAdded(amountPaid: number, monthlyFee: number): number {
-    if (!monthlyFee || monthlyFee <= 0) return 0;
-    const costPerClass = monthlyFee / 4;
-    // e.g., 2500 monthly / 4 = 625 per class. 
-    // If they pay 625, they get Math.floor(625/625) = 1 class.
+export function calculateClassesAdded(amountPaid: number, feeAmount: number, feesBasis: string = 'monthly'): number {
+    if (!feeAmount || feeAmount <= 0) return 0;
+
+    if (feesBasis === 'class') {
+        // For class-basis, feeAmount is the cost per single class.
+        // e.g., ₹500 fee per class. If they pay ₹500, they get 1 class.
+        const classes = Math.floor(amountPaid / feeAmount);
+        return classes > 0 ? classes : 1;
+    }
+
+    // For monthly subscription, feeAmount covers 4 classes per month.
+    // e.g., ₹2500 monthly / 4 = ₹625 per class.
+    const costPerClass = feeAmount / 4;
     return Math.floor(amountPaid / costPerClass);
 }
 

@@ -248,6 +248,12 @@ export default function FeesManagementDashboard() {
         const hasPending = studentPayments.some(p => p.status === 'pending_approval');
         if (hasPending) return 'pending_verification';
 
+        if (student.fees_basis === 'class') {
+            if (student.fees_classes_paid < 0) return 'overdue';
+            if (student.fees_classes_paid === 0) return 'due_classes';
+            return 'good';
+        }
+
         if (student.fees_basis === 'monthly' && student.fees_collection_date) {
             const feeStatus = getStudentFeeStatus(
                 student.fees_basis,
@@ -271,7 +277,7 @@ export default function FeesManagementDashboard() {
             }
         }
 
-        // Fallback or class-basis
+        // Fallback
         return classesCompleted ? 'due_classes' : 'good';
     };
 
@@ -366,7 +372,7 @@ export default function FeesManagementDashboard() {
         setSelectedStudent(student);
         setPaymentAmount(String(student.fees_amount));
         setPaymentMethod('UPI');
-        setClassesAdded(student.fees_basis === 'monthly' ? '4' : '5');
+        setClassesAdded(student.fees_basis === 'class' ? '1' : '4');
         setPaymentDate(new Date().toISOString().split('T')[0]);
         
         // Calculate default next due date (+30 days)
@@ -412,8 +418,10 @@ export default function FeesManagementDashboard() {
             if (paymentError) throw paymentError;
 
             // 2. Update Student User values
-            // Add classes to remaining classes balance
-            const newClassesPaid = selectedStudent.fees_classes_paid + cls;
+            // For class-basis: payment books/covers 1 class in advance (does not endlessly accumulate to 2, 3...)
+            const newClassesPaid = selectedStudent.fees_basis === 'class'
+                ? Math.min(cls, Math.max(0, selectedStudent.fees_classes_paid) + cls)
+                : selectedStudent.fees_classes_paid + cls;
             const { error: studentUpdateError } = await supabaseAuth
                 .from('users')
                 .update({
@@ -535,7 +543,8 @@ export default function FeesManagementDashboard() {
         try {
             const student = students.find(s => s.id === studentId);
             const studentFeesAmount = student ? student.fees_amount : (selectedStudent?.fees_amount || 0);
-            const classesToAdd = calculateClassesAdded(amount, studentFeesAmount);
+            const studentFeesBasis = student ? student.fees_basis : (selectedStudent?.fees_basis || basis || 'monthly');
+            const classesToAdd = calculateClassesAdded(amount, studentFeesAmount, studentFeesBasis);
 
             // Update payment status
             const { error: paymentError } = await supabaseAuth
@@ -547,7 +556,9 @@ export default function FeesManagementDashboard() {
 
             // Update student balance
             const currentClasses = student ? student.fees_classes_paid : (selectedStudent?.fees_classes_paid || 0);
-            const newClassesPaid = currentClasses + classesToAdd;
+            const newClassesPaid = studentFeesBasis === 'class'
+                ? Math.min(classesToAdd, Math.max(0, currentClasses) + classesToAdd)
+                : currentClasses + classesToAdd;
             
             const { error: studentUpdateError } = await supabaseAuth
                 .from('users')

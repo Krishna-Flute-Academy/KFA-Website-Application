@@ -140,3 +140,16 @@ test('does not advance due date to next month for a late payment of the previous
   assert.equal(localDateString(result.dueDate), '2026-08-01');
   assert.equal(result.formattedDueDate, '1 August');
 });
+
+const { calculateClassesAdded } = await importTypeScriptModule('../src/lib/fee-utils.ts');
+
+test('calculateClassesAdded returns 1 class for class-basis payments of 1 class fee', () => {
+  assert.equal(calculateClassesAdded(500, 500, 'class'), 1);
+  assert.equal(calculateClassesAdded(1000, 500, 'class'), 2);
+});
+
+test('calculateClassesAdded returns 4 classes for monthly-basis full monthly payment', () => {
+  assert.equal(calculateClassesAdded(2000, 2000, 'monthly'), 4);
+  assert.equal(calculateClassesAdded(500, 2000, 'monthly'), 1);
+});
+

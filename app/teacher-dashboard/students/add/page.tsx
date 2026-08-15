@@ -117,8 +117,8 @@ export default function AddStudentPage() {
 
         setSubmitting(true);
         try {
-            // Save the Fees Collection Date as day of the month (1-31)
-            const finalCollectionDate = formData.feesCollectionDate ? Number(formData.feesCollectionDate) : null;
+            // Save the Fees Collection Date as day of the month (1-31) for monthly basis, or null for class basis
+            const finalCollectionDate = (formData.feesBasis === 'monthly' && formData.feesCollectionDate) ? Number(formData.feesCollectionDate) : null;
 
             const selectedClassroom = classrooms.find(r => r.id === formData.batchId);
             const assignedTeacherId = teacherProfile.role === 'admin'
@@ -339,41 +339,57 @@ export default function AddStudentPage() {
                                                         <select
                                                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none"
                                                             value={formData.feesBasis}
-                                                            onChange={(e) => setFormData({ ...formData, feesBasis: e.target.value })}
+                                                            onChange={(e) => {
+                                                                const basis = e.target.value;
+                                                                setFormData({
+                                                                    ...formData,
+                                                                    feesBasis: basis,
+                                                                    feesClassesPaid: basis === 'class' ? '1' : '4',
+                                                                    feesCollectionDate: basis === 'class' ? '' : (formData.feesCollectionDate || String(new Date().getDate()))
+                                                                });
+                                                            }}
                                                         >
-                                                            <option value="monthly">Monthly Subscription (4 classes)</option>
-                                                            <option value="class">Class-basis (Advance Booking)</option>
+                                                            <option value="monthly">Monthly Subscription (4 classes / month)</option>
+                                                            <option value="class">Class-basis (Pay Per Class / 1 class)</option>
                                                         </select>
                                                         <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                                     </div>
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="text-sm font-bold text-slate-700 block">Fees Amount</label>
+                                                    <label className="text-sm font-bold text-slate-700 block">
+                                                        {formData.feesBasis === 'class' ? 'Fee Per Class (₹)' : 'Monthly Fees Amount (₹)'}
+                                                    </label>
                                                     <input
                                                         required
                                                         type="number"
                                                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
-                                                        placeholder="e.g. 2000"
+                                                        placeholder={formData.feesBasis === 'class' ? "e.g. 500 per class" : "e.g. 2000 per month"}
                                                         value={formData.feesAmount}
                                                         onChange={(e) => setFormData({ ...formData, feesAmount: e.target.value })}
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="text-sm font-bold text-slate-700 block">Fees Collection Date (Day of Month)</label>
-                                                    <div className="relative">
-                                                        <select
-                                                            required
-                                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
-                                                            value={formData.feesCollectionDate}
-                                                            onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
-                                                        >
-                                                            <option value="" disabled>Select day of month (1-31)...</option>
-                                                            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                                                                <option key={day} value={String(day)}>{day}</option>
-                                                            ))}
-                                                        </select>
-                                                        <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
-                                                    </div>
+                                                    {formData.feesBasis === 'class' ? (
+                                                        <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-xs font-semibold text-slate-400 italic">
+                                                            N/A — Collection day is not applicable for Class-basis students.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="relative">
+                                                            <select
+                                                                required={formData.feesBasis === 'monthly'}
+                                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                                value={formData.feesCollectionDate}
+                                                                onChange={(e) => setFormData({ ...formData, feesCollectionDate: e.target.value })}
+                                                            >
+                                                                <option value="" disabled>Select day of month (1-31)...</option>
+                                                                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                                                    <option key={day} value={String(day)}>{day}</option>
+                                                                ))}
+                                                            </select>
+                                                            <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="text-sm font-bold text-slate-700 block">Initial Prepaid Classes</label>
@@ -381,7 +397,7 @@ export default function AddStudentPage() {
                                                         required
                                                         type="number"
                                                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none"
-                                                        placeholder="e.g. 4"
+                                                        placeholder={formData.feesBasis === 'class' ? "e.g. 1" : "e.g. 4"}
                                                         value={formData.feesClassesPaid}
                                                         onChange={(e) => setFormData({ ...formData, feesClassesPaid: e.target.value })}
                                                     />
