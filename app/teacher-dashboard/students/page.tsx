@@ -1942,7 +1942,8 @@ export default function StudentDirectory() {
                                                         className="text-xs font-bold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 py-1 pl-1 pr-6 cursor-pointer flex-1 outline-none">
                                                         <option value="all">All Status</option>
                                                         <option value="active">Active Only</option>
-                                                        <option value="archived">Archived / Inactive</option>
+                                                        <option value="inactive">Inactive</option>
+                                                        <option value="archived">Archived</option>
                                                     </select>
                                                 </div>
                                             </div>

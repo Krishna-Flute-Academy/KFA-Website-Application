@@ -133,6 +133,7 @@ export default function FeesManagementDashboard() {
                     fees_collection_date,
                     fees_classes_paid,
                     profile_pic_url,
+                    status,
                     classroom_students(
                         classrooms(name)
                     )
@@ -143,27 +144,43 @@ export default function FeesManagementDashboard() {
             if (studentsError) throw studentsError;
 
             if (studentsData) {
-                const formatted: StudentFeesData[] = studentsData.map((s: any) => {
-                    const studentClassroomRef = s.classroom_students?.[0] as any;
-                    const studentClassroom = studentClassroomRef?.classrooms;
-                    const batch_name = Array.isArray(studentClassroom) 
-                        ? studentClassroom[0]?.name 
-                        : studentClassroom?.name;
+                const formatted: StudentFeesData[] = studentsData
+                    .filter((s: any) => {
+                        const stLower = (s.status || '').toLowerCase();
+                        if (stLower === 'archived' || stLower === 'inactive') return false;
 
-                    return {
-                        id: s.id,
-                        name: s.name,
-                        email: s.email || '',
-                        phone: s.phone || '',
-                        profile_pic_url: s.profile_pic_url,
-                        join_date: s.join_date || s.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-                        fees_basis: s.fees_basis || 'monthly',
-                        fees_amount: Number(s.fees_amount) || 0,
-                        fees_collection_date: s.fees_collection_date,
-                        fees_classes_paid: Number(s.fees_classes_paid) || 0,
-                        batch_name: batch_name || 'Unassigned'
-                    };
-                });
+                        const studentClassroomRef = s.classroom_students?.[0] as any;
+                        const studentClassroom = studentClassroomRef?.classrooms;
+                        const batch_name = Array.isArray(studentClassroom) 
+                            ? studentClassroom[0]?.name 
+                            : studentClassroom?.name;
+
+                        if (batch_name && String(batch_name).toLowerCase().includes('learning circle')) {
+                            return false;
+                        }
+                        return true;
+                    })
+                    .map((s: any) => {
+                        const studentClassroomRef = s.classroom_students?.[0] as any;
+                        const studentClassroom = studentClassroomRef?.classrooms;
+                        const batch_name = Array.isArray(studentClassroom) 
+                            ? studentClassroom[0]?.name 
+                            : studentClassroom?.name;
+
+                        return {
+                            id: s.id,
+                            name: s.name,
+                            email: s.email || '',
+                            phone: s.phone || '',
+                            profile_pic_url: s.profile_pic_url,
+                            join_date: s.join_date || s.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+                            fees_basis: s.fees_basis || 'monthly',
+                            fees_amount: Number(s.fees_amount) || 0,
+                            fees_collection_date: s.fees_collection_date,
+                            fees_classes_paid: Number(s.fees_classes_paid) || 0,
+                            batch_name: batch_name || 'Unassigned'
+                        };
+                    });
                 setStudents(formatted);
             }
 
@@ -231,6 +248,12 @@ export default function FeesManagementDashboard() {
         const hasPending = studentPayments.some(p => p.status === 'pending_approval');
         if (hasPending) return 'pending_verification';
 
+        if (student.fees_basis === 'class') {
+            if (student.fees_classes_paid < 0) return 'overdue';
+            if (student.fees_classes_paid === 0) return 'due_classes';
+            return 'good';
+        }
+
         if (student.fees_basis === 'monthly' && student.fees_collection_date) {
             const feeStatus = getStudentFeeStatus(
                 student.fees_basis,
@@ -254,7 +277,7 @@ export default function FeesManagementDashboard() {
             }
         }
 
-        // Fallback or class-basis
+        // Fallback
         return classesCompleted ? 'due_classes' : 'good';
     };
 
@@ -349,7 +372,7 @@ export default function FeesManagementDashboard() {
         setSelectedStudent(student);
         setPaymentAmount(String(student.fees_amount));
         setPaymentMethod('UPI');
-        setClassesAdded(student.fees_basis === 'monthly' ? '4' : '5');
+        setClassesAdded(student.fees_basis === 'class' ? '1' : '4');
         setPaymentDate(new Date().toISOString().split('T')[0]);
         
         // Calculate default next due date (+30 days)
@@ -395,8 +418,10 @@ export default function FeesManagementDashboard() {
             if (paymentError) throw paymentError;
 
             // 2. Update Student User values
-            // Add classes to remaining classes balance
-            const newClassesPaid = selectedStudent.fees_classes_paid + cls;
+            // For class-basis: payment books/covers 1 class in advance (does not endlessly accumulate to 2, 3...)
+            const newClassesPaid = selectedStudent.fees_basis === 'class'
+                ? Math.min(cls, Math.max(0, selectedStudent.fees_classes_paid) + cls)
+                : selectedStudent.fees_classes_paid + cls;
             const { error: studentUpdateError } = await supabaseAuth
                 .from('users')
                 .update({
@@ -518,7 +543,8 @@ export default function FeesManagementDashboard() {
         try {
             const student = students.find(s => s.id === studentId);
             const studentFeesAmount = student ? student.fees_amount : (selectedStudent?.fees_amount || 0);
-            const classesToAdd = calculateClassesAdded(amount, studentFeesAmount);
+            const studentFeesBasis = student ? student.fees_basis : (selectedStudent?.fees_basis || basis || 'monthly');
+            const classesToAdd = calculateClassesAdded(amount, studentFeesAmount, studentFeesBasis);
 
             // Update payment status
             const { error: paymentError } = await supabaseAuth
@@ -530,7 +556,9 @@ export default function FeesManagementDashboard() {
 
             // Update student balance
             const currentClasses = student ? student.fees_classes_paid : (selectedStudent?.fees_classes_paid || 0);
-            const newClassesPaid = currentClasses + classesToAdd;
+            const newClassesPaid = studentFeesBasis === 'class'
+                ? Math.min(classesToAdd, Math.max(0, currentClasses) + classesToAdd)
+                : currentClasses + classesToAdd;
             
             const { error: studentUpdateError } = await supabaseAuth
                 .from('users')

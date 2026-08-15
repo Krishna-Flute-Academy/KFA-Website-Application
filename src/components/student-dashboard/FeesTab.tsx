@@ -136,6 +136,22 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                 </div>
             )}
 
+            {classesLeft <= 0 && (
+                <div className="bg-red-50 border-2 border-red-200 text-red-700 px-5 py-4 rounded-2xl flex items-start gap-4 shadow-sm animate-in slide-in-from-top-4 duration-300 text-left">
+                    <div className="w-9 h-9 rounded-xl bg-red-100 border border-red-200 flex items-center justify-center text-red-600 shrink-0 mt-0.5">
+                        <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1">
+                        <span className="bg-red-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md inline-block">
+                            Prepaid Credit Expired
+                        </span>
+                        <p className="text-xs sm:text-sm font-bold text-slate-800 leading-relaxed">
+                            This is a quick note to let you know that your prepaid class credits have now expired. To keep your learning momentum going and book your next session, please complete the fee payment in advance.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
                 {/* Left Column: Status & Balance */}
                 <div className="lg:col-span-1 space-y-6">
@@ -177,10 +193,14 @@ export default function FeesTab({ profile, payments, notifications = [], directM
 
                             {classesLeft <= 1 && !feeStatus?.hasPendingPayment && (
                                 <div className={`mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border ${
-                                    classesLeft <= 0 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                                    classesLeft <= 0 
+                                        ? (profile?.fees_basis === 'class' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-rose-50 text-rose-700 border-rose-200')
+                                        : 'bg-amber-50 text-amber-700 border-amber-200'
                                 }`}>
                                     <AlertTriangle className="w-3.5 h-3.5" /> 
-                                    {classesLeft <= 0 ? 'Overdue - Please Pay' : 'Due Soon - 1 Class Left'}
+                                    {classesLeft <= 0 
+                                        ? (profile?.fees_basis === 'class' ? 'Advance Booking Required — Pay for 1 Class' : 'Overdue - Please Pay')
+                                        : (profile?.fees_basis === 'class' ? '1 Class Available' : 'Due Soon - 1 Class Left')}
                                 </div>
                             )}
                         </div>
@@ -190,7 +210,8 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                                 onClick={() => setIsReporting(true)}
                                 className="mt-8 w-full bg-[#ecb613] hover:bg-[#d4a000] text-slate-900 font-bold py-3.5 rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
                             >
-                                <CheckCircle className="w-4 h-4" /> Report Payment
+                                <CheckCircle className="w-4 h-4" /> 
+                                {profile?.fees_basis === 'class' ? 'Book / Pay for Next Class' : 'Report Payment'}
                             </button>
                         ) : (
                             <button 
@@ -260,7 +281,7 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                                 Submit Payment Details
                             </h2>
                             <p className="text-sm text-slate-500 mb-8 max-w-lg">
-                                Have you already paid your fees to the academy? Enter the details below. Once verified, {monthlyFee > 0 ? `paying ₹${monthlyFee} adds 4 classes to your balance.` : 'your balance will be updated.'}
+                                Have you already paid your fees to the academy? Enter the details below. Once verified, {monthlyFee > 0 ? (profile?.fees_basis === 'class' ? `paying ₹${monthlyFee} adds 1 class credit to your balance.` : `paying ₹${monthlyFee} adds 4 classes to your balance.`) : 'your balance will be updated.'}
                             </p>
                             
                             <form onSubmit={handleReportPayment} className="space-y-5">
