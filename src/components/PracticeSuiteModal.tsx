@@ -41,6 +41,138 @@ const METRONOME_PRESETS = [
 
 const METRONOME_SOUNDS = ['Woodblock', 'Tabla', 'Bell', 'Dholak', 'Flute Breath'];
 
+// ── TABLA TAAL CONSTANTS ────────────────────────────────────────────────────
+type BolStroke = 'dha' | 'dhin' | 'na' | 'ta' | 'ka' | 'ge' | 'tin' | 'silence';
+type MatraAccent = 'sam' | 'tali' | 'khali';
+
+interface TaalMatra {
+    position: number;
+    bol: string;
+    stroke: BolStroke;
+    accent: MatraAccent;
+    vibhag: number;
+}
+
+interface TaalDef {
+    id: string;
+    name: string;
+    nameHindi: string;
+    totalMatras: number;
+    vibhags: number[];
+    defaultBpm: { vilambit: number; madhya: number; drut: number };
+    description: string;
+    matras: TaalMatra[];
+}
+
+const TABLA_TAALS: TaalDef[] = [
+    {
+        id: 'teen_taal',
+        name: 'Teen Taal',
+        nameHindi: 'तीन ताल',
+        totalMatras: 16,
+        vibhags: [4, 4, 4, 4],
+        defaultBpm: { vilambit: 40, madhya: 90, drut: 160 },
+        description: '16 matras • Most popular taal in Hindustani music',
+        matras: [
+            { position: 1,  bol: 'Dha',  stroke: 'dha',  accent: 'sam',   vibhag: 1 },
+            { position: 2,  bol: 'Dhin', stroke: 'dhin', accent: 'tali',  vibhag: 1 },
+            { position: 3,  bol: 'Dhin', stroke: 'dhin', accent: 'tali',  vibhag: 1 },
+            { position: 4,  bol: 'Dha',  stroke: 'dha',  accent: 'tali',  vibhag: 1 },
+            { position: 5,  bol: 'Dha',  stroke: 'dha',  accent: 'tali',  vibhag: 2 },
+            { position: 6,  bol: 'Dhin', stroke: 'dhin', accent: 'tali',  vibhag: 2 },
+            { position: 7,  bol: 'Dhin', stroke: 'dhin', accent: 'tali',  vibhag: 2 },
+            { position: 8,  bol: 'Dha',  stroke: 'dha',  accent: 'tali',  vibhag: 2 },
+            { position: 9,  bol: 'Na',   stroke: 'na',   accent: 'khali', vibhag: 3 },
+            { position: 10, bol: 'Tin',  stroke: 'tin',  accent: 'khali', vibhag: 3 },
+            { position: 11, bol: 'Tin',  stroke: 'tin',  accent: 'khali', vibhag: 3 },
+            { position: 12, bol: 'Ta',   stroke: 'ta',   accent: 'khali', vibhag: 3 },
+            { position: 13, bol: 'Dha',  stroke: 'dha',  accent: 'tali',  vibhag: 4 },
+            { position: 14, bol: 'Dhin', stroke: 'dhin', accent: 'tali',  vibhag: 4 },
+            { position: 15, bol: 'Dhin', stroke: 'dhin', accent: 'tali',  vibhag: 4 },
+            { position: 16, bol: 'Dha',  stroke: 'dha',  accent: 'tali',  vibhag: 4 },
+        ]
+    },
+    {
+        id: 'keherwa',
+        name: 'Keherwa',
+        nameHindi: 'कहरवा',
+        totalMatras: 8,
+        vibhags: [4, 4],
+        defaultBpm: { vilambit: 60, madhya: 110, drut: 180 },
+        description: '8 matras • Popular in folk, bhajan & semi-classical',
+        matras: [
+            { position: 1, bol: 'Dha',  stroke: 'dha',  accent: 'sam',   vibhag: 1 },
+            { position: 2, bol: 'Ge',   stroke: 'ge',   accent: 'tali',  vibhag: 1 },
+            { position: 3, bol: 'Na',   stroke: 'na',   accent: 'tali',  vibhag: 1 },
+            { position: 4, bol: 'Ti',   stroke: 'tin',  accent: 'tali',  vibhag: 1 },
+            { position: 5, bol: 'Na',   stroke: 'na',   accent: 'khali', vibhag: 2 },
+            { position: 6, bol: 'Ka',   stroke: 'ka',   accent: 'khali', vibhag: 2 },
+            { position: 7, bol: 'Dhin', stroke: 'dhin', accent: 'khali', vibhag: 2 },
+            { position: 8, bol: 'Na',   stroke: 'na',   accent: 'khali', vibhag: 2 },
+        ]
+    },
+    {
+        id: 'dadra',
+        name: 'Dadra',
+        nameHindi: 'दादरा',
+        totalMatras: 6,
+        vibhags: [3, 3],
+        defaultBpm: { vilambit: 50, madhya: 90, drut: 150 },
+        description: '6 matras • Light & lyrical, used in thumri & dadra',
+        matras: [
+            { position: 1, bol: 'Dha',  stroke: 'dha',  accent: 'sam',   vibhag: 1 },
+            { position: 2, bol: 'Dhin', stroke: 'dhin', accent: 'tali',  vibhag: 1 },
+            { position: 3, bol: 'Na',   stroke: 'na',   accent: 'tali',  vibhag: 1 },
+            { position: 4, bol: 'Na',   stroke: 'na',   accent: 'khali', vibhag: 2 },
+            { position: 5, bol: 'Dhin', stroke: 'dhin', accent: 'khali', vibhag: 2 },
+            { position: 6, bol: 'Na',   stroke: 'na',   accent: 'khali', vibhag: 2 },
+        ]
+    },
+    {
+        id: 'bhajni',
+        name: 'Bhajni Theka',
+        nameHindi: 'भजनी ठेका',
+        totalMatras: 8,
+        vibhags: [4, 4],
+        defaultBpm: { vilambit: 55, madhya: 100, drut: 160 },
+        description: '8 matras • Spiritual & devotional; used in bhajans',
+        matras: [
+            { position: 1, bol: 'Dha',  stroke: 'dha',  accent: 'sam',   vibhag: 1 },
+            { position: 2, bol: 'Dha',  stroke: 'dha',  accent: 'tali',  vibhag: 1 },
+            { position: 3, bol: 'Na',   stroke: 'na',   accent: 'tali',  vibhag: 1 },
+            { position: 4, bol: 'Na',   stroke: 'na',   accent: 'tali',  vibhag: 1 },
+            { position: 5, bol: 'Na',   stroke: 'na',   accent: 'khali', vibhag: 2 },
+            { position: 6, bol: 'Ka',   stroke: 'ka',   accent: 'khali', vibhag: 2 },
+            { position: 7, bol: 'Dha',  stroke: 'dha',  accent: 'khali', vibhag: 2 },
+            { position: 8, bol: 'Na',   stroke: 'na',   accent: 'khali', vibhag: 2 },
+        ]
+    },
+    {
+        id: 'rupak',
+        name: 'Rupak',
+        nameHindi: 'रूपक',
+        totalMatras: 7,
+        vibhags: [3, 2, 2],
+        defaultBpm: { vilambit: 45, madhya: 80, drut: 140 },
+        description: '7 matras • Unique — starts on Khali. Used in classical ragas',
+        matras: [
+            { position: 1, bol: 'Tin',  stroke: 'tin',  accent: 'khali', vibhag: 1 },
+            { position: 2, bol: 'Tin',  stroke: 'tin',  accent: 'khali', vibhag: 1 },
+            { position: 3, bol: 'Na',   stroke: 'na',   accent: 'khali', vibhag: 1 },
+            { position: 4, bol: 'Dhi',  stroke: 'dhin', accent: 'tali',  vibhag: 2 },
+            { position: 5, bol: 'Na',   stroke: 'na',   accent: 'tali',  vibhag: 2 },
+            { position: 6, bol: 'Dhi',  stroke: 'dhin', accent: 'tali',  vibhag: 3 },
+            { position: 7, bol: 'Na',   stroke: 'na',   accent: 'tali',  vibhag: 3 },
+        ]
+    },
+];
+
+const TABLA_LAYA = [
+    { id: 'vilambit', label: 'Vilambit', labelHindi: 'विलंबित', desc: 'Slow' },
+    { id: 'madhya',   label: 'Madhya',   labelHindi: 'मध्य',    desc: 'Medium' },
+    { id: 'drut',     label: 'Drut',     labelHindi: 'द्रुत',   desc: 'Fast' },
+] as const;
+
 // ── DRUMS CONSTANTS ─────────────────────────────────────────────────────────
 interface GroupingOption {
     name: string;
@@ -251,12 +383,13 @@ function Ripple({ id }: { id: number }) {
     );
 }
 
-export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'tanpura' | 'drums' | 'combosetup' }) {
+export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'tanpura' | 'drums' | 'combosetup' | 'tabla' }) {
     // ── GENERAL STATES ──────────────────────────────────────────────────────
-    const [activeTool, setActiveTool] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>(() => {
+    const [activeTool, setActiveTool] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup' | 'tabla'>(() => {
         if (defaultTab === 'combosetup') return 'combosetup';
         if (defaultTab === 'drums') return 'drums';
         if (defaultTab === 'tanpura') return 'tanpura';
+        if (defaultTab === 'tabla') return 'tabla';
         return 'metronome';
     });
     const activeRhythmTab = activeTool === 'drums' ? 'drums' : 'metronome';
@@ -367,6 +500,171 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     useEffect(() => { drumsStepsCountRef.current = drumsActiveStepsCount; }, [drumsActiveStepsCount]);
     useEffect(() => { isDrumsPlayingRef.current = isDrumsPlaying; }, [isDrumsPlaying]);
     useEffect(() => { drumsStepsPerBeatRef.current = selectedDrumsTimeSig.stepsPerBeat; }, [selectedDrumsTimeSig]);
+
+    // ── TABLA STATES ─────────────────────────────────────────────────────────
+    const [isTablaPlaying, setIsTablaPlaying] = useState(false);
+    const [tablaVolume, setTablaVolume] = useState(0.7);
+    const [selectedTaal, setSelectedTaal] = useState<TaalDef>(TABLA_TAALS[0]);
+    const [selectedLaya, setSelectedLaya] = useState<'vilambit' | 'madhya' | 'drut'>('madhya');
+    const [currentTaalMatra, setCurrentTaalMatra] = useState(-1);
+    const [taalBpm, setTaalBpm] = useState(TABLA_TAALS[0].defaultBpm.madhya);
+    const [tablaScale, setTablaScale] = useState(SHRU_PITCHES[1]); // Default C#
+
+    const tablaSchedulerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const tablaNextBeatTimeRef = useRef(0);
+    const tablaMatraIndexRef = useRef(0);
+    const tablaIsPlayingRef = useRef(false);
+    const tablaVolumeRef = useRef(tablaVolume);
+    const taalBpmRef = useRef(taalBpm);
+    const selectedTaalRef = useRef(selectedTaal);
+    const tablaScaleRef = useRef(tablaScale);
+
+    useEffect(() => { tablaVolumeRef.current = tablaVolume; }, [tablaVolume]);
+    useEffect(() => { taalBpmRef.current = taalBpm; }, [taalBpm]);
+    useEffect(() => { selectedTaalRef.current = selectedTaal; }, [selectedTaal]);
+    useEffect(() => { tablaScaleRef.current = tablaScale; }, [tablaScale]);
+    useEffect(() => { tablaIsPlayingRef.current = isTablaPlaying; }, [isTablaPlaying]);
+
+    // ── TABLA AUDIO ENGINE ───────────────────────────────────────────────────
+    // Synthesized strokes using Web Audio API — pitch shifted by tablaScale (same pattern as tanpura).
+    const playTablaStroke = useCallback((
+        ctx: AudioContext,
+        stroke: BolStroke,
+        accent: MatraAccent,
+        vol: number,
+        when: number,
+        pitchRatio: number
+    ) => {
+        try {
+            // Accent volume multipliers: Sam is loudest, Khali is lightest
+            const accentMult = accent === 'sam' ? 1.0 : accent === 'tali' ? 0.72 : 0.38;
+            const v = vol * accentMult;
+            // Base frequency for tabla dayan tuned to C# and shifted by pitchRatio
+            const baseFreq = 277.18 * pitchRatio; // C# as reference, scaled by shruti
+
+            if (stroke === 'silence') return;
+
+            if (stroke === 'dha' || stroke === 'dhin') {
+                // Bayan (left bass drum) — low thump
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(baseFreq * 0.28, when);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.14, when + 0.22);
+                g.gain.setValueAtTime(0, when);
+                g.gain.linearRampToValueAtTime(v * 0.9, when + 0.006);
+                g.gain.exponentialRampToValueAtTime(0.001, when + (stroke === 'dhin' ? 0.38 : 0.22));
+                osc.connect(g); g.connect(ctx.destination);
+                osc.start(when); osc.stop(when + 0.45);
+
+                // Dayan (right melodic ping) — higher pitched resonance
+                const osc2 = ctx.createOscillator();
+                const g2 = ctx.createGain();
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(baseFreq, when);
+                osc2.frequency.exponentialRampToValueAtTime(baseFreq * 0.82, when + 0.08);
+                g2.gain.setValueAtTime(0, when);
+                g2.gain.linearRampToValueAtTime(v * 0.55, when + 0.004);
+                g2.gain.exponentialRampToValueAtTime(0.001, when + (stroke === 'dhin' ? 0.5 : 0.18));
+                osc2.connect(g2); g2.connect(ctx.destination);
+                osc2.start(when); osc2.stop(when + 0.6);
+            }
+
+            if (stroke === 'na' || stroke === 'ta') {
+                // Dayan only — muted / rim stroke
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(baseFreq * 1.18, when);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.95, when + 0.06);
+                g.gain.setValueAtTime(0, when);
+                g.gain.linearRampToValueAtTime(v * 0.45, when + 0.003);
+                g.gain.exponentialRampToValueAtTime(0.001, when + 0.1);
+                osc.connect(g); g.connect(ctx.destination);
+                osc.start(when); osc.stop(when + 0.15);
+            }
+
+            if (stroke === 'ka' || stroke === 'ge') {
+                // Bayan only — open or muted palm
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(baseFreq * 0.32, when);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.18, when + 0.12);
+                g.gain.setValueAtTime(0, when);
+                g.gain.linearRampToValueAtTime(v * 0.65, when + 0.005);
+                g.gain.exponentialRampToValueAtTime(0.001, when + (stroke === 'ge' ? 0.28 : 0.12));
+                osc.connect(g); g.connect(ctx.destination);
+                osc.start(when); osc.stop(when + 0.35);
+            }
+
+            if (stroke === 'tin') {
+                // Tin — higher pitched dayan, crisp
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(baseFreq * 1.35, when);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq, when + 0.05);
+                g.gain.setValueAtTime(0, when);
+                g.gain.linearRampToValueAtTime(v * 0.38, when + 0.003);
+                g.gain.exponentialRampToValueAtTime(0.001, when + 0.12);
+                osc.connect(g); g.connect(ctx.destination);
+                osc.start(when); osc.stop(when + 0.18);
+            }
+        } catch (_) {}
+    }, []);
+
+    // Lookahead Scheduler — fires every 25ms, schedules beats 100ms ahead using AudioContext time
+    const TABLA_LOOKAHEAD_MS = 25;
+    const TABLA_SCHEDULE_AHEAD = 0.1;
+
+    const tablaScheduler = useCallback(() => {
+        if (!tablaIsPlayingRef.current) return;
+        const ctx = getCtx();
+        const taal = selectedTaalRef.current;
+        const secondsPerMatra = 60.0 / taalBpmRef.current;
+        const pitchRatio = tablaScaleRef.current.freq / 277.18;
+
+        while (tablaNextBeatTimeRef.current < ctx.currentTime + TABLA_SCHEDULE_AHEAD) {
+            const matraIdx = tablaMatraIndexRef.current;
+            const matra = taal.matras[matraIdx];
+            playTablaStroke(ctx, matra.stroke, matra.accent, tablaVolumeRef.current, tablaNextBeatTimeRef.current, pitchRatio);
+            // Update UI indicator — schedule setCurrentTaalMatra to fire at approximately the right visual time
+            const visualDelay = Math.max(0, (tablaNextBeatTimeRef.current - ctx.currentTime) * 1000);
+            const capturedIdx = matraIdx;
+            setTimeout(() => { if (tablaIsPlayingRef.current) setCurrentTaalMatra(capturedIdx); }, visualDelay);
+            tablaNextBeatTimeRef.current += secondsPerMatra;
+            tablaMatraIndexRef.current = (matraIdx + 1) % taal.totalMatras;
+        }
+        tablaSchedulerRef.current = setTimeout(tablaScheduler, TABLA_LOOKAHEAD_MS);
+    }, [playTablaStroke]);
+
+    // Handle Tabla Play state changes
+    useEffect(() => {
+        if (isTablaPlaying) {
+            const ctx = getCtx();
+            if (ctx.state !== 'running') ctx.resume();
+            tablaMatraIndexRef.current = 0;
+            tablaNextBeatTimeRef.current = ctx.currentTime + 0.05;
+            tablaIsPlayingRef.current = true;
+            tablaScheduler();
+        } else {
+            tablaIsPlayingRef.current = false;
+            if (tablaSchedulerRef.current) clearTimeout(tablaSchedulerRef.current);
+            setCurrentTaalMatra(-1);
+        }
+        return () => { if (tablaSchedulerRef.current) clearTimeout(tablaSchedulerRef.current); };
+    }, [isTablaPlaying, tablaScheduler]);
+
+    // Restart scheduler when taal or laya changes while playing
+    const restartTablaIfPlaying = useCallback(() => {
+        if (!tablaIsPlayingRef.current) return;
+        if (tablaSchedulerRef.current) clearTimeout(tablaSchedulerRef.current);
+        const ctx = getCtx();
+        tablaMatraIndexRef.current = 0;
+        tablaNextBeatTimeRef.current = ctx.currentTime + 0.05;
+        tablaScheduler();
+    }, [tablaScheduler]);
 
     // ── SHARED AUDIO UTILS ──────────────────────────────────────────────────
     const createNoiseBuffer = (ctx: AudioContext, duration: number): AudioBuffer => {
@@ -928,9 +1226,12 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
         setIsTanpuraPlaying(false);
         setIsMetronomePlaying(false);
         setIsDrumsPlaying(false);
+        setIsTablaPlaying(false);
+        tablaIsPlayingRef.current = false;
         stopTanpuraNodes();
         if (metronomeTimerRef.current) clearTimeout(metronomeTimerRef.current);
         if (drumsTimerRef.current) clearTimeout(drumsTimerRef.current);
+        if (tablaSchedulerRef.current) clearTimeout(tablaSchedulerRef.current);
         onClose();
     };
 
@@ -1109,7 +1410,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-lg" onClick={e => e.target === e.currentTarget && handleClose()}>
             <div className={`relative w-full bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-3xl border border-[#d46211]/25 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${
-                activeTool === 'tanpura' ? 'max-w-md h-auto my-auto' : activeTool === 'metronome' ? 'max-w-2xl h-auto my-auto' : activeTool === 'drums' ? 'max-w-5xl h-auto my-auto' : 'max-w-4xl h-auto my-auto'
+                activeTool === 'tanpura' ? 'max-w-md h-auto my-auto' : activeTool === 'metronome' ? 'max-w-2xl h-auto my-auto' : activeTool === 'drums' ? 'max-w-5xl h-auto my-auto' : activeTool === 'tabla' ? 'max-w-3xl h-auto my-auto' : 'max-w-4xl h-auto my-auto'
             }`}>
                 
                 {/* Header */}
@@ -1120,13 +1421,15 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                 <Music className="w-5 h-5" />
                             ) : activeTool === 'metronome' ? (
                                 <Volume2 className="w-5 h-5" />
+                            ) : activeTool === 'tabla' ? (
+                                <span className="text-lg font-black">ताल</span>
                             ) : (
                                 <span className="material-symbols-outlined text-xl font-bold">album</span>
                             )}
                         </div>
                         <div>
                             <h2 className="text-white font-black text-sm md:text-base tracking-tight animate-in fade-in duration-300">
-                                {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : activeTool === 'drums' ? 'Drum Beats Sequencer' : 'Combo Session Mixer'}
+                                {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : activeTool === 'drums' ? 'Drum Beats Sequencer' : activeTool === 'tabla' ? 'Tabla Taal Player' : 'Combo Session Mixer'}
                             </h2>
                             <p className="text-[#d46211]/60 text-xs md:text-sm animate-in fade-in duration-300">
                                 {activeTool === 'tanpura' 
@@ -1135,7 +1438,9 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                         ? 'Keep perfect time with speed adjustments' 
                                         : activeTool === 'drums'
                                             ? 'Interactive step sequencer for flute play-along grooves'
-                                            : 'Club and control multiple practice tools simultaneously'}
+                                            : activeTool === 'tabla'
+                                                ? 'Authentic taals in all scales for riyaz practice'
+                                                : 'Club and control multiple practice tools simultaneously'}
                             </p>
                         </div>
                     </div>
@@ -1157,6 +1462,30 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                             <X className="w-4 h-4" />
                         </button>
                     </div>
+                </div>
+
+                {/* ── TAB NAV ── */}
+                <div className="flex items-center gap-1 px-6 pt-4 border-b border-white/5 bg-black/20">
+                    {([
+                        { id: 'tanpura',   label: 'Tanpura',   icon: '♪' },
+                        { id: 'metronome', label: 'Metronome', icon: '♩' },
+                        { id: 'tabla',     label: 'Tabla Taal',icon: 'ताल' },
+                        { id: 'drums',     label: 'Drum Beats',icon: '⬡' },
+                        { id: 'combosetup',label: 'Combo',     icon: '⊞' },
+                    ] as const).map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTool(tab.id)}
+                            className={`px-3 py-2 text-[11px] font-extrabold tracking-wide rounded-t-lg transition-all flex items-center gap-1.5 border-b-2 ${
+                                activeTool === tab.id
+                                    ? 'text-[#d46211] border-[#d46211] bg-[#d46211]/5'
+                                    : 'text-white/35 border-transparent hover:text-white/60 hover:border-white/20'
+                            }`}
+                        >
+                            <span className="text-sm">{tab.icon}</span>
+                            <span className="hidden sm:inline">{tab.label}</span>
+                        </button>
+                    ))}
                 </div>
 
                 {/* Dashboard body layout */}
@@ -1270,6 +1599,228 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                         <><Play className="w-3.5 h-3.5 fill-white" /> Play Drone</>
                                     )}
                                 </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ──── VIEW 1B: TABLA TAAL ──── */}
+                    {activeTool === 'tabla' && (
+                        <div className="w-full p-5 flex flex-col gap-5 overflow-y-auto max-h-[85vh] animate-in fade-in duration-200">
+
+                            {/* Hero banner with tabla image */}
+                            <div className="relative h-36 rounded-2xl overflow-hidden border border-white/5 shadow-inner">
+                                <img
+                                    src="/images/tabla_drums.jpg"
+                                    alt="Tabla Drums"
+                                    className="w-full h-full object-cover object-center"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-r from-[#0c0f12]/90 via-[#0c0f12]/50 to-transparent" />
+                                <div className="absolute inset-0 flex flex-col justify-center px-6">
+                                    <span className="text-[10px] font-black text-[#d46211] uppercase tracking-[0.2em] mb-1">Currently Playing</span>
+                                    <h3 className="text-2xl font-black text-white tracking-tight">{selectedTaal.name}</h3>
+                                    <p className="text-sm font-bold text-white/50">{selectedTaal.nameHindi} &nbsp;•&nbsp; {selectedTaal.totalMatras} Matras</p>
+                                </div>
+                                {/* Live indicator */}
+                                {isTablaPlaying && (
+                                    <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-full border border-[#d46211]/30">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-[#d46211] animate-pulse" />
+                                        <span className="text-[10px] font-black text-[#d46211] uppercase tracking-widest">Live</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                                {/* LEFT: Taal Selector */}
+                                <div className="flex flex-col gap-4">
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-[10px] font-black uppercase tracking-wider block mb-2">Select Taal</span>
+                                        <div className="flex flex-col gap-1.5">
+                                            {TABLA_TAALS.map(taal => (
+                                                <button
+                                                    key={taal.id}
+                                                    onClick={() => {
+                                                        setSelectedTaal(taal);
+                                                        setTaalBpm(taal.defaultBpm[selectedLaya]);
+                                                        restartTablaIfPlaying();
+                                                    }}
+                                                    className={`w-full text-left px-3.5 py-2.5 rounded-xl border transition-all ${
+                                                        selectedTaal.id === taal.id
+                                                            ? 'bg-[#d46211]/10 border-[#d46211]/60 text-white'
+                                                            : 'border-white/5 bg-white/3 text-white/50 hover:border-white/15 hover:text-white/80'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <span className="font-extrabold text-sm block leading-tight">{taal.name}</span>
+                                                            <span className={`text-[10px] font-bold ${selectedTaal.id === taal.id ? 'text-[#d46211]/70' : 'text-white/30'}`}>{taal.nameHindi}</span>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <span className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                                                                selectedTaal.id === taal.id ? 'bg-[#d46211]/20 text-[#d46211]' : 'bg-white/5 text-white/30'
+                                                            }`}>{taal.totalMatras} M</span>
+                                                        </div>
+                                                    </div>
+                                                    {selectedTaal.id === taal.id && (
+                                                        <p className="text-[10px] text-white/40 mt-1">{taal.description}</p>
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Scale / Shruti */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-[10px] font-black uppercase tracking-wider block mb-2">Tabla Scale (Shruti)</span>
+                                        <div className="grid grid-cols-4 gap-1">
+                                            {SHRU_PITCHES.map(pitch => (
+                                                <button
+                                                    key={pitch.label}
+                                                    onClick={() => setTablaScale(pitch)}
+                                                    className={`py-1.5 rounded-lg text-center font-bold text-xs transition-all border ${
+                                                        tablaScale.label === pitch.label
+                                                            ? 'bg-[#d46211] border-[#d46211] text-white'
+                                                            : 'border-[#d46211]/15 text-[#d46211]/50 hover:border-[#d46211]/30 hover:text-white'
+                                                    }`}
+                                                >
+                                                    {pitch.label.split(' ')[0]}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* RIGHT: Laya + BPM + Matra Visualizer + Play */}
+                                <div className="flex flex-col gap-4">
+
+                                    {/* Laya (Speed preset) */}
+                                    <div>
+                                        <span className="text-[#d46211]/70 text-[10px] font-black uppercase tracking-wider block mb-2">Laya (Speed)</span>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {TABLA_LAYA.map(l => (
+                                                <button
+                                                    key={l.id}
+                                                    onClick={() => {
+                                                        setSelectedLaya(l.id);
+                                                        setTaalBpm(selectedTaal.defaultBpm[l.id]);
+                                                        restartTablaIfPlaying();
+                                                    }}
+                                                    className={`flex flex-col items-center py-2.5 rounded-xl border transition-all ${
+                                                        selectedLaya === l.id
+                                                            ? 'bg-[#d46211]/10 border-[#d46211]/50 text-white'
+                                                            : 'border-white/5 text-white/40 hover:border-white/15'
+                                                    }`}
+                                                >
+                                                    <span className="text-xs font-black">{l.label}</span>
+                                                    <span className={`text-[10px] font-bold ${selectedLaya === l.id ? 'text-[#d46211]' : 'text-white/25'}`}>{l.labelHindi}</span>
+                                                    <span className={`text-[9px] font-bold mt-0.5 ${selectedLaya === l.id ? 'text-white/50' : 'text-white/20'}`}>{selectedTaal.defaultBpm[l.id]} BPM</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Fine BPM control */}
+                                    <div className="bg-black/30 border border-white/5 rounded-xl px-4 py-3">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-[10px] font-black text-white/40 uppercase tracking-wider">Fine BPM</span>
+                                            <span className="text-sm font-black font-mono text-[#d46211]">{taalBpm}</span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <button onClick={() => { const v = Math.max(20, taalBpm - 1); setTaalBpm(v); restartTablaIfPlaying(); }} className="w-7 h-7 rounded-lg border border-white/10 text-white/50 hover:bg-white/5 flex items-center justify-center font-black text-sm">-</button>
+                                            <input
+                                                type="range" min="20" max="300" step="1" value={taalBpm}
+                                                onChange={e => { setTaalBpm(Number(e.target.value)); restartTablaIfPlaying(); }}
+                                                className="flex-1 h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                            />
+                                            <button onClick={() => { const v = Math.min(300, taalBpm + 1); setTaalBpm(v); restartTablaIfPlaying(); }} className="w-7 h-7 rounded-lg border border-white/10 text-white/50 hover:bg-white/5 flex items-center justify-center font-black text-sm">+</button>
+                                        </div>
+                                    </div>
+
+                                    {/* Volume */}
+                                    <div className="bg-black/30 border border-white/5 rounded-xl px-4 py-3">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-[10px] font-black text-white/40 uppercase tracking-wider">Volume</span>
+                                            <span className="text-sm font-black font-mono text-[#d46211]">{Math.round(tablaVolume * 100)}%</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Volume2 className="w-4 h-4 text-white/30 shrink-0" />
+                                            <input
+                                                type="range" min="0" max="1" step="0.05" value={tablaVolume}
+                                                onChange={e => setTablaVolume(parseFloat(e.target.value))}
+                                                className="flex-1 h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Play Button */}
+                                    <button
+                                        onClick={() => {
+                                            getCtx().resume();
+                                            setIsTablaPlaying(p => !p);
+                                        }}
+                                        className={`w-full h-12 rounded-xl font-extrabold text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
+                                            isTablaPlaying
+                                                ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15'
+                                                : 'bg-[#d46211] text-white shadow-orange-500/25 hover:bg-[#c05510]'
+                                        }`}
+                                    >
+                                        {isTablaPlaying
+                                            ? <><Square className="w-4 h-4 fill-white" /> Stop Tabla</>
+                                            : <><Play className="w-4 h-4 fill-white" /> Play Tabla</>}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Matra Visualizer — full width at bottom */}
+                            <div className="bg-black/40 border border-white/5 rounded-2xl p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-[10px] font-black text-[#d46211]/70 uppercase tracking-wider">Matra Cycle — {selectedTaal.name}</span>
+                                    <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-widest">
+                                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#d46211] inline-block" />Sam</span>
+                                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-300 inline-block" />Tali</span>
+                                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-white/20 inline-block" />Khali</span>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {selectedTaal.matras.map((matra, idx) => {
+                                        const isActive = currentTaalMatra === idx;
+                                        const isSam = matra.accent === 'sam';
+                                        const isTali = matra.accent === 'tali';
+                                        const isKhali = matra.accent === 'khali';
+                                        const isVibhagStart = idx === 0 || selectedTaal.matras[idx - 1].vibhag !== matra.vibhag;
+                                        return (
+                                            <React.Fragment key={idx}>
+                                                {isVibhagStart && idx > 0 && (
+                                                    <div className="w-px self-stretch bg-white/10 mx-0.5" />
+                                                )}
+                                                <div className={`flex flex-col items-center gap-1 transition-all duration-75 ${
+                                                    isActive ? 'scale-110' : ''
+                                                }`}>
+                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px] border transition-all ${
+                                                        isActive
+                                                            ? isSam
+                                                                ? 'bg-[#d46211] border-[#d46211] text-white shadow-lg shadow-orange-500/40'
+                                                                : isTali
+                                                                    ? 'bg-amber-300 border-amber-300 text-black shadow-md shadow-amber-400/30'
+                                                                    : 'bg-white/20 border-white/40 text-white'
+                                                            : isSam
+                                                                ? 'bg-[#d46211]/15 border-[#d46211]/40 text-[#d46211]'
+                                                                : isTali
+                                                                    ? 'bg-amber-300/10 border-amber-300/30 text-amber-300/80'
+                                                                    : 'bg-white/3 border-white/8 text-white/25'
+                                                    }`}>
+                                                        {matra.position}
+                                                    </div>
+                                                    <span className={`text-[9px] font-extrabold leading-none ${
+                                                        isActive ? 'text-white' : isSam ? 'text-[#d46211]/70' : 'text-white/30'
+                                                    }`}>{matra.bol}</span>
+                                                    {isSam && <span className="text-[8px] font-black text-[#d46211]/80 leading-none">X</span>}
+                                                    {isKhali && !isSam && <span className="text-[8px] font-black text-white/20 leading-none">0</span>}
+                                                </div>
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
                     )}
