@@ -149,9 +149,37 @@ export default function StudentDirectory() {
         }
     };
 
+    // SWR Cache Saver for Students Directory
     useEffect(() => {
+        if (students.length === 0) return;
+        const timer = setTimeout(() => {
+            try {
+                const cacheData = { students, classrooms, teachers, stats, unassignedStudents, teacherProfile };
+                localStorage.setItem('kfa_students_cache', JSON.stringify(cacheData));
+            } catch (e) { console.error('Students cache save error:', e); }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [students, classrooms, teachers, stats, unassignedStudents, teacherProfile]);
+
+    useEffect(() => {
+        let hasCachedData = false;
+        try {
+            const cached = localStorage.getItem('kfa_students_cache');
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (data.students) setStudents(data.students);
+                if (data.classrooms) setClassrooms(data.classrooms);
+                if (data.teachers) setTeachers(data.teachers);
+                if (data.stats) setStats(data.stats);
+                if (data.unassignedStudents) setUnassignedStudents(data.unassignedStudents);
+                if (data.teacherProfile) setTeacherProfile(data.teacherProfile);
+                setLoading(false);
+                hasCachedData = true;
+            }
+        } catch (e) { console.error('Students cache load error:', e); }
+
         const checkAuthAndFetchData = async () => {
-            setLoading(true);
+            if (!hasCachedData) setLoading(true);
             try {
                 // 1. Check Session
                 const { data: { session } } = await supabaseAuth.auth.getSession();

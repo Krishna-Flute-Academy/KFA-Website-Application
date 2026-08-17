@@ -347,16 +347,21 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                             )}
                                             {/* File chip */}
                                             {note.file_url && (
-                                                <a
-                                                    href={note.file_url}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-705 dark:text-slate-300 hover:border-[#ecb613]/50 hover:text-[#ecb613] transition-all max-w-full"
-                                                >
-                                                    <Download className="w-3 h-3 flex-shrink-0" />
-                                                    <span className="truncate">{note.file_name || 'Attachment'}</span>
-                                                    {note.file_size && <span className="text-slate-400 flex-shrink-0">· {formatFileSize(note.file_size)}</span>}
-                                                </a>
+                                                <div className="mt-2.5 space-y-1.5">
+                                                    <a
+                                                        href={note.file_url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-[#ecb613]/50 hover:text-[#ecb613] transition-all max-w-full"
+                                                    >
+                                                        <Download className="w-3 h-3 flex-shrink-0" />
+                                                        <span className="truncate">{note.file_name || 'Attachment'}</span>
+                                                        {note.file_size && <span className="text-slate-400 flex-shrink-0">· {formatFileSize(note.file_size)}</span>}
+                                                    </a>
+                                                    {(note.file_url.includes('.webm') || note.file_url.includes('.mp3') || note.file_url.includes('.wav') || note.file_url.includes('.m4a') || note.file_url.includes('.ogg') || (note.file_name && note.file_name.toLowerCase().includes('voice'))) && (
+                                                        <audio src={note.file_url} controls className="w-full h-8 rounded-lg" />
+                                                    )}
+                                                </div>
                                             )}
                                             {/* Timestamp */}
                                             <p className="mt-2.5 text-[10px] font-medium text-slate-400 dark:text-slate-500">
@@ -521,15 +526,22 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                         Topic: <span className="text-[#ecb613]">{asg.inventory_ref_title}</span>
                                                     </div>
                                                 ) : asg.file_url ? (
-                                                    <a
-                                                        href={asg.file_url}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-[#ecb613] hover:underline"
-                                                    >
-                                                        <Paperclip className="w-3 h-3" />{asg.file_name}
-                                                    </a>
+                                                    <div className="mt-2 space-y-1">
+                                                        <a
+                                                            href={asg.file_url}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#ecb613] hover:underline"
+                                                        >
+                                                            <Paperclip className="w-3 h-3" />{asg.file_name || 'Attachment'}
+                                                        </a>
+                                                        {(asg.file_url.includes('.webm') || asg.file_url.includes('.mp3') || asg.file_url.includes('.wav') || asg.file_url.includes('.m4a') || asg.file_url.includes('.ogg') || (asg.file_name && asg.file_name.toLowerCase().includes('voice'))) && (
+                                                            <div onClick={(e) => e.stopPropagation()}>
+                                                                <audio src={asg.file_url} controls className="w-full h-8 rounded-lg mt-1" />
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 ) : null}
                                                 <p className="text-[10px] text-slate-400 mt-1.5">
                                                     Created {new Date(asg.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}

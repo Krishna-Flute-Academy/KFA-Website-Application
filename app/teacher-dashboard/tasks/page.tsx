@@ -3,12 +3,13 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircle, Save, X, ClipboardList, Plus, ChevronLeft, ChevronRight, Trash2, ChevronDown, ChevronUp, Edit2, Download, Upload, Library, Paperclip, Send, FileText, Clock, BookOpen, Video, Music, Image as ImageIcon } from 'lucide-react';
+import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircle, Save, X, ClipboardList, Plus, ChevronLeft, ChevronRight, Trash2, ChevronDown, ChevronUp, Edit2, Download, Upload, Library, Paperclip, Send, FileText, Clock, BookOpen, Video, Music, Image as ImageIcon, Mic } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sendClassroomNotification } from '../../../src/lib/notifications';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
+import AudioRecorderWidget from '../../../src/components/AudioRecorderWidget';
 
 interface Classroom {
     id: string;
@@ -117,8 +118,9 @@ export default function TaskReviewPage() {
     const [createSelectedLessonId, setCreateSelectedLessonId] = useState<string | null>(null);
     const [createSelectedLessonTitle, setCreateSelectedLessonTitle] = useState<string | null>(null);
     
-    // Inventory selection sub-modal state
+    // Inventory selection & audio recorder sub-modal state
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
+    const [showAudioRecorder, setShowAudioRecorder] = useState(false);
     const [inventoryLessons, setInventoryLessons] = useState<any[]>([]);
     const [selectedOverviewTask, setSelectedOverviewTask] = useState<TaskSubmission | null>(null);
 
@@ -455,16 +457,44 @@ export default function TaskReviewPage() {
         }
     }, [selectedSub]);
 
+    // SWR Cache Saver for Tasks
     useEffect(() => {
+        if (submissions.length === 0) return;
+        const timer = setTimeout(() => {
+            try {
+                const cacheData = { submissions, teacherProfile };
+                localStorage.setItem('kfa_tasks_cache', JSON.stringify(cacheData));
+            } catch (e) { console.error('Tasks cache save error:', e); }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [submissions, teacherProfile]);
+
+    useEffect(() => {
+        let hasCachedData = false;
+        try {
+            const cached = localStorage.getItem('kfa_tasks_cache');
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (data.submissions) {
+                    setSubmissions(data.submissions);
+                    setFilteredSubmissions(data.submissions);
+                }
+                if (data.teacherProfile) setTeacherProfile(data.teacherProfile);
+                setLoading(false);
+                hasCachedData = true;
+            }
+        } catch (e) { console.error('Tasks cache load error:', e); }
+
         const checkAuth = async () => {
+            if (!hasCachedData) setLoading(true);
             const { data: { session } } = await supabaseAuth.auth.getSession();
             if (!session) {
                 router.push('/login?type=teacher');
                 return;
             }
 
-            // Clear unread task notifications
-            await supabaseAuth
+            // Clear unread task notifications asynchronously
+            supabaseAuth
                 .from('notifications')
                 .update({ is_read: true })
                 .eq('user_id', session.user.id)
@@ -1016,30 +1046,7 @@ export default function TaskReviewPage() {
         ));
     };
 
-    const handleCreateFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        let friendlySize = '';
-        if (file.size >= 1024 * 1024) {
-            friendlySize = `${(file.size / (1024 * 1024)).toFixed(1)}MB`;
-        } else if (file.size >= 1024) {
-            friendlySize = `${(file.size / 1024).toFixed(1)}KB`;
-        } else {
-            friendlySize = `${file.size} Bytes`;
-        }
-
-        let mappedType = 'file';
-        if (file.type.startsWith('audio/')) {
-            mappedType = 'audio';
-        } else if (file.type.startsWith('video/')) {
-            mappedType = 'video';
-        } else if (file.type.includes('pdf') || file.name.endsWith('.pdf')) {
-            mappedType = 'pdf';
-        } else if (file.type.startsWith('image/')) {
-            mappedType = 'image';
-        }
-
+    const uploadTaskFile = async (file: File) => {
         setUploadProgress(20);
         try {
             const fileExt = file.name.split('.').pop();
@@ -1077,6 +1084,12 @@ export default function TaskReviewPage() {
             setUploadProgress(null);
             alert(`File upload failed: ${err.message}`);
         }
+    };
+
+    const handleCreateFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        await uploadTaskFile(file);
     };
 
     const handleEditTaskClick = async (taskId: string) => {
@@ -2056,12 +2069,12 @@ export default function TaskReviewPage() {
 
                                     {/* Task Attachment if exists */}
                                     {selectedSub.file_url && (
-                                        <section className="bg-slate-50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-                                            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 flex items-center gap-2">
+                                        <section className="bg-slate-50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+                                            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
                                                 <Paperclip className="w-3.5 h-3.5" />
                                                 Attachments
                                             </h3>
-                                            <div className="flex items-center justify-between gap-3 mt-2 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                                            <div className="flex items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                                                 <span className="text-xs font-bold text-slate-750 dark:text-slate-200 truncate max-w-[200px]" title={selectedSub.file_name}>
                                                     📎 {selectedSub.file_name || 'Learning Material'}
                                                 </span>
@@ -2074,6 +2087,9 @@ export default function TaskReviewPage() {
                                                     <Download className="w-3.5 h-3.5" /> View
                                                 </a>
                                             </div>
+                                            {(selectedSub.file_url.includes('.webm') || selectedSub.file_url.includes('.mp3') || selectedSub.file_url.includes('.wav') || selectedSub.file_url.includes('.m4a') || selectedSub.file_url.includes('.ogg') || (selectedSub.file_name && selectedSub.file_name.toLowerCase().includes('voice'))) && (
+                                                <audio src={selectedSub.file_url} controls className="w-full h-8 rounded-lg" />
+                                            )}
                                         </section>
                                     )}
 
@@ -2353,54 +2369,87 @@ export default function TaskReviewPage() {
 
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wide">Learning Materials & Attachments</label>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                         <button 
                                             onClick={() => setIsInventoryOpen(true)}
-                                            className="group flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-amber-400 hover:bg-amber-50/20 dark:hover:bg-amber-900/10 transition-all text-center" 
+                                            className="group flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-amber-400 hover:bg-amber-50/20 dark:hover:bg-amber-900/10 transition-all text-center cursor-pointer" 
                                             type="button"
                                         >
-                                            <Library className="w-7 h-7 text-amber-600 mb-2 group-hover:scale-110 transition-transform" />
-                                            <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">Inventory Library</span>
-                                            <span className="text-xs text-slate-505 mt-1">Pick from uploaded sheet music</span>
+                                            <Library className="w-6 h-6 text-amber-600 mb-1.5 group-hover:scale-110 transition-transform" />
+                                            <span className="text-xs font-bold text-slate-900 dark:text-white tracking-tight">Inventory</span>
+                                            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Sheet music library</span>
                                         </button>
                                         <button 
                                             onClick={() => fileInputRef.current?.click()}
-                                            className="group flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-amber-400 hover:bg-amber-50/20 dark:hover:bg-amber-900/10 transition-all text-center" 
+                                            className="group flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-amber-400 hover:bg-amber-50/20 dark:hover:bg-amber-900/10 transition-all text-center cursor-pointer" 
                                             type="button"
                                         >
                                             {uploadProgress !== null ? (
-                                                <Loader2 className="w-7 h-7 animate-spin text-amber-650 mb-2" />
+                                                <Loader2 className="w-6 h-6 animate-spin text-amber-600 mb-1.5" />
                                             ) : (
-                                                <Upload className="w-7 h-7 text-amber-600 mb-2 group-hover:scale-110 transition-transform" />
+                                                <Upload className="w-6 h-6 text-amber-600 mb-1.5 group-hover:scale-110 transition-transform" />
                                             )}
-                                            <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
-                                                {uploadProgress !== null ? `Uploading (${uploadProgress}%)` : 'Upload New'}
+                                            <span className="text-xs font-bold text-slate-900 dark:text-white tracking-tight">
+                                                {uploadProgress !== null ? `(${uploadProgress}%)` : 'Upload File'}
                                             </span>
-                                            <span className="text-xs text-slate-505 mt-1">Audio, PDF, Image, or Video</span>
+                                            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Audio, PDF, Image</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => setShowAudioRecorder(prev => !prev)}
+                                            className={`group flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-2xl transition-all text-center cursor-pointer ${
+                                                showAudioRecorder 
+                                                    ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20' 
+                                                    : 'border-slate-200 dark:border-slate-800 hover:border-amber-400 hover:bg-amber-50/20 dark:hover:bg-amber-900/10'
+                                            }`} 
+                                            type="button"
+                                        >
+                                            <Mic className="w-6 h-6 text-amber-600 mb-1.5 group-hover:scale-110 transition-transform" />
+                                            <span className="text-xs font-bold text-slate-900 dark:text-white tracking-tight">Record Voice</span>
+                                            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Live audio note</span>
                                         </button>
                                     </div>
-                                                                    {/* Selected File Badge */}
-                                    {createFileUrl && (
-                                        <div className="mt-4 p-3 bg-amber-50/40 dark:bg-amber-955/10 rounded-xl border border-amber-100 dark:border-amber-900/20 flex items-center justify-between">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <Paperclip className="w-4 h-4 text-amber-650 shrink-0" />
-                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title={createFileName}>
-                                                    {createFileName}
-                                                </span>
-                                                {createFileSize && (
-                                                    <span className="text-[10px] text-slate-400 font-mono">({formatFileSize(createFileSize)})</span>
-                                                )}
-                                            </div>
-                                            <button 
-                                                onClick={() => {
-                                                    setCreateFileUrl('');
-                                                    setCreateFileName('');
-                                                    setCreateFileSize(null);
+
+                                    {/* Audio Recorder Widget */}
+                                    {showAudioRecorder && (
+                                        <div className="mt-3">
+                                            <AudioRecorderWidget
+                                                onAudioRecorded={(file) => {
+                                                    uploadTaskFile(file);
+                                                    setShowAudioRecorder(false);
                                                 }}
-                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-805 rounded-full transition-colors shrink-0"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
+                                                onCancel={() => setShowAudioRecorder(false)}
+                                                label="Record Voice Instruction"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Selected File Badge */}
+                                    {createFileUrl && (
+                                        <div className="mt-4 p-3 bg-amber-50/40 dark:bg-amber-955/10 rounded-xl border border-amber-100 dark:border-amber-900/20 space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <Paperclip className="w-4 h-4 text-amber-600 shrink-0" />
+                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title={createFileName}>
+                                                        {createFileName}
+                                                    </span>
+                                                    {createFileSize && (
+                                                        <span className="text-[10px] text-slate-400 font-mono">({formatFileSize(createFileSize)})</span>
+                                                    )}
+                                                </div>
+                                                <button 
+                                                    onClick={() => {
+                                                        setCreateFileUrl('');
+                                                        setCreateFileName('');
+                                                        setCreateFileSize(null);
+                                                    }}
+                                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors shrink-0 cursor-pointer"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            {(createFileUrl.includes('.webm') || createFileUrl.includes('.mp3') || createFileUrl.includes('.wav') || createFileUrl.includes('.m4a') || createFileUrl.includes('.ogg') || createFileName.toLowerCase().includes('voice')) && (
+                                                <audio src={createFileUrl} controls className="w-full h-8 rounded-lg" />
+                                            )}
                                         </div>
                                     )}
 

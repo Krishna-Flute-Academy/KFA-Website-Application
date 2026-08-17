@@ -6,12 +6,13 @@ import { supabaseAuth } from '../../../../../src/lib/supabase-auth';
 import { 
     Loader2, ChevronRight, ChevronLeft,
     Library, Upload, Send, FileText, Users, 
-    Calendar, X, Save
+    Calendar, X, Save, Mic, Paperclip, Download
 } from 'lucide-react';
 import TeacherSidebar from '../../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sortClassroomsByDayAndTime } from '../../../../../src/lib/classroomSort';
+import AudioRecorderWidget from '../../../../../src/components/AudioRecorderWidget';
 
 interface Classroom {
     id: string;
@@ -52,6 +53,42 @@ export default function EditTaskPage() {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [dueDate, setDueDate] = useState('');
+    
+    // Attachment & audio recording state
+    const [fileUrl, setFileUrl] = useState('');
+    const [fileName, setFileName] = useState('');
+    const [fileSize, setFileSize] = useState<number | null>(null);
+    const [showAudioRecorder, setShowAudioRecorder] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleFileUpload = async (file: File) => {
+        setIsUploading(true);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const randomName = `${Math.random().toString(36).substring(2, 12)}_${Date.now()}.${fileExt}`;
+            const filePath = `materials/${randomName}`;
+
+            const { error: uploadError } = await supabaseAuth.storage
+                .from('inventory_materials')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabaseAuth.storage
+                .from('inventory_materials')
+                .getPublicUrl(filePath);
+
+            setFileUrl(publicUrl);
+            setFileName(file.name);
+            setFileSize(file.size);
+        } catch (err: any) {
+            console.error('File upload failed:', err);
+            alert(`File upload failed: ${err.message}`);
+        } finally {
+            setIsUploading(false);
+        }
+    };
     
     // Assignment state
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
@@ -109,7 +146,7 @@ export default function EditTaskPage() {
                 let assignmentData: any = null;
                 const { data: asg, error: asgError } = await supabaseAuth
                     .from('assignments')
-                    .select('id, title, description, due_date, classroom_id, status, target_type')
+                    .select('id, title, description, due_date, classroom_id, status, target_type, file_url, file_name, file_size')
                     .eq('id', assignmentId)
                     .single();
 
@@ -135,6 +172,9 @@ export default function EditTaskPage() {
                 setAssignment(assignmentData);
                 setTitle(assignmentData.title || '');
                 setDescription(assignmentData.description || '');
+                setFileUrl(assignmentData.file_url || '');
+                setFileName(assignmentData.file_name || '');
+                setFileSize(assignmentData.file_size ? Number(assignmentData.file_size) : null);
                 
                 // Format date for input: YYYY-MM-DD
                 if (assignmentData.due_date) {
@@ -315,7 +355,10 @@ export default function EditTaskPage() {
                 classroom_id: primaryClassId,
                 teacher_id: primaryTeacherId,
                 target_type: selectedClassroom === 'all' && selectAll ? 'all' : 'individual',
-                status: isDraft ? 'draft' : 'active'
+                status: isDraft ? 'draft' : 'active',
+                file_url: fileUrl || null,
+                file_name: fileName || null,
+                file_size: fileSize || null
             };
 
             let { error: updateError } = await supabaseAuth
@@ -509,21 +552,88 @@ export default function EditTaskPage() {
                                                 onChange={(e) => setDescription(e.target.value)}
                                             ></textarea>
                                         </div>
-                                        {/* Inventory Library / Attachments */}
-                                        <div className="pt-4">
-                                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-4 uppercase tracking-wide text-xs">Learning Materials</label>
+                                        {/* Learning Materials & Voice Note Attachments */}
+                                        <div className="pt-4 space-y-3">
+                                            <input 
+                                                type="file" 
+                                                className="hidden" 
+                                                ref={fileInputRef}
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                        handleFileUpload(e.target.files[0]);
+                                                    }
+                                                }}
+                                            />
+                                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide text-xs">Learning Materials & Attachments</label>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <button className="group flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition-all" type="button">
-                                                    <Library className="w-8 h-8 text-amber-600 mb-2 group-hover:scale-110 transition-transform" />
-                                                    <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">Inventory Library</span>
-                                                    <span className="text-xs text-slate-500 mt-1">Pick from uploaded sheet music</span>
+                                                <button 
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    className="group flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition-all text-center cursor-pointer" 
+                                                    type="button"
+                                                >
+                                                    {isUploading ? (
+                                                        <Loader2 className="w-7 h-7 text-amber-600 mb-2 animate-spin" />
+                                                    ) : (
+                                                        <Upload className="w-7 h-7 text-amber-600 mb-2 group-hover:scale-110 transition-transform" />
+                                                    )}
+                                                    <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+                                                        {isUploading ? 'Uploading...' : 'Upload File'}
+                                                    </span>
+                                                    <span className="text-xs text-slate-500 mt-1">Audio, PDF, Image, or Video</span>
                                                 </button>
-                                                <button className="group flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition-all" type="button">
-                                                    <Upload className="w-8 h-8 text-amber-600 mb-2 group-hover:scale-110 transition-transform" />
-                                                    <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">Upload New</span>
-                                                    <span className="text-xs text-slate-500 mt-1">Audio, PDF, or Video</span>
+
+                                                <button 
+                                                    onClick={() => setShowAudioRecorder(prev => !prev)}
+                                                    className={`group flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-2xl transition-all text-center cursor-pointer ${
+                                                        showAudioRecorder 
+                                                            ? 'border-amber-500 bg-amber-50/40 dark:bg-amber-950/20' 
+                                                            : 'border-slate-200 dark:border-slate-800 hover:border-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-900/10'
+                                                    }`} 
+                                                    type="button"
+                                                >
+                                                    <Mic className="w-7 h-7 text-amber-600 mb-2 group-hover:scale-110 transition-transform" />
+                                                    <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">Record Voice Note</span>
+                                                    <span className="text-xs text-slate-500 mt-1">Speak into microphone</span>
                                                 </button>
                                             </div>
+
+                                            {showAudioRecorder && (
+                                                <AudioRecorderWidget
+                                                    onAudioRecorded={(file) => {
+                                                        handleFileUpload(file);
+                                                        setShowAudioRecorder(false);
+                                                    }}
+                                                    onCancel={() => setShowAudioRecorder(false)}
+                                                    label="Record Voice Instruction"
+                                                    className="mt-3"
+                                                />
+                                            )}
+
+                                            {fileUrl && (
+                                                <div className="mt-3 p-3 bg-amber-50/40 dark:bg-amber-955/10 rounded-xl border border-amber-100 dark:border-amber-900/20 space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <Paperclip className="w-4 h-4 text-amber-600 shrink-0" />
+                                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title={fileName}>
+                                                                {fileName || 'Attached Material'}
+                                                            </span>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => {
+                                                                setFileUrl('');
+                                                                setFileName('');
+                                                                setFileSize(null);
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors shrink-0 cursor-pointer"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                    {(fileUrl.includes('.webm') || fileUrl.includes('.mp3') || fileUrl.includes('.wav') || fileUrl.includes('.m4a') || fileUrl.includes('.ogg') || fileName.toLowerCase().includes('voice')) && (
+                                                        <audio src={fileUrl} controls className="w-full h-8 rounded-lg" />
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </section>

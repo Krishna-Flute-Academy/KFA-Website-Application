@@ -932,11 +932,37 @@ function MessagesDashboardContent() {
             }
         }
     }, [activeChatStudentId, activeChannel, directMessages.length]);
-
-    // ── Auth & Data Loading ────────────────────────────────────────────────────
+    // SWR Cache Saver for Messages
     useEffect(() => {
+        if (students.length === 0 && directMessages.length === 0) return;
+        const timer = setTimeout(() => {
+            try {
+                const cacheData = { students, classrooms, broadcasts, directMessages, teacherProfile };
+                localStorage.setItem('kfa_messages_cache', JSON.stringify(cacheData));
+            } catch (e) { console.error('Messages cache save error:', e); }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [students, classrooms, broadcasts, directMessages, teacherProfile]);
+
+    useEffect(() => {
+        let hasCachedData = false;
+        try {
+            const cached = localStorage.getItem('kfa_messages_cache');
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (data.students) setStudents(data.students);
+                if (data.classrooms) setClassrooms(data.classrooms);
+                if (data.broadcasts) setBroadcasts(data.broadcasts);
+                if (data.directMessages) setDirectMessages(data.directMessages);
+                if (data.teacherProfile) setTeacherProfile(data.teacherProfile);
+                setLoading(false);
+                setDbChecking(false);
+                hasCachedData = true;
+            }
+        } catch (e) { console.error('Messages cache load error:', e); }
+
         const checkAuthAndLoad = async () => {
-            setLoading(true);
+            if (!hasCachedData) setLoading(true);
             try {
                 // 1. Authenticate Teacher
                 const { data: { session } } = await supabaseAuth.auth.getSession();

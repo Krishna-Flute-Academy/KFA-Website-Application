@@ -510,7 +510,6 @@ export default function ClassroomsPage() {
     };
 
     const fetchData = React.useCallback(async () => {
-        setLoading(true);
         try {
             const { data: { session } } = await supabaseAuth.auth.getSession();
             if (!session) {
@@ -718,9 +717,36 @@ export default function ClassroomsPage() {
         }
     }, [router]);
 
+    // SWR Cache Saver for Classrooms
     useEffect(() => {
+        if (classrooms.length === 0 && tempClassrooms.length === 0) return;
+        const timer = setTimeout(() => {
+            try {
+                const cacheData = { classrooms, tempClassrooms, rawSchedules, teacherProfile };
+                localStorage.setItem('kfa_classrooms_cache', JSON.stringify(cacheData));
+            } catch (e) { console.error('Classrooms cache save error:', e); }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [classrooms, tempClassrooms, rawSchedules, teacherProfile]);
+
+    useEffect(() => {
+        let hasCachedData = false;
+        try {
+            const cached = localStorage.getItem('kfa_classrooms_cache');
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (data.classrooms) setClassrooms(data.classrooms);
+                if (data.tempClassrooms) setTempClassrooms(data.tempClassrooms);
+                if (data.rawSchedules) setRawSchedules(data.rawSchedules);
+                if (data.teacherProfile) setTeacherProfile(data.teacherProfile);
+                setLoading(false);
+                hasCachedData = true;
+            }
+        } catch (e) { console.error('Classrooms cache load error:', e); }
+
+        if (!hasCachedData) setLoading(true);
         fetchData();
-    }, [fetchData]);
+    }, []);
 
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
@@ -1383,7 +1409,7 @@ export default function ClassroomsPage() {
                                                         <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} className="flex-1 md:flex-initial">
                                                             <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center justify-center gap-1.5 animate-pulse">
                                                                 <Activity className="size-3.5 animate-spin" />
-                                                                Resume
+                                                                Maximize
                                                             </button>
                                                         </Link>
                                                     ) : (
@@ -1569,9 +1595,9 @@ export default function ClassroomsPage() {
                                                         </Link>
                                                         {isOngoing ? (
                                                             <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                <button className="px-2.5 py-1 bg-rose-505 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5">
+                                                                <button className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5">
                                                                     <Activity className="size-3 animate-spin" />
-                                                                    Resume
+                                                                    Maximize
                                                                 </button>
                                                             </Link>
                                                         ) : (
@@ -1846,7 +1872,7 @@ export default function ClassroomsPage() {
                                                                     <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                                         <button className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center gap-1.5 animate-pulse">
                                                                             <Activity className="size-3.5 animate-spin" />
-                                                                            Resume
+                                                                            Maximize
                                                                         </button>
                                                                     </Link>
                                                                 ) : (

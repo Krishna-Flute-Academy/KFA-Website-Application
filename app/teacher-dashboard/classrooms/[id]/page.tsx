@@ -10,13 +10,14 @@ import {
     FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, 
     X, BookOpen, Send, ClipboardList, Download, ExternalLink, Unlock, 
     MessageSquare, Share2, LogOut, Check, Info, FileIcon, Trash, Sliders,
-    User, ChevronUp, ChevronDown, Paperclip, Upload, StickyNote
+    User, ChevronUp, ChevronDown, Paperclip, Upload, StickyNote, Mic
 } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { CourseCategory, INITIAL_CATEGORIES, INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
 import { sendClassroomNotification } from '../../../../src/lib/notifications';
 import SecureCurriculumMaterial from '../../../../src/components/SecureCurriculumMaterial';
+import AudioRecorderWidget from '../../../../src/components/AudioRecorderWidget';
 
 // Tab components
 import OverviewTab from '../../../../src/components/classroom/OverviewTab';
@@ -621,6 +622,8 @@ export default function ClassroomDashboardPage({
         setIsAllocationDrawerOpen(true);
     };
     const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+    const [showAssignmentAudioRecorder, setShowAssignmentAudioRecorder] = useState(false);
+    const [showNoteAudioRecorder, setShowNoteAudioRecorder] = useState(false);
     const [isSavingAssignment, setIsSavingAssignment] = useState(false);
     const [assignmentForm, setAssignmentForm] = useState({
         title: '',
@@ -5286,8 +5289,30 @@ export default function ClassroomDashboardPage({
                                     </div>
                                 )}
 
-                                <div className="space-y-1.5 text-left">
-                                    <label className="block text-xs font-black text-slate-505 uppercase tracking-wide">Attach Learning Material (File/Video)</label>
+                                <div className="space-y-2 text-left">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-xs font-black text-slate-505 uppercase tracking-wide">Attach Learning Material / Voice Note</label>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setShowAssignmentAudioRecorder(prev => !prev)}
+                                            className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <Mic className="w-3.5 h-3.5" />
+                                            {showAssignmentAudioRecorder ? 'Close Voice Recorder' : 'Record Voice Note'}
+                                        </button>
+                                    </div>
+
+                                    {showAssignmentAudioRecorder && (
+                                        <AudioRecorderWidget
+                                            onAudioRecorded={(file) => {
+                                                setAssignmentFile(file);
+                                                setShowAssignmentAudioRecorder(false);
+                                            }}
+                                            onCancel={() => setShowAssignmentAudioRecorder(false)}
+                                            label="Record Assignment Voice Note"
+                                        />
+                                    )}
+
                                     <div 
                                         onClick={() => assignmentFileRef.current?.click()}
                                         className="border-2 border-dashed border-slate-205 dark:border-slate-700/80 hover:border-[#ecb613]/50 rounded-2xl p-5 text-center cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-all flex flex-col items-center justify-center gap-1.5 group select-none"
@@ -5306,12 +5331,12 @@ export default function ClassroomDashboardPage({
                                             <Upload className="size-5" />
                                         </div>
                                         {assignmentFile ? (
-                                            <div className="space-y-0.5">
+                                            <div className="space-y-1">
                                                 <p className="text-xs font-extrabold text-[#ecb613] truncate max-w-[320px]">{assignmentFile.name}</p>
                                                 <p className="text-[10px] text-slate-405 font-mono">Size: {formatFileSize(assignmentFile.size)}</p>
                                             </div>
                                         ) : assignmentForm.file_url ? (
-                                            <div className="space-y-0.5">
+                                            <div className="space-y-1">
                                                 <p className="text-xs font-extrabold text-[#ecb613] truncate max-w-[320px]">{assignmentForm.file_name || 'Linked Resource Attachment'}</p>
                                                 <p className="text-[10px] text-slate-400 font-mono">Linked from Class Note board</p>
                                             </div>
@@ -5426,8 +5451,30 @@ export default function ClassroomDashboardPage({
                                     </div>
                                 </div>
 
-                                <div className="space-y-1.5 text-left">
-                                    <label className="block text-xs font-black text-slate-550 uppercase tracking-wide">Attach Learning Sheet / PDF / Audio Track</label>
+                                <div className="space-y-2 text-left">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-xs font-black text-slate-550 uppercase tracking-wide">Attach Learning Sheet / PDF / Voice Note</label>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setShowNoteAudioRecorder(prev => !prev)}
+                                            className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <Mic className="w-3.5 h-3.5" />
+                                            {showNoteAudioRecorder ? 'Close Voice Recorder' : 'Record Voice Note'}
+                                        </button>
+                                    </div>
+
+                                    {showNoteAudioRecorder && (
+                                        <AudioRecorderWidget
+                                            onAudioRecorded={(file) => {
+                                                setNoteFile(file);
+                                                setShowNoteAudioRecorder(false);
+                                            }}
+                                            onCancel={() => setShowNoteAudioRecorder(false)}
+                                            label="Record Board Voice Note"
+                                        />
+                                    )}
+
                                     <div 
                                         onClick={() => noteFileRef.current?.click()}
                                         className="border-2 border-dashed border-slate-205 dark:border-slate-700/80 hover:border-[#ecb613]/50 rounded-2xl p-5 text-center cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-all flex flex-col items-center justify-center gap-1.5 group select-none"
@@ -5446,12 +5493,12 @@ export default function ClassroomDashboardPage({
                                             <Upload className="size-5" />
                                         </div>
                                         {noteFile ? (
-                                            <div className="space-y-0.5">
+                                            <div className="space-y-1">
                                                 <p className="text-xs font-extrabold text-[#ecb613] truncate max-w-[320px]">{noteFile.name}</p>
                                                 <p className="text-[10px] text-slate-405 font-mono">Size: {formatFileSize(noteFile.size)}</p>
                                             </div>
                                         ) : editingNote?.file_url ? (
-                                            <div className="space-y-0.5">
+                                            <div className="space-y-1">
                                                 <p className="text-xs font-extrabold text-[#ecb613] truncate max-w-[320px]">{editingNote.file_name || 'Keep current attached resource'}</p>
                                                 <p className="text-[10px] text-slate-405 font-mono">Size: {formatFileSize(editingNote.file_size)}</p>
                                             </div>

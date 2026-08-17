@@ -220,7 +220,7 @@ export default function TasksTab({
 
                                     {/* Attachment file */}
                                     {asg.file_url && (
-                                        <div className="pt-0.5">
+                                        <div className="pt-0.5 space-y-1.5">
                                             <a 
                                                 href={asg.file_url}
                                                 target="_blank"
@@ -228,8 +228,11 @@ export default function TasksTab({
                                                 className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors shadow-2xs"
                                             >
                                                 <Download className="w-3.5 h-3.5 text-amber-500" />
-                                                <span className="truncate max-w-[150px]">{asg.file_name || 'Attachment'}</span>
+                                                <span className="truncate max-w-[180px]">{asg.file_name || 'Instruction Attachment'}</span>
                                             </a>
+                                            {(asg.file_url.includes('.webm') || asg.file_url.includes('.mp3') || asg.file_url.includes('.wav') || asg.file_url.includes('.m4a') || asg.file_url.includes('.ogg') || (asg.file_name && asg.file_name.toLowerCase().includes('voice'))) && (
+                                                <audio src={asg.file_url} controls className="w-full h-8 rounded-lg" />
+                                            )}
                                         </div>
                                     )}
                                 </div>

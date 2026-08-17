@@ -50,6 +50,147 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
     const [isOpen, setIsOpen] = useState(false);
 
+    // Widget Minimize / Maximize State for active classroom session
+    const [isWidgetMinimized, setIsWidgetMinimized] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('active_class_widget_minimized') === 'true';
+        }
+        return false;
+    });
+
+    const toggleWidgetMinimized = (val?: boolean) => {
+        setIsWidgetMinimized(prev => {
+            const next = val !== undefined ? val : !prev;
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('active_class_widget_minimized', String(next));
+            }
+            return next;
+        });
+    };
+
+    // Widget Drag Position State
+    const [widgetPos, setWidgetPos] = useState<{ x: number; y: number } | null>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('active_class_widget_pos');
+            if (saved) {
+                try {
+                    return JSON.parse(saved);
+                } catch (e) {}
+            }
+        }
+        return null;
+    });
+
+    const isDraggingRef = React.useRef(false);
+    const dragStartRef = React.useRef<{ mouseX: number; mouseY: number; initialX: number; initialY: number }>({ mouseX: 0, mouseY: 0, initialX: 0, initialY: 0 });
+    const currentPosRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+    const rafIdRef = React.useRef<number | null>(null);
+    const widgetRef = React.useRef<HTMLDivElement>(null);
+
+    const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('button') || target.closest('a') || target.closest('input')) {
+            return;
+        }
+
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+        let currentX = widgetPos?.x;
+        let currentY = widgetPos?.y;
+
+        if (currentX === undefined || currentY === undefined || widgetPos === null) {
+            if (widgetRef.current) {
+                const rect = widgetRef.current.getBoundingClientRect();
+                currentX = rect.left;
+                currentY = rect.top;
+            } else {
+                currentX = window.innerWidth - 340;
+                currentY = window.innerHeight - 200;
+            }
+        }
+
+        isDraggingRef.current = true;
+        dragStartRef.current = {
+            mouseX: clientX,
+            mouseY: clientY,
+            initialX: currentX,
+            initialY: currentY
+        };
+        currentPosRef.current = { x: currentX, y: currentY };
+
+        if (widgetRef.current) {
+            widgetRef.current.style.transition = 'none';
+            widgetRef.current.style.left = `${currentX}px`;
+            widgetRef.current.style.top = `${currentY}px`;
+            widgetRef.current.style.right = 'auto';
+            widgetRef.current.style.bottom = 'auto';
+        }
+
+        const handleDragMove = (moveEvt: MouseEvent | TouchEvent) => {
+            if (!isDraggingRef.current) return;
+            if (moveEvt.cancelable) moveEvt.preventDefault();
+
+            const moveX = 'touches' in moveEvt ? moveEvt.touches[0].clientX : moveEvt.clientX;
+            const moveY = 'touches' in moveEvt ? moveEvt.touches[0].clientY : moveEvt.clientY;
+
+            const deltaX = moveX - dragStartRef.current.mouseX;
+            const deltaY = moveY - dragStartRef.current.mouseY;
+
+            let newX = dragStartRef.current.initialX + deltaX;
+            let newY = dragStartRef.current.initialY + deltaY;
+
+            const widgetWidth = widgetRef.current?.offsetWidth || 320;
+            const widgetHeight = widgetRef.current?.offsetHeight || 180;
+
+            const maxX = window.innerWidth - widgetWidth - 10;
+            const maxY = window.innerHeight - widgetHeight - 10;
+
+            newX = Math.max(10, Math.min(newX, maxX));
+            newY = Math.max(10, Math.min(newY, maxY));
+
+            currentPosRef.current = { x: newX, y: newY };
+
+            if (rafIdRef.current === null) {
+                rafIdRef.current = requestAnimationFrame(() => {
+                    rafIdRef.current = null;
+                    if (widgetRef.current && isDraggingRef.current) {
+                        widgetRef.current.style.left = `${currentPosRef.current.x}px`;
+                        widgetRef.current.style.top = `${currentPosRef.current.y}px`;
+                    }
+                });
+            }
+        };
+
+        const handleDragEnd = () => {
+            if (!isDraggingRef.current) return;
+            isDraggingRef.current = false;
+            if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+            }
+            window.removeEventListener('mousemove', handleDragMove);
+            window.removeEventListener('mouseup', handleDragEnd);
+            window.removeEventListener('touchmove', handleDragMove);
+            window.removeEventListener('touchend', handleDragEnd);
+
+            if (widgetRef.current) {
+                widgetRef.current.style.transition = '';
+            }
+
+            const finalPos = currentPosRef.current;
+            setWidgetPos(finalPos);
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('active_class_widget_pos', JSON.stringify(finalPos));
+            }
+        };
+
+        window.addEventListener('mousemove', handleDragMove);
+        window.addEventListener('mouseup', handleDragEnd);
+        window.addEventListener('touchmove', handleDragMove, { passive: false });
+        window.addEventListener('touchend', handleDragEnd);
+    };
+
     // Storage Status States
     const [storageUsed, setStorageUsed] = useState<number | null>(null);
     const [isFetchingStorage, setIsFetchingStorage] = useState<boolean>(true);
@@ -596,9 +737,16 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
         {/* Global floating ongoing active class screen widget */}
         {activeSession && !isMeetingPage && (
-            <div className="fixed bottom-6 right-6 z-[150] w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 flex flex-col gap-3 animate-in slide-in-from-bottom-5 duration-300 text-left">
-                {/* Glowing active indicator and class name */}
-                <div className="flex items-center justify-between">
+            isWidgetMinimized ? (
+                /* Minimized Pill View */
+                <div
+                    ref={widgetRef}
+                    onMouseDown={handleDragStart}
+                    onTouchStart={handleDragStart}
+                    style={widgetPos ? { left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
+                    className={`${widgetPos ? 'fixed z-[150]' : 'fixed bottom-6 right-6 z-[150]'} bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-amber-500/40 dark:border-amber-500/30 shadow-2xl px-4 py-2.5 flex items-center gap-3 animate-in slide-in-from-bottom-3 duration-200 text-left cursor-grab active:cursor-grabbing select-none`}
+                >
+                    <span className="material-symbols-outlined text-slate-400 dark:text-slate-500 text-sm cursor-grab">drag_indicator</span>
                     <div className="flex items-center gap-2">
                         <span className="relative flex h-2.5 w-2.5">
                             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
@@ -608,12 +756,18 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                 activeSession.sessionType === 'online' ? 'bg-blue-500' : 'bg-amber-500'
                             }`}></span>
                         </span>
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 font-mono">
-                            Ongoing {activeSession.sessionType === 'online' ? 'Online' : 'In-Person'} Class
-                        </span>
+                        <div className="flex flex-col">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400 font-mono">
+                                Started Class
+                            </span>
+                            <h4 className="text-xs font-black text-slate-900 dark:text-white max-w-[140px] sm:max-w-[180px] truncate leading-tight">
+                                {activeSession.classroomName}
+                            </h4>
+                        </div>
                     </div>
-                    {/* Compact timer */}
-                    <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-150 dark:border-slate-800">
+
+                    {/* Timer */}
+                    <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800">
                         <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
                         <span>{(() => {
                             const mins = Math.floor(secondsElapsed / 60);
@@ -621,81 +775,146 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                             return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
                         })()}</span>
                     </div>
+
+                    {/* Controls */}
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => toggleWidgetMinimized(false)}
+                            title="Expand active class widget"
+                            className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer"
+                        >
+                            <span className="material-symbols-outlined text-base">open_in_full</span>
+                        </button>
+                        <Link
+                            href={`/teacher-dashboard/classrooms/${activeSession.classroomId}/meeting`}
+                            className="px-3 py-1.5 bg-[#ecb613] hover:bg-amber-500 text-slate-950 rounded-xl text-[10px] font-black tracking-wide uppercase transition-all shadow-sm flex items-center gap-1 hover:scale-105 active:scale-95 text-center cursor-pointer"
+                            title="Open started classroom"
+                        >
+                            <span className="material-symbols-outlined text-sm">fullscreen</span>
+                            Maximize
+                        </Link>
+                    </div>
                 </div>
+            ) : (
+                /* Maximized Card View */
+                <div
+                    ref={widgetRef}
+                    onMouseDown={handleDragStart}
+                    onTouchStart={handleDragStart}
+                    style={widgetPos ? { left: `${widgetPos.x}px`, top: `${widgetPos.y}px`, right: 'auto', bottom: 'auto' } : undefined}
+                    className={`${widgetPos ? 'fixed z-[150]' : 'fixed bottom-6 right-6 z-[150]'} w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 flex flex-col gap-3 animate-in slide-in-from-bottom-5 duration-300 text-left cursor-grab active:cursor-grabbing select-none`}
+                >
+                    {/* Glowing active indicator, drag handle, timer, and minimize button */}
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-slate-400 dark:text-slate-500 text-sm cursor-grab">drag_indicator</span>
+                            <span className="relative flex h-2.5 w-2.5">
+                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                                    activeSession.sessionType === 'online' ? 'bg-blue-400' : 'bg-amber-400'
+                                }`}></span>
+                                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                                    activeSession.sessionType === 'online' ? 'bg-blue-500' : 'bg-amber-500'
+                                }`}></span>
+                            </span>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 font-mono">
+                                Ongoing {activeSession.sessionType === 'online' ? 'Online' : 'In-Person'} Class
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            {/* Compact timer */}
+                            <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-150 dark:border-slate-800">
+                                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
+                                <span>{(() => {
+                                    const mins = Math.floor(secondsElapsed / 60);
+                                    const secs = secondsElapsed % 60;
+                                    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                                })()}</span>
+                            </div>
+                            {/* Minimize Widget Button */}
+                            <button
+                                onClick={() => toggleWidgetMinimized(true)}
+                                title="Minimize active class widget"
+                                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-base">close_fullscreen</span>
+                            </button>
+                        </div>
+                    </div>
 
-                <div className="text-left space-y-1">
-                    <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">{activeSession.classroomName}</h4>
-                    <p className="text-[10px] text-slate-500 font-medium">Session in progress. Navigate away safely; your progress is preserved.</p>
-                </div>
+                    <div className="text-left space-y-1">
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white truncate">{activeSession.classroomName}</h4>
+                        <p className="text-[10px] text-slate-500 font-medium">Classroom is started. Navigate away safely; your session remains active.</p>
+                    </div>
 
-                {/* Direct action triggers */}
-                <div className="flex gap-2 mt-1">
-                    <button
-                        onClick={async () => {
-                            if (confirm('Are you sure you want to end this active class session?')) {
-                                try {
-                                    const startedAtTime = activeSession.startedAt;
-                                    const endedAtTime = Date.now();
-                                    const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
-                                    
-                                    // 1. Fetch attendance counts to log correctly
-                                    const { data: attData } = await supabaseAuth
-                                        .from('attendance')
-                                        .select('status')
-                                        .eq('classroom_id', activeSession.classroomId)
-                                        .eq('date', activeSession.sessionDate);
-                                    
-                                    const present = attData?.filter(a => a.status === 'present').length || 0;
-                                    const absent = attData?.filter(a => a.status === 'absent').length || 0;
-                                    const late = attData?.filter(a => a.status === 'late').length || 0;
-                                    const excused = attData?.filter(a => a.status === 'excused').length || 0;
-                                    
-                                    // 2. Call RPC to end classroom session transactionally and log history
-                                    await supabaseAuth.rpc('end_classroom_session', {
-                                        p_classroom_id: activeSession.classroomId,
-                                        p_session_date: activeSession.sessionDate,
-                                        p_session_type: activeSession.sessionType,
-                                        p_started_at: new Date(startedAtTime).toISOString(),
-                                        p_ended_at: new Date(endedAtTime).toISOString(),
-                                        p_duration_seconds: durationSecs,
-                                        p_present_count: present,
-                                        p_absent_count: absent,
-                                        p_late_count: late,
-                                        p_excused_count: excused
-                                    });
+                    {/* Direct action triggers */}
+                    <div className="flex gap-2 mt-1">
+                        <button
+                            onClick={async () => {
+                                if (confirm('Are you sure you want to end this active class session?')) {
+                                    try {
+                                        const startedAtTime = activeSession.startedAt;
+                                        const endedAtTime = Date.now();
+                                        const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
+                                        
+                                        // 1. Fetch attendance counts to log correctly
+                                        const { data: attData } = await supabaseAuth
+                                            .from('attendance')
+                                            .select('status')
+                                            .eq('classroom_id', activeSession.classroomId)
+                                            .eq('date', activeSession.sessionDate);
+                                        
+                                        const present = attData?.filter(a => a.status === 'present').length || 0;
+                                        const absent = attData?.filter(a => a.status === 'absent').length || 0;
+                                        const late = attData?.filter(a => a.status === 'late').length || 0;
+                                        const excused = attData?.filter(a => a.status === 'excused').length || 0;
+                                        
+                                        // 2. Call RPC to end classroom session transactionally and log history
+                                        await supabaseAuth.rpc('end_classroom_session', {
+                                            p_classroom_id: activeSession.classroomId,
+                                            p_session_date: activeSession.sessionDate,
+                                            p_session_type: activeSession.sessionType,
+                                            p_started_at: new Date(startedAtTime).toISOString(),
+                                            p_ended_at: new Date(endedAtTime).toISOString(),
+                                            p_duration_seconds: durationSecs,
+                                            p_present_count: present,
+                                            p_absent_count: absent,
+                                            p_late_count: late,
+                                            p_excused_count: excused
+                                        });
 
-                                    // 3. Clear classrooms live state
-                                    await supabaseAuth
-                                        .from('classrooms')
-                                        .update({
-                                            is_live: false,
-                                            live_meeting_link: null,
-                                            live_session_started_at: null
-                                        })
-                                        .eq('id', activeSession.classroomId);
+                                        // 3. Clear classrooms live state
+                                        await supabaseAuth
+                                            .from('classrooms')
+                                            .update({
+                                                is_live: false,
+                                                live_meeting_link: null,
+                                                live_session_started_at: null
+                                            })
+                                            .eq('id', activeSession.classroomId);
 
-                                    localStorage.removeItem('active_class_session');
-                                    window.location.reload();
-                                } catch (err) {
-                                    console.error('Error ending class session from sidebar:', err);
-                                    alert('Failed to end classroom session. Please try again.');
+                                        localStorage.removeItem('active_class_session');
+                                        window.location.reload();
+                                    } catch (err) {
+                                        console.error('Error ending class session from sidebar:', err);
+                                        alert('Failed to end classroom session. Please try again.');
+                                    }
                                 }
-                            }
-                        }}
-                        className="flex-1 py-2 border border-rose-200 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-950/20 text-rose-600 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95"
-                    >
-                        <span className="material-symbols-outlined text-sm">logout</span>
-                        End Class
-                    </button>
-                    <Link
-                        href={`/teacher-dashboard/classrooms/${activeSession.classroomId}/meeting`}
-                        className="flex-1 py-2 bg-[#ecb613] hover:bg-amber-500 text-slate-950 rounded-xl text-[11px] font-black tracking-wide uppercase transition-all shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-95 text-center"
-                    >
-                        <span className="material-symbols-outlined text-sm">screen_share</span>
-                        Resume
-                    </Link>
+                            }}
+                            className="flex-1 py-2 border border-rose-200 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-950/20 text-rose-600 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                        >
+                            <span className="material-symbols-outlined text-sm">logout</span>
+                            End Class
+                        </button>
+                        <Link
+                            href={`/teacher-dashboard/classrooms/${activeSession.classroomId}/meeting`}
+                            className="flex-1 py-2 bg-[#ecb613] hover:bg-amber-500 text-slate-950 rounded-xl text-[11px] font-black tracking-wide uppercase transition-all shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5 hover:scale-[1.02] active:scale-95 text-center cursor-pointer"
+                        >
+                            <span className="material-symbols-outlined text-sm">fullscreen</span>
+                            Maximize
+                        </Link>
+                    </div>
                 </div>
-            </div>
+            )
         )}
     </>
 );
