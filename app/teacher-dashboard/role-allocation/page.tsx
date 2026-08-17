@@ -92,8 +92,8 @@ export default function RoleAllocationDashboard() {
 
             setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
 
-            // 3. Fetch All Users with Classroom Student relationships
-            const { data: usersData, error: usersError } = await supabaseAuth
+            // 3. Fetch All Users and Classrooms IN PARALLEL!
+            const usersReq = supabaseAuth
                 .from('users')
                 .select(`
                     id, name, email, phone, role, status, join_date, teacher_id, level,
@@ -104,16 +104,22 @@ export default function RoleAllocationDashboard() {
                     )
                 `);
 
+            const classroomsReq = supabaseAuth
+                .from('classrooms')
+                .select('id, name, teacher_id, status');
+
+            const [
+                { data: usersData, error: usersError },
+                { data: classroomsData }
+            ] = await Promise.all([
+                usersReq,
+                classroomsReq
+            ]);
+
             if (usersError) throw usersError;
             if (usersData) {
                 setUsersList(usersData as unknown as UserProfile[]);
             }
-
-            // 4. Fetch All Classrooms
-            const { data: classroomsData } = await supabaseAuth
-                .from('classrooms')
-                .select('id, name, teacher_id, status');
-            
             if (classroomsData) {
                 setClassrooms(classroomsData as Classroom[]);
             }

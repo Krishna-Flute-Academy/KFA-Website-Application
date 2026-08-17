@@ -39,7 +39,7 @@ const METRONOME_PRESETS = [
     { name: 'Articulation Check', bpm: 100, beats: 6, icon: '♩', desc: 'Complex beat patternsCheck' },
 ];
 
-const METRONOME_SOUNDS = ['Woodblock', 'Tabla', 'Bell', 'Dholak', 'Flute Breath'];
+const METRONOME_SOUNDS = ['Woodblock', 'Bell'];
 
 // ── TABLA TAAL CONSTANTS ────────────────────────────────────────────────────
 type BolStroke = 'dha' | 'dhin' | 'na' | 'ta' | 'ka' | 'ge' | 'tin' | 'silence';
@@ -383,13 +383,12 @@ function Ripple({ id }: { id: number }) {
     );
 }
 
-export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'tanpura' | 'drums' | 'combosetup' | 'tabla' }) {
+export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }: { onClose: () => void; defaultTab?: 'metronome' | 'tanpura' | 'drums' | 'combosetup' }) {
     // ── GENERAL STATES ──────────────────────────────────────────────────────
-    const [activeTool, setActiveTool] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup' | 'tabla'>(() => {
+    const [activeTool, setActiveTool] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>(() => {
         if (defaultTab === 'combosetup') return 'combosetup';
         if (defaultTab === 'drums') return 'drums';
         if (defaultTab === 'tanpura') return 'tanpura';
-        if (defaultTab === 'tabla') return 'tabla';
         return 'metronome';
     });
     const activeRhythmTab = activeTool === 'drums' ? 'drums' : 'metronome';
@@ -899,8 +898,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
             gain.connect(ctx.destination);
             
             const freqMap: Record<string, [number, number]> = {
-                Woodblock: [880, 660], Tabla: [220, 165], Bell: [1200, 900],
-                Dholak: [180, 140], 'Flute Breath': [600, 450],
+                Woodblock: [880, 660], Bell: [1200, 900],
             };
             const [hf, lf] = freqMap[metronomeSoundRef.current] || [880, 660];
             osc.frequency.value = down ? hf : lf;
@@ -1237,72 +1235,101 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
     const knobDeg = ((bpm - 20) / 220) * 270 - 135;
 
+    // Sync defaultTab changes to activeTool & auto-unminimize when user clicks a tool from UI
+    useEffect(() => {
+        if (defaultTab) {
+            setActiveTool(defaultTab);
+            setIsMinimized(false);
+        }
+    }, [defaultTab]);
+
     if (isMinimized) {
         return (
-            <div className="fixed bottom-6 right-6 z-[100] w-[360px] bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-2xl border border-[#d46211]/30 shadow-2xl p-5 flex flex-col gap-4 text-white text-left font-sans select-none" style={{ fontFamily: 'Lexend, sans-serif' }}>
+            <div className="fixed bottom-5 right-5 z-[100] w-[380px] max-w-[calc(100vw-2.5rem)] bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-2xl border border-[#d46211]/40 shadow-2xl p-4 flex flex-col gap-3 text-white text-left font-sans select-none backdrop-blur-xl animate-in slide-in-from-bottom-4 duration-300" style={{ fontFamily: 'Lexend, sans-serif' }}>
                 
-                {/* Minimized Header */}
-                <div className="flex items-center justify-between pb-2 border-b border-[#d46211]/10">
+                {/* Minimized Header & Tool Quick Switcher */}
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
                     <div className="flex items-center gap-2">
-                        <Compass className="w-5 h-5 text-[#d46211]" />
-                        <span className="font-extrabold text-sm tracking-tight">
-                            {activeTool === 'tanpura' ? 'KFA Tanpura' : activeTool === 'metronome' ? 'KFA Metronome' : 'KFA Drum Beats'}
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#d46211] animate-pulse" />
+                        <span className="font-extrabold text-xs tracking-tight text-amber-500 uppercase font-mono">
+                            {activeTool === 'tanpura' ? 'KFA Tanpura' : activeTool === 'metronome' ? 'KFA Metronome' : activeTool === 'drums' ? 'KFA Drum Beats' : 'KFA Combo Mixer'}
                         </span>
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    {/* Quick Tab Switcher */}
+                    <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/5">
+                        {([
+                            { id: 'metronome', label: 'Metronome', icon: '♩' },
+                            { id: 'tanpura',   label: 'Tanpura',   icon: '♪' },
+                            { id: 'drums',     label: 'Drums',     icon: '⬡' },
+                            { id: 'combosetup',label: 'Combo',     icon: '⊞' },
+                        ] as const).map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTool(tab.id)}
+                                title={tab.label}
+                                className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                                    activeTool === tab.id
+                                        ? 'bg-[#d46211] text-white shadow-sm'
+                                        : 'text-white/40 hover:text-white hover:bg-white/10'
+                                }`}
+                            >
+                                {tab.icon}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
                         <button 
                             onClick={() => setIsMinimized(false)} 
-                            title="Expand to Fullscreen"
-                            className="p-1.5 rounded-lg border border-white/5 bg-white/5 text-white/50 hover:text-white hover:border-white/20 transition-all"
+                            title="Expand to Full View"
+                            className="p-1.5 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:border-white/30 transition-all"
                         >
-                            <Maximize2 className="w-4 h-4" />
+                            <Maximize2 className="w-3.5 h-3.5" />
                         </button>
                         <button 
                             onClick={handleClose} 
-                            title="Close"
-                            className="p-1.5 rounded-lg border border-white/5 bg-white/5 text-white/50 hover:text-white hover:border-[#d46211]/50 transition-all hover:bg-red-500/10 hover:text-red-400"
+                            title="Stop Audio & Close"
+                            className="p-1.5 rounded-lg border border-white/10 bg-white/5 text-white/50 hover:text-white hover:border-[#d46211]/50 transition-all hover:bg-red-500/20 hover:text-red-400"
                         >
-                            <X className="w-4 h-4" />
+                            <X className="w-3.5 h-3.5" />
                         </button>
                     </div>
                 </div>
 
                 {/* 1. Tanpura Section */}
                 {activeTool === 'tanpura' && (
-                    <div className="flex flex-col gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5">
-                        <div className="flex justify-between items-center">
-                            <span className="text-xs font-black text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
-                                <Music className="w-4 h-4" /> Tanpura
+                    <div className="flex flex-col gap-2.5 bg-black/30 p-3 rounded-xl border border-white/5">
+                        <div className="flex justify-between items-center text-[11px]">
+                            <span className="font-extrabold text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
+                                <Music className="w-3.5 h-3.5" /> {selectedPitch.label}
                             </span>
-                            <span className="text-xs font-bold text-white/55 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md uppercase tracking-wider">{selectedPitch.label}</span>
+                            <span className="font-bold text-white/60 truncate max-w-[150px]">{selectedTuningMode.label}</span>
                         </div>
                         
                         <div className="flex items-center gap-3">
                             <button 
                                 onClick={() => setIsTanpuraPlaying(!isTanpuraPlaying)}
-                                className={`h-10 px-4 rounded-lg font-bold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
+                                className={`h-9 px-3.5 rounded-lg font-extrabold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
                                     isTanpuraPlaying 
-                                        ? 'bg-[#d46211]/15 border border-[#d46211]/30 text-[#d46211] hover:bg-[#d46211]/25' 
-                                        : 'bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
+                                        ? 'bg-[#d46211]/20 border border-[#d46211]/40 text-[#d46211] hover:bg-[#d46211]/30' 
+                                        : 'bg-[#d46211] text-white hover:bg-[#c05510]'
                                 }`}
                             >
                                 {isTanpuraPlaying ? (
-                                    <><Square className="w-3.5 h-3.5 fill-[#d46211]" /> Stop</>
+                                    <><Square className="w-3 h-3 fill-[#d46211]" /> Stop</>
                                 ) : (
-                                    <><Play className="w-3.5 h-3.5 fill-white/70" /> Play</>
+                                    <><Play className="w-3 h-3 fill-white" /> Play</>
                                 )}
                             </button>
                             
-                            <div className="flex-1 flex flex-col gap-1">
-                                <span className="text-xs text-white/70 font-semibold truncate leading-none">{selectedTuningMode.label}</span>
-                                <div className="flex items-center gap-2">
-                                    <Volume2 className="w-4 h-4 text-white/40" />
-                                    <input 
-                                        type="range" min="0" max="1.0" step="0.05" value={tanpuraVolume}
-                                        onChange={(e) => setTanpuraVolume(parseFloat(e.target.value))}
-                                        className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                    />
-                                </div>
+                            <div className="flex-1 flex items-center gap-2">
+                                <Volume2 className="w-3.5 h-3.5 text-white/40 shrink-0" />
+                                <input 
+                                    type="range" min="0" max="1.0" step="0.05" value={tanpuraVolume}
+                                    onChange={(e) => setTanpuraVolume(parseFloat(e.target.value))}
+                                    className="w-full h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
+                                />
                             </div>
                         </div>
                     </div>
@@ -1310,12 +1337,26 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                 {/* 2. Metronome Section */}
                 {activeTool === 'metronome' && (
-                    <div className="flex flex-col gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5">
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
-                                <Volume2 className="w-4 h-4" /> Metronome
+                    <div className="flex flex-col gap-2.5 bg-black/30 p-3 rounded-xl border border-white/5">
+                        <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-extrabold text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
+                                <Volume2 className="w-3.5 h-3.5" /> Beat {metronomeBeats}/4
                             </span>
-                            <span className="text-xs font-bold text-white/55 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md uppercase tracking-wider">{bpm} BPM</span>
+                            <span className="font-bold text-white/80 font-mono bg-white/10 px-2 py-0.5 rounded-md">{bpm} BPM</span>
+                        </div>
+
+                        {/* Beat Visualizer Indicators */}
+                        <div className="flex items-center gap-1.5 justify-center py-1">
+                            {Array.from({ length: metronomeBeats }).map((_, i) => (
+                                <div 
+                                    key={i} 
+                                    className={`h-2 flex-1 rounded-full transition-all duration-100 ${
+                                        currentMetronomeBeat === i 
+                                            ? 'bg-amber-400 shadow-[0_0_8px_#f59e0b]' 
+                                            : 'bg-white/15'
+                                    }`} 
+                                />
+                            ))}
                         </div>
                         
                         <div className="flex items-center gap-3">
@@ -1324,27 +1365,29 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                     getCtx().resume();
                                     setIsMetronomePlaying(!isMetronomePlaying);
                                 }}
-                                className={`h-10 px-4 rounded-lg font-bold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
+                                className={`h-9 px-3.5 rounded-lg font-extrabold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
                                     isMetronomePlaying 
-                                        ? 'bg-[#d46211]/15 border border-[#d46211]/30 text-[#d46211] hover:bg-[#d46211]/25' 
+                                        ? 'bg-[#d46211]/20 border border-[#d46211]/40 text-[#d46211] hover:bg-[#d46211]/30' 
                                         : 'bg-[#d46211] text-white hover:bg-[#c05510]'
                                 }`}
                             >
                                 {isMetronomePlaying ? (
-                                    <><Square className="w-3.5 h-3.5 fill-[#d46211]" /> Stop</>
+                                    <><Square className="w-3 h-3 fill-[#d46211]" /> Stop</>
                                 ) : (
-                                    <><Play className="w-3.5 h-3.5 fill-white" /> Play</>
+                                    <><Play className="w-3 h-3 fill-white" /> Play</>
                                 )}
                             </button>
                             
-                            <div className="flex-1 flex flex-col gap-1">
-                                <div className="flex items-center justify-between">
-                                    <button onClick={() => setBpm(b => Math.max(20, Math.min(240, b - 1)))} className="w-6 h-6 rounded-full border border-white/15 text-white/60 hover:bg-white/5 flex items-center justify-center font-bold text-xs">-</button>
-                                    <span className="text-xs font-mono text-white/80 font-bold">{bpm} BPM</span>
-                                    <button onClick={() => setBpm(b => Math.max(20, Math.min(240, b + 1)))} className="w-6 h-6 rounded-full border border-white/15 text-white/60 hover:bg-white/5 flex items-center justify-center font-bold text-xs">+</button>
+                            <div className="flex-1 flex flex-col gap-1.5">
+                                <div className="flex items-center justify-between gap-1">
+                                    <button onClick={() => setBpm(b => Math.max(20, b - 5))} className="px-1.5 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold">-5</button>
+                                    <button onClick={() => setBpm(b => Math.max(20, b - 1))} className="w-6 h-6 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-xs">-</button>
+                                    <span className="text-xs font-mono text-white font-black">{bpm}</span>
+                                    <button onClick={() => setBpm(b => Math.min(240, b + 1))} className="w-6 h-6 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-xs">+</button>
+                                    <button onClick={() => setBpm(b => Math.min(240, b + 5))} className="px-1.5 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold">+5</button>
                                 </div>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <Volume2 className="w-4 h-4 text-white/40" />
+                                <div className="flex items-center gap-2">
+                                    <Volume2 className="w-3.5 h-3.5 text-white/40 shrink-0" />
                                     <input 
                                         type="range" min="0" max="1.0" step="0.05" value={metronomeVolume}
                                         onChange={(e) => setMetronomeVolume(parseFloat(e.target.value))}
@@ -1358,41 +1401,40 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                 {/* 3. Drum Beats Section */}
                 {activeTool === 'drums' && (
-                    <div className="flex flex-col gap-3 bg-black/20 p-3.5 rounded-xl border border-white/5">
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
+                    <div className="flex flex-col gap-2.5 bg-black/30 p-3 rounded-xl border border-white/5">
+                        <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-extrabold text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
                                 <span className="material-symbols-outlined text-sm font-bold">album</span> Drums
                             </span>
-                            <span className="text-xs font-bold text-white/55 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md uppercase tracking-wider">{selectedDrumsPresetName}</span>
+                            <span className="font-bold text-white/60 truncate max-w-[160px]">{selectedDrumsPresetName}</span>
                         </div>
                         
                         <div className="flex items-center gap-3">
                             <button 
                                 onClick={() => setIsDrumsPlaying(!isDrumsPlaying)}
-                                className={`h-10 px-4 rounded-lg font-bold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
+                                className={`h-9 px-3.5 rounded-lg font-extrabold text-xs tracking-wide uppercase transition-all flex items-center gap-1.5 shrink-0 ${
                                     isDrumsPlaying 
-                                        ? 'bg-[#d46211]/15 border border-[#d46211]/30 text-[#d46211] hover:bg-[#d46211]/25' 
+                                        ? 'bg-[#d46211]/20 border border-[#d46211]/40 text-[#d46211] hover:bg-[#d46211]/30' 
                                         : 'bg-[#d46211] text-white hover:bg-[#c05510]'
                                 }`}
                             >
                                 {isDrumsPlaying ? (
-                                    <><Square className="w-3.5 h-3.5 fill-[#d46211]" /> Stop</>
+                                    <><Square className="w-3 h-3 fill-[#d46211]" /> Stop</>
                                 ) : (
-                                    <><Play className="w-3.5 h-3.5 fill-white" /> Play</>
+                                    <><Play className="w-3 h-3 fill-white" /> Play</>
                                 )}
                             </button>
                             
-                            <div className="flex-1 flex flex-col gap-1">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[10px] text-white/50 font-bold uppercase">{selectedDrumsTimeSig.name} Time Sig</span>
-                                    <div className="flex items-center gap-1.5">
-                                        <button onClick={() => setBpm(b => Math.max(20, Math.min(240, b - 1)))} className="w-5 h-5 rounded-full border border-white/15 text-white/60 hover:bg-white/5 flex items-center justify-center font-bold text-xs">-</button>
-                                        <span className="text-[11px] font-mono text-white/80 font-bold">{bpm} BPM</span>
-                                        <button onClick={() => setBpm(b => Math.max(20, Math.min(240, b + 1)))} className="w-5 h-5 rounded-full border border-white/15 text-white/60 hover:bg-white/5 flex items-center justify-center font-bold text-xs">+</button>
-                                    </div>
+                            <div className="flex-1 flex flex-col gap-1.5">
+                                <div className="flex items-center justify-between gap-1">
+                                    <button onClick={() => setBpm(b => Math.max(20, b - 5))} className="px-1.5 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold">-5</button>
+                                    <button onClick={() => setBpm(b => Math.max(20, b - 1))} className="w-6 h-6 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-xs">-</button>
+                                    <span className="text-xs font-mono text-white font-black">{bpm} BPM</span>
+                                    <button onClick={() => setBpm(b => Math.min(240, b + 1))} className="w-6 h-6 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-xs">+</button>
+                                    <button onClick={() => setBpm(b => Math.min(240, b + 5))} className="px-1.5 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold">+5</button>
                                 </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                    <Volume2 className="w-4 h-4 text-white/40" />
+                                <div className="flex items-center gap-2">
+                                    <Volume2 className="w-3.5 h-3.5 text-white/40 shrink-0" />
                                     <input 
                                         type="range" min="0" max="1.0" step="0.05" value={drumsVolume}
                                         onChange={(e) => setDrumsVolume(parseFloat(e.target.value))}
@@ -1403,14 +1445,40 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         </div>
                     </div>
                 )}
+
+                {/* 4. Combo Setup Section */}
+                {activeTool === 'combosetup' && (
+                    <div className="flex flex-col gap-2.5 bg-black/30 p-3 rounded-xl border border-white/5">
+                        <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-extrabold text-[#d46211] uppercase tracking-wider flex items-center gap-1.5">
+                                ⊞ Combo Mixer
+                            </span>
+                            <span className="font-bold text-white/80 font-mono bg-white/10 px-2 py-0.5 rounded-md">{bpm} BPM</span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-[10px] font-extrabold">
+                            <span className={`px-2 py-0.5 rounded ${isMetronomePlaying ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-white/30'}`}>Metro</span>
+                            <span className={`px-2 py-0.5 rounded ${isTanpuraPlaying ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-white/30'}`}>Tanpura</span>
+                            <span className={`px-2 py-0.5 rounded ${isDrumsPlaying ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-white/30'}`}>Drums</span>
+                        </div>
+                        
+                        <div className="flex items-center justify-between gap-1 pt-1 border-t border-white/5">
+                            <button onClick={() => setBpm(b => Math.max(20, b - 5))} className="px-1.5 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold">-5</button>
+                            <button onClick={() => setBpm(b => Math.max(20, b - 1))} className="w-6 h-6 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-xs">-</button>
+                            <span className="text-xs font-mono text-white font-black">{bpm} BPM</span>
+                            <button onClick={() => setBpm(b => Math.min(240, b + 1))} className="w-6 h-6 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-xs">+</button>
+                            <button onClick={() => setBpm(b => Math.min(240, b + 5))} className="px-1.5 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold">+5</button>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-lg" onClick={e => e.target === e.currentTarget && handleClose()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-lg" onClick={e => e.target === e.currentTarget && setIsMinimized(true)}>
             <div className={`relative w-full bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-3xl border border-[#d46211]/25 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${
-                activeTool === 'tanpura' ? 'max-w-md h-auto my-auto' : activeTool === 'metronome' ? 'max-w-2xl h-auto my-auto' : activeTool === 'drums' ? 'max-w-5xl h-auto my-auto' : activeTool === 'tabla' ? 'max-w-3xl h-auto my-auto' : 'max-w-4xl h-auto my-auto'
+                activeTool === 'tanpura' ? 'max-w-md h-auto my-auto' : activeTool === 'metronome' ? 'max-w-2xl h-auto my-auto' : activeTool === 'drums' ? 'max-w-5xl h-auto my-auto' : 'max-w-4xl h-auto my-auto'
             }`}>
                 
                 {/* Header */}
@@ -1421,15 +1489,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                 <Music className="w-5 h-5" />
                             ) : activeTool === 'metronome' ? (
                                 <Volume2 className="w-5 h-5" />
-                            ) : activeTool === 'tabla' ? (
-                                <span className="text-lg font-black">ताल</span>
                             ) : (
                                 <span className="material-symbols-outlined text-xl font-bold">album</span>
                             )}
                         </div>
                         <div>
                             <h2 className="text-white font-black text-sm md:text-base tracking-tight animate-in fade-in duration-300">
-                                {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : activeTool === 'drums' ? 'Drum Beats Sequencer' : activeTool === 'tabla' ? 'Tabla Taal Player' : 'Combo Session Mixer'}
+                                {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : activeTool === 'drums' ? 'Drum Beats Sequencer' : 'Combo Session Mixer'}
                             </h2>
                             <p className="text-[#d46211]/60 text-xs md:text-sm animate-in fade-in duration-300">
                                 {activeTool === 'tanpura' 
@@ -1438,9 +1504,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                         ? 'Keep perfect time with speed adjustments' 
                                         : activeTool === 'drums'
                                             ? 'Interactive step sequencer for flute play-along grooves'
-                                            : activeTool === 'tabla'
-                                                ? 'Authentic taals in all scales for riyaz practice'
-                                                : 'Club and control multiple practice tools simultaneously'}
+                                            : 'Club and control multiple practice tools simultaneously'}
                             </p>
                         </div>
                     </div>
@@ -1455,8 +1519,14 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                             <Minimize2 className="w-4 h-4" />
                         </button>
                         <button 
-                            onClick={handleClose} 
-                            title="Close" 
+                            onClick={() => {
+                                if (isMetronomePlaying || isTanpuraPlaying || isDrumsPlaying) {
+                                    setIsMinimized(true);
+                                } else {
+                                    handleClose();
+                                }
+                            }} 
+                            title={isMetronomePlaying || isTanpuraPlaying || isDrumsPlaying ? "Minimize to background (audio playing)" : "Close"} 
                             className="p-2 rounded-xl border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all"
                         >
                             <X className="w-4 h-4" />
@@ -1469,7 +1539,6 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                     {([
                         { id: 'tanpura',   label: 'Tanpura',   icon: '♪' },
                         { id: 'metronome', label: 'Metronome', icon: '♩' },
-                        { id: 'tabla',     label: 'Tabla Taal',icon: 'ताल' },
                         { id: 'drums',     label: 'Drum Beats',icon: '⬡' },
                         { id: 'combosetup',label: 'Combo',     icon: '⊞' },
                     ] as const).map(tab => (
@@ -1599,228 +1668,6 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                         <><Play className="w-3.5 h-3.5 fill-white" /> Play Drone</>
                                     )}
                                 </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ──── VIEW 1B: TABLA TAAL ──── */}
-                    {activeTool === 'tabla' && (
-                        <div className="w-full p-5 flex flex-col gap-5 overflow-y-auto max-h-[85vh] animate-in fade-in duration-200">
-
-                            {/* Hero banner with tabla image */}
-                            <div className="relative h-36 rounded-2xl overflow-hidden border border-white/5 shadow-inner">
-                                <img
-                                    src="/images/tabla_drums.jpg"
-                                    alt="Tabla Drums"
-                                    className="w-full h-full object-cover object-center"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-r from-[#0c0f12]/90 via-[#0c0f12]/50 to-transparent" />
-                                <div className="absolute inset-0 flex flex-col justify-center px-6">
-                                    <span className="text-[10px] font-black text-[#d46211] uppercase tracking-[0.2em] mb-1">Currently Playing</span>
-                                    <h3 className="text-2xl font-black text-white tracking-tight">{selectedTaal.name}</h3>
-                                    <p className="text-sm font-bold text-white/50">{selectedTaal.nameHindi} &nbsp;•&nbsp; {selectedTaal.totalMatras} Matras</p>
-                                </div>
-                                {/* Live indicator */}
-                                {isTablaPlaying && (
-                                    <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-full border border-[#d46211]/30">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-[#d46211] animate-pulse" />
-                                        <span className="text-[10px] font-black text-[#d46211] uppercase tracking-widest">Live</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-                                {/* LEFT: Taal Selector */}
-                                <div className="flex flex-col gap-4">
-                                    <div>
-                                        <span className="text-[#d46211]/70 text-[10px] font-black uppercase tracking-wider block mb-2">Select Taal</span>
-                                        <div className="flex flex-col gap-1.5">
-                                            {TABLA_TAALS.map(taal => (
-                                                <button
-                                                    key={taal.id}
-                                                    onClick={() => {
-                                                        setSelectedTaal(taal);
-                                                        setTaalBpm(taal.defaultBpm[selectedLaya]);
-                                                        restartTablaIfPlaying();
-                                                    }}
-                                                    className={`w-full text-left px-3.5 py-2.5 rounded-xl border transition-all ${
-                                                        selectedTaal.id === taal.id
-                                                            ? 'bg-[#d46211]/10 border-[#d46211]/60 text-white'
-                                                            : 'border-white/5 bg-white/3 text-white/50 hover:border-white/15 hover:text-white/80'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center justify-between">
-                                                        <div>
-                                                            <span className="font-extrabold text-sm block leading-tight">{taal.name}</span>
-                                                            <span className={`text-[10px] font-bold ${selectedTaal.id === taal.id ? 'text-[#d46211]/70' : 'text-white/30'}`}>{taal.nameHindi}</span>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <span className={`text-xs font-black px-2 py-0.5 rounded-md ${
-                                                                selectedTaal.id === taal.id ? 'bg-[#d46211]/20 text-[#d46211]' : 'bg-white/5 text-white/30'
-                                                            }`}>{taal.totalMatras} M</span>
-                                                        </div>
-                                                    </div>
-                                                    {selectedTaal.id === taal.id && (
-                                                        <p className="text-[10px] text-white/40 mt-1">{taal.description}</p>
-                                                    )}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Scale / Shruti */}
-                                    <div>
-                                        <span className="text-[#d46211]/70 text-[10px] font-black uppercase tracking-wider block mb-2">Tabla Scale (Shruti)</span>
-                                        <div className="grid grid-cols-4 gap-1">
-                                            {SHRU_PITCHES.map(pitch => (
-                                                <button
-                                                    key={pitch.label}
-                                                    onClick={() => setTablaScale(pitch)}
-                                                    className={`py-1.5 rounded-lg text-center font-bold text-xs transition-all border ${
-                                                        tablaScale.label === pitch.label
-                                                            ? 'bg-[#d46211] border-[#d46211] text-white'
-                                                            : 'border-[#d46211]/15 text-[#d46211]/50 hover:border-[#d46211]/30 hover:text-white'
-                                                    }`}
-                                                >
-                                                    {pitch.label.split(' ')[0]}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* RIGHT: Laya + BPM + Matra Visualizer + Play */}
-                                <div className="flex flex-col gap-4">
-
-                                    {/* Laya (Speed preset) */}
-                                    <div>
-                                        <span className="text-[#d46211]/70 text-[10px] font-black uppercase tracking-wider block mb-2">Laya (Speed)</span>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {TABLA_LAYA.map(l => (
-                                                <button
-                                                    key={l.id}
-                                                    onClick={() => {
-                                                        setSelectedLaya(l.id);
-                                                        setTaalBpm(selectedTaal.defaultBpm[l.id]);
-                                                        restartTablaIfPlaying();
-                                                    }}
-                                                    className={`flex flex-col items-center py-2.5 rounded-xl border transition-all ${
-                                                        selectedLaya === l.id
-                                                            ? 'bg-[#d46211]/10 border-[#d46211]/50 text-white'
-                                                            : 'border-white/5 text-white/40 hover:border-white/15'
-                                                    }`}
-                                                >
-                                                    <span className="text-xs font-black">{l.label}</span>
-                                                    <span className={`text-[10px] font-bold ${selectedLaya === l.id ? 'text-[#d46211]' : 'text-white/25'}`}>{l.labelHindi}</span>
-                                                    <span className={`text-[9px] font-bold mt-0.5 ${selectedLaya === l.id ? 'text-white/50' : 'text-white/20'}`}>{selectedTaal.defaultBpm[l.id]} BPM</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Fine BPM control */}
-                                    <div className="bg-black/30 border border-white/5 rounded-xl px-4 py-3">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-[10px] font-black text-white/40 uppercase tracking-wider">Fine BPM</span>
-                                            <span className="text-sm font-black font-mono text-[#d46211]">{taalBpm}</span>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <button onClick={() => { const v = Math.max(20, taalBpm - 1); setTaalBpm(v); restartTablaIfPlaying(); }} className="w-7 h-7 rounded-lg border border-white/10 text-white/50 hover:bg-white/5 flex items-center justify-center font-black text-sm">-</button>
-                                            <input
-                                                type="range" min="20" max="300" step="1" value={taalBpm}
-                                                onChange={e => { setTaalBpm(Number(e.target.value)); restartTablaIfPlaying(); }}
-                                                className="flex-1 h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                            />
-                                            <button onClick={() => { const v = Math.min(300, taalBpm + 1); setTaalBpm(v); restartTablaIfPlaying(); }} className="w-7 h-7 rounded-lg border border-white/10 text-white/50 hover:bg-white/5 flex items-center justify-center font-black text-sm">+</button>
-                                        </div>
-                                    </div>
-
-                                    {/* Volume */}
-                                    <div className="bg-black/30 border border-white/5 rounded-xl px-4 py-3">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-[10px] font-black text-white/40 uppercase tracking-wider">Volume</span>
-                                            <span className="text-sm font-black font-mono text-[#d46211]">{Math.round(tablaVolume * 100)}%</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Volume2 className="w-4 h-4 text-white/30 shrink-0" />
-                                            <input
-                                                type="range" min="0" max="1" step="0.05" value={tablaVolume}
-                                                onChange={e => setTablaVolume(parseFloat(e.target.value))}
-                                                className="flex-1 h-1 bg-white/10 accent-[#d46211] rounded-lg cursor-pointer outline-none"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Play Button */}
-                                    <button
-                                        onClick={() => {
-                                            getCtx().resume();
-                                            setIsTablaPlaying(p => !p);
-                                        }}
-                                        className={`w-full h-12 rounded-xl font-extrabold text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 shadow-lg ${
-                                            isTablaPlaying
-                                                ? 'bg-white/10 border border-white/20 text-white hover:bg-white/15'
-                                                : 'bg-[#d46211] text-white shadow-orange-500/25 hover:bg-[#c05510]'
-                                        }`}
-                                    >
-                                        {isTablaPlaying
-                                            ? <><Square className="w-4 h-4 fill-white" /> Stop Tabla</>
-                                            : <><Play className="w-4 h-4 fill-white" /> Play Tabla</>}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Matra Visualizer — full width at bottom */}
-                            <div className="bg-black/40 border border-white/5 rounded-2xl p-4">
-                                <div className="flex items-center justify-between mb-3">
-                                    <span className="text-[10px] font-black text-[#d46211]/70 uppercase tracking-wider">Matra Cycle — {selectedTaal.name}</span>
-                                    <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-widest">
-                                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#d46211] inline-block" />Sam</span>
-                                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-300 inline-block" />Tali</span>
-                                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-white/20 inline-block" />Khali</span>
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {selectedTaal.matras.map((matra, idx) => {
-                                        const isActive = currentTaalMatra === idx;
-                                        const isSam = matra.accent === 'sam';
-                                        const isTali = matra.accent === 'tali';
-                                        const isKhali = matra.accent === 'khali';
-                                        const isVibhagStart = idx === 0 || selectedTaal.matras[idx - 1].vibhag !== matra.vibhag;
-                                        return (
-                                            <React.Fragment key={idx}>
-                                                {isVibhagStart && idx > 0 && (
-                                                    <div className="w-px self-stretch bg-white/10 mx-0.5" />
-                                                )}
-                                                <div className={`flex flex-col items-center gap-1 transition-all duration-75 ${
-                                                    isActive ? 'scale-110' : ''
-                                                }`}>
-                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-[10px] border transition-all ${
-                                                        isActive
-                                                            ? isSam
-                                                                ? 'bg-[#d46211] border-[#d46211] text-white shadow-lg shadow-orange-500/40'
-                                                                : isTali
-                                                                    ? 'bg-amber-300 border-amber-300 text-black shadow-md shadow-amber-400/30'
-                                                                    : 'bg-white/20 border-white/40 text-white'
-                                                            : isSam
-                                                                ? 'bg-[#d46211]/15 border-[#d46211]/40 text-[#d46211]'
-                                                                : isTali
-                                                                    ? 'bg-amber-300/10 border-amber-300/30 text-amber-300/80'
-                                                                    : 'bg-white/3 border-white/8 text-white/25'
-                                                    }`}>
-                                                        {matra.position}
-                                                    </div>
-                                                    <span className={`text-[9px] font-extrabold leading-none ${
-                                                        isActive ? 'text-white' : isSam ? 'text-[#d46211]/70' : 'text-white/30'
-                                                    }`}>{matra.bol}</span>
-                                                    {isSam && <span className="text-[8px] font-black text-[#d46211]/80 leading-none">X</span>}
-                                                    {isKhali && !isSam && <span className="text-[8px] font-black text-white/20 leading-none">0</span>}
-                                                </div>
-                                            </React.Fragment>
-                                        );
-                                    })}
-                                </div>
                             </div>
                         </div>
                     )}

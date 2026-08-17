@@ -177,77 +177,21 @@ export default function StudentDirectory() {
                 setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
                 const isAdminUser = profile.role === 'admin';
 
-                // 3. Fetch classrooms
-                const roomsQuery = supabaseAuth
-                    .from('classrooms')
-                    .select('id, name, teacher_id');
-                const { data: rooms } = isAdminUser
-                    ? await roomsQuery
-                    : await roomsQuery.eq('teacher_id', userId);
-
-                if (rooms) setClassrooms(rooms);
-
-                // Fetch teachers and build teacher name mapping
-                const teacherMap = new Map<string, string>();
-                const { data: teachersData } = await supabaseAuth
-                    .from('users')
-                    .select('id, name')
-                    .in('role', ['teacher', 'admin']);
-                
-                if (teachersData) {
-                    setTeachers(teachersData);
-                    teachersData.forEach(t => teacherMap.set(t.id, t.name));
-                }
-
-                // Fetch course lessons once
-                const { data: lessons } = await supabaseAuth.from('course_lessons').select('id');
-                const totalLessonsCount = lessons?.length || 0;
-
-                // Fetch active sessions from the last 5 minutes
+                // Parallelize all secondary fetches (rooms, teachers, lessons, sessions, attendance, progress, assignments, students)
                 const fiveMinutesAgoForQuery = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-                const { data: activeSessions } = await supabaseAuth
-                    .from('user_sessions')
-                    .select('user_id')
-                    .is('logout_at', null)
-                    .gt('last_activity_at', fiveMinutesAgoForQuery);
-                const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
 
-                // Fetch all attendance for mapping
-                const { data: allAttendance } = await supabaseAuth
-                    .from('attendance')
-                    .select('student_id, status');
-                const attendanceMap = new Map<string, string[]>();
-                allAttendance?.forEach(a => {
-                    if (!attendanceMap.has(a.student_id)) {
-                        attendanceMap.set(a.student_id, []);
-                    }
-                    attendanceMap.get(a.student_id)!.push(a.status);
-                });
+                const roomsReq = isAdminUser
+                    ? supabaseAuth.from('classrooms').select('id, name, teacher_id')
+                    : supabaseAuth.from('classrooms').select('id, name, teacher_id').eq('teacher_id', userId);
 
-                // Fetch all completed lessons for mapping
-                const { data: allProgress } = await supabaseAuth
-                    .from('student_topic_progress')
-                    .select('student_id')
-                    .eq('status', 'completed');
-                const progressCountMap = new Map<string, number>();
-                allProgress?.forEach(p => {
-                    progressCountMap.set(p.student_id, (progressCountMap.get(p.student_id) || 0) + 1);
-                });
+                const teachersReq = supabaseAuth.from('users').select('id, name').in('role', ['teacher', 'admin']);
+                const lessonsReq = supabaseAuth.from('course_lessons').select('id');
+                const sessionsReq = supabaseAuth.from('user_sessions').select('user_id').is('logout_at', null).gt('last_activity_at', fiveMinutesAgoForQuery);
+                const attendanceReq = supabaseAuth.from('attendance').select('student_id, status');
+                const progressReq = supabaseAuth.from('student_topic_progress').select('student_id').eq('status', 'completed');
+                const assignmentsReq = supabaseAuth.from('assignment_students').select('student_id, status, score');
 
-                // Fetch all assignments for mapping
-                const { data: allAssignments } = await supabaseAuth
-                    .from('assignment_students')
-                    .select('student_id, status, score');
-                const assignmentsMap = new Map<string, { status: string; score: number | null }[]>();
-                allAssignments?.forEach(a => {
-                    if (!assignmentsMap.has(a.student_id)) {
-                        assignmentsMap.set(a.student_id, []);
-                    }
-                    assignmentsMap.get(a.student_id)!.push({ status: a.status, score: a.score ? Number(a.score) : null });
-                });
-
-                // 4. Fetch Students directly from users table (including mentors who are senior students)
-                const studentsQuery = supabaseAuth
+                const studentsBaseReq = supabaseAuth
                     .from('users')
                     .select(`
                         id,
@@ -265,9 +209,61 @@ export default function StudentDirectory() {
                     `)
                     .in('role', ['student', 'mentor']);
 
-                const { data: studentsData, error: studentsError } = isAdminUser
-                    ? await studentsQuery
-                    : await studentsQuery.eq('teacher_id', userId);
+                const studentsReq = isAdminUser
+                    ? studentsBaseReq
+                    : studentsBaseReq.eq('teacher_id', userId);
+
+                const [
+                    { data: rooms },
+                    { data: teachersData },
+                    { data: lessons },
+                    { data: activeSessions },
+                    { data: allAttendance },
+                    { data: allProgress },
+                    { data: allAssignments },
+                    { data: studentsData, error: studentsError }
+                ] = await Promise.all([
+                    roomsReq,
+                    teachersReq,
+                    lessonsReq,
+                    sessionsReq,
+                    attendanceReq,
+                    progressReq,
+                    assignmentsReq,
+                    studentsReq
+                ]);
+
+                if (rooms) setClassrooms(rooms);
+
+                const teacherMap = new Map<string, string>();
+                if (teachersData) {
+                    setTeachers(teachersData);
+                    teachersData.forEach(t => teacherMap.set(t.id, t.name));
+                }
+
+                const totalLessonsCount = lessons?.length || 0;
+                const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+
+                const attendanceMap = new Map<string, string[]>();
+                allAttendance?.forEach(a => {
+                    if (!attendanceMap.has(a.student_id)) {
+                        attendanceMap.set(a.student_id, []);
+                    }
+                    attendanceMap.get(a.student_id)!.push(a.status);
+                });
+
+                const progressCountMap = new Map<string, number>();
+                allProgress?.forEach(p => {
+                    progressCountMap.set(p.student_id, (progressCountMap.get(p.student_id) || 0) + 1);
+                });
+
+                const assignmentsMap = new Map<string, { status: string; score: number | null }[]>();
+                allAssignments?.forEach(a => {
+                    if (!assignmentsMap.has(a.student_id)) {
+                        assignmentsMap.set(a.student_id, []);
+                    }
+                    assignmentsMap.get(a.student_id)!.push({ status: a.status, score: a.score ? Number(a.score) : null });
+                });
 
                 if (studentsError) {
                     console.error('Supabase error fetching students:', {

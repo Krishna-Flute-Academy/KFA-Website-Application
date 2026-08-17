@@ -15,6 +15,7 @@ import TeacherHeader from '../TeacherHeader';
 import Link from 'next/link';
 import { useToast } from '../../lib/ToastContext';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
+import { parseDayAndStartFromClassroom } from '../../lib/classroomSort';
 
 // Import subcomponents
 import StatsSummary from './StatsSummary';
@@ -297,88 +298,70 @@ export default function TeacherDashboardContainer() {
                 setTeachers(teacherUsers || []);
             }
 
-            // 2. Classrooms (All classrooms for Admin, assigned classrooms for Teachers)
-            let classQuery = supabaseAuth.from('classrooms').select('id, name, description, teacher_id, type');
-            if (profile.role !== 'admin') {
-                classQuery = classQuery.eq('teacher_id', userId);
-            }
-            const { data: dbClassrooms } = await classQuery;
+            // 2. Parallelize Classrooms, Temporary Classes, Session Logs, Core Students Count, Live Classrooms, and Fee Collections!
+            const classBaseQuery = supabaseAuth.from('classrooms').select('id, name, description, teacher_id, type');
+            const classReq = profile.role === 'admin' ? classBaseQuery : classBaseQuery.eq('teacher_id', userId);
+
+            const tempBaseQuery = supabaseAuth.from('temporary_classes').select('classroom_id, class_date');
+            const tempReq = profile.role === 'admin' ? tempBaseQuery : tempBaseQuery.eq('teacher_id', userId);
+
+            const sessionLogsReq = supabaseAuth.from('classroom_session_logs').select('classroom_id, session_date');
+
+            const studentsCountBaseReq = supabaseAuth.from('users').select('id', { count: 'exact', head: true }).or('role.eq.student,role.eq.pending,role.eq.mentor').eq('status', 'active');
+            const studentsCountReq = profile.role === 'admin' ? studentsCountBaseReq : studentsCountBaseReq.eq('teacher_id', userId);
+
+            const liveClassBaseReq = supabaseAuth.from('classrooms').select('id').eq('is_live', true);
+            const liveClassReq = profile.role === 'admin' ? liveClassBaseReq : liveClassBaseReq.eq('teacher_id', userId);
+
+            const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+            const feesReq = profile.role === 'admin'
+                ? supabaseAuth.from('fees_payments').select('amount').eq('status', 'approved').gte('payment_date', startOfMonth)
+                : Promise.resolve({ data: [] });
+
+            const [
+                { data: dbClassrooms },
+                { data: tempRoomsData },
+                { data: sessionLogs },
+                { count: studentsCountRes },
+                { data: liveRooms },
+                { data: collections }
+            ] = await Promise.all([
+                classReq,
+                tempReq,
+                sessionLogsReq,
+                studentsCountReq,
+                liveClassReq,
+                feesReq
+            ]);
+
             const classIds = (dbClassrooms || []).map(c => c.id);
             setClassrooms(dbClassrooms || []);
 
             const permanentRooms = (dbClassrooms || []).filter(r => r.type === 'permanent' || !r.type);
             const permanentCount = permanentRooms.length;
 
-            // Fetch temporary classes and calculate temporary classrooms count which are not yet done
-            let temporaryCountNotDone = 0;
-            try {
-                const tempQuery = supabaseAuth
-                    .from('temporary_classes')
-                    .select('classroom_id, class_date');
-                const { data: tempRoomsData } = profile.role === 'admin'
-                    ? await tempQuery
-                    : await tempQuery.eq('teacher_id', userId);
+            const notDoneTempRooms = (tempRoomsData || []).filter(room => {
+                const isDone = (sessionLogs || []).some(log => log.classroom_id === room.classroom_id && log.session_date === room.class_date);
+                return !isDone;
+            });
+            const temporaryCountNotDone = notDoneTempRooms.length;
 
-                const { data: sessionLogs } = await supabaseAuth
-                    .from('classroom_session_logs')
-                    .select('classroom_id, session_date');
+            const studentsCount = studentsCountRes || 0;
 
-                const notDoneTempRooms = (tempRoomsData || []).filter(room => {
-                    const isDone = (sessionLogs || []).some(log => log.classroom_id === room.classroom_id && log.session_date === room.class_date);
-                    return !isDone;
-                });
-                temporaryCountNotDone = notDoneTempRooms.length;
-            } catch (err) {
-                console.error('Error fetching temp classes:', err);
-            }
-
-            // 3. Stats & Submissions
-            // Core stats count (unique students count)
-            let studentsCount = 0;
-            if (profile.role === 'admin') {
-                const { count } = await supabaseAuth
-                    .from('users')
-                    .select('id', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
-                    .eq('status', 'active');
-                studentsCount = count || 0;
-            } else {
-                const { count } = await supabaseAuth
-                    .from('users')
-                    .select('id', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
-                    .eq('teacher_id', userId)
-                    .eq('status', 'active');
-                studentsCount = count || 0;
-            }
-
-            // Live students count (unique students in live classrooms)
+            // Live students count
             let liveStudentsCount = 0;
-            try {
-                let liveClassQuery = supabaseAuth
-                    .from('classrooms')
-                    .select('id')
-                    .eq('is_live', true);
-                if (profile.role !== 'admin') {
-                    liveClassQuery = liveClassQuery.eq('teacher_id', userId);
-                }
-                const { data: liveRooms } = await liveClassQuery;
-                const liveRoomIds = (liveRooms || []).map(r => r.id);
-
-                if (liveRoomIds.length > 0) {
-                    const { data: liveClassStudents } = await supabaseAuth
-                        .from('classroom_students')
-                        .select('student_id, users!student_id(teacher_id)')
-                        .in('classroom_id', liveRoomIds);
-                    const uniqueLiveIds = new Set(
-                        (liveClassStudents || [])
-                            .filter(row => profile.role === 'admin' || (row.users as any)?.teacher_id === userId)
-                            .map(row => row.student_id)
-                    );
-                    liveStudentsCount = uniqueLiveIds.size;
-                }
-            } catch (err) {
-                console.error('Error calculating live students:', err);
+            const liveRoomIds = (liveRooms || []).map(r => r.id);
+            if (liveRoomIds.length > 0) {
+                const { data: liveClassStudents } = await supabaseAuth
+                    .from('classroom_students')
+                    .select('student_id, users!student_id(teacher_id)')
+                    .in('classroom_id', liveRoomIds);
+                const uniqueLiveIds = new Set(
+                    (liveClassStudents || [])
+                        .filter(row => profile.role === 'admin' || (row.users as any)?.teacher_id === userId)
+                        .map(row => row.student_id)
+                );
+                liveStudentsCount = uniqueLiveIds.size;
             }
 
             // Fetch assignments list for these classrooms once to resolve mapping without DB joins
@@ -414,14 +397,6 @@ export default function TeacherDashboardContainer() {
 
             // Fees Stats (Admin only)
             if (profile.role === 'admin') {
-                const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-                
-                const { data: collections } = await supabaseAuth
-                    .from('fees_payments')
-                    .select('amount')
-                    .eq('status', 'approved')
-                    .gte('payment_date', startOfMonth);
-                
                 const totalCollected = (collections || []).reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
 
                 // Fetch due students count by running the calculation locally
@@ -617,10 +592,11 @@ export default function TeacherDashboardContainer() {
                 const todayTemps = localTemps.filter(t => t.class_date === todayDateStr);
 
                 // Batch-fetch student counts for all today's classrooms in ONE query
-                const todayClassroomIds = [
+                const todayClassroomIds = Array.from(new Set([
                     ...todaySchedules.map(s => s.classroom_id),
-                    ...todayTemps.map(t => t.classroom_id).filter(Boolean)
-                ];
+                    ...todayTemps.map(t => t.classroom_id).filter(Boolean),
+                    ...dbClassrooms.map(c => c.id)
+                ]));
 
                 // Map: classroom_id -> student count
                 const studentCountMap: Record<string, number> = {};
@@ -654,8 +630,10 @@ export default function TeacherDashboardContainer() {
                 }
 
                 const unifiedClasses: UpcomingClass[] = [];
+                const processedClassroomIds = new Set<string>();
 
                 for (const sch of todaySchedules) {
+                    processedClassroomIds.add(sch.classroom_id);
                     unifiedClasses.push({
                         id: `rec-${sch.id}`,
                         classroom_id: sch.classroom_id,
@@ -666,6 +644,28 @@ export default function TeacherDashboardContainer() {
                         students_joined: studentCountMap[sch.classroom_id] || 0
                     });
                 }
+
+                // Also include any classroom whose title explicitly matches today's day of week
+                (dbClassrooms || []).forEach(room => {
+                    if (!processedClassroomIds.has(room.id)) {
+                        const parsed = parseDayAndStartFromClassroom(room);
+                        if (parsed.dayOfWeek === todayDow) {
+                            processedClassroomIds.add(room.id);
+                            const startTimeStr = parsed.startTimeMinutes < 24 * 60 ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}:00` : '00:00:00';
+                            const endMin = (parsed.startTimeMinutes + 60) % (24 * 60);
+                            const endTimeStr = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:00`;
+                            unifiedClasses.push({
+                                id: `rec-parsed-${room.id}`,
+                                classroom_id: room.id,
+                                session_date: todayDateStr,
+                                start_time: startTimeStr,
+                                end_time: endTimeStr,
+                                classroom_name: room.name || 'Classroom',
+                                students_joined: studentCountMap[room.id] || 0
+                            });
+                        }
+                    }
+                });
 
                 for (const t of todayTemps) {
                     unifiedClasses.push({
@@ -1161,8 +1161,10 @@ export default function TeacherDashboardContainer() {
             const cellDow = cellDate.getDay();
 
             // Bind recurring classes matching Day Of Week
+            const boundIds = new Set<string>();
             const matchingSchedules = classroomSchedules.filter(sch => sch.day_of_week === cellDow);
             matchingSchedules.forEach(sch => {
+                boundIds.add(sch.classroom_id);
                 cell.events.push({
                     id: `rec-${sch.id}`,
                     type: 'recurring',
@@ -1171,6 +1173,27 @@ export default function TeacherDashboardContainer() {
                     date: cell.date,
                     classroom_id: sch.classroom_id
                 });
+            });
+
+            // Also check all classrooms for title day match if not bound by batch_schedules
+            classrooms.forEach(room => {
+                if (!boundIds.has(room.id)) {
+                    const parsed = parseDayAndStartFromClassroom(room);
+                    if (parsed.dayOfWeek === cellDow) {
+                        boundIds.add(room.id);
+                        const startTimeStr = parsed.startTimeMinutes < 24 * 60 ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}` : '00:00';
+                        const endMin = (parsed.startTimeMinutes + 60) % (24 * 60);
+                        const endTimeStr = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+                        cell.events.push({
+                            id: `rec-parsed-${room.id}`,
+                            type: 'recurring',
+                            name: room.name || 'Classroom',
+                            time: `${formatTime12hr(startTimeStr)} - ${formatTime12hr(endTimeStr)}`,
+                            date: cell.date,
+                            classroom_id: room.id
+                        });
+                    }
+                }
             });
 
             // Bind temporary/makeup classes matching date
@@ -1257,6 +1280,7 @@ export default function TeacherDashboardContainer() {
                                 temporaryClasses={temporaryClasses}
                                 classroomStudents={classroomStudents}
                                 tempClassOverrides={tempClassOverrides}
+                                classrooms={classrooms}
                             />
                         )}
 

@@ -97,9 +97,29 @@ function parseTimeFromName(name: string): string | null {
 }
 
 function getClassroomSortKeys(room: any, rawSchedules: any[]) {
+    const nameLower = (room.name || '').toLowerCase();
+    let nameDayVal = 99;
+    for (const [dayName, orderVal] of Object.entries(DAY_ORDER)) {
+        if (nameLower.includes(dayName)) {
+            nameDayVal = orderVal;
+            break;
+        }
+    }
+
+    const slotNum = parseSlotNumber(room.name || '');
+    const parsedTimeFromName = parseTimeFromName(room.name || '');
+
     // 1. Try rawSchedules first
     const targetId = room.id || room.classroom_id;
     const schedules = rawSchedules.filter(s => s.classroom_id === targetId || (room.id && s.classroom_id === room.id));
+    
+    let dayVal = 99;
+    let timeStr = '99:99';
+
+    if (nameDayVal !== 99) {
+        dayVal = nameDayVal;
+    }
+
     if (schedules.length > 0) {
         const sortedScheds = [...schedules].sort((a, b) => {
             const dayA = a.day_of_week === 0 ? 7 : a.day_of_week;
@@ -108,41 +128,28 @@ function getClassroomSortKeys(room: any, rawSchedules: any[]) {
             return (a.start_time || '').localeCompare(b.start_time || '');
         });
         const first = sortedScheds[0];
-        const dayVal = first.day_of_week === 0 ? 7 : first.day_of_week;
-        return {
-            dayOrder: dayVal,
-            timeStr: (first.start_time || parseTimeFromName(room.name || '') || '99:99').slice(0, 5),
-            slotNum: parseSlotNumber(room.name || '')
-        };
-    }
-
-    // 2. If temporary class with class_date
-    if ((room as any).class_date) {
-        const d = parseClassDate((room as any).class_date);
-        const dayVal = d ? (d.getDay() === 0 ? 7 : d.getDay()) : 99;
-        return {
-            dayOrder: dayVal,
-            timeStr: ((room as any).start_time || parseTimeFromName(room.name || '') || '99:99').slice(0, 5),
-            slotNum: parseSlotNumber(room.name || '')
-        };
-    }
-
-    // 3. Fallback: Parse day, slot, and time from room.name
-    const nameLower = (room.name || '').toLowerCase();
-    let dayVal = 99;
-    for (const [dayName, orderVal] of Object.entries(DAY_ORDER)) {
-        if (nameLower.includes(dayName)) {
-            dayVal = orderVal;
-            break;
+        if (dayVal === 99) {
+            dayVal = first.day_of_week === 0 ? 7 : first.day_of_week;
         }
+        timeStr = (first.start_time || '').slice(0, 5);
+    } else if ((room as any).class_date) {
+        const d = parseClassDate((room as any).class_date);
+        if (dayVal === 99) {
+            dayVal = d ? (d.getDay() === 0 ? 7 : d.getDay()) : 99;
+        }
+        timeStr = ((room as any).start_time || '').slice(0, 5);
     }
 
-    const slotNum = parseSlotNumber(room.name || '');
-    const parsedTime = parseTimeFromName(room.name || '');
+    // Always prefer explicit 24hr time parsed from title if available (e.g. 5:30 PM -> 17:30)
+    if (parsedTimeFromName) {
+        timeStr = parsedTimeFromName;
+    } else if (!timeStr || timeStr === '99:99') {
+        timeStr = '99:99';
+    }
 
     return {
         dayOrder: dayVal,
-        timeStr: parsedTime || '99:99',
+        timeStr: timeStr,
         slotNum: slotNum
     };
 }
@@ -522,11 +529,23 @@ export default function ClassroomsPage() {
 
             const isAdminUser = profile.role === 'admin';
 
-            // Fetch all active teachers/admins to map their names in memory
-            const { data: teachersData, error: teachersError } = await supabaseAuth
-                .from('users')
-                .select('id, name')
-                .in('role', ['teacher', 'admin']);
+            // Stage 1: Fetch teachers, permanent classrooms, and temporary classrooms IN PARALLEL!
+            const teachersReq = supabaseAuth.from('users').select('id, name').in('role', ['teacher', 'admin']);
+            const classroomsQuery = supabaseAuth.from('classrooms').select('*');
+            const roomsReq = isAdminUser ? classroomsQuery : classroomsQuery.eq('teacher_id', profile.id);
+            const tempQuery = supabaseAuth.from('temporary_classes').select('*').order('class_date', { ascending: false });
+            const tempReq = isAdminUser ? tempQuery : tempQuery.eq('teacher_id', profile.id);
+
+            const [
+                { data: teachersData, error: teachersError },
+                { data: roomsData, error: roomsError },
+                { data: tempRoomsData }
+            ] = await Promise.all([
+                teachersReq,
+                roomsReq,
+                tempReq
+            ]);
+
             if (teachersError) {
                 console.error('Error fetching teachersData for mapping:', teachersError);
             }
@@ -537,21 +556,40 @@ export default function ClassroomsPage() {
                 });
             }
 
-            const classroomsQuery = supabaseAuth
-                .from('classrooms')
-                .select('*');
-
-            const { data: roomsData, error: roomsError } = isAdminUser
-                ? await classroomsQuery
-                : await classroomsQuery.eq('teacher_id', profile.id);
-
             if (roomsError) throw roomsError;
 
-            // Fetch batch schedules for all classrooms
+            // Stage 2: Fetch schedules, student rosters, and overrides IN PARALLEL!
             const roomIds = (roomsData || []).map(r => r.id);
-            const { data: allSchedules } = roomIds.length > 0
-                ? await supabaseAuth.from('batch_schedules').select('classroom_id, day_of_week, start_time, end_time').in('classroom_id', roomIds).order('day_of_week', { ascending: true }).order('start_time', { ascending: true })
-                : { data: [] };
+            const tempRoomIds = (tempRoomsData || []).map(r => r.classroom_id || r.id).filter(Boolean);
+            const tempClassIds = (tempRoomsData || []).map(r => r.id);
+
+            const schedulesReq = roomIds.length > 0
+                ? supabaseAuth.from('batch_schedules').select('classroom_id, day_of_week, start_time, end_time').in('classroom_id', roomIds).order('day_of_week', { ascending: true }).order('start_time', { ascending: true })
+                : Promise.resolve({ data: [] });
+
+            const permStudentsReq = roomIds.length > 0
+                ? supabaseAuth.from('classroom_students').select('classroom_id, student_id, users!student_id(id, name, profile_pic_url)').in('classroom_id', roomIds)
+                : Promise.resolve({ data: [] });
+
+            const tempStudentsReq = tempClassIds.length > 0
+                ? supabaseAuth.from('temporary_class_students').select('temporary_class_id, student_id, users!student_id(id, name, profile_pic_url)').in('temporary_class_id', tempClassIds)
+                : Promise.resolve({ data: [] });
+
+            const tempOverridesReq = tempRoomIds.length > 0
+                ? supabaseAuth.from('session_student_overrides').select('target_classroom_id, student_id, users!student_id(id, name, profile_pic_url)').in('target_classroom_id', tempRoomIds)
+                : Promise.resolve({ data: [] });
+
+            const [
+                { data: allSchedules },
+                { data: permStudentsData },
+                { data: tempStudentsData },
+                { data: tempOverridesData }
+            ] = await Promise.all([
+                schedulesReq,
+                permStudentsReq,
+                tempStudentsReq,
+                tempOverridesReq
+            ]);
 
             setRawSchedules(allSchedules || []);
 
@@ -564,12 +602,25 @@ export default function ClassroomsPage() {
                     grouped[s.classroom_id].push(s);
                 });
                 for (const [cid, entries] of Object.entries(grouped)) {
-                    const days = Array.from(new Set(entries.map(e => DAY_SHORT[e.day_of_week]))).join(', ');
+                    const roomObj = (roomsData || []).find(r => r.id === cid);
+                    const nameLower = (roomObj?.name || '').toLowerCase();
+                    let nameDayIndex = -1;
+                    if (nameLower.includes('sunday') || nameLower.includes('sun')) nameDayIndex = 0;
+                    else if (nameLower.includes('monday') || nameLower.includes('mon')) nameDayIndex = 1;
+                    else if (nameLower.includes('tuesday') || nameLower.includes('tue')) nameDayIndex = 2;
+                    else if (nameLower.includes('wednesday') || nameLower.includes('wed')) nameDayIndex = 3;
+                    else if (nameLower.includes('thursday') || nameLower.includes('thu')) nameDayIndex = 4;
+                    else if (nameLower.includes('friday') || nameLower.includes('fri')) nameDayIndex = 5;
+                    else if (nameLower.includes('saturday') || nameLower.includes('sat')) nameDayIndex = 6;
+
+                    const days = nameDayIndex !== -1 
+                        ? DAY_SHORT[nameDayIndex] 
+                        : Array.from(new Set(entries.map(e => DAY_SHORT[e.day_of_week]))).join(', ');
                     
-                    // Just take the first timing range for the summary view
                     const first = entries[0];
                     if (first) {
-                        const startStr = formatTime12hr(first.start_time.slice(0, 5));
+                        const parsedT = parseTimeFromName(roomObj?.name || '');
+                        const startStr = parsedT ? formatTime12hr(parsedT) : formatTime12hr(first.start_time.slice(0, 5));
                         const endStr = formatTime12hr(first.end_time.slice(0, 5));
                         scheduleMap[cid] = `${days} • ${startStr} - ${endStr}`;
                     } else {
@@ -577,14 +628,6 @@ export default function ClassroomsPage() {
                     }
                 }
             }
-
-            // Fetch student names for permanent classrooms
-            const { data: permStudentsData } = roomIds.length > 0
-                ? await supabaseAuth
-                    .from('classroom_students')
-                    .select('classroom_id, student_id, users!student_id(id, name, profile_pic_url)')
-                    .in('classroom_id', roomIds)
-                : { data: [] };
 
             const studentMap: Record<string, { id: string; name: string; profile_pic_url?: string }[]> = {};
             (permStudentsData || []).forEach((row: any) => {
@@ -613,31 +656,6 @@ export default function ClassroomsPage() {
             });
 
             setClassrooms(roomsWithCounts.filter(r => r.type === 'permanent'));
-
-            // Fetch Temporary Classes
-            const tempQuery = supabaseAuth
-                .from('temporary_classes')
-                .select('*')
-                .order('class_date', { ascending: false });
-
-            const { data: tempRoomsData } = isAdminUser
-                ? await tempQuery
-                : await tempQuery.eq('teacher_id', profile.id);
-
-            const tempRoomIds = (tempRoomsData || []).map(r => r.classroom_id || r.id).filter(Boolean);
-            const { data: tempStudentsData } = tempRoomIds.length > 0
-                ? await supabaseAuth
-                    .from('temporary_class_students')
-                    .select('temporary_class_id, student_id, users!student_id(id, name, profile_pic_url)')
-                    .in('temporary_class_id', (tempRoomsData || []).map(r => r.id))
-                : { data: [] };
-
-            const { data: tempOverridesData } = tempRoomIds.length > 0
-                ? await supabaseAuth
-                    .from('session_student_overrides')
-                    .select('target_classroom_id, student_id, users!student_id(id, name, profile_pic_url)')
-                    .in('target_classroom_id', tempRoomIds)
-                : { data: [] };
 
             const tempStudentMap: Record<string, { id: string; name: string; profile_pic_url?: string }[]> = {};
             (tempStudentsData || []).forEach((row: any) => {
@@ -832,8 +850,8 @@ export default function ClassroomsPage() {
 
         const combined = [...activePermanent, ...activeTemporary] as any[];
         combined.sort((a, b) => {
-            const timeA = (a.start_time || parseTimeFromName(a.name) || '00:00:00').slice(0, 5);
-            const timeB = (b.start_time || parseTimeFromName(b.name) || '00:00:00').slice(0, 5);
+            const timeA = parseTimeFromName(a.name) || (a.start_time || '00:00:00').slice(0, 5);
+            const timeB = parseTimeFromName(b.name) || (b.start_time || '00:00:00').slice(0, 5);
             if (timeA !== timeB) return timeA.localeCompare(timeB);
             const slotA = parseSlotNumber(a.name);
             const slotB = parseSlotNumber(b.name);

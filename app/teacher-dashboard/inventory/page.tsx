@@ -190,87 +190,75 @@ export default function InventoryLibrary() {
         fetchAuthAndData();
     }, [router]);
 
-    // Query active Supabase tables dynamically
+    // Query active Supabase tables dynamically in parallel
     const loadDatabaseData = async () => {
         let loadedCats = INITIAL_CATEGORIES;
         try {
-            const { data: dbCategories, error: catErr } = await supabaseAuth
-                .from('course_categories')
-                .select('*')
-                .order('category_order', { ascending: true });
-            if (!catErr && dbCategories && dbCategories.length > 0) {
+            const categoriesReq = supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true });
+            const modulesReq = supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
+            const chaptersReq = supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
+            const lessonsReq = supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+            const studentCountReq = supabaseAuth.from('users').select('*', { count: 'exact', head: true }).or('role.eq.student,role.eq.pending,role.eq.mentor');
+            const progressReq = supabaseAuth.from('student_topic_progress').select('lesson_id, status');
+
+            const [
+                { data: dbCategories },
+                { data: dbModules, error: modErr },
+                { data: dbChapters },
+                { data: dbLessons },
+                { count: studentCount },
+                { data: progressRecords }
+            ] = await Promise.all([
+                categoriesReq,
+                modulesReq,
+                chaptersReq,
+                lessonsReq,
+                studentCountReq,
+                progressReq
+            ]);
+
+            if (dbCategories && dbCategories.length > 0) {
                 loadedCats = dbCategories;
             }
-        } catch (e) {
-            console.warn('Failed to query course_categories, using fallbacks:', e);
-        }
-        setCategories(loadedCats);
+            setCategories(loadedCats);
 
-        const { data: dbModules, error: modErr } = await supabaseAuth
-            .from('course_modules')
-            .select('*')
-            .order('module_number', { ascending: true });
-        
-        if (modErr) {
-            throw new Error('Supabase tables course_modules query failed.');
-        }
-
-        const { data: dbChapters } = await supabaseAuth
-            .from('course_chapters')
-            .select('*')
-            .order('chapter_number', { ascending: true });
-            
-        const { data: dbLessons } = await supabaseAuth
-            .from('course_lessons')
-            .select('*')
-            .order('lesson_number', { ascending: true });
-
-        if (dbModules && dbModules.length > 0) {
-            setModules(dbModules);
-            const cleanedChapters = (dbChapters || []).map(chapter => ({ ...chapter, title: cleanChapterTitle(chapter.title) }));
-            setChapters(cleanedChapters);
-            setLessons(dbLessons || []);
-
-            const titlesToClean = (dbChapters || []).filter(chapter => cleanChapterTitle(chapter.title) !== chapter.title);
-            if (titlesToClean.length > 0) {
-                await Promise.all(titlesToClean.map(chapter =>
-                    supabaseAuth.from('course_chapters').update({ title: cleanChapterTitle(chapter.title) }).eq('id', chapter.id)
-                ));
+            if (modErr) {
+                throw new Error('Supabase tables course_modules query failed.');
             }
-            
-            // Auto expand the first chapter of active module by default
-            if (dbChapters && dbChapters.length > 0) {
-                const firstChap = dbChapters.find(c => c.module_id === selectedModuleId);
-                if (firstChap) {
-                    setExpandedChapters({ [firstChap.id]: true });
+
+            if (dbModules && dbModules.length > 0) {
+                setModules(dbModules);
+                const cleanedChapters = (dbChapters || []).map(chapter => ({ ...chapter, title: cleanChapterTitle(chapter.title) }));
+                setChapters(cleanedChapters);
+                setLessons(dbLessons || []);
+
+                const titlesToClean = (dbChapters || []).filter(chapter => cleanChapterTitle(chapter.title) !== chapter.title);
+                if (titlesToClean.length > 0) {
+                    Promise.all(titlesToClean.map(chapter =>
+                        supabaseAuth.from('course_chapters').update({ title: cleanChapterTitle(chapter.title) }).eq('id', chapter.id)
+                    )).catch(err => console.warn('Background title cleanup warning:', err));
                 }
-            }
-            
-            // Fetch live stats from remote DB
-            try {
-                const { count: studentCount } = await supabaseAuth
-                    .from('users')
-                    .select('*', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending,role.eq.mentor');
-                if (studentCount !== null) {
+                
+                // Auto expand the first chapter of active module by default
+                if (dbChapters && dbChapters.length > 0) {
+                    const firstChap = dbChapters.find(c => c.module_id === selectedModuleId);
+                    if (firstChap) {
+                        setExpandedChapters({ [firstChap.id]: true });
+                    }
+                }
+                
+                if (studentCount !== null && studentCount !== undefined) {
                     setActiveStudentsCount(studentCount);
                 }
 
-                const { data: progressRecords } = await supabaseAuth
-                    .from('student_topic_progress')
-                    .select('lesson_id, status')
-                    .eq('status', 'completed');
                 if (progressRecords) {
                     setStudentProgressRecords(progressRecords);
                 }
-            } catch (statsErr) {
-                console.warn('Could not query stats from database:', statsErr);
             }
 
             setIsUsingFallback(false);
-        } else {
-            // Tables are empty, auto-seed database from INITIAL constants
-            await seedSupabaseTables();
+        } catch (err) {
+            console.warn('Failed to query course data, using fallbacks:', err);
         }
     };
 

@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
+import { sortClassroomsByDayAndTime, parseDayAndStartFromClassroom } from '../../../src/lib/classroomSort';
 import { 
     Loader2, 
     Calendar as CalendarIcon, 
@@ -326,22 +326,52 @@ export default function AttendancePage() {
     // Active batches scheduled on the selected date (sorted in time ascending order)
     const activeBatchesOnSelectedDate = useMemo((): BatchItem[] => {
         if (!selectedDate) return [];
-        const dateObj = new Date(selectedDate);
-        // Correctly handle UTC vs local day mapping
+        const [year, month, day] = selectedDate.split('-').map(Number);
+        const dateObj = new Date(year, month - 1, day);
         const dayOfWeek = dateObj.getDay(); 
 
-        const activePermanent = allSchedules
+        const processedRoomIds = new Set<string>();
+        const activePermanent: BatchItem[] = [];
+
+        // 1. Process allSchedules for dayOfWeek
+        allSchedules
             .filter(s => s.day_of_week === dayOfWeek)
-            .map(s => {
+            .forEach(s => {
                 const room = classrooms.find(c => c.id === s.classroom_id);
-                return {
-                    id: s.classroom_id,
-                    name: room?.name || 'Classroom',
-                    type: 'permanent' as const,
-                    time: `${formatTime12hr(s.start_time.slice(0, 5))} - ${formatTime12hr(s.end_time.slice(0, 5))}`,
-                    startTime: s.start_time
-                };
+                if (room && !processedRoomIds.has(room.id)) {
+                    processedRoomIds.add(room.id);
+                    const parsed = parseDayAndStartFromClassroom(room);
+                    const startTimeStr = s.start_time || (parsed.startTimeMinutes < 24 * 60 ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}:00` : '00:00:00');
+                    const endTimeStr = s.end_time || '01:00:00';
+                    activePermanent.push({
+                        id: room.id,
+                        name: room.name || 'Classroom',
+                        type: 'permanent',
+                        time: `${formatTime12hr(startTimeStr.slice(0, 5))} - ${formatTime12hr(endTimeStr.slice(0, 5))}`,
+                        startTime: startTimeStr
+                    });
+                }
             });
+
+        // 2. Include any classrooms whose title explicitly matches dayOfWeek even if schedule row is missing/mismatched
+        classrooms.forEach(room => {
+            if (!processedRoomIds.has(room.id)) {
+                const parsed = parseDayAndStartFromClassroom(room);
+                if (parsed.dayOfWeek === dayOfWeek) {
+                    processedRoomIds.add(room.id);
+                    const startTimeStr = parsed.startTimeMinutes < 24 * 60 ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}:00` : '00:00:00';
+                    const endMin = (parsed.startTimeMinutes + 60) % (24 * 60);
+                    const endTimeStr = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:00`;
+                    activePermanent.push({
+                        id: room.id,
+                        name: room.name || 'Classroom',
+                        type: 'permanent',
+                        time: `${formatTime12hr(startTimeStr.slice(0, 5))} - ${formatTime12hr(endTimeStr.slice(0, 5))}`,
+                        startTime: startTimeStr
+                    });
+                }
+            }
+        });
 
         const activeTemporary = temporaryClasses
             .filter(tc => tc.class_date === selectedDate)
@@ -361,12 +391,20 @@ export default function AttendancePage() {
     // Helper to calculate dot indicators for the calendar month
     const scheduledDatesSet = useMemo(() => {
         const scheduledDaysOfWeek = new Set(allSchedules.map(s => s.day_of_week));
+        classrooms.forEach(c => {
+            const parsed = parseDayAndStartFromClassroom(c);
+            if (parsed.dayOfWeek !== 99) {
+                scheduledDaysOfWeek.add(parsed.dayOfWeek);
+            }
+        });
         const tempDates = new Set(temporaryClasses.map(tc => tc.class_date));
         return { scheduledDaysOfWeek, tempDates };
-    }, [allSchedules, temporaryClasses]);
+    }, [allSchedules, classrooms, temporaryClasses]);
 
     const hasClassesOnDate = useCallback((dateStr: string) => {
-        const dateObj = new Date(dateStr);
+        if (!dateStr) return false;
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const dateObj = new Date(year, month - 1, day);
         const dayOfWeek = dateObj.getDay();
         return scheduledDatesSet.scheduledDaysOfWeek.has(dayOfWeek) || scheduledDatesSet.tempDates.has(dateStr);
     }, [scheduledDatesSet]);
@@ -380,37 +418,33 @@ export default function AttendancePage() {
             
             await Promise.all(activeBatchesOnSelectedDate.map(async (batch) => {
                 try {
-                    // Fetch roster counts
                     let total = 0;
+                    let attendanceData: { status: string }[] | null = [];
+
                     if (batch.type === 'permanent') {
-                        const { count: enrolledCount } = await supabaseAuth
-                            .from('classroom_students')
-                            .select('*', { count: 'exact', head: true })
-                            .eq('classroom_id', batch.id);
-                        
-                        const { count: overrideCount } = await supabaseAuth
-                            .from('session_student_overrides')
-                            .select('*', { count: 'exact', head: true })
-                            .eq('target_classroom_id', batch.id)
-                            .eq('override_date', selectedDate);
-                        
+                        const [
+                            { count: enrolledCount },
+                            { count: overrideCount },
+                            { data: attData }
+                        ] = await Promise.all([
+                            supabaseAuth.from('classroom_students').select('*', { count: 'exact', head: true }).eq('classroom_id', batch.id),
+                            supabaseAuth.from('session_student_overrides').select('*', { count: 'exact', head: true }).eq('target_classroom_id', batch.id).eq('override_date', selectedDate),
+                            supabaseAuth.from('attendance').select('status').eq('classroom_id', batch.id).eq('date', selectedDate)
+                        ]);
                         total = (enrolledCount || 0) + (overrideCount || 0);
+                        attendanceData = attData;
                     } else {
-                        const { count } = await supabaseAuth
-                            .from('session_student_overrides')
-                            .select('*', { count: 'exact', head: true })
-                            .eq('target_classroom_id', batch.id)
-                            .eq('override_date', selectedDate);
+                        const [
+                            { count },
+                            { data: attData }
+                        ] = await Promise.all([
+                            supabaseAuth.from('session_student_overrides').select('*', { count: 'exact', head: true }).eq('target_classroom_id', batch.id).eq('override_date', selectedDate),
+                            supabaseAuth.from('attendance').select('status').eq('classroom_id', batch.id).eq('date', selectedDate)
+                        ]);
                         total = count || 0;
+                        attendanceData = attData;
                     }
 
-                    // Fetch marked attendance records
-                    const { data: attendanceData } = await supabaseAuth
-                        .from('attendance')
-                        .select('status')
-                        .eq('classroom_id', batch.id)
-                        .eq('date', selectedDate);
-                    
                     const present = (attendanceData || []).filter(r => r.status === 'present').length;
                     const absent = (attendanceData || []).filter(r => r.status === 'absent').length;
                     const late = (attendanceData || []).filter(r => r.status === 'late').length;

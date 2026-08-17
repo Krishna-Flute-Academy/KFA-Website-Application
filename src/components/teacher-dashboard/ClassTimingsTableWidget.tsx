@@ -4,6 +4,8 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Search, Clock, Calendar, Video, Laptop, CalendarDays, ArrowRight } from 'lucide-react';
 
+import { parseDayAndStartFromClassroom } from '../../lib/classroomSort';
+
 interface BatchSchedule {
     id: string;
     classroom_id: string;
@@ -30,6 +32,7 @@ interface ClassTimingsTableWidgetProps {
     temporaryClasses: TemporaryClass[];
     classroomStudents: Record<string, string[]>;
     tempClassOverrides: Record<string, { override_date: string, student_name: string }[]>;
+    classrooms?: any[];
 }
 
 const DAYS_OF_WEEK = [
@@ -65,7 +68,8 @@ export default function ClassTimingsTableWidget({
     classroomSchedules = [],
     temporaryClasses = [],
     classroomStudents = {},
-    tempClassOverrides = {}
+    tempClassOverrides = {},
+    classrooms = []
 }: ClassTimingsTableWidgetProps) {
     const todayDow = new Date().getDay();
     const [selectedDay, setSelectedDay] = useState<number>(todayDow);
@@ -75,27 +79,64 @@ export default function ClassTimingsTableWidget({
 
     // Aggregate schedules for the selected day of week
     const classesForDay = useMemo(() => {
+        const processedRoomIds = new Set<string>();
+        const recurringRows: any[] = [];
+
         // 1. Filter recurring schedules
-        const recurringRows = classroomSchedules
-            .filter(sch => sch.day_of_week === selectedDay)
-            .map(sch => {
+        classroomSchedules.forEach(sch => {
+            const parsed = parseDayAndStartFromClassroom({ name: sch.classroom_name, day_of_week: sch.day_of_week, start_time: sch.start_time });
+            if (sch.day_of_week === selectedDay || parsed.dayOfWeek === selectedDay) {
+                processedRoomIds.add(sch.classroom_id);
                 const isOnline = sch.classroom_description?.includes('[delivery_format:online]') ?? false;
                 const students = classroomStudents[sch.classroom_id] || [];
-                return {
+                const startTimeStr = (parsed.startTimeMinutes < 24 * 60)
+                    ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}:00`
+                    : sch.start_time;
+                recurringRows.push({
                     id: `rec-${sch.id}`,
                     classroom_id: sch.classroom_id,
                     name: sch.classroom_name,
-                    start_time: sch.start_time,
+                    start_time: startTimeStr,
                     end_time: sch.end_time,
                     isOnline,
                     isPermanent: true,
                     students,
                     displayType: 'Permanent',
                     displayDate: null
-                };
-            });
+                });
+            }
+        });
 
-        // 2. Filter temporary schedules that fall on this day of week
+        // 2. Also check classrooms list for title day match if not yet processed
+        (classrooms || []).forEach((room: any) => {
+            if (!processedRoomIds.has(room.id)) {
+                const parsed = parseDayAndStartFromClassroom(room);
+                if (parsed.dayOfWeek === selectedDay) {
+                    processedRoomIds.add(room.id);
+                    const isOnline = room.description?.includes('[delivery_format:online]') ?? false;
+                    const students = classroomStudents[room.id] || [];
+                    const startTimeStr = parsed.startTimeMinutes < 24 * 60
+                        ? `${String(Math.floor(parsed.startTimeMinutes / 60)).padStart(2, '0')}:${String(parsed.startTimeMinutes % 60).padStart(2, '0')}:00`
+                        : '00:00:00';
+                    const endMin = (parsed.startTimeMinutes + 60) % (24 * 60);
+                    const endTimeStr = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}:00`;
+                    recurringRows.push({
+                        id: `rec-parsed-${room.id}`,
+                        classroom_id: room.id,
+                        name: room.name,
+                        start_time: startTimeStr,
+                        end_time: endTimeStr,
+                        isOnline,
+                        isPermanent: true,
+                        students,
+                        displayType: 'Permanent',
+                        displayDate: null
+                    });
+                }
+            }
+        });
+
+        // 3. Filter temporary schedules that fall on this day of week
         const tempRows = temporaryClasses
             .filter(t => t.class_date && getDayOfWeekFromDate(t.class_date) === selectedDay)
             .map(t => {
@@ -137,10 +178,17 @@ export default function ClassTimingsTableWidget({
             });
 
         const combined = [...recurringRows, ...tempRows];
-        // Sort chronologically by start time
-        combined.sort((a, b) => a.start_time.localeCompare(b.start_time));
+        // Sort chronologically by start time (using parseDayAndStartFromClassroom)
+        combined.sort((a, b) => {
+            const parsedA = parseDayAndStartFromClassroom({ name: a.name, start_time: a.start_time });
+            const parsedB = parseDayAndStartFromClassroom({ name: b.name, start_time: b.start_time });
+            if (parsedA.startTimeMinutes !== parsedB.startTimeMinutes) {
+                return parsedA.startTimeMinutes - parsedB.startTimeMinutes;
+            }
+            return (a.start_time || '').localeCompare(b.start_time || '');
+        });
         return combined;
-    }, [selectedDay, classroomSchedules, temporaryClasses, classroomStudents, tempClassOverrides]);
+    }, [selectedDay, classroomSchedules, temporaryClasses, classroomStudents, tempClassOverrides, classrooms]);
 
     // Filter rows based on query & selected filters
     const filteredRows = useMemo(() => {

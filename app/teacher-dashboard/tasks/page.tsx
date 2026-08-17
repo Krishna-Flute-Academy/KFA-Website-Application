@@ -166,8 +166,8 @@ export default function TaskReviewPage() {
                 return;
             }
 
-            // Step 2: Get all enrolled students for these classrooms (with user details joined)
-            const { data: enrollments, error: enrollError } = await supabaseAuth
+            // Step 2 & 3 in parallel: Fetch enrollments AND assignments concurrently!
+            const enrollmentsReq = supabaseAuth
                 .from('classroom_students')
                 .select(`
                     classroom_id,
@@ -175,6 +175,19 @@ export default function TaskReviewPage() {
                     users!student_id(name, profile_pic_url, teacher_id)
                 `)
                 .in('classroom_id', classroomIds);
+
+            const assignmentsReq = supabaseAuth
+                .from('assignments')
+                .select('id, title, description, created_at, due_date, target_type, classroom_id, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
+                .in('classroom_id', classroomIds);
+
+            const [
+                { data: enrollments, error: enrollError },
+                res
+            ] = await Promise.all([
+                enrollmentsReq,
+                assignmentsReq
+            ]);
 
             if (enrollError) {
                 console.error('Error fetching enrolled students:', enrollError);
@@ -190,17 +203,8 @@ export default function TaskReviewPage() {
                 console.log('No students enrolled in classrooms');
             }
 
-            // Step 3: Fetch all assignments created for these classrooms
-            let assignmentsList: any[] | null = null;
-            let assignmentsError = null;
-
-            const res = await supabaseAuth
-                .from('assignments')
-                .select('id, title, description, created_at, due_date, target_type, classroom_id, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size')
-                .in('classroom_id', classroomIds);
-            
-            assignmentsList = res.data;
-            assignmentsError = res.error;
+            let assignmentsList: any[] | null = res.data;
+            let assignmentsError = res.error;
 
             if (assignmentsError && (assignmentsError.code === '42703' || assignmentsError.message?.includes('status'))) {
                 console.warn('status column missing in assignments, running fallback...');

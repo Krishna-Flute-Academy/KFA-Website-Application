@@ -1395,13 +1395,24 @@ function MessagesDashboardContent() {
         return Array.from(studentIds);
     };
 
+    // Pre-index direct messages by partner ID for O(1) instant contact list mapping
+    const directMessagesMap = useMemo(() => {
+        const map: Record<string, any[]> = {};
+        directMessages.forEach(m => {
+            const partnerId = m.sender_id === teacherProfile?.id ? m.receiver_id : m.sender_id;
+            if (partnerId) {
+                if (!map[partnerId]) map[partnerId] = [];
+                map[partnerId].push(m);
+            }
+        });
+        return map;
+    }, [directMessages, teacherProfile?.id]);
+
     const chatContacts = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
         const localQuery = studentSearchQuery.trim().toLowerCase();
         const list = students.map(student => {
-            const threadMsgs = directMessages.filter(m => 
-                m.sender_id === student.id || m.receiver_id === student.id
-            );
+            const threadMsgs = directMessagesMap[student.id] || [];
             const unreadCount = threadMsgs.filter(m => 
                 m.sender_id === student.id && 
                 m.status !== 'read'

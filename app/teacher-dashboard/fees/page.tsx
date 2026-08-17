@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check, Trash2 } from 'lucide-react';
@@ -50,12 +50,24 @@ export default function FeesManagementDashboard() {
     const [students, setStudents] = useState<StudentFeesData[]>([]);
     const [payments, setPayments] = useState<PaymentRecord[]>([]);
     
+    const [totalCount, setTotalCount] = useState<number>(0);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    
     // UI Filters
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [basisFilter, setBasisFilter] = useState<'all' | 'monthly' | 'class'>('all');
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 8;
+
+    // Debounce search query by 350ms to eliminate excessive network requests while typing
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+        }, 350);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     // Modals
     const [selectedStudent, setSelectedStudent] = useState<StudentFeesData | null>(null);
@@ -85,42 +97,80 @@ export default function FeesManagementDashboard() {
         }
     }, [alertMessage]);
 
-    const fetchData = async () => {
-        setLoading(true);
+    // 1. Initial Mount: Check Session, Fetch Profile, Mark Notifications Read (ONCE)
+    useEffect(() => {
+        let isMounted = true;
+        const initDashboard = async () => {
+            try {
+                const { data: { session } } = await supabaseAuth.auth.getSession();
+                if (!session) {
+                    router.push('/login?type=teacher');
+                    return;
+                }
+
+                const userId = session.user.id;
+                const { data: profile, error: profileError } = await supabaseAuth
+                    .from('users')
+                    .select('name, email, phone, role, profile_pic_url')
+                    .eq('id', userId)
+                    .single();
+
+                if (profileError || profile?.role !== 'admin') {
+                    router.push('/teacher-dashboard');
+                    return;
+                }
+
+                if (isMounted) {
+                    setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
+                }
+
+                // Clear unread fees notifications once in background
+                supabaseAuth
+                    .from('notifications')
+                    .update({ is_read: true })
+                    .eq('user_id', userId)
+                    .eq('type', 'fees')
+                    .eq('is_read', false)
+                    .then(() => {});
+
+            } catch (err) {
+                console.error('Error initializing fees dashboard:', err);
+            }
+        };
+
+        initDashboard();
+
+        // 2. Persistent Single Realtime Subscription Channel
+        const feesChannel = supabaseAuth
+            .channel('admin-fees-payments-realtime')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'fees_payments' },
+                () => {
+                    fetchDataRef.current?.();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            isMounted = false;
+            supabaseAuth.removeChannel(feesChannel);
+        };
+    }, [router]);
+
+    // 3. Fast Data Fetching (Server-Side Range Pagination + Non-blocking UI Refresh)
+    const fetchData = useCallback(async () => {
+        if (!teacherProfile) return;
+        setIsRefreshing(true);
         try {
-            // 1. Check Session
-            const { data: { session } } = await supabaseAuth.auth.getSession();
-            if (!session) {
-                router.push('/login?type=teacher');
-                return;
-            }
+            const sixtyDaysAgo = new Date();
+            sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+            const startSearchDate = sixtyDaysAgo.toISOString().split('T')[0];
 
-            const userId = session.user.id;
+            const from = (currentPage - 1) * ITEMS_PER_PAGE;
+            const to = from + ITEMS_PER_PAGE - 1;
 
-            // Clear unread fees notifications for the admin
-            await supabaseAuth
-                .from('notifications')
-                .update({ is_read: true })
-                .eq('user_id', userId)
-                .eq('type', 'fees')
-                .eq('is_read', false);
-
-            // 2. Fetch Teacher Profile
-            const { data: profile, error: profileError } = await supabaseAuth
-                .from('users')
-                .select('name, email, phone, role, profile_pic_url')
-                .eq('id', userId)
-                .single();
-
-            if (profileError || profile?.role !== 'admin') {
-                router.push('/teacher-dashboard');
-                return;
-            }
-
-            setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
-
-            // 3. Fetch Students with Fees columns
-            const { data: studentsData, error: studentsError } = await supabaseAuth
+            let studentsQuery = supabaseAuth
                 .from('users')
                 .select(`
                     id,
@@ -137,14 +187,42 @@ export default function FeesManagementDashboard() {
                     classroom_students(
                         classrooms(name)
                     )
-                `)
+                `, { count: 'exact' })
                 .or('role.eq.student,role.eq.pending,role.eq.mentor')
                 .eq('status', 'active');
 
-            if (studentsError) throw studentsError;
+            if (debouncedSearch.trim() !== '') {
+                studentsQuery = studentsQuery.ilike('name', `%${debouncedSearch.trim()}%`);
+            }
 
-            if (studentsData) {
-                const formatted: StudentFeesData[] = studentsData
+            if (basisFilter !== 'all') {
+                studentsQuery = studentsQuery.eq('fees_basis', basisFilter);
+            }
+
+            studentsQuery = studentsQuery
+                .order('name', { ascending: true })
+                .range(from, to);
+
+            const [studentsRes, paymentsRes] = await Promise.all([
+                studentsQuery,
+                supabaseAuth
+                    .from('fees_payments')
+                    .select(`
+                        id,
+                        student_id,
+                        amount,
+                        payment_date,
+                        payment_method,
+                        classes_added,
+                        notes,
+                        status,
+                        created_at
+                    `)
+                    .gte('payment_date', startSearchDate)
+            ]);
+
+            if (studentsRes.data) {
+                const formatted: StudentFeesData[] = studentsRes.data
                     .filter((s: any) => {
                         const stLower = (s.status || '').toLowerCase();
                         if (stLower === 'archived' || stLower === 'inactive') return false;
@@ -182,69 +260,53 @@ export default function FeesManagementDashboard() {
                         };
                     });
                 setStudents(formatted);
+                setTotalCount(studentsRes.count ?? formatted.length);
             }
 
-            // 4. Fetch Payments from last 60 days
-            const sixtyDaysAgo = new Date();
-            sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-            const startSearchDate = sixtyDaysAgo.toISOString().split('T')[0];
-            const { data: paymentsData } = await supabaseAuth
-                .from('fees_payments')
-                .select(`
-                    id,
-                    student_id,
-                    amount,
-                    payment_date,
-                    payment_method,
-                    classes_added,
-                    notes,
-                    status,
-                    created_at
-                `)
-                .gte('payment_date', startSearchDate);
-
-            if (paymentsData) {
-                setPayments(paymentsData as any);
+            if (paymentsRes.data) {
+                setPayments(paymentsRes.data as any);
             }
 
         } catch (err) {
             console.error('Error fetching fees dashboard data:', err);
         } finally {
             setLoading(false);
+            setIsRefreshing(false);
         }
-    };
+    }, [teacherProfile, currentPage, debouncedSearch, basisFilter]);
+
+    const fetchDataRef = useRef(fetchData);
+    useEffect(() => {
+        fetchDataRef.current = fetchData;
+    }, [fetchData]);
 
     useEffect(() => {
-        fetchData();
-
-        // Subscribe to realtime updates on fees_payments table
-        const feesChannel = supabaseAuth
-            .channel('admin-fees-payments-realtime')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'fees_payments' },
-                () => {
-                    fetchData();
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabaseAuth.removeChannel(feesChannel);
-        };
-    }, [router]);
+        if (teacherProfile) {
+            fetchData();
+        }
+    }, [teacherProfile, currentPage, debouncedSearch, basisFilter, fetchData]);
 
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
         router.push('/');
     };
 
-    // Calculate student payment status
-    const getStudentStatus = (student: StudentFeesData) => {
+    // Pre-index payments by student_id for O(1) instant lookup
+    const paymentsMap = useMemo(() => {
+        const map: Record<string, PaymentRecord[]> = {};
+        payments.forEach(p => {
+            if (!map[p.student_id]) map[p.student_id] = [];
+            map[p.student_id].push(p);
+        });
+        return map;
+    }, [payments]);
+
+    // Calculate student payment status with O(1) payments map lookup
+    const getStudentStatus = useCallback((student: StudentFeesData) => {
         if (student.fees_amount <= 0) return 'setup_required';
         const classesCompleted = student.fees_classes_paid <= 0;
         
-        const studentPayments = payments.filter(p => p.student_id === student.id);
+        const studentPayments = paymentsMap[student.id] || [];
         const hasPending = studentPayments.some(p => p.status === 'pending_approval');
         if (hasPending) return 'pending_verification';
 
@@ -279,10 +341,13 @@ export default function FeesManagementDashboard() {
 
         // Fallback
         return classesCompleted ? 'due_classes' : 'good';
-    };
+    }, [paymentsMap]);
 
-    // Filtering logic
+    // Filtering & Sorting logic with Memoized Statuses
     const filteredStudents = useMemo(() => {
+        const statusMap = new Map<string, string>();
+        students.forEach(s => statusMap.set(s.id, getStudentStatus(s)));
+
         let result = [...students];
 
         if (searchQuery.trim() !== '') {
@@ -297,30 +362,27 @@ export default function FeesManagementDashboard() {
         if (statusFilter !== 'all') {
             if (statusFilter === 'overdue_due') {
                 result = result.filter(s => {
-                    const status = getStudentStatus(s);
+                    const status = statusMap.get(s.id);
                     return status === 'overdue' || status === 'due_classes' || status === 'due_date';
                 });
             } else {
-                result = result.filter(s => getStudentStatus(s) === statusFilter);
+                result = result.filter(s => statusMap.get(s.id) === statusFilter);
             }
         }
 
         // Sort by status severity, then name
         const statusPriority: Record<string, number> = { overdue: 0, setup_required: 1, due_classes: 2, due_date: 3, good: 4 };
         return result.sort((a, b) => {
-            const pA = statusPriority[getStudentStatus(a)];
-            const pB = statusPriority[getStudentStatus(b)];
+            const pA = statusPriority[statusMap.get(a.id) || 'good'] ?? 4;
+            const pB = statusPriority[statusMap.get(b.id) || 'good'] ?? 4;
             if (pA !== pB) return pA - pB;
             return a.name.localeCompare(b.name);
         });
-    }, [students, searchQuery, statusFilter, basisFilter]);
+    }, [students, searchQuery, statusFilter, basisFilter, getStudentStatus]);
 
-    // Pagination
-    const totalPages = Math.ceil(filteredStudents.length / ITEMS_PER_PAGE);
-    const paginatedStudents = useMemo(() => {
-        const start = (currentPage - 1) * ITEMS_PER_PAGE;
-        return filteredStudents.slice(start, start + ITEMS_PER_PAGE);
-    }, [filteredStudents, currentPage]);
+    // Server-Side Range Pagination
+    const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
+    const paginatedStudents = filteredStudents;
 
     // Reset page on filter change
     useEffect(() => {
@@ -1137,7 +1199,7 @@ export default function FeesManagementDashboard() {
                                 {/* Pagination Footer */}
                                 {totalPages > 1 && (
                                     <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-slate-500">
-                                        <span>Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filteredStudents.length)} of {filteredStudents.length} Students</span>
+                                        <span>Showing {totalCount > 0 ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(currentPage * ITEMS_PER_PAGE, totalCount)} of {totalCount} Students</span>
                                         <div className="flex gap-2">
                                             <button
                                                 disabled={currentPage === 1}

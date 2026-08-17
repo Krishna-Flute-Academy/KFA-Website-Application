@@ -4520,7 +4520,7 @@ export default function ClassroomDashboardPage({
                                         {hasMaterial ? (
                                             <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center relative shadow-inner">
                                                 {true ? (
-                                                    <SecureCurriculumMaterial url={selectedTopic.material_url} title={selectedTopic.title} materialType={selectedTopic.material_type} viewerName={teacherProfile?.name} viewerEmail={teacherProfile?.email} />
+                                                    <SecureCurriculumMaterial url={selectedTopic.material_url} title={selectedTopic.title} materialType={selectedTopic.material_type} viewerName={teacherProfile?.name} viewerEmail={teacherProfile?.email} showWatermark={false} />
                                                 ) : isVideo ? (
                                                     <video src={selectedTopic.material_url} controls className="w-full h-full object-contain" autoPlay />
                                                 ) : isAudio ? (
