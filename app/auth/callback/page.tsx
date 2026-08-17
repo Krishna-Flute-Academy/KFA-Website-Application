@@ -13,8 +13,17 @@ export default function AuthCallbackPage() {
 
     useEffect(() => {
         const handleCallback = async () => {
-            // Wait a moment for Supabase to process the session from the URL
-            await new Promise(resolve => setTimeout(resolve, 500));
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
+            const nextParam = params.get('next');
+
+            if (code) {
+                // Manually exchange the PKCE code for a session instead of relying purely on auto-detection
+                await supabaseAuth.auth.exchangeCodeForSession(code);
+            } else {
+                // Fallback for legacy implicit flow (hash fragments)
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
 
             const { data: { session }, error: sessionError } = await supabaseAuth.auth.getSession();
 
@@ -108,9 +117,7 @@ export default function AuthCallbackPage() {
             }
 
             // Check if there is a 'next' redirect URL (e.g. /reset-password)
-            const params = new URLSearchParams(window.location.search);
-            const nextParam = params.get('next');
-
+            // (nextParam is extracted at the top of the function)
             if (nextParam === '/reset-password') {
                 router.push('/reset-password');
                 return;

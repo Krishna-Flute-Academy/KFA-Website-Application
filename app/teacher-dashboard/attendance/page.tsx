@@ -663,7 +663,7 @@ export default function AttendancePage() {
                     date: request.class_date,
                     status: 'excused',
                     marked_by: teacherProfile.id
-                }, { onConflict: 'student_id, classroom_id, date' });
+                }, { onConflict: 'student_id,classroom_id,date' });
 
             if (attendanceError) throw attendanceError;
 
@@ -737,7 +737,8 @@ export default function AttendancePage() {
                 });
             }
 
-            fetchMissedReport();
+            // Removed wasteful fetchMissedReport() call here. 
+            // It runs automatically when switching to the Missed tab anyway.
         } catch (err: any) {
             console.error('Error unmarking attendance:', err);
             alert(`Failed to unmark attendance: ${err.message || err}`);
@@ -795,7 +796,7 @@ export default function AttendancePage() {
                     date: selectedDate,
                     status: (status as string).toLowerCase(),
                     marked_by: teacherProfile.id
-                }, { onConflict: 'student_id, classroom_id, date' });
+                }, { onConflict: 'student_id,classroom_id,date' });
 
             if (error) throw error;
 
@@ -835,8 +836,8 @@ export default function AttendancePage() {
                 return { ...prev, [batchId]: nextSummary };
             });
 
-            // Trigger refresh of missed report so changed status updates immediately
-            fetchMissedReport();
+            // Removed wasteful fetchMissedReport() call here.
+            // It runs automatically when switching to the Missed tab anyway.
 
         } catch (err: any) {
             console.error('Error marking attendance:', err);
@@ -1066,7 +1067,7 @@ export default function AttendancePage() {
                     date: selectedDate,
                     status: status.toLowerCase(),
                     marked_by: teacherProfile.id
-                }, { onConflict: 'student_id, classroom_id, date' });
+                }, { onConflict: 'student_id,classroom_id,date' });
             if (error) throw error;
             // Also sync batchAttendanceMap if batch is expanded
             setBatchAttendanceMap(prev => {
