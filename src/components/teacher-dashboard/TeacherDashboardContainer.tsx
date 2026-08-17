@@ -258,9 +258,11 @@ export default function TeacherDashboardContainer() {
                     pendingSubmissionsList, teachers, classroomStudents,
                     tempClassOverrides
                 };
-                localStorage.setItem(`teacherDashboardCache_${teacherProfile.id}`, JSON.stringify(cacheData));
+                const serialized = JSON.stringify(cacheData);
+                localStorage.setItem('kfa_admin_dashboard_cache', serialized);
+                localStorage.setItem(`teacherDashboardCache_${teacherProfile.id}`, serialized);
             } catch (e) { console.error('Cache save error:', e); }
-        }, 1000);
+        }, 300);
         return () => clearTimeout(cacheTimer);
     }, [teacherProfile, stats, feesStats, recentSubmissions, classroomSchedules, temporaryClasses, upcomingClasses, forgottenClasses, classrooms, unassignedStudents, pendingLeaves, pendingPayments, dueStudents, pendingSubmissionsList, teachers, classroomStudents, tempClassOverrides]);
 
@@ -289,16 +291,7 @@ export default function TeacherDashboardContainer() {
             }
             setTeacherProfile(profile);
 
-            // If Admin, load teacher listing for dropdown
-            if (profile.role === 'admin') {
-                const { data: teacherUsers } = await supabaseAuth
-                    .from('users')
-                    .select('id, name')
-                    .eq('role', 'teacher');
-                setTeachers(teacherUsers || []);
-            }
-
-            // 2. Parallelize Classrooms, Temporary Classes, Session Logs, Core Students Count, Live Classrooms, and Fee Collections!
+            // 2. Single Parallel Promise.all Batch for ALL Admin Dashboard Widgets!
             const classBaseQuery = supabaseAuth.from('classrooms').select('id, name, description, teacher_id, type');
             const classReq = profile.role === 'admin' ? classBaseQuery : classBaseQuery.eq('teacher_id', userId);
 
@@ -318,21 +311,42 @@ export default function TeacherDashboardContainer() {
                 ? supabaseAuth.from('fees_payments').select('amount').eq('status', 'approved').gte('payment_date', startOfMonth)
                 : Promise.resolve({ data: [] });
 
+            const teacherUsersReq = profile.role === 'admin'
+                ? supabaseAuth.from('users').select('id, name').eq('role', 'teacher')
+                : Promise.resolve({ data: [] });
+
+            const schedulesReq = supabaseAuth.from('batch_schedules').select('id, classroom_id, classrooms(name, description), day_of_week, start_time, end_time');
+            const tempsDetailReq = supabaseAuth.from('temporary_classes').select('id, classroom_id, classrooms(name, description), title, class_date, start_time, end_time');
+            const classStudsReq = supabaseAuth.from('classroom_students').select('classroom_id, student_id, users!student_id(name)');
+            const overridesReq = supabaseAuth.from('session_student_overrides').select('target_classroom_id, student_id, override_date, users!student_id(name)');
+
             const [
                 { data: dbClassrooms },
                 { data: tempRoomsData },
                 { data: sessionLogs },
                 { count: studentsCountRes },
                 { data: liveRooms },
-                { data: collections }
+                { data: collections },
+                { data: teacherUsers },
+                { data: schedules },
+                { data: temps },
+                { data: classStudsData },
+                { data: overridesData }
             ] = await Promise.all([
                 classReq,
                 tempReq,
                 sessionLogsReq,
                 studentsCountReq,
                 liveClassReq,
-                feesReq
+                feesReq,
+                teacherUsersReq,
+                schedulesReq,
+                tempsDetailReq,
+                classStudsReq,
+                overridesReq
             ]);
+
+            if (teacherUsers) setTeachers(teacherUsers);
 
             const classIds = (dbClassrooms || []).map(c => c.id);
             setClassrooms(dbClassrooms || []);
@@ -395,66 +409,67 @@ export default function TeacherDashboardContainer() {
                 pendingSubmissions: pendingSubmissionsCount
             });
 
-            // Fees Stats (Admin only)
+            // Fees Stats (Admin only - set initial collected sum immediately, calculate due count asynchronously)
             if (profile.role === 'admin') {
                 const totalCollected = (collections || []).reduce((acc, row) => acc + (Number(row.amount) || 0), 0);
+                setFeesStats({ collectedThisMonth: totalCollected, dueStudentsCount: 0 });
 
-                // Fetch due students count by running the calculation locally
-                const { data: allStudsForStats } = await supabaseAuth
-                    .from('users')
-                    .select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid, status, classroom_students(classrooms(name))')
-                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
-                    .eq('status', 'active');
+                // Defer due students calculation in background without blocking UI render
+                (async () => {
+                    try {
+                        const [
+                            { data: allStudsForStats },
+                            { data: allPayForStats }
+                        ] = await Promise.all([
+                            supabaseAuth.from('users').select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid, status, classroom_students(classrooms(name))').or('role.eq.student,role.eq.pending,role.eq.mentor').eq('status', 'active'),
+                            supabaseAuth.from('fees_payments').select('id, student_id, amount, payment_date, status')
+                        ]);
 
-                const { data: allPayForStats } = await supabaseAuth
-                    .from('fees_payments')
-                    .select('id, student_id, amount, payment_date, status');
+                        let localDueCount = 0;
+                        if (allStudsForStats) {
+                            for (const student of allStudsForStats) {
+                                const stLower = (student.status || '').toLowerCase();
+                                if (stLower === 'archived' || stLower === 'inactive') continue;
 
-                let localDueCount = 0;
-                if (allStudsForStats) {
-                    for (const student of allStudsForStats) {
-                        const stLower = (student.status || '').toLowerCase();
-                        if (stLower === 'archived' || stLower === 'inactive') continue;
+                                const studentClassroomRef = (student as any).classroom_students?.[0];
+                                const studentClassroom = studentClassroomRef?.classrooms;
+                                const batch_name = Array.isArray(studentClassroom) 
+                                    ? studentClassroom[0]?.name 
+                                    : studentClassroom?.name;
 
-                        const studentClassroomRef = (student as any).classroom_students?.[0];
-                        const studentClassroom = studentClassroomRef?.classrooms;
-                        const batch_name = Array.isArray(studentClassroom) 
-                            ? studentClassroom[0]?.name 
-                            : studentClassroom?.name;
+                                if (batch_name && String(batch_name).toLowerCase().includes('learning circle')) continue;
 
-                        if (batch_name && String(batch_name).toLowerCase().includes('learning circle')) continue;
+                                if (Number(student.fees_amount) > 0) {
+                                    const studentPayments = (allPayForStats || []).filter(p => p.student_id === student.id);
+                                    const classesCompleted = (student.fees_classes_paid || 0) <= 0;
+                                    let isFeeDue = false;
 
-                        if (Number(student.fees_amount) > 0) {
-                            const studentPayments = (allPayForStats || []).filter(p => p.student_id === student.id);
-                            const classesCompleted = (student.fees_classes_paid || 0) <= 0;
-                            let isFeeDue = false;
+                                    if (student.fees_basis === 'monthly' && student.fees_collection_date) {
+                                        const feeStatus = getStudentFeeStatus(
+                                            student.fees_basis,
+                                            Number(student.fees_collection_date),
+                                            studentPayments
+                                        );
+                                        if (feeStatus) {
+                                            isFeeDue = feeStatus.status === 'overdue' || feeStatus.status === 'due' || classesCompleted;
+                                        }
+                                    } else {
+                                        if (classesCompleted) {
+                                            isFeeDue = true;
+                                        }
+                                    }
 
-                            if (student.fees_basis === 'monthly' && student.fees_collection_date) {
-                                const feeStatus = getStudentFeeStatus(
-                                    student.fees_basis,
-                                    Number(student.fees_collection_date),
-                                    studentPayments
-                                );
-                                if (feeStatus) {
-                                    isFeeDue = feeStatus.status === 'overdue' || feeStatus.status === 'due' || classesCompleted;
+                                    if (isFeeDue) {
+                                        localDueCount++;
+                                    }
                                 }
-                            } else {
-                                if (classesCompleted) {
-                                    isFeeDue = true;
-                                }
-                            }
-
-                            if (isFeeDue) {
-                                localDueCount++;
                             }
                         }
+                        setFeesStats({ collectedThisMonth: totalCollected, dueStudentsCount: localDueCount });
+                    } catch (e) {
+                        console.warn('Deferred fee due count warning:', e);
                     }
-                }
-
-                setFeesStats({
-                    collectedThisMonth: totalCollected,
-                    dueStudentsCount: localDueCount
-                });
+                })();
             }
 
             // Recent Submissions
@@ -964,10 +979,54 @@ export default function TeacherDashboardContainer() {
     };
 
     useEffect(() => {
+        const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
         const init = async () => {
-            setLoading(true);
+            // 1. Instant Cache Hydration for 0ms Mount!
+            let hasCachedData = false;
+            try {
+                let cached = localStorage.getItem('kfa_admin_dashboard_cache');
+                if (!cached && typeof window !== 'undefined') {
+                    const keys = Object.keys(localStorage).filter(k => k.startsWith('teacherDashboardCache_'));
+                    if (keys.length > 0) {
+                        cached = localStorage.getItem(keys[0]);
+                    }
+                }
+                if (cached) {
+                    const data = JSON.parse(cached);
+                    if (data.teacherProfile) setTeacherProfile(data.teacherProfile);
+                    if (data.stats) setStats(data.stats);
+                    if (data.feesStats) setFeesStats(data.feesStats);
+                    if (data.recentSubmissions) setRecentSubmissions(data.recentSubmissions);
+                    if (data.classroomSchedules) setClassroomSchedules(data.classroomSchedules);
+                    if (data.temporaryClasses) setTemporaryClasses(data.temporaryClasses);
+                    if (data.upcomingClasses) setUpcomingClasses(data.upcomingClasses);
+                    if (data.classrooms) setClassrooms(data.classrooms);
+                    if (data.teachers) setTeachers(data.teachers);
+                    if (data.unassignedStudents) setUnassignedStudents(data.unassignedStudents);
+                    if (data.pendingLeaves) setPendingLeaves(data.pendingLeaves);
+                    if (data.dueStudents) setDueStudents(data.dueStudents);
+                    if (data.pendingSubmissionsList) setPendingSubmissionsList(data.pendingSubmissionsList);
+                    if (data.classroomStudents) setClassroomStudents(data.classroomStudents);
+                    if (data.tempClassOverrides) setTempClassOverrides(data.tempClassOverrides);
+                    setLoading(false);
+                    hasCachedData = true;
+                    if (t0 > 0) {
+                        console.log(`[Admin Dashboard] ⚡ Instant Cache Mount Time: ${(performance.now() - t0).toFixed(2)}ms`);
+                    }
+                }
+            } catch (e) { console.error('Cache load error:', e); }
+
+            if (!hasCachedData) {
+                setLoading(true);
+            }
+
+            // 2. Silent Background Refresh
+            const tBgStart = typeof performance !== 'undefined' ? performance.now() : 0;
             await loadDashboardData();
             setLoading(false);
+            if (tBgStart > 0) {
+                console.log(`[Admin Dashboard] 🔄 Silent Background Sync Completed in: ${(performance.now() - tBgStart).toFixed(2)}ms`);
+            }
         };
         init();
     }, []);
