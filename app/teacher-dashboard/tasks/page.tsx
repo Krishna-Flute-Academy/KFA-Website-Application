@@ -523,6 +523,13 @@ export default function TaskReviewPage() {
     }, [router, fetchSubmissions]);
 
     useEffect(() => {
+        if (isCreateModalOpen && teacherProfile?.id) {
+            const isAdmin = teacherProfile.role === 'admin';
+            loadCreationData(teacherProfile.id, isAdmin);
+        }
+    }, [isCreateModalOpen, teacherProfile?.id, teacherProfile?.role]);
+
+    useEffect(() => {
         setCurrentPage(1);
         let result = submissions;
 
@@ -664,11 +671,13 @@ export default function TaskReviewPage() {
 
     const loadCreationData = async (teacherId: string, isAdmin: boolean = false) => {
         try {
+            const userIsAdmin = isAdmin || teacherProfile?.role === 'admin';
+
             // Fetch classrooms
             let classroomQuery = supabaseAuth
                 .from('classrooms')
                 .select('id, name, teacher_id');
-            if (!isAdmin) {
+            if (!userIsAdmin) {
                 classroomQuery = classroomQuery.eq('teacher_id', teacherId);
             }
             const { data: classes } = await classroomQuery;
@@ -681,7 +690,7 @@ export default function TaskReviewPage() {
             let prevTasksQuery = supabaseAuth
                 .from('assignments')
                 .select('id, title, description, due_date, classroom_id, target_type, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size');
-            if (!isAdmin) {
+            if (!userIsAdmin) {
                 prevTasksQuery = prevTasksQuery.eq('teacher_id', teacherId);
             }
             const { data: prevTasks } = await prevTasksQuery;
@@ -775,7 +784,7 @@ export default function TaskReviewPage() {
                 .select('id, name, profile_pic_url')
                 .or('role.eq.student,role.eq.pending,role.eq.mentor');
             
-            if (!isAdmin) {
+            if (!userIsAdmin) {
                 studentsUserQuery = studentsUserQuery.eq('teacher_id', teacherId);
             }
 
@@ -796,7 +805,6 @@ export default function TaskReviewPage() {
 
                 if (usersData) {
                     const formatted = usersData
-                        .filter((item: any) => isAdmin || item.teacher_id === teacherId)
                         .map((item: any) => ({
                             id: item.id,
                             name: item.name || 'Unknown Student',
@@ -1032,18 +1040,46 @@ export default function TaskReviewPage() {
         }
     };
 
+    const handleClassroomChange = (classroomId: string) => {
+        setCreateSelectedClassroom(classroomId);
+        setCreateStudentPage(1);
+        
+        if (classroomId === 'all') {
+            setCreateStudents(prev => prev.map(s => ({ ...s, selected: true })));
+        } else {
+            setCreateStudents(prev => prev.map(s => ({
+                ...s,
+                selected: s.classroom_ids?.includes(classroomId) || false
+            })));
+        }
+        setCreateSelectAll(true);
+    };
+
     const handleToggleStudent = (studentId: string) => {
-        setCreateStudents(prev => prev.map(s => 
-            s.id === studentId ? { ...s, selected: !s.selected } : s
-        ));
+        setCreateStudents(prev => {
+            const next = prev.map(s => 
+                s.id === studentId ? { ...s, selected: !s.selected } : s
+            );
+            const filteredIds = new Set(filteredCreateStudents.map(s => s.id));
+            const allFilteredSelected = filteredCreateStudents.length > 0 && 
+                next.filter(s => filteredIds.has(s.id)).every(s => s.selected);
+            setCreateSelectAll(allFilteredSelected);
+            return next;
+        });
     };
 
     const handleToggleAll = (checked: boolean) => {
         setCreateSelectAll(checked);
         const filteredIds = new Set(filteredCreateStudents.map(s => s.id));
-        setCreateStudents(prev => prev.map(s => 
-            filteredIds.has(s.id) ? { ...s, selected: checked } : s
-        ));
+        setCreateStudents(prev => prev.map(s => {
+            if (filteredIds.has(s.id)) {
+                return { ...s, selected: checked };
+            }
+            if (createSelectedClassroom && createSelectedClassroom !== 'all') {
+                return { ...s, selected: false };
+            }
+            return s;
+        }));
     };
 
     const uploadTaskFile = async (file: File) => {
@@ -1155,12 +1191,20 @@ export default function TaskReviewPage() {
             return;
         }
 
+        if (!isDraft && !createDueDate) {
+            alert('Please select a due date for the task.');
+            return;
+        }
+
         if (createClassrooms.length === 0) {
             alert('Please create at least one classroom before assigning tasks.');
             return;
         }
 
-        const selectedStudents = createStudents.filter(s => s.selected);
+        let selectedStudents = createStudents.filter(s => s.selected);
+        if (createSelectedClassroom && createSelectedClassroom !== 'all') {
+            selectedStudents = selectedStudents.filter(s => s.classroom_ids?.includes(createSelectedClassroom));
+        }
         if (!isDraft && selectedStudents.length === 0) {
             alert('Please select at least one student.');
             return;
@@ -1722,11 +1766,13 @@ export default function TaskReviewPage() {
                             {tabConfig.map(tab => {
                                 const count = tab.id === 'all'
                                     ? new Set(submissions.map(s => s.task_id)).size
+                                    : tab.id === 'draft'
+                                    ? new Set(submissions.filter(s => s.status === 'draft').map(s => s.task_id)).size
                                     : tab.id === 'assigned'
-                                    ? new Set(submissions.filter(s => s.status === 'pending' && s.student_id !== 'draft' && s.student_id !== 'no-students').map(s => s.task_id)).size
+                                    ? submissions.filter(s => s.status === 'pending' && s.student_id !== 'draft' && s.student_id !== 'no-students').length
                                     : tab.id === 'reviewed'
-                                    ? new Set(submissions.filter(s => s.status === 'reviewed').map(s => s.task_id)).size
-                                    : new Set(submissions.filter(s => s.status.toLowerCase() === tab.id).map(s => s.task_id)).size;
+                                    ? submissions.filter(s => s.status === 'reviewed' && s.student_id !== 'draft' && s.student_id !== 'no-students').length
+                                    : submissions.filter(s => s.status.toLowerCase() === tab.id && s.student_id !== 'draft' && s.student_id !== 'no-students').length;
 
                                 const isActive = activeTab === tab.id;
                                 return (
@@ -2486,7 +2532,7 @@ export default function TaskReviewPage() {
                                         <select 
                                             className="w-full px-3 py-2.5 bg-white dark:bg-slate-805 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-none font-bold"
                                             value={createSelectedClassroom}
-                                            onChange={(e) => setCreateSelectedClassroom(e.target.value)}
+                                            onChange={(e) => handleClassroomChange(e.target.value)}
                                         >
                                             <option value="all">All Students (Student Directory)</option>
                                             {sortClassroomsByDayAndTime(createClassrooms).map(cls => (
@@ -2576,10 +2622,11 @@ export default function TaskReviewPage() {
 
                                     {/* Due Date */}
                                     <div>
-                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 font-mono">Due Date</label>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 font-mono">Due Date <span className="text-rose-500">*</span></label>
                                         <input 
                                             className="w-full px-3 py-2.5 bg-white dark:bg-slate-805 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-none font-bold" 
                                             type="date"
+                                            required
                                             value={createDueDate}
                                             onChange={(e) => setCreateDueDate(e.target.value)}
                                         />

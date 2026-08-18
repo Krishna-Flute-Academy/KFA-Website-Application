@@ -53,13 +53,88 @@ export default function FeesManagementDashboard() {
     const [totalCount, setTotalCount] = useState<number>(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     
-    // UI Filters
+    // UI Filters & Sorting
+    type SortField = 'name' | 'join_date' | 'fees_basis' | 'fees_classes_paid' | 'next_collection' | 'fees_amount' | 'status';
+    type SortOrder = 'asc' | 'desc';
+
+    const [sortField, setSortField] = useState<SortField>('status');
+    const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [basisFilter, setBasisFilter] = useState<'all' | 'monthly' | 'class'>('all');
+    const [dateFilter, setDateFilter] = useState<string>('all');
+    const [classesLeftFilter, setClassesLeftFilter] = useState<string>('all');
+    const [amountFilter, setAmountFilter] = useState<string>('all');
+    const [collectionFilter, setCollectionFilter] = useState<string>('all');
+    
+    // Month & Date Range Filter State
+    const [selectedMonthValue, setSelectedMonthValue] = useState<string>('current_month');
+    const [customStartDate, setCustomStartDate] = useState<string>('');
+    const [customEndDate, setCustomEndDate] = useState<string>('');
+
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 8;
+
+    // Generate list of months that actually contain payment or student join data
+    const monthOptions = useMemo(() => {
+        const monthSet = new Set<string>();
+
+        // 1. Scan payments for months with actual data
+        payments.forEach(p => {
+            if (p.payment_date) {
+                const ym = p.payment_date.slice(0, 7);
+                if (ym && ym.length === 7 && ym.includes('-')) {
+                    monthSet.add(ym);
+                }
+            }
+        });
+
+        // 2. Scan student join dates for months with actual data
+        students.forEach(s => {
+            if (s.join_date) {
+                const ym = s.join_date.slice(0, 7);
+                if (ym && ym.length === 7 && ym.includes('-')) {
+                    monthSet.add(ym);
+                }
+            }
+        });
+
+        // Always include current month
+        const now = new Date();
+        const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        monthSet.add(currentMonthKey);
+
+        // Sort descending (most recent first)
+        const sortedMonths = Array.from(monthSet).sort((a, b) => b.localeCompare(a));
+
+        return sortedMonths.map(ym => {
+            const [yyyy, mm] = ym.split('-').map(Number);
+            const d = new Date(yyyy, mm - 1, 1);
+            const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            return { value: ym, label };
+        });
+    }, [payments, students]);
+
+    // Formatted label for selected fee period
+    const periodDisplayTitle = useMemo(() => {
+        if (selectedMonthValue === 'current_month') {
+            return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        }
+        if (selectedMonthValue === 'all_time') {
+            return 'All Time';
+        }
+        if (selectedMonthValue === 'custom_range') {
+            if (customStartDate && customEndDate) {
+                return `${new Date(customStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(customEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+            }
+            return 'Custom Date Range';
+        }
+        const [yyyy, mm] = selectedMonthValue.split('-').map(Number);
+        const d = new Date(yyyy, mm - 1, 1);
+        return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }, [selectedMonthValue, customStartDate, customEndDate]);
 
     // Debounce search query by 350ms to eliminate excessive network requests while typing
     useEffect(() => {
@@ -167,9 +242,6 @@ export default function FeesManagementDashboard() {
             sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
             const startSearchDate = sixtyDaysAgo.toISOString().split('T')[0];
 
-            const from = (currentPage - 1) * ITEMS_PER_PAGE;
-            const to = from + ITEMS_PER_PAGE - 1;
-
             let studentsQuery = supabaseAuth
                 .from('users')
                 .select(`
@@ -200,8 +272,7 @@ export default function FeesManagementDashboard() {
             }
 
             studentsQuery = studentsQuery
-                .order('name', { ascending: true })
-                .range(from, to);
+                .order('name', { ascending: true });
 
             const [studentsRes, paymentsRes] = await Promise.all([
                 studentsQuery,
@@ -273,7 +344,7 @@ export default function FeesManagementDashboard() {
             setLoading(false);
             setIsRefreshing(false);
         }
-    }, [teacherProfile, currentPage, debouncedSearch, basisFilter]);
+    }, [teacherProfile, debouncedSearch, basisFilter]);
 
     const fetchDataRef = useRef(fetchData);
     useEffect(() => {
@@ -284,7 +355,7 @@ export default function FeesManagementDashboard() {
         if (teacherProfile) {
             fetchData();
         }
-    }, [teacherProfile, currentPage, debouncedSearch, basisFilter, fetchData]);
+    }, [teacherProfile, debouncedSearch, basisFilter, fetchData]);
 
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
@@ -343,16 +414,66 @@ export default function FeesManagementDashboard() {
         return classesCompleted ? 'due_classes' : 'good';
     }, [paymentsMap]);
 
+    const handleHeaderSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortOrder('asc');
+        }
+    };
+
+    const handleResetFilters = () => {
+        setSearchQuery('');
+        setBasisFilter('all');
+        setStatusFilter('all');
+        setDateFilter('all');
+        setClassesLeftFilter('all');
+        setAmountFilter('all');
+        setCollectionFilter('all');
+        setSelectedMonthValue('current_month');
+        setCustomStartDate('');
+        setCustomEndDate('');
+        setSortField('status');
+        setSortOrder('asc');
+    };
+
+    const hasActiveFilters = searchQuery !== '' || basisFilter !== 'all' || statusFilter !== 'all' || dateFilter !== 'all' || classesLeftFilter !== 'all' || amountFilter !== 'all' || collectionFilter !== 'all' || selectedMonthValue !== 'current_month';
+
     // Filtering & Sorting logic with Memoized Statuses
     const filteredStudents = useMemo(() => {
         const statusMap = new Map<string, string>();
-        students.forEach(s => statusMap.set(s.id, getStudentStatus(s)));
+        const nextCollectionMap = new Map<string, number>();
+
+        students.forEach(s => {
+            statusMap.set(s.id, getStudentStatus(s));
+
+            let ts = 9999999999999;
+            if (s.fees_amount > 0) {
+                if (s.fees_basis === 'monthly' && s.fees_collection_date) {
+                    const studentPayments = paymentsMap[s.id] || [];
+                    const feeStatus = getStudentFeeStatus(
+                        s.fees_basis,
+                        Number(s.fees_collection_date),
+                        studentPayments
+                    );
+                    if (feeStatus && feeStatus.dueDate) {
+                        ts = feeStatus.dueDate.getTime();
+                    }
+                } else if (s.join_date) {
+                    const joinD = new Date(s.join_date);
+                    joinD.setDate(joinD.getDate() + 30);
+                    ts = joinD.getTime();
+                }
+            }
+            nextCollectionMap.set(s.id, ts);
+        });
 
         let result = [...students];
 
         if (searchQuery.trim() !== '') {
             const lowerQuery = searchQuery.toLowerCase();
-            result = result.filter(s => s.name.toLowerCase().includes(lowerQuery));
+            result = result.filter(s => s.name.toLowerCase().includes(lowerQuery) || (s.batch_name || '').toLowerCase().includes(lowerQuery));
         }
 
         if (basisFilter !== 'all') {
@@ -370,28 +491,129 @@ export default function FeesManagementDashboard() {
             }
         }
 
-        // Sort by status severity, then name
-        const statusPriority: Record<string, number> = { overdue: 0, setup_required: 1, due_classes: 2, due_date: 3, good: 4 };
+        if (dateFilter !== 'all') {
+            const now = new Date().getTime();
+            result = result.filter(s => {
+                if (!s.join_date) return false;
+                const jTime = new Date(s.join_date).getTime();
+                if (dateFilter === '30days') return (now - jTime) <= 30 * 86400000;
+                if (dateFilter === '90days') return (now - jTime) <= 90 * 86400000;
+                if (dateFilter === '2026') return new Date(s.join_date).getFullYear() === 2026;
+                return true;
+            });
+        }
+
+        if (classesLeftFilter !== 'all') {
+            result = result.filter(s => {
+                if (classesLeftFilter === 'zero' || classesLeftFilter === '0') return s.fees_classes_paid <= 0;
+                if (classesLeftFilter === 'one' || classesLeftFilter === '1') return s.fees_classes_paid === 1;
+                if (classesLeftFilter === '2') return s.fees_classes_paid === 2;
+                if (classesLeftFilter === '3') return s.fees_classes_paid === 3;
+                if (classesLeftFilter === '4') return s.fees_classes_paid === 4;
+                if (classesLeftFilter === '5') return s.fees_classes_paid === 5;
+                if (classesLeftFilter === '6+') return s.fees_classes_paid >= 6;
+                if (classesLeftFilter === 'multiple') return s.fees_classes_paid > 1;
+                return true;
+            });
+        }
+
+        if (amountFilter !== 'all') {
+            result = result.filter(s => {
+                if (amountFilter === 'configured') return s.fees_amount > 0;
+                if (amountFilter === 'unconfigured') return s.fees_amount <= 0;
+                return true;
+            });
+        }
+
+        if (collectionFilter !== 'all') {
+            const now = new Date().getTime();
+            result = result.filter(s => {
+                const ts = nextCollectionMap.get(s.id) || 9999999999999;
+                if (collectionFilter === 'due') return ts <= now;
+                if (collectionFilter === 'next7') return ts > now && ts <= now + 7 * 86400000;
+                if (collectionFilter === 'next30') return ts > now && ts <= now + 30 * 86400000;
+                return true;
+            });
+        }
+
+        const statusPriority: Record<string, number> = { overdue: 0, due_classes: 1, due_date: 2, pending_verification: 3, setup_required: 4, good: 5 };
+
         return result.sort((a, b) => {
-            const pA = statusPriority[statusMap.get(a.id) || 'good'] ?? 4;
-            const pB = statusPriority[statusMap.get(b.id) || 'good'] ?? 4;
-            if (pA !== pB) return pA - pB;
+            let comparison = 0;
+
+            if (sortField === 'name') {
+                comparison = a.name.localeCompare(b.name);
+            } else if (sortField === 'join_date') {
+                const dA = a.join_date ? new Date(a.join_date).getTime() : 0;
+                const dB = b.join_date ? new Date(b.join_date).getTime() : 0;
+                comparison = dA - dB;
+            } else if (sortField === 'fees_basis') {
+                comparison = a.fees_basis.localeCompare(b.fees_basis);
+            } else if (sortField === 'fees_classes_paid') {
+                comparison = a.fees_classes_paid - b.fees_classes_paid;
+            } else if (sortField === 'next_collection') {
+                const tA = nextCollectionMap.get(a.id) || 9999999999999;
+                const tB = nextCollectionMap.get(b.id) || 9999999999999;
+                comparison = tA - tB;
+            } else if (sortField === 'fees_amount') {
+                comparison = a.fees_amount - b.fees_amount;
+            } else if (sortField === 'status') {
+                const pA = statusPriority[statusMap.get(a.id) || 'good'] ?? 5;
+                const pB = statusPriority[statusMap.get(b.id) || 'good'] ?? 5;
+                comparison = pA - pB;
+            }
+
+            if (comparison !== 0) {
+                return sortOrder === 'asc' ? comparison : -comparison;
+            }
             return a.name.localeCompare(b.name);
         });
-    }, [students, searchQuery, statusFilter, basisFilter, getStudentStatus]);
+    }, [students, searchQuery, statusFilter, basisFilter, dateFilter, classesLeftFilter, amountFilter, collectionFilter, sortField, sortOrder, getStudentStatus, paymentsMap]);
 
-    // Server-Side Range Pagination
-    const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
-    const paginatedStudents = filteredStudents;
+    // Pagination
+    const totalPages = Math.max(1, Math.ceil(filteredStudents.length / ITEMS_PER_PAGE));
+    const paginatedStudents = useMemo(() => {
+        const from = (currentPage - 1) * ITEMS_PER_PAGE;
+        return filteredStudents.slice(from, from + ITEMS_PER_PAGE);
+    }, [filteredStudents, currentPage]);
 
     // Reset page on filter change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchQuery, statusFilter, basisFilter]);
+    }, [searchQuery, statusFilter, basisFilter, dateFilter, classesLeftFilter, amountFilter, collectionFilter, sortField, sortOrder]);
 
-    // Statistics
+    // Statistics & Period Payment Filter
     const statsSummary = useMemo(() => {
-        const totalCollected = payments.reduce((acc, curr) => acc + Number(curr.amount), 0);
+        let startDateStr = '';
+        let endDateStr = '';
+
+        if (selectedMonthValue === 'current_month') {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const lastDay = new Date(yyyy, now.getMonth() + 1, 0).getDate();
+            startDateStr = `${yyyy}-${mm}-01`;
+            endDateStr = `${yyyy}-${mm}-${String(lastDay).padStart(2, '0')}`;
+        } else if (selectedMonthValue === 'custom_range') {
+            startDateStr = customStartDate || '1970-01-01';
+            endDateStr = customEndDate || '2099-12-31';
+        } else if (selectedMonthValue === 'all_time') {
+            startDateStr = '1970-01-01';
+            endDateStr = '2099-12-31';
+        } else {
+            const [yyyy, mm] = selectedMonthValue.split('-').map(Number);
+            const lastDay = new Date(yyyy, mm, 0).getDate();
+            startDateStr = `${selectedMonthValue}-01`;
+            endDateStr = `${selectedMonthValue}-${String(lastDay).padStart(2, '0')}`;
+        }
+
+        const filteredPaymentsInPeriod = payments.filter(p => {
+            const pDate = p.payment_date ? p.payment_date.split('T')[0] : '';
+            return pDate >= startDateStr && pDate <= endDateStr;
+        });
+
+        const totalCollected = filteredPaymentsInPeriod.reduce((acc, curr) => acc + Number(curr.amount), 0);
+
         let overdueCount = 0;
         let dueClassesCount = 0;
         let dueDateCount = 0;
@@ -411,6 +633,9 @@ export default function FeesManagementDashboard() {
 
         return {
             totalCollected,
+            filteredPaymentsCount: filteredPaymentsInPeriod.length,
+            startDateStr,
+            endDateStr,
             overdueCount,
             dueClassesCount,
             dueDateCount,
@@ -419,7 +644,7 @@ export default function FeesManagementDashboard() {
             pendingCount,
             totalStudents: students.length
         };
-    }, [students, payments]);
+    }, [students, payments, selectedMonthValue, customStartDate, customEndDate, getStudentStatus]);
 
     const tabs = useMemo(() => [
         { id: 'all', label: 'All Students', count: statsSummary.totalStudents },
@@ -767,6 +992,61 @@ export default function FeesManagementDashboard() {
                                 )}
                             </div>
 
+                            {/* Fee Period / Month Selector Bar */}
+                            <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="size-10 rounded-xl bg-amber-100 dark:bg-amber-950/40 text-[#b45309] dark:text-[#ecb613] flex items-center justify-center shrink-0">
+                                        <Calendar className="size-5" />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Active Fee Period</p>
+                                        <h3 className="text-sm font-black text-slate-900 dark:text-white capitalize">{periodDisplayTitle}</h3>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5">
+                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">Select Period:</span>
+                                        <select
+                                            value={selectedMonthValue}
+                                            onChange={e => setSelectedMonthValue(e.target.value)}
+                                            className="bg-transparent border-none text-xs font-bold text-slate-800 dark:text-slate-200 outline-none cursor-pointer pr-6"
+                                        >
+                                            <option value="current_month">Current Month ({new Date().toLocaleDateString('en-US', { month: 'short' })})</option>
+                                            {monthOptions
+                                                .filter(m => {
+                                                    const now = new Date();
+                                                    const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                                                    return m.value !== currentKey;
+                                                })
+                                                .map(m => (
+                                                    <option key={m.value} value={m.value}>{m.label}</option>
+                                                ))}
+                                            <option value="custom_range">Custom Date Range...</option>
+                                            <option value="all_time">All Time</option>
+                                        </select>
+                                    </div>
+
+                                    {selectedMonthValue === 'custom_range' && (
+                                        <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1 text-xs animate-in fade-in duration-200">
+                                            <input
+                                                type="date"
+                                                value={customStartDate}
+                                                onChange={e => setCustomStartDate(e.target.value)}
+                                                className="bg-transparent text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none"
+                                            />
+                                            <span className="text-slate-400 font-bold">to</span>
+                                            <input
+                                                type="date"
+                                                value={customEndDate}
+                                                onChange={e => setCustomEndDate(e.target.value)}
+                                                className="bg-transparent text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             {/* Stats Cards */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-5">
@@ -774,8 +1054,13 @@ export default function FeesManagementDashboard() {
                                         <DollarSign className="size-6" />
                                     </div>
                                     <div>
-                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Collected This Month</p>
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide truncate max-w-[170px]" title={`Collected in ${periodDisplayTitle}`}>
+                                            Collected ({periodDisplayTitle})
+                                        </p>
                                         <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">₹{statsSummary.totalCollected.toLocaleString('en-IN')}</p>
+                                        <p className="text-[10px] font-semibold text-slate-400 mt-1">
+                                            {statsSummary.filteredPaymentsCount} payment{statsSummary.filteredPaymentsCount !== 1 ? 's' : ''} in period
+                                        </p>
                                     </div>
                                 </div>
 
@@ -843,31 +1128,114 @@ export default function FeesManagementDashboard() {
                                     })}
                                 </div>
 
-                                {/* Filters Panel */}
-                                <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-900/40">
-                                    <div className="relative flex-1 max-w-md">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-                                        <input
-                                            value={searchQuery}
-                                            onChange={e => setSearchQuery(e.target.value)}
-                                            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none transition-all"
-                                            placeholder="Search students by name..."
-                                            type="text"
-                                        />
+                                {/* Filters & Sorting Panel */}
+                                <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-900/40">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                        {/* Search */}
+                                        <div className="relative flex-1 max-w-md">
+                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                                            <input
+                                                value={searchQuery}
+                                                onChange={e => setSearchQuery(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none transition-all"
+                                                placeholder="Search by student name or batch..."
+                                                type="text"
+                                            />
+                                        </div>
+                                        
+                                        {/* Sort indicator & Reset button */}
+                                        <div className="flex items-center gap-3">
+                                            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 hidden sm:block">
+                                                Sorting by: <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">{sortField.replace('_', ' ')} ({sortOrder.toUpperCase()})</span>
+                                            </div>
+                                            {hasActiveFilters && (
+                                                <button
+                                                    onClick={handleResetFilters}
+                                                    className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 text-rose-700 dark:text-rose-300 rounded-lg text-xs font-bold transition-all border border-rose-200 dark:border-rose-800 shrink-0"
+                                                >
+                                                    <span className="material-symbols-outlined text-base">restart_alt</span>
+                                                    Reset Filters
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
-                                    
-                                    <div className="flex flex-wrap items-center gap-3">
-                                        {/* Basis Filter */}
-                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1">
-                                            <span className="text-[10px] font-bold text-slate-400 uppercase pl-1.5">Basis:</span>
+
+                                    {/* Multi-Column Filter Dropdowns */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                                        {/* Filter: Billing Plan */}
+                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Plan:</span>
                                             <select
                                                 value={basisFilter}
                                                 onChange={e => setBasisFilter(e.target.value as any)}
-                                                className="bg-transparent border-none text-xs font-semibold py-1.5 pr-8 focus:ring-0 outline-none cursor-pointer"
+                                                className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
                                             >
-                                                <option value="all">All plans</option>
+                                                <option value="all">All Plans</option>
                                                 <option value="monthly">Monthly</option>
-                                                <option value="class">Class-basis</option>
+                                                <option value="class">Class Basis</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Filter: Prepaid Classes Left */}
+                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Classes:</span>
+                                            <select
+                                                value={classesLeftFilter}
+                                                onChange={e => setClassesLeftFilter(e.target.value)}
+                                                className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
+                                            >
+                                                <option value="all">All Balances</option>
+                                                <option value="0">0 Classes Left</option>
+                                                <option value="1">1 Class Left</option>
+                                                <option value="2">2 Classes Left</option>
+                                                <option value="3">3 Classes Left</option>
+                                                <option value="4">4 Classes Left</option>
+                                                <option value="5">5 Classes Left</option>
+                                                <option value="6+">6+ Classes Left</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Filter: Next Collection */}
+                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Due:</span>
+                                            <select
+                                                value={collectionFilter}
+                                                onChange={e => setCollectionFilter(e.target.value)}
+                                                className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
+                                            >
+                                                <option value="all">All Dates</option>
+                                                <option value="due">Due / Overdue Today</option>
+                                                <option value="next7">Next 7 Days</option>
+                                                <option value="next30">Next 30 Days</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Filter: Standard Amount */}
+                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Amount:</span>
+                                            <select
+                                                value={amountFilter}
+                                                onChange={e => setAmountFilter(e.target.value)}
+                                                className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
+                                            >
+                                                <option value="all">All Amounts</option>
+                                                <option value="configured">Configured (&gt; ₹0)</option>
+                                                <option value="unconfigured">Setup Required (₹0)</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Filter: Joining Date */}
+                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Joined:</span>
+                                            <select
+                                                value={dateFilter}
+                                                onChange={e => setDateFilter(e.target.value)}
+                                                className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
+                                            >
+                                                <option value="all">All Dates</option>
+                                                <option value="30days">Last 30 Days</option>
+                                                <option value="90days">Last 90 Days</option>
+                                                <option value="2026">Year 2026</option>
                                             </select>
                                         </div>
                                     </div>
@@ -910,7 +1278,7 @@ export default function FeesManagementDashboard() {
                                                     <div className="grid grid-cols-2 gap-2 text-xs">
                                                         <div className="p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                                             <span className="block text-[10px] font-bold text-slate-400 uppercase">Plan</span>
-                                                            <span className="font-semibold text-slate-700 dark:text-slate-300">{student.fees_basis === 'monthly' ? 'Monthly' : 'Class Basis'}</span>
+                                                            <span className="font-semibold text-slate-700 dark:text-slate-350">{student.fees_basis === 'monthly' ? 'Monthly' : 'Class Basis'}</span>
                                                         </div>
                                                         <div className="p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                                             <span className="block text-[10px] font-bold text-slate-400 uppercase">Classes Left</span>
@@ -960,16 +1328,108 @@ export default function FeesManagementDashboard() {
                                 {/* Table */}
                                 <div className="hidden lg:block overflow-x-auto min-h-[350px]">
                                     <table className="w-full min-w-[1100px] border-collapse text-left">
-                                        <thead>
-                                            <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/20">
-                                                <th className="px-6 py-4 whitespace-nowrap">Student</th>
-                                                <th className="px-6 py-4 whitespace-nowrap">Joining Date</th>
-                                                <th className="px-6 py-4 whitespace-nowrap">Billing Plan</th>
-                                                <th className="px-6 py-4 whitespace-nowrap">Prepaid Classes</th>
-                                                <th className="px-6 py-4 whitespace-nowrap">Next Collection</th>
-                                                <th className="px-6 py-4 whitespace-nowrap">Standard Amount</th>
-                                                <th className="px-6 py-4 whitespace-nowrap">Status</th>
-                                                <th className="px-6 py-4 text-right whitespace-nowrap">Actions</th>
+                                        <thead className="bg-slate-100/70 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 select-none">
+                                            <tr className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">
+                                                {/* STUDENT */}
+                                                <th 
+                                                    onClick={() => handleHeaderSort('name')}
+                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    title="Click to sort by Student Name"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={sortField === 'name' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Student</span>
+                                                        <span className="text-xs">
+                                                            {sortField === 'name' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+                                                        </span>
+                                                    </div>
+                                                </th>
+
+                                                {/* JOINING DATE */}
+                                                <th 
+                                                    onClick={() => handleHeaderSort('join_date')}
+                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    title="Click to sort by Joining Date"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={sortField === 'join_date' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Joining Date</span>
+                                                        <span className="text-xs">
+                                                            {sortField === 'join_date' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+                                                        </span>
+                                                    </div>
+                                                </th>
+
+                                                {/* BILLING PLAN */}
+                                                <th 
+                                                    onClick={() => handleHeaderSort('fees_basis')}
+                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    title="Click to sort by Billing Plan"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={sortField === 'fees_basis' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Billing Plan</span>
+                                                        <span className="text-xs">
+                                                            {sortField === 'fees_basis' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+                                                        </span>
+                                                    </div>
+                                                </th>
+
+                                                {/* PREPAID CLASSES */}
+                                                <th 
+                                                    onClick={() => handleHeaderSort('fees_classes_paid')}
+                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    title="Click to sort by Prepaid Classes Left"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={sortField === 'fees_classes_paid' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Prepaid Classes</span>
+                                                        <span className="text-xs">
+                                                            {sortField === 'fees_classes_paid' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+                                                        </span>
+                                                    </div>
+                                                </th>
+
+                                                {/* NEXT COLLECTION */}
+                                                <th 
+                                                    onClick={() => handleHeaderSort('next_collection')}
+                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    title="Click to sort by Next Collection Date"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={sortField === 'next_collection' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Next Collection</span>
+                                                        <span className="text-xs">
+                                                            {sortField === 'next_collection' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+                                                        </span>
+                                                    </div>
+                                                </th>
+
+                                                {/* STANDARD AMOUNT */}
+                                                <th 
+                                                    onClick={() => handleHeaderSort('fees_amount')}
+                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    title="Click to sort by Standard Amount"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={sortField === 'fees_amount' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Standard Amount</span>
+                                                        <span className="text-xs">
+                                                            {sortField === 'fees_amount' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+                                                        </span>
+                                                    </div>
+                                                </th>
+
+                                                {/* STATUS */}
+                                                <th 
+                                                    onClick={() => handleHeaderSort('status')}
+                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    title="Click to sort by Fee Status"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={sortField === 'status' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Status</span>
+                                                        <span className="text-xs">
+                                                            {sortField === 'status' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+                                                        </span>
+                                                    </div>
+                                                </th>
+
+                                                {/* ACTIONS */}
+                                                <th className="px-6 py-3.5 text-right whitespace-nowrap">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1199,7 +1659,7 @@ export default function FeesManagementDashboard() {
                                 {/* Pagination Footer */}
                                 {totalPages > 1 && (
                                     <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs font-semibold text-slate-500">
-                                        <span>Showing {totalCount > 0 ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(currentPage * ITEMS_PER_PAGE, totalCount)} of {totalCount} Students</span>
+                                        <span>Showing {filteredStudents.length > 0 ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0} - {Math.min(currentPage * ITEMS_PER_PAGE, filteredStudents.length)} of {filteredStudents.length} Students</span>
                                         <div className="flex gap-2">
                                             <button
                                                 disabled={currentPage === 1}

@@ -138,7 +138,7 @@ export default function TeacherHeader({
                             <span className="material-symbols-outlined text-2xl select-none">arrow_back</span>
                         </Link>
                     )}
-                    <h2 className="text-base md:text-lg font-bold tracking-tight text-slate-800 dark:text-white shrink-0 truncate max-w-[120px] sm:max-w-none">{title}</h2>
+                    <h2 className="text-base md:text-lg font-bold tracking-tight text-slate-800 dark:text-white shrink-0 truncate max-w-[200px] xs:max-w-[260px] sm:max-w-none">{title}</h2>
                     {onSearchChange && (
                         <div className="hidden md:flex items-center flex-1 max-w-xs sm:max-w-md w-full">
                             <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-2 shrink-0"></div>

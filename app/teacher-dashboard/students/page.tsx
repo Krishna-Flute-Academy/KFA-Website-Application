@@ -1814,21 +1814,21 @@ export default function StudentDirectory() {
                                         <p className="text-sm text-slate-500 mt-1">Manage and track progress for {students.length} enrolled students.</p>
                                     </div>
                                     {(teacherProfile?.role === 'admin' || teacherProfile?.role === 'teacher') && (
-                                        <div className="flex items-center gap-2">
+                                        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
                                             <button
                                                 onClick={() => setShowRecycleBin(true)}
-                                                className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 px-4 h-11 rounded-lg text-sm font-bold shadow-sm transition-all border border-slate-250 dark:border-slate-700"
+                                                className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 sm:px-4 h-10 sm:h-11 rounded-lg text-xs sm:text-sm font-bold shadow-xs transition-all border border-slate-200 dark:border-slate-700"
                                                 title="Recycle Bin (Deleted Students)"
                                             >
-                                                <span className="material-symbols-outlined text-lg">delete_sweep</span>
-                                                Recycle Bin ({recycleBin.length})
+                                                <span className="material-symbols-outlined text-base sm:text-lg">delete_sweep</span>
+                                                <span className="truncate">Recycle Bin ({recycleBin.length})</span>
                                             </button>
                                             <Link
                                                 href="/teacher-dashboard/students/add"
-                                                className="bg-black dark:bg-[#ecb613] dark:text-slate-900 hover:bg-slate-800 text-white px-5 h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-all whitespace-nowrap"
+                                                className="bg-black dark:bg-[#ecb613] dark:text-slate-900 hover:bg-slate-800 text-white px-3 sm:px-5 h-10 sm:h-11 rounded-lg text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all whitespace-nowrap"
                                             >
-                                                <span className="material-symbols-outlined text-lg">person_add</span>
-                                                Add New Student
+                                                <span className="material-symbols-outlined text-base sm:text-lg">person_add</span>
+                                                <span className="truncate">Add New Student</span>
                                             </Link>
                                         </div>
                                     )}
@@ -1836,43 +1836,48 @@ export default function StudentDirectory() {
 
                                 {/* ── Pending Signup Requests Banner ────────────────── */}
                                 {pendingUsers.length > 0 && (
-                                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-700 overflow-hidden">
-                                        <div className="flex items-center justify-between px-4 py-3 bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700">
+                                    <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 dark:bg-amber-950/20 dark:border-amber-700/80 overflow-hidden shadow-xs">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 bg-amber-100/70 dark:bg-amber-900/30 border-b border-amber-200/80 dark:border-amber-700/80">
                                             <div className="flex items-center gap-2">
-                                                <span className="relative flex h-2.5 w-2.5">
+                                                <span className="relative flex h-2.5 w-2.5 shrink-0">
                                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
                                                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
                                                 </span>
-                                                <span className="font-bold text-sm text-amber-800 dark:text-amber-300">
+                                                <span className="font-bold text-xs sm:text-sm text-amber-900 dark:text-amber-300">
                                                     {pendingUsers.length} New Registration Request{pendingUsers.length !== 1 ? 's' : ''} Awaiting Approval
                                                 </span>
                                             </div>
                                             <Link
                                                 href="/teacher-dashboard/role-allocation"
-                                                className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline flex items-center gap-1"
+                                                className="text-xs font-bold text-amber-800 dark:text-amber-300 hover:underline flex items-center gap-1 shrink-0 self-start sm:self-auto"
                                             >
                                                 Go to Role Allocation →
                                             </Link>
                                         </div>
                                         <div className="divide-y divide-amber-100 dark:divide-amber-900/30">
                                             {pendingUsers.slice(0, 5).map(u => (
-                                                <div key={u.id} className="flex items-center justify-between px-4 py-3">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-9 h-9 rounded-full bg-amber-200 dark:bg-amber-800 flex items-center justify-center text-amber-800 dark:text-amber-200 font-bold text-sm">
+                                                <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:px-4 sm:py-3 gap-3">
+                                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                        <div className="w-10 h-10 rounded-full bg-amber-200/80 dark:bg-amber-800/80 flex items-center justify-center text-amber-900 dark:text-amber-100 font-black text-sm shrink-0 border border-amber-300/50">
                                                             {u.name?.charAt(0)?.toUpperCase() || '?'}
                                                         </div>
-                                                        <div>
-                                                            <p className="font-semibold text-sm text-slate-800 dark:text-slate-200">{u.name}</p>
-                                                            <p className="text-xs text-slate-500">{u.email}{u.phone ? ` · ${u.phone}` : ''}</p>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center justify-between sm:justify-start gap-2">
+                                                                <p className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">{u.name}</p>
+                                                                <span className="text-[11px] font-medium text-slate-400 shrink-0 sm:hidden">
+                                                                    {new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{u.email}{u.phone ? ` · ${u.phone}` : ''}</p>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-slate-400">
+                                                    <div className="flex items-center justify-end gap-3 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-amber-200/40 dark:border-amber-900/20">
+                                                        <span className="text-xs font-medium text-slate-400 hidden sm:inline">
                                                             {new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                                                         </span>
                                                         <Link
                                                             href="/teacher-dashboard/role-allocation"
-                                                            className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg font-semibold transition-colors"
+                                                            className="w-full sm:w-auto text-center text-xs bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white px-4 py-2 sm:py-1.5 rounded-lg font-bold transition-all shadow-xs whitespace-nowrap shrink-0"
                                                         >
                                                             Assign Role
                                                         </Link>
@@ -1880,8 +1885,8 @@ export default function StudentDirectory() {
                                                 </div>
                                             ))}
                                             {pendingUsers.length > 5 && (
-                                                <div className="px-4 py-2 text-center">
-                                                    <Link href="/teacher-dashboard/role-allocation" className="text-xs text-amber-700 dark:text-amber-400 font-semibold hover:underline">
+                                                <div className="px-4 py-2.5 text-center bg-amber-50/50 dark:bg-amber-950/10">
+                                                    <Link href="/teacher-dashboard/role-allocation" className="text-xs text-amber-800 dark:text-amber-400 font-bold hover:underline">
                                                         View all {pendingUsers.length} pending requests →
                                                     </Link>
                                                 </div>
@@ -1979,9 +1984,9 @@ export default function StudentDirectory() {
                                                 {paginatedStudents.map((student) => (
                                                     <div 
                                                         key={student.id} 
-                                                        className={`px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}
+                                                        className={`p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}
                                                     >
-                                                        {/* Left side: checkbox & text details */}
+                                                        {/* Left side: checkbox, avatar & text details */}
                                                         <div className="flex items-center gap-3 min-w-0 flex-1">
                                                             {filterMode !== 'unassigned' && (
                                                                 <input
@@ -1991,11 +1996,18 @@ export default function StudentDirectory() {
                                                                     className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer shrink-0"
                                                                 />
                                                             )}
+                                                            <div className="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-700/50 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                                                                {student.profile_pic_url ? (
+                                                                    <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <span className="text-amber-800 dark:text-amber-300 font-black text-xs">{student.name?.charAt(0)?.toUpperCase() || '?'}</span>
+                                                                )}
+                                                            </div>
                                                             <Link href={`/teacher-dashboard/students/${student.id}`} className="min-w-0 flex-1 cursor-pointer">
-                                                                <div className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                                                                <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
                                                                     {student.name}
                                                                 </div>
-                                                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                                                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                                                                     <span className="truncate">{student.batch}</span>
                                                                     {teacherProfile?.role === 'admin' && student.teacher_name && (
                                                                         <span className="truncate">• {student.teacher_name}</span>
@@ -2009,27 +2021,27 @@ export default function StudentDirectory() {
                                                             {filterMode === 'unassigned' ? (
                                                                 <button
                                                                     onClick={() => setShowClaimModal(student)}
-                                                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-sm flex items-center gap-1"
+                                                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1"
                                                                 >
-                                                                    <span className="material-symbols-outlined text-[14px]">person_add</span>
+                                                                    <span className="material-symbols-outlined text-base">person_add</span>
                                                                     Claim
                                                                 </button>
                                                             ) : (
                                                                 <>
                                                                     <Link
                                                                         href={`/teacher-dashboard/students/${student.id}/edit`}
-                                                                        className="p-1.5 text-[#a15912] dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all flex items-center justify-center"
+                                                                        className="p-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-all flex items-center justify-center"
                                                                         title="Edit Profile"
                                                                     >
-                                                                        <span className="material-symbols-outlined text-lg">edit</span>
+                                                                        <span className="material-symbols-outlined text-xl">edit</span>
                                                                     </Link>
                                                                     {teacherProfile?.role === 'admin' && (
                                                                         <button
                                                                             onClick={() => setStudentToDelete({ id: student.id, name: student.name })}
-                                                                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all flex items-center justify-center"
+                                                                            className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all flex items-center justify-center"
                                                                             title="Delete Student"
                                                                         >
-                                                                            <span className="material-symbols-outlined text-lg">delete</span>
+                                                                            <span className="material-symbols-outlined text-xl">delete</span>
                                                                         </button>
                                                                     )}
                                                                 </>

@@ -279,18 +279,46 @@ export default function EditTaskPage() {
         setCurrentPage(1);
     }, [selectedClassroom, studentSearch]);
 
+    const handleClassroomChange = (classroomId: string) => {
+        setSelectedClassroom(classroomId);
+        setCurrentPage(1);
+        
+        if (classroomId === 'all') {
+            setStudents(prev => prev.map(s => ({ ...s, selected: true })));
+        } else {
+            setStudents(prev => prev.map(s => ({
+                ...s,
+                selected: s.classroom_ids?.includes(classroomId) || false
+            })));
+        }
+        setSelectAll(true);
+    };
+
     const handleToggleStudent = (studentId: string) => {
-        setStudents(prev => prev.map(s => 
-            s.id === studentId ? { ...s, selected: !s.selected } : s
-        ));
+        setStudents(prev => {
+            const next = prev.map(s => 
+                s.id === studentId ? { ...s, selected: !s.selected } : s
+            );
+            const filteredIds = new Set(filteredStudents.map(s => s.id));
+            const allFilteredSelected = filteredStudents.length > 0 && 
+                next.filter(s => filteredIds.has(s.id)).every(s => s.selected);
+            setSelectAll(allFilteredSelected);
+            return next;
+        });
     };
 
     const handleToggleAll = (checked: boolean) => {
         setSelectAll(checked);
         const filteredIds = new Set(filteredStudents.map(s => s.id));
-        setStudents(prev => prev.map(s => 
-            filteredIds.has(s.id) ? { ...s, selected: checked } : s
-        ));
+        setStudents(prev => prev.map(s => {
+            if (filteredIds.has(s.id)) {
+                return { ...s, selected: checked };
+            }
+            if (selectedClassroom && selectedClassroom !== 'all') {
+                return { ...s, selected: false };
+            }
+            return s;
+        }));
     };
 
     const handleSaveEditedTask = async (isDraft: boolean = false) => {
@@ -300,7 +328,15 @@ export default function EditTaskPage() {
             return;
         }
 
-        const selectedStudents = students.filter(s => s.selected);
+        if (!isDraft && !dueDate) {
+            alert('Please select a due date for the task.');
+            return;
+        }
+
+        let selectedStudents = students.filter(s => s.selected);
+        if (selectedClassroom && selectedClassroom !== 'all') {
+            selectedStudents = selectedStudents.filter(s => s.classroom_ids?.includes(selectedClassroom));
+        }
         if (!isDraft && selectedStudents.length === 0) {
             alert('Please select at least one student.');
             return;
@@ -654,7 +690,7 @@ export default function EditTaskPage() {
                                                 <select 
                                                     className="w-full appearance-none px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none font-medium"
                                                     value={selectedClassroom}
-                                                    onChange={(e) => setSelectedClassroom(e.target.value)}
+                                                    onChange={(e) => handleClassroomChange(e.target.value)}
                                                 >
                                                     <option value="all">All Students (Student Directory)</option>
                                                      {sortClassroomsByDayAndTime(classrooms).map(cls => (
@@ -744,11 +780,12 @@ export default function EditTaskPage() {
                                         </div>
                                         {/* Due Date Picker */}
                                         <div>
-                                            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-3 Inter">Due Date</label>
+                                            <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-3 Inter">Due Date <span className="text-rose-500">*</span></label>
                                             <div className="relative">
                                                 <input 
                                                     className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none font-bold" 
                                                     type="date"
+                                                    required
                                                     value={dueDate}
                                                     onChange={(e) => setDueDate(e.target.value)}
                                                 />

@@ -640,6 +640,53 @@ export default function ClassroomDashboardPage({
     const assignmentFileRef = useRef<HTMLInputElement>(null);
     const [isDraggingOverAssignments, setIsDraggingOverAssignments] = useState(false);
 
+    // Previous tasks reuse state
+    const [previousTasks, setPreviousTasks] = useState<any[]>([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [selectedPreviousTaskId, setSelectedPreviousTaskId] = useState<string | null>(null);
+
+    const filteredPreviousTasks = useMemo(() => {
+        const seen = new Set<string>();
+        const unique: any[] = [];
+        previousTasks.forEach(task => {
+            const normalizedTitle = (task.title || '').toLowerCase().trim();
+            if (normalizedTitle && !seen.has(normalizedTitle)) {
+                seen.add(normalizedTitle);
+                unique.push(task);
+            }
+        });
+
+        if (!assignmentForm.title.trim()) return unique;
+        const lowerTitle = assignmentForm.title.toLowerCase();
+        return unique.filter(t => t.title?.toLowerCase().includes(lowerTitle));
+    }, [previousTasks, assignmentForm.title]);
+
+    const handleSelectPreviousTask = (task: any) => {
+        setAssignmentForm(prev => ({
+            ...prev,
+            title: task.title || '',
+            description: task.description || '',
+            due_date: task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : '',
+            file_url: task.file_url || null,
+            file_name: task.file_name || null,
+            file_size: task.file_size || null,
+        }));
+        setAssignmentFile(null);
+        setSelectedPreviousTaskId(task.id);
+        setShowSuggestions(false);
+    };
+
+    const handleAssignmentTitleChange = (newTitle: string) => {
+        setAssignmentForm(prev => ({ ...prev, title: newTitle }));
+        if (selectedPreviousTaskId) {
+            const matched = previousTasks.find(t => t.id === selectedPreviousTaskId);
+            if (matched && matched.title !== newTitle) {
+                setSelectedPreviousTaskId(null);
+            }
+        }
+        setShowSuggestions(true);
+    };
+
     // Student Task Review Dialog states
     const [selectedReviewStudent, setSelectedReviewStudent] = useState<AssignmentStudent | null>(null);
     const [selectedReviewAssignment, setSelectedReviewAssignment] = useState<Assignment | null>(null);
@@ -729,7 +776,39 @@ export default function ClassroomDashboardPage({
         });
         setAssignmentFile(null);
         setAssignmentError('');
+        setSelectedPreviousTaskId(null);
+        setShowSuggestions(false);
     };
+
+    const fetchPreviousTasks = useCallback(async () => {
+        if (!teacherProfile?.id) return;
+        try {
+            let prevTasksQuery = supabaseAuth
+                .from('assignments')
+                .select('id, title, description, due_date, classroom_id, target_type, status, inventory_ref_type, inventory_ref_id, inventory_ref_title, file_url, file_name, file_size');
+            
+            if (teacherProfile.role !== 'admin') {
+                prevTasksQuery = prevTasksQuery.eq('teacher_id', teacherProfile.id);
+            }
+            const { data: prevTasksData } = await prevTasksQuery.order('created_at', { ascending: false });
+
+            if (prevTasksData) {
+                const manualPrevTasks = prevTasksData.filter((t: any) => {
+                    const isAutoCurriculum = t.inventory_ref_type && t.title === t.inventory_ref_title;
+                    return !isAutoCurriculum;
+                });
+                setPreviousTasks(manualPrevTasks);
+            }
+        } catch (err) {
+            console.error('Error fetching previous tasks:', err);
+        }
+    }, [teacherProfile?.id, teacherProfile?.role]);
+
+    useEffect(() => {
+        if (showAssignmentModal) {
+            fetchPreviousTasks();
+        }
+    }, [showAssignmentModal, fetchPreviousTasks]);
 
     const handleDragStart = (e: React.DragEvent, note: ClassNote) => {
         e.dataTransfer.setData('application/json', JSON.stringify(note));
@@ -2045,6 +2124,7 @@ export default function ClassroomDashboardPage({
 
             const fullAssignment: Assignment = { ...newAsg, assignment_students: assignedStudents };
             setAssignments(prev => [fullAssignment, ...prev]);
+            setPreviousTasks(prev => [fullAssignment, ...prev]);
 
             closeAssignmentModal();
         } catch (err: any) {
@@ -5204,15 +5284,68 @@ export default function ClassroomDashboardPage({
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-6 space-y-5 text-left custom-scrollbar">
-                                <div className="space-y-1.5 text-left">
+                                <div className="space-y-1.5 text-left relative">
                                     <label className="block text-xs font-black text-slate-505 uppercase tracking-wide">Assignment Title *</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="e.g., practice middle C scale, 20 mins daily"
-                                        value={assignmentForm.title}
-                                        onChange={e => setAssignmentForm(prev => ({ ...prev, title: e.target.value }))}
-                                        className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 text-sm font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
-                                    />
+                                    <div className="relative flex items-center">
+                                        <input 
+                                            type="text" 
+                                            placeholder="e.g., practice middle C scale, 20 mins daily"
+                                            value={assignmentForm.title}
+                                            onChange={e => handleAssignmentTitleChange(e.target.value)}
+                                            onFocus={() => setShowSuggestions(true)}
+                                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 pr-10 text-sm font-semibold focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-[#ecb613]/25 focus:border-[#ecb613] outline-none transition-all text-slate-800 dark:text-slate-100"
+                                        />
+                                        <button
+                                            type="button"
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            onClick={() => setShowSuggestions(prev => !prev)}
+                                            className="absolute right-3 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                                            title="Show previous tasks"
+                                        >
+                                            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showSuggestions ? 'rotate-180' : ''}`} />
+                                        </button>
+                                    </div>
+
+                                    {showSuggestions && filteredPreviousTasks.length > 0 && (
+                                        <div 
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/50"
+                                        >
+                                            <div className="px-4 py-2 text-[10px] font-black text-slate-400 dark:text-slate-505 uppercase tracking-widest bg-slate-50/50 dark:bg-slate-800/10 flex items-center justify-between">
+                                                <span>Previous Tasks (Click to Reuse)</span>
+                                                <span className="text-[9px] font-normal text-slate-400">{filteredPreviousTasks.length} available</span>
+                                            </div>
+                                            {filteredPreviousTasks.map(task => (
+                                                <button
+                                                    key={task.id}
+                                                    type="button"
+                                                    onClick={() => handleSelectPreviousTask(task)}
+                                                    className="w-full text-left px-4 py-3 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 flex items-center justify-between transition-colors group cursor-pointer"
+                                                >
+                                                    <div className="flex-1 min-w-0 pr-4">
+                                                        <div className="font-bold text-sm text-slate-800 dark:text-slate-205 truncate group-hover:text-amber-600 transition-colors">
+                                                            {task.title}
+                                                        </div>
+                                                        {task.description && (
+                                                            <div className="text-xs text-slate-505 dark:text-slate-400 truncate mt-0.5">
+                                                                {task.description}
+                                                            </div>
+                                                        )}
+                                                        {(task.file_name || task.file_url) && (
+                                                            <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1 mt-1">
+                                                                <Paperclip className="w-3 h-3" />
+                                                                <span className="truncate">{task.file_name || 'Attached Material / Voice Note'}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {task.status === 'draft' && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 dark:bg-slate-800 text-slate-505 tracking-wider shrink-0">Draft</span>
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="space-y-1.5 text-left">
@@ -5337,8 +5470,10 @@ export default function ClassroomDashboardPage({
                                             </div>
                                         ) : assignmentForm.file_url ? (
                                             <div className="space-y-1">
-                                                <p className="text-xs font-extrabold text-[#ecb613] truncate max-w-[320px]">{assignmentForm.file_name || 'Linked Resource Attachment'}</p>
-                                                <p className="text-[10px] text-slate-400 font-mono">Linked from Class Note board</p>
+                                                <p className="text-xs font-extrabold text-[#ecb613] truncate max-w-[320px]">{assignmentForm.file_name || 'Attached Material / Voice Note'}</p>
+                                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-1">
+                                                    <CheckCircle className="w-3 h-3" /> Reused attachment from previous task
+                                                </p>
                                             </div>
                                         ) : (
                                             <div>
@@ -5347,6 +5482,21 @@ export default function ClassroomDashboardPage({
                                             </div>
                                         )}
                                     </div>
+                                    {(assignmentFile || assignmentForm.file_url) && (
+                                        <div className="mt-1 text-center">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setAssignmentFile(null);
+                                                    setAssignmentForm(prev => ({ ...prev, file_url: null, file_name: null, file_size: null }));
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
+                                            >
+                                                <X className="w-3.5 h-3.5" /> Clear Attachment
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {assignmentError && (
