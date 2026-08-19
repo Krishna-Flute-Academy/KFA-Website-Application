@@ -3,10 +3,11 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check, Trash2, Download, FileSpreadsheet } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { getStudentFeeStatus, calculateClassesAdded } from '../../../src/lib/fee-utils';
+import { exportFeesCSV } from '../../../src/lib/csv-export';
 
 interface StudentFeesData {
     id: string;
@@ -54,7 +55,7 @@ export default function FeesManagementDashboard() {
     const [isRefreshing, setIsRefreshing] = useState(false);
     
     // UI Filters & Sorting
-    type SortField = 'name' | 'join_date' | 'fees_basis' | 'fees_classes_paid' | 'next_collection' | 'fees_amount' | 'status';
+    type SortField = 'name' | 'join_date' | 'fees_basis' | 'fees_classes_paid' | 'next_collection' | 'fees_amount' | 'status' | 'latest_payment';
     type SortOrder = 'asc' | 'desc';
 
     const [sortField, setSortField] = useState<SortField>('status');
@@ -68,6 +69,7 @@ export default function FeesManagementDashboard() {
     const [classesLeftFilter, setClassesLeftFilter] = useState<string>('all');
     const [amountFilter, setAmountFilter] = useState<string>('all');
     const [collectionFilter, setCollectionFilter] = useState<string>('all');
+    const [periodPaymentFilter, setPeriodPaymentFilter] = useState<'received_only' | 'all'>('received_only');
     
     // Month & Date Range Filter State
     const [selectedMonthValue, setSelectedMonthValue] = useState<string>('current_month');
@@ -289,7 +291,7 @@ export default function FeesManagementDashboard() {
                         status,
                         created_at
                     `)
-                    .gte('payment_date', startSearchDate)
+                    .order('payment_date', { ascending: false })
             ]);
 
             if (studentsRes.data) {
@@ -316,16 +318,21 @@ export default function FeesManagementDashboard() {
                             ? studentClassroom[0]?.name 
                             : studentClassroom?.name;
 
+                        const joinDateVal = s.join_date || s.created_at?.split('T')[0] || new Date().toISOString().split('T')[0];
+                        const derivedCollectionDate = s.fees_collection_date 
+                            ? Number(s.fees_collection_date) 
+                            : (joinDateVal ? new Date(joinDateVal).getDate() : 1);
+
                         return {
                             id: s.id,
                             name: s.name,
                             email: s.email || '',
                             phone: s.phone || '',
                             profile_pic_url: s.profile_pic_url,
-                            join_date: s.join_date || s.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+                            join_date: joinDateVal,
                             fees_basis: s.fees_basis || 'monthly',
                             fees_amount: Number(s.fees_amount) || 0,
-                            fees_collection_date: s.fees_collection_date,
+                            fees_collection_date: derivedCollectionDate,
                             fees_classes_paid: Number(s.fees_classes_paid) || 0,
                             batch_name: batch_name || 'Unassigned'
                         };
@@ -372,6 +379,49 @@ export default function FeesManagementDashboard() {
         return map;
     }, [payments]);
 
+    // Active fee period target date evaluation
+    const activePeriodDate = useMemo(() => {
+        if (selectedMonthValue === 'current_month' || selectedMonthValue === 'all_time') {
+            return new Date();
+        }
+        if (selectedMonthValue === 'custom_range') {
+            return customEndDate ? new Date(customEndDate) : new Date();
+        }
+        if (selectedMonthValue.includes('-')) {
+            const [yyyy, mm] = selectedMonthValue.split('-').map(Number);
+            return new Date(yyyy, mm - 1, 15);
+        }
+        return new Date();
+    }, [selectedMonthValue, customEndDate]);
+
+    // Period date bounds (start and end date string YYYY-MM-DD)
+    const periodDateRange = useMemo(() => {
+        let startDateStr = '1970-01-01';
+        let endDateStr = '2099-12-31';
+
+        if (selectedMonthValue === 'current_month') {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const lastDay = new Date(yyyy, now.getMonth() + 1, 0).getDate();
+            startDateStr = `${yyyy}-${mm}-01`;
+            endDateStr = `${yyyy}-${mm}-${String(lastDay).padStart(2, '0')}`;
+        } else if (selectedMonthValue === 'custom_range') {
+            startDateStr = customStartDate || '1970-01-01';
+            endDateStr = customEndDate || '2099-12-31';
+        } else if (selectedMonthValue === 'all_time') {
+            startDateStr = '1970-01-01';
+            endDateStr = '2099-12-31';
+        } else if (selectedMonthValue.includes('-')) {
+            const [yyyy, mm] = selectedMonthValue.split('-').map(Number);
+            const lastDay = new Date(yyyy, mm, 0).getDate();
+            startDateStr = `${selectedMonthValue}-01`;
+            endDateStr = `${selectedMonthValue}-${String(lastDay).padStart(2, '0')}`;
+        }
+
+        return { startDateStr, endDateStr };
+    }, [selectedMonthValue, customStartDate, customEndDate]);
+
     // Calculate student payment status with O(1) payments map lookup
     const getStudentStatus = useCallback((student: StudentFeesData) => {
         if (student.fees_amount <= 0) return 'setup_required';
@@ -391,7 +441,9 @@ export default function FeesManagementDashboard() {
             const feeStatus = getStudentFeeStatus(
                 student.fees_basis,
                 Number(student.fees_collection_date),
-                studentPayments
+                studentPayments,
+                activePeriodDate,
+                student.join_date
             );
 
             if (feeStatus) {
@@ -412,7 +464,7 @@ export default function FeesManagementDashboard() {
 
         // Fallback
         return classesCompleted ? 'due_classes' : 'good';
-    }, [paymentsMap]);
+    }, [paymentsMap, activePeriodDate]);
 
     const handleHeaderSort = (field: SortField) => {
         if (sortField === field) {
@@ -431,6 +483,7 @@ export default function FeesManagementDashboard() {
         setClassesLeftFilter('all');
         setAmountFilter('all');
         setCollectionFilter('all');
+        setPeriodPaymentFilter('received_only');
         setSelectedMonthValue('current_month');
         setCustomStartDate('');
         setCustomEndDate('');
@@ -438,20 +491,30 @@ export default function FeesManagementDashboard() {
         setSortOrder('asc');
     };
 
-    const hasActiveFilters = searchQuery !== '' || basisFilter !== 'all' || statusFilter !== 'all' || dateFilter !== 'all' || classesLeftFilter !== 'all' || amountFilter !== 'all' || collectionFilter !== 'all' || selectedMonthValue !== 'current_month';
+    const hasActiveFilters = searchQuery !== '' || basisFilter !== 'all' || statusFilter !== 'all' || dateFilter !== 'all' || classesLeftFilter !== 'all' || amountFilter !== 'all' || collectionFilter !== 'all' || periodPaymentFilter !== 'received_only' || selectedMonthValue !== 'current_month';
 
-    // Filtering & Sorting logic with Memoized Statuses
-    const filteredStudents = useMemo(() => {
+    // Filtering & Sorting logic with Memoized Statuses & Period Payment Filters
+    const { periodPaymentsMap, filteredStudents } = useMemo(() => {
         const statusMap = new Map<string, string>();
         const nextCollectionMap = new Map<string, number>();
+        const periodPaymentsMap = new Map<string, PaymentRecord[]>();
+
+        const { startDateStr, endDateStr } = periodDateRange;
 
         students.forEach(s => {
             statusMap.set(s.id, getStudentStatus(s));
 
+            const studentPayments = paymentsMap[s.id] || [];
+            const inPeriod = studentPayments.filter(p => {
+                const pDate = p.payment_date ? p.payment_date.split('T')[0] : '';
+                return pDate >= startDateStr && pDate <= endDateStr;
+            }).sort((a, b) => (b.payment_date || '').localeCompare(a.payment_date || ''));
+
+            periodPaymentsMap.set(s.id, inPeriod);
+
             let ts = 9999999999999;
             if (s.fees_amount > 0) {
                 if (s.fees_basis === 'monthly' && s.fees_collection_date) {
-                    const studentPayments = paymentsMap[s.id] || [];
                     const feeStatus = getStudentFeeStatus(
                         s.fees_basis,
                         Number(s.fees_collection_date),
@@ -470,6 +533,14 @@ export default function FeesManagementDashboard() {
         });
 
         let result = [...students];
+
+        // Apply Received in Period filter if periodPaymentFilter is 'received_only'
+        // AND statusFilter is 'all' (or 'good'), so specific status tabs like 'setup_required' or 'overdue_due' display their full list.
+        const isSpecificStatusTab = statusFilter === 'setup_required' || statusFilter === 'overdue_due' || statusFilter === 'pending_verification';
+
+        if (selectedMonthValue !== 'all_time' && periodPaymentFilter === 'received_only' && !isSpecificStatusTab) {
+            result = result.filter(s => (periodPaymentsMap.get(s.id)?.length || 0) > 0);
+        }
 
         if (searchQuery.trim() !== '') {
             const lowerQuery = searchQuery.toLowerCase();
@@ -538,7 +609,7 @@ export default function FeesManagementDashboard() {
 
         const statusPriority: Record<string, number> = { overdue: 0, due_classes: 1, due_date: 2, pending_verification: 3, setup_required: 4, good: 5 };
 
-        return result.sort((a, b) => {
+        const sorted = result.sort((a, b) => {
             let comparison = 0;
 
             if (sortField === 'name') {
@@ -555,6 +626,12 @@ export default function FeesManagementDashboard() {
                 const tA = nextCollectionMap.get(a.id) || 9999999999999;
                 const tB = nextCollectionMap.get(b.id) || 9999999999999;
                 comparison = tA - tB;
+            } else if (sortField === 'latest_payment') {
+                const pA = periodPaymentsMap.get(a.id)?.[0];
+                const pB = periodPaymentsMap.get(b.id)?.[0];
+                const tA = pA?.payment_date ? new Date(pA.payment_date).getTime() : 0;
+                const tB = pB?.payment_date ? new Date(pB.payment_date).getTime() : 0;
+                comparison = tA - tB;
             } else if (sortField === 'fees_amount') {
                 comparison = a.fees_amount - b.fees_amount;
             } else if (sortField === 'status') {
@@ -568,7 +645,9 @@ export default function FeesManagementDashboard() {
             }
             return a.name.localeCompare(b.name);
         });
-    }, [students, searchQuery, statusFilter, basisFilter, dateFilter, classesLeftFilter, amountFilter, collectionFilter, sortField, sortOrder, getStudentStatus, paymentsMap]);
+
+        return { periodPaymentsMap, filteredStudents: sorted };
+    }, [students, searchQuery, statusFilter, basisFilter, dateFilter, classesLeftFilter, amountFilter, collectionFilter, sortField, sortOrder, getStudentStatus, paymentsMap, periodDateRange, selectedMonthValue, periodPaymentFilter]);
 
     // Pagination
     const totalPages = Math.max(1, Math.ceil(filteredStudents.length / ITEMS_PER_PAGE));
@@ -580,32 +659,11 @@ export default function FeesManagementDashboard() {
     // Reset page on filter change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchQuery, statusFilter, basisFilter, dateFilter, classesLeftFilter, amountFilter, collectionFilter, sortField, sortOrder]);
+    }, [searchQuery, statusFilter, basisFilter, dateFilter, classesLeftFilter, amountFilter, collectionFilter, sortField, sortOrder, selectedMonthValue, periodPaymentFilter]);
 
     // Statistics & Period Payment Filter
     const statsSummary = useMemo(() => {
-        let startDateStr = '';
-        let endDateStr = '';
-
-        if (selectedMonthValue === 'current_month') {
-            const now = new Date();
-            const yyyy = now.getFullYear();
-            const mm = String(now.getMonth() + 1).padStart(2, '0');
-            const lastDay = new Date(yyyy, now.getMonth() + 1, 0).getDate();
-            startDateStr = `${yyyy}-${mm}-01`;
-            endDateStr = `${yyyy}-${mm}-${String(lastDay).padStart(2, '0')}`;
-        } else if (selectedMonthValue === 'custom_range') {
-            startDateStr = customStartDate || '1970-01-01';
-            endDateStr = customEndDate || '2099-12-31';
-        } else if (selectedMonthValue === 'all_time') {
-            startDateStr = '1970-01-01';
-            endDateStr = '2099-12-31';
-        } else {
-            const [yyyy, mm] = selectedMonthValue.split('-').map(Number);
-            const lastDay = new Date(yyyy, mm, 0).getDate();
-            startDateStr = `${selectedMonthValue}-01`;
-            endDateStr = `${selectedMonthValue}-${String(lastDay).padStart(2, '0')}`;
-        }
+        const { startDateStr, endDateStr } = periodDateRange;
 
         const filteredPaymentsInPeriod = payments.filter(p => {
             const pDate = p.payment_date ? p.payment_date.split('T')[0] : '';
@@ -644,7 +702,7 @@ export default function FeesManagementDashboard() {
             pendingCount,
             totalStudents: students.length
         };
-    }, [students, payments, selectedMonthValue, customStartDate, customEndDate, getStudentStatus]);
+    }, [students, payments, periodDateRange, getStudentStatus]);
 
     const tabs = useMemo(() => [
         { id: 'all', label: 'All Students', count: statsSummary.totalStudents },
@@ -981,15 +1039,49 @@ export default function FeesManagementDashboard() {
                                     <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white tracking-tight leading-none">Fees Dashboard</h1>
                                     <p className="text-slate-500 dark:text-slate-400 mt-2.5">Track joining dates, collection cycles, payments history, and prepaid class balances.</p>
                                 </div>
-                                {alertMessage && (
-                                    <div className={`px-4 py-3 rounded-xl border text-sm font-semibold shadow-sm transition-all duration-300 animate-in fade-in slide-in-from-top-3 ${
-                                        alertMessage.type === 'success' 
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-150 dark:border-emerald-900/30' 
-                                            : 'bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 border-rose-150 dark:border-rose-900/30'
-                                    }`}>
-                                        {alertMessage.text}
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <button
+                                        onClick={() => {
+                                            const statusTextMap: Record<string, string> = {
+                                                overdue: 'Overdue',
+                                                due_classes: 'Classes Expired',
+                                                due_date: 'Due Today',
+                                                pending_verification: 'Pending Review',
+                                                setup_required: 'Setup Required',
+                                                good: 'Good Standing'
+                                            };
+                                            const { startDateStr, endDateStr } = statsSummary;
+                                            const studentsForExport = students.map(s => {
+                                                const studentPaymentsInPeriod = payments.filter(p => {
+                                                    if (p.student_id !== s.id) return false;
+                                                    const pDate = p.payment_date ? p.payment_date.split('T')[0] : '';
+                                                    return pDate >= startDateStr && pDate <= endDateStr;
+                                                });
+                                                const collectedInPeriod = studentPaymentsInPeriod.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                                                return {
+                                                    ...s,
+                                                    statusLabel: statusTextMap[getStudentStatus(s)] || 'Good Standing',
+                                                    collectedInPeriod
+                                                };
+                                            });
+                                            exportFeesCSV(studentsForExport, periodDisplayTitle);
+                                        }}
+                                        className="flex items-center gap-2 px-4 py-2.5 bg-[#ecb613] hover:bg-[#d9a40e] text-slate-950 font-black rounded-xl text-xs shadow-sm transition-all cursor-pointer border border-[#d9a40e] shrink-0"
+                                        title="Export Fees Report to CSV File"
+                                    >
+                                        <Download className="size-4" />
+                                        <span>Export CSV Report</span>
+                                    </button>
+                                    {alertMessage && (
+                                        <div className={`px-4 py-3 rounded-xl border text-sm font-semibold shadow-sm transition-all duration-300 animate-in fade-in slide-in-from-top-3 ${
+                                            alertMessage.type === 'success' 
+                                                ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-150 dark:border-emerald-900/30' 
+                                                : 'bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 border-rose-150 dark:border-rose-900/30'
+                                        }`}>
+                                            {alertMessage.text}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Fee Period / Month Selector Bar */}
@@ -1009,7 +1101,15 @@ export default function FeesManagementDashboard() {
                                         <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">Select Period:</span>
                                         <select
                                             value={selectedMonthValue}
-                                            onChange={e => setSelectedMonthValue(e.target.value)}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                setSelectedMonthValue(val);
+                                                if (val === 'all_time') {
+                                                    setPeriodPaymentFilter('all');
+                                                } else {
+                                                    setPeriodPaymentFilter('received_only');
+                                                }
+                                            }}
                                             className="bg-transparent border-none text-xs font-bold text-slate-800 dark:text-slate-200 outline-none cursor-pointer pr-6"
                                         >
                                             <option value="current_month">Current Month ({new Date().toLocaleDateString('en-US', { month: 'short' })})</option>
@@ -1161,7 +1261,20 @@ export default function FeesManagementDashboard() {
                                     </div>
 
                                     {/* Multi-Column Filter Dropdowns */}
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                                        {/* Filter: Period Received Payments */}
+                                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Period:</span>
+                                            <select
+                                                value={periodPaymentFilter}
+                                                onChange={e => setPeriodPaymentFilter(e.target.value as any)}
+                                                className="bg-transparent border-none text-xs font-bold py-1 pl-1 pr-6 focus:ring-0 outline-none cursor-pointer w-full text-slate-800 dark:text-slate-200"
+                                            >
+                                                <option value="received_only">Received in Period Only</option>
+                                                <option value="all">All Active Students</option>
+                                            </select>
+                                        </div>
+
                                         {/* Filter: Billing Plan */}
                                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Plan:</span>
@@ -1290,6 +1403,21 @@ export default function FeesManagementDashboard() {
                                                                         : 'text-slate-700 dark:text-slate-300'
                                                             }`}>{student.fees_classes_paid}</span>
                                                         </div>
+                                                        {(() => {
+                                                            const inPeriod = periodPaymentsMap.get(student.id) || [];
+                                                            const latestP = inPeriod[0];
+                                                            if (latestP) {
+                                                                return (
+                                                                    <div className="p-2 bg-emerald-50/80 dark:bg-emerald-950/20 rounded-lg border border-emerald-100 dark:border-emerald-900/30 col-span-2">
+                                                                        <span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Received in {periodDisplayTitle}</span>
+                                                                        <span className="font-bold text-slate-800 dark:text-slate-200">
+                                                                            {new Date(latestP.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} — ₹{Number(latestP.amount).toLocaleString('en-IN')} ({latestP.payment_method})
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
                                                     </div>
                                                     <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
                                                         <div className="flex items-center gap-2">
@@ -1327,13 +1455,13 @@ export default function FeesManagementDashboard() {
 
                                 {/* Table */}
                                 <div className="hidden lg:block overflow-x-auto min-h-[350px]">
-                                    <table className="w-full min-w-[1100px] border-collapse text-left">
+                                    <table className="w-full min-w-[1250px] border-collapse text-left">
                                         <thead className="bg-slate-100/70 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 select-none">
                                             <tr className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">
                                                 {/* STUDENT */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('name')}
-                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap min-w-[220px] w-[260px]"
                                                     title="Click to sort by Student Name"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1347,7 +1475,7 @@ export default function FeesManagementDashboard() {
                                                 {/* JOINING DATE */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('join_date')}
-                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Joining Date"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1358,10 +1486,24 @@ export default function FeesManagementDashboard() {
                                                     </div>
                                                 </th>
 
+                                                {/* PAYMENT RECEIVED IN PERIOD */}
+                                                <th 
+                                                    onClick={() => handleHeaderSort('latest_payment')}
+                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    title="Click to sort by Received Payment Date in Selected Period"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={sortField === 'latest_payment' ? 'text-[#b45309] dark:text-[#ecb613] font-black' : ''}>Payment Received</span>
+                                                        <span className="text-xs">
+                                                            {sortField === 'latest_payment' ? (sortOrder === 'asc' ? '↑' : '↓') : '↕'}
+                                                        </span>
+                                                    </div>
+                                                </th>
+
                                                 {/* BILLING PLAN */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('fees_basis')}
-                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Billing Plan"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1375,7 +1517,7 @@ export default function FeesManagementDashboard() {
                                                 {/* PREPAID CLASSES */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('fees_classes_paid')}
-                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Prepaid Classes Left"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1389,7 +1531,7 @@ export default function FeesManagementDashboard() {
                                                 {/* NEXT COLLECTION */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('next_collection')}
-                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Next Collection Date"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1403,7 +1545,7 @@ export default function FeesManagementDashboard() {
                                                 {/* STANDARD AMOUNT */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('fees_amount')}
-                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Standard Amount"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1417,7 +1559,7 @@ export default function FeesManagementDashboard() {
                                                 {/* STATUS */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('status')}
-                                                    className="px-6 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Fee Status"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1429,7 +1571,7 @@ export default function FeesManagementDashboard() {
                                                 </th>
 
                                                 {/* ACTIONS */}
-                                                <th className="px-6 py-3.5 text-right whitespace-nowrap">Actions</th>
+                                                <th className="px-6 py-2.5 text-right whitespace-nowrap">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1450,29 +1592,53 @@ export default function FeesManagementDashboard() {
                                                         <tr key={student.id} className={`transition-colors border-b border-b-slate-100 dark:border-b-slate-800 ${rowUrgencyClass}`}>
                                                             
                                                             {/* Student Profile */}
-                                                            <td className="px-6 py-4.5">
+                                                            <td className="px-6 py-2.5 min-w-[220px] w-[260px]">
                                                                 <div className="flex items-center gap-3">
-                                                                    <div className="size-9 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-bold flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-800">
+                                                                    <div className="size-8 rounded-lg bg-[#ecb613]/10 text-[#ecb613] font-bold flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-800 shrink-0">
                                                                         {student.profile_pic_url ? (
                                                                             <img src={student.profile_pic_url} alt="" className="w-full h-full object-cover" />
                                                                         ) : (
                                                                             <span>{student.name.charAt(0)}</span>
                                                                         )}
                                                                     </div>
-                                                                    <div>
-                                                                        <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">{student.name}</p>
-                                                                        <p className="text-[10px] font-medium text-slate-400 mt-1">{student.batch_name === 'Unassigned' ? 'No Batch' : student.batch_name}</p>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight whitespace-nowrap">{student.name}</p>
+                                                                        <p className="text-[10px] font-medium text-slate-400 mt-0.5 truncate max-w-[200px]" title={student.batch_name === 'Unassigned' ? 'No Batch' : student.batch_name}>
+                                                                            {student.batch_name === 'Unassigned' ? 'No Batch' : student.batch_name}
+                                                                        </p>
                                                                     </div>
                                                                 </div>
                                                             </td>
 
                                                             {/* Joining Date */}
-                                                            <td className="px-6 py-4.5 text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                                            <td className="px-6 py-2.5 text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">
                                                                 {student.join_date ? new Date(student.join_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
                                                             </td>
 
+                                                            {/* Payment Received Date (In Period) */}
+                                                            <td className="px-6 py-2.5 text-xs whitespace-nowrap">
+                                                                {(() => {
+                                                                    const inPeriod = periodPaymentsMap.get(student.id) || [];
+                                                                    const latestP = inPeriod[0];
+                                                                    if (latestP) {
+                                                                        return (
+                                                                            <div>
+                                                                                <p className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1 leading-tight">
+                                                                                    <Check className="size-3 text-emerald-500" />
+                                                                                    {new Date(latestP.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                                </p>
+                                                                                <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                                                                                    ₹{Number(latestP.amount).toLocaleString('en-IN')} ({latestP.payment_method})
+                                                                                </p>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    return <span className="text-slate-400 italic text-[11px]">No payment in period</span>;
+                                                                })()}
+                                                            </td>
+
                                                             {/* Billing Plan */}
-                                                            <td className="px-6 py-4.5">
+                                                            <td className="px-6 py-2.5">
                                                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
                                                                     student.fees_basis === 'monthly'
                                                                         ? 'bg-purple-50 dark:bg-purple-950/20 text-purple-750 border border-purple-100 dark:border-purple-900/30'
@@ -1483,7 +1649,7 @@ export default function FeesManagementDashboard() {
                                                             </td>
 
                                                             {/* Prepaid Classes Balance */}
-                                                            <td className="px-6 py-4.5 whitespace-nowrap">
+                                                            <td className="px-6 py-2.5 whitespace-nowrap">
                                                                 <div className="flex items-center gap-2">
                                                                     <span className={`text-sm font-black ${
                                                                         student.fees_classes_paid <= 0
@@ -1501,17 +1667,19 @@ export default function FeesManagementDashboard() {
                                                             </td>
 
                                                             {/* Next Collection Date */}
-                                                            <td className="px-6 py-4.5 text-xs font-bold text-slate-700 dark:text-slate-350 whitespace-nowrap">
+                                                            <td className="px-6 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-350 whitespace-nowrap">
                                                                 {(() => {
                                                                     if (student.fees_amount <= 0) return <span className="text-slate-400 italic font-medium text-[10px]">Setup Required</span>;
                                                                     
                                                                     if (student.fees_basis === 'monthly') {
                                                                         if (student.fees_collection_date) {
-                                                                            const studentPayments = payments.filter(p => p.student_id === student.id);
+                                                                            const studentPayments = paymentsMap[student.id] || [];
                                                                             const feeStatus = getStudentFeeStatus(
                                                                                 student.fees_basis,
                                                                                 Number(student.fees_collection_date),
-                                                                                studentPayments
+                                                                                studentPayments,
+                                                                                activePeriodDate,
+                                                                                student.join_date
                                                                             );
                                                                             return feeStatus ? feeStatus.formattedDueDate : 'N/A';
                                                                         } else if (student.join_date) {
@@ -1526,12 +1694,12 @@ export default function FeesManagementDashboard() {
                                                             </td>
 
                                                             {/* Fees Amount */}
-                                                            <td className="px-6 py-4.5 text-sm font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                                                            <td className="px-6 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                                                                 ₹{student.fees_amount.toLocaleString('en-IN')}
                                                             </td>
 
                                                             {/* Status Badge */}
-                                                            <td className="px-6 py-4.5 whitespace-nowrap">
+                                                            <td className="px-6 py-2.5 whitespace-nowrap">
                                                                 {status === 'setup_required' && (
                                                                     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                                                                         Setup Required
@@ -1574,7 +1742,7 @@ export default function FeesManagementDashboard() {
                                                             </td>
 
                                                             {/* Actions */}
-                                                            <td className="px-6 py-4.5 text-right whitespace-nowrap">
+                                                            <td className="px-6 py-2.5 text-right whitespace-nowrap">
                                                                 <div className="flex items-center justify-end gap-2">
                                                                     {status !== 'good' && status !== 'setup_required' && (
                                                                         <button

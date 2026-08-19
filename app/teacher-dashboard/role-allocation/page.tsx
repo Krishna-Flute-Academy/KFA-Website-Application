@@ -3,12 +3,17 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Users, ShieldAlert, Award, Calendar, Coins, UserCheck, ArrowRight, ShieldCheck, Mail, Phone, BookOpen, Trash2 } from 'lucide-react';
+import { 
+    Loader2, Users, ShieldAlert, Award, Calendar, Coins, UserCheck, 
+    ArrowRight, ShieldCheck, Mail, Phone, BookOpen, Trash2,
+    ArrowUpDown, ArrowUp, ArrowDown, Filter, X, Download, FileSpreadsheet
+} from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import TeacherMentorManagement from '../../../src/components/teacher-dashboard/TeacherMentorManagement';
 import { useToast } from '../../../src/lib/ToastContext';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
+import { exportRoleAllocationCSV } from '../../../src/lib/csv-export';
 
 interface UserProfile {
     id: string;
@@ -20,13 +25,15 @@ interface UserProfile {
     join_date: string | null;
     teacher_id: string | null;
     level: string | null;
+    learning_mode?: string | null;
     fees_basis: string | null;
     fees_amount: number | null;
     fees_classes_paid: number | null;
     fees_collection_date: number | null;
+    profile_pic_url?: string | null;
     classroom_students?: {
         classroom_id: string;
-        classrooms?: { name: string };
+        classrooms?: { name: string } | { name: string }[];
     }[];
 }
 
@@ -36,6 +43,9 @@ interface Classroom {
     teacher_id: string;
     status?: string;
 }
+
+type SortField = 'name' | 'contact' | 'role' | 'teacher' | 'classroom' | 'billing' | 'dueDate' | 'status';
+type SortOrder = 'asc' | 'desc';
 
 export default function RoleAllocationDashboard() {
     const router = useRouter();
@@ -48,6 +58,20 @@ export default function RoleAllocationDashboard() {
     // Tabs & Filters
     const [activeTab, setActiveTab] = useState<'pending' | 'teachers' | 'students' | 'admins' | 'mentors'>('pending');
     const [searchQuery, setSearchQuery] = useState('');
+
+    // Column Sorting State
+    const [sortField, setSortField] = useState<SortField>('name');
+    const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+
+    // Column Filter States
+    const [colUserFilter, setColUserFilter] = useState('');
+    const [colContactFilter, setColContactFilter] = useState('');
+    const [colRoleFilter, setColRoleFilter] = useState('all');
+    const [colTeacherFilter, setColTeacherFilter] = useState('all');
+    const [colClassroomFilter, setColClassroomFilter] = useState('all');
+    const [colBillingFilter, setColBillingFilter] = useState('all');
+    const [colDueDateFilter, setColDueDateFilter] = useState('all');
+    const [colStatusFilter, setColStatusFilter] = useState('all');
     
     // Modal states
     const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -59,6 +83,7 @@ export default function RoleAllocationDashboard() {
     const [selectedTeacherId, setSelectedTeacherId] = useState('');
     const [selectedClassroomId, setSelectedClassroomId] = useState('');
     const [experienceLevel, setExperienceLevel] = useState('beginner');
+    const [learningMode, setLearningMode] = useState('online');
     const [feesBasis, setFeesBasis] = useState('monthly');
     const [feesAmount, setFeesAmount] = useState('1500');
     const [feesClassesPaid, setFeesClassesPaid] = useState('0');
@@ -96,8 +121,8 @@ export default function RoleAllocationDashboard() {
             const usersReq = supabaseAuth
                 .from('users')
                 .select(`
-                    id, name, email, phone, role, status, join_date, teacher_id, level,
-                    fees_basis, fees_amount, fees_classes_paid, fees_collection_date,
+                    id, name, email, phone, role, status, join_date, teacher_id, level, learning_mode,
+                    fees_basis, fees_amount, fees_classes_paid, fees_collection_date, profile_pic_url,
                     classroom_students(
                         classroom_id,
                         classrooms(name)
@@ -145,11 +170,62 @@ export default function RoleAllocationDashboard() {
         return usersList.filter(u => u.role === 'teacher' || u.role === 'admin');
     }, [usersList]);
 
+    const uniqueBatches = React.useMemo(() => {
+        const names = new Set<string>();
+        classrooms.forEach(c => {
+            if (c.name) names.add(c.name);
+        });
+        return Array.from(names).sort();
+    }, [classrooms]);
+
     const filteredClassrooms = React.useMemo(() => {
         const activeRooms = classrooms.filter(c => c.status === 'active');
         const targetRooms = selectedTeacherId ? activeRooms.filter(c => c.teacher_id === selectedTeacherId) : activeRooms;
         return sortClassroomsByDayAndTime(targetRooms);
     }, [classrooms, selectedTeacherId]);
+
+    const handleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+        } else {
+            setSortField(field);
+            setSortOrder('asc');
+        }
+    };
+
+    const hasActiveFilters = React.useMemo(() => {
+        return (
+            searchQuery.trim() !== '' ||
+            colUserFilter.trim() !== '' ||
+            colContactFilter.trim() !== '' ||
+            colRoleFilter !== 'all' ||
+            colTeacherFilter !== 'all' ||
+            colClassroomFilter !== 'all' ||
+            colBillingFilter !== 'all' ||
+            colDueDateFilter !== 'all' ||
+            colStatusFilter !== 'all' ||
+            sortField !== 'name' ||
+            sortOrder !== 'asc'
+        );
+    }, [
+        searchQuery, colUserFilter, colContactFilter, colRoleFilter,
+        colTeacherFilter, colClassroomFilter, colBillingFilter,
+        colDueDateFilter, colStatusFilter, sortField, sortOrder
+    ]);
+
+    const clearAllFilters = () => {
+        setSearchQuery('');
+        setColUserFilter('');
+        setColContactFilter('');
+        setColRoleFilter('all');
+        setColTeacherFilter('all');
+        setColClassroomFilter('all');
+        setColBillingFilter('all');
+        setColDueDateFilter('all');
+        setColStatusFilter('all');
+        setSortField('name');
+        setSortOrder('asc');
+    };
 
     const filteredUsers = React.useMemo(() => {
         let result = usersList.filter(u => {
@@ -165,6 +241,7 @@ export default function RoleAllocationDashboard() {
             return u.role === targetRole && u.status !== 'pending';
         });
 
+        // 1. Search Query
         if (searchQuery.trim() !== '') {
             const lowerQ = searchQuery.toLowerCase();
             result = result.filter(u => 
@@ -173,8 +250,118 @@ export default function RoleAllocationDashboard() {
             );
         }
 
-        return result.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    }, [usersList, activeTab, searchQuery]);
+        // 2. Column Filters
+        if (colUserFilter.trim() !== '') {
+            const q = colUserFilter.toLowerCase();
+            result = result.filter(u => 
+                (u.name && u.name.toLowerCase().includes(q)) ||
+                (u.id && u.id.toLowerCase().includes(q))
+            );
+        }
+
+        if (colContactFilter.trim() !== '') {
+            const q = colContactFilter.toLowerCase();
+            result = result.filter(u => 
+                (u.email && u.email.toLowerCase().includes(q)) ||
+                (u.phone && u.phone.toLowerCase().includes(q))
+            );
+        }
+
+        if (colRoleFilter !== 'all') {
+            result = result.filter(u => u.role === colRoleFilter);
+        }
+
+        if (colTeacherFilter !== 'all') {
+            if (colTeacherFilter === 'unassigned') {
+                result = result.filter(u => !u.teacher_id);
+            } else {
+                result = result.filter(u => u.teacher_id === colTeacherFilter);
+            }
+        }
+
+        if (colClassroomFilter !== 'all') {
+            if (colClassroomFilter === 'unassigned') {
+                result = result.filter(u => {
+                    const cData = u.classroom_students?.[0]?.classrooms;
+                    const cName = Array.isArray(cData) ? (cData[0] as any)?.name : (cData as any)?.name;
+                    return !cName;
+                });
+            } else {
+                result = result.filter(u => {
+                    const cData = u.classroom_students?.[0]?.classrooms;
+                    const cName = Array.isArray(cData) ? (cData[0] as any)?.name : (cData as any)?.name;
+                    return cName === colClassroomFilter;
+                });
+            }
+        }
+
+        if (colBillingFilter !== 'all') {
+            if (colBillingFilter === 'none') {
+                result = result.filter(u => !u.fees_basis);
+            } else {
+                result = result.filter(u => u.fees_basis === colBillingFilter);
+            }
+        }
+
+        if (colDueDateFilter !== 'all') {
+            result = result.filter(u => String(u.fees_collection_date) === colDueDateFilter);
+        }
+
+        if (colStatusFilter !== 'all') {
+            result = result.filter(u => u.status === colStatusFilter);
+        }
+
+        // 3. Sorting
+        return result.sort((a, b) => {
+            let valA: any = '';
+            let valB: any = '';
+
+            if (sortField === 'name') {
+                valA = a.name || '';
+                valB = b.name || '';
+            } else if (sortField === 'contact') {
+                valA = a.email || '';
+                valB = b.email || '';
+            } else if (sortField === 'role') {
+                valA = a.role || '';
+                valB = b.role || '';
+            } else if (sortField === 'teacher') {
+                const teacherA = teachers.find(t => t.id === a.teacher_id)?.name || 'ZUnassigned';
+                const teacherB = teachers.find(t => t.id === b.teacher_id)?.name || 'ZUnassigned';
+                valA = teacherA;
+                valB = teacherB;
+            } else if (sortField === 'classroom') {
+                const cDataA = a.classroom_students?.[0]?.classrooms;
+                const cNameA = Array.isArray(cDataA) ? (cDataA[0] as any)?.name : (cDataA as any)?.name;
+                const cDataB = b.classroom_students?.[0]?.classrooms;
+                const cNameB = Array.isArray(cDataB) ? (cDataB[0] as any)?.name : (cDataB as any)?.name;
+                valA = cNameA || 'ZUnassigned';
+                valB = cNameB || 'ZUnassigned';
+            } else if (sortField === 'billing') {
+                valA = a.fees_basis || '';
+                valB = b.fees_basis || '';
+            } else if (sortField === 'dueDate') {
+                valA = a.fees_collection_date || 99;
+                valB = b.fees_collection_date || 99;
+            } else if (sortField === 'status') {
+                valA = a.status || '';
+                valB = b.status || '';
+            }
+
+            let comparison = 0;
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                comparison = valA - valB;
+            } else {
+                comparison = String(valA).localeCompare(String(valB));
+            }
+
+            return sortOrder === 'asc' ? comparison : -comparison;
+        });
+    }, [
+        usersList, activeTab, searchQuery, teachers, sortField, sortOrder,
+        colUserFilter, colContactFilter, colRoleFilter, colTeacherFilter,
+        colClassroomFilter, colBillingFilter, colDueDateFilter, colStatusFilter
+    ]);
 
     const openAllocationModal = (user: UserProfile) => {
         setSelectedUser(user);
@@ -184,6 +371,7 @@ export default function RoleAllocationDashboard() {
         const currentClassroom = user.classroom_students?.[0]?.classroom_id || '';
         setSelectedClassroomId(currentClassroom);
         setExperienceLevel(user.level || 'beginner');
+        setLearningMode(user.learning_mode || 'online');
         const basis = user.fees_basis || 'monthly';
         setFeesBasis(basis);
         
@@ -228,6 +416,7 @@ export default function RoleAllocationDashboard() {
                 role: allocatedRole,
                 status: 'active',
                 level: isStudent ? experienceLevel : null,
+                learning_mode: isStudent ? learningMode : null,
                 teacher_id: isStudent ? (selectedTeacherId || null) : null,
                 fees_basis: isStudent ? feesBasis : null,
                 fees_amount: isStudent ? (Number(feesAmount) || 0) : null,
@@ -315,6 +504,29 @@ export default function RoleAllocationDashboard() {
         }
     };
 
+    const renderSortHeader = (label: string, field: SortField) => {
+        const isSorted = sortField === field;
+        return (
+            <button
+                type="button"
+                onClick={() => handleSort(field)}
+                className="flex items-center gap-1 hover:text-slate-700 dark:hover:text-slate-200 font-black uppercase text-[10px] tracking-wider transition-colors text-left group"
+                title={`Click to sort by ${label}`}
+            >
+                <span className={isSorted ? 'text-[#b45309] dark:text-[#ecb613]' : ''}>{label}</span>
+                {isSorted ? (
+                    sortOrder === 'asc' ? (
+                        <ArrowUp className="size-3 text-[#b45309] dark:text-[#ecb613] shrink-0" />
+                    ) : (
+                        <ArrowDown className="size-3 text-[#b45309] dark:text-[#ecb613] shrink-0" />
+                    )
+                ) : (
+                    <ArrowUpDown className="size-3 text-slate-300 dark:text-slate-600 opacity-60 group-hover:opacity-100 shrink-0" />
+                )}
+            </button>
+        );
+    };
+
     if (loading) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-[#f8f8f6] dark:bg-[#1a1608]">
@@ -341,9 +553,21 @@ export default function RoleAllocationDashboard() {
                         <div className="w-full space-y-8">
                             
                             {/* Header Section */}
-                            <div>
-                                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Registration approvals</h1>
-                                <p className="text-slate-550 dark:text-slate-400 mt-2.5">Review newly registered accounts and allocate portal roles, teachers, class batches, and fees parameters.</p>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                    <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Registration approvals</h1>
+                                    <p className="text-slate-550 dark:text-slate-400 mt-2.5">Review newly registered accounts and allocate portal roles, teachers, class batches, and fees parameters.</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        exportRoleAllocationCSV(usersList, teachers, classrooms, 'All_Roles_Report');
+                                    }}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-[#ecb613] hover:bg-[#d9a40e] text-slate-950 font-black rounded-xl text-xs shadow-sm transition-all cursor-pointer border border-[#d9a40e] shrink-0 self-start sm:self-center"
+                                    title="Export All Users (Students, Teachers, Admins, Mentors, Pending) to CSV File"
+                                >
+                                    <Download className="size-4" />
+                                    <span>Export CSV Report</span>
+                                </button>
                             </div>
 
                             {/* User Tab Filters */}
@@ -382,15 +606,27 @@ export default function RoleAllocationDashboard() {
                                         ))}
                                     </div>
 
-                                    <div className="relative w-full md:w-64">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                                        <input
-                                            value={searchQuery}
-                                            onChange={e => setSearchQuery(e.target.value)}
-                                            className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-850 text-xs focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none transition-all"
-                                            placeholder="Search by name or email..."
-                                            type="text"
-                                        />
+                                    <div className="flex items-center gap-2 w-full md:w-auto">
+                                        <div className="relative w-full md:w-64">
+                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                                            <input
+                                                value={searchQuery}
+                                                onChange={e => setSearchQuery(e.target.value)}
+                                                className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-850 text-xs focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none transition-all"
+                                                placeholder="Search by name or email..."
+                                                type="text"
+                                            />
+                                        </div>
+                                        {hasActiveFilters && (
+                                            <button
+                                                onClick={clearAllFilters}
+                                                className="px-3 py-2 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/60 rounded-xl border border-rose-200 dark:border-rose-900/40 flex items-center gap-1 transition-all shrink-0"
+                                                title="Reset all filters and sorting"
+                                            >
+                                                <X className="size-3.5" />
+                                                <span className="hidden sm:inline">Reset</span>
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
@@ -408,254 +644,416 @@ export default function RoleAllocationDashboard() {
                                                     const class_name = Array.isArray(classroomData)
                                                         ? (classroomData[0] as any)?.name || 'Not assigned'
                                                         : (classroomData as any)?.name || 'Not assigned';
-                                            const teacherName = teachers.find(t => t.id === user.teacher_id)?.name || 'Not assigned';
-                                            
-                                            return (
-                                                <div key={user.id} className="p-4 space-y-3">
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="size-10 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800">
-                                                                <span>{user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}</span>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">{user.name || 'Unassigned Name'}</p>
-                                                                <p className="text-[10px] text-slate-500 mt-1">{user.email}</p>
-                                                            </div>
-                                                        </div>
-                                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
-                                                            user.role === 'admin'
-                                                                ? 'bg-red-50 text-red-600'
-                                                                : user.role === 'teacher'
-                                                                    ? 'bg-blue-50 text-blue-600'
-                                                                    : user.role === 'student'
-                                                                        ? 'bg-green-50 text-green-700'
-                                                                        : 'bg-slate-100 text-slate-500'
-                                                        }`}>
-                                                            {user.role}
-                                                        </span>
-                                                    </div>
-                                                    
-                                                    {activeTab === 'students' && (
-                                                        <div className="grid grid-cols-2 gap-2 text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                                            <div>
-                                                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Teacher</span>
-                                                                <span className="font-semibold text-slate-700 dark:text-slate-350">{teacherName}</span>
-                                                            </div>
-                                                            <div>
-                                                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Batch</span>
-                                                                <span className="font-semibold text-slate-700 dark:text-slate-350">{class_name}</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    
-                                                    {(activeTab === 'students' || activeTab === 'pending') && (
-                                                        <div className="grid grid-cols-2 gap-2 text-xs p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
-                                                            <div>
-                                                                <span className="block text-[9px] font-bold text-slate-400 uppercase">Billing Plan</span>
-                                                                <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] capitalize">
-                                                                    {user.fees_basis === 'monthly' ? 'Monthly' : user.fees_basis === 'class' ? 'Class-basis' : 'N/A'}
-                                                                </span>
-                                                            </div>
-                                                            <div>
-                                                                <span className="block text-[9px] font-bold text-slate-400 uppercase">Due Date</span>
-                                                                <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] whitespace-nowrap">
-                                                                    {(() => {
-                                                                        if (user.fees_basis === 'monthly') {
-                                                                            if (user.fees_collection_date) {
-                                                                                return `${user.fees_collection_date}th`;
-                                                                            }
-                                                                        }
-                                                                        return 'N/A';
-                                                                    })()}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    
-                                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
-                                                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                            user.status === 'active'
-                                                                ? 'bg-emerald-50 text-emerald-700'
-                                                                : 'bg-amber-50 text-amber-700'
-                                                        }`}>
-                                                            {user.status}
-                                                        </span>
-                                                        <div className="flex gap-2">
-                                                            {activeTab === 'students' && (
-                                                                <button onClick={() => openAllocationModal(user)} className="px-3 py-1.5 text-xs font-bold bg-[#ecb613]/10 text-[#b45309] rounded-lg">
-                                                                    Assign
-                                                                </button>
-                                                            )}
-                                                            <button onClick={() => openAllocationModal(user)} className="px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 rounded-lg">
-                                                                Edit
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <div className="p-8 text-center text-slate-400">
-                                            <p className="text-sm font-bold">No users found</p>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Table */}
-                                <div className="hidden lg:block overflow-x-auto min-h-[350px]">
-                                    <table className="w-full border-collapse text-left">
-                                        <thead>
-                                            <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/20">
-                                                <th className="px-4 py-3.5 text-left whitespace-nowrap">User</th>
-                                                <th className="px-4 py-3.5 text-left whitespace-nowrap">Contact Details</th>
-                                                <th className="px-4 py-3.5 text-left whitespace-nowrap">Current Role</th>
-                                                {activeTab === 'students' && (
-                                                    <>
-                                                        <th className="px-4 py-3.5 text-left whitespace-nowrap">Teacher</th>
-                                                        <th className="px-4 py-3.5 text-left whitespace-nowrap">Batch Class</th>
-                                                    </>
-                                                )}
-                                                {(activeTab === 'students' || activeTab === 'pending') && (
-                                                    <>
-                                                        <th className="px-4 py-3.5 text-left whitespace-nowrap">Billing Plan</th>
-                                                        <th className="px-4 py-3.5 text-left whitespace-nowrap">Due Date</th>
-                                                    </>
-                                                )}
-                                                <th className="px-4 py-3.5 text-left whitespace-nowrap">Status</th>
-                                                <th className="px-4 py-3.5 text-right whitespace-nowrap">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                            {filteredUsers.length > 0 ? (
-                                                filteredUsers.map(user => {
-                                                    const classroomData = user.classroom_students?.[0]?.classrooms;
-                                                    const class_name = Array.isArray(classroomData)
-                                                        ? (classroomData[0] as any)?.name || 'Not assigned'
-                                                        : (classroomData as any)?.name || 'Not assigned';
                                                     const teacherName = teachers.find(t => t.id === user.teacher_id)?.name || 'Not assigned';
-                                                    
+                                             
                                                     return (
-                                                        <tr key={user.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
-                                                            {/* User Profile */}
-                                                            <td className="px-4 py-4 min-w-[180px]">
+                                                        <div key={user.id} className="p-4 space-y-3">
+                                                            <div className="flex justify-between items-start">
                                                                 <div className="flex items-center gap-3">
-                                                                    <div className="size-8 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800 shrink-0">
-                                                                        <span>{user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}</span>
+                                                                    <div className="size-10 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800 overflow-hidden shrink-0">
+                                                                        {user.profile_pic_url ? (
+                                                                            <img src={user.profile_pic_url} alt={user.name || user.email} className="w-full h-full object-cover" loading="lazy" />
+                                                                        ) : (
+                                                                            <span>{user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}</span>
+                                                                        )}
                                                                     </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug break-words">{user.name || 'Unassigned Name'}</p>
-                                                                        <p className="text-[9px] font-mono font-bold text-slate-400 mt-0.5 uppercase tracking-wide">ID: {user.id.slice(0, 8)}</p>
+                                                                    <div>
+                                                                        <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">{user.name || 'Unassigned Name'}</p>
+                                                                        <p className="text-[10px] text-slate-500 mt-1">{user.email}</p>
                                                                     </div>
                                                                 </div>
-                                                            </td>
-
-                                                            {/* Contact Details */}
-                                                            <td className="px-4 py-4 min-w-[200px] space-y-0.5">
-                                                                <p className="text-xs text-slate-700 dark:text-slate-350 flex items-center gap-1.5 font-medium truncate" title={user.email}>
-                                                                    <Mail className="size-3.5 text-slate-400 shrink-0" />
-                                                                    <span className="truncate">{user.email}</span>
-                                                                </p>
-                                                                {user.phone && (
-                                                                    <p className="text-[11px] text-slate-400 flex items-center gap-1.5 font-medium">
-                                                                        <Phone className="size-3.5 text-slate-400 shrink-0" />
-                                                                        <span>{user.phone}</span>
-                                                                    </p>
-                                                                )}
-                                                            </td>
-
-                                                            {/* Current Role */}
-                                                            <td className="px-4 py-4 whitespace-nowrap">
-                                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider inline-block whitespace-nowrap ${
+                                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
                                                                     user.role === 'admin'
-                                                                        ? 'bg-red-50 dark:bg-red-950/20 text-red-600 border border-red-100 dark:border-red-900/30'
+                                                                        ? 'bg-red-50 text-red-600'
                                                                         : user.role === 'teacher'
-                                                                            ? 'bg-blue-50 dark:bg-blue-950/20 text-blue-600 border border-blue-100 dark:border-blue-900/30'
+                                                                            ? 'bg-blue-50 text-blue-600'
                                                                             : user.role === 'student'
-                                                                                ? 'bg-green-50 dark:bg-green-950/20 text-green-700 border border-green-100 dark:border-green-900/30'
-                                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                                                                                ? 'bg-green-50 text-green-700'
+                                                                                : 'bg-slate-100 text-slate-500'
                                                                 }`}>
                                                                     {user.role}
                                                                 </span>
-                                                            </td>
-
-                                                            {/* Student Specific Fields */}
+                                                            </div>
+                                                            
                                                             {activeTab === 'students' && (
-                                                                <>
-                                                                    <td className="px-4 py-4 text-xs font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
-                                                                        {teacherName}
-                                                                    </td>
-                                                                    <td className="px-4 py-4 text-xs font-extrabold text-[#b45309] dark:text-[#ecb613] min-w-[150px] leading-snug">
-                                                                        {class_name}
-                                                                    </td>
-                                                                </>
+                                                                <div className="grid grid-cols-2 gap-2 text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                                                    <div>
+                                                                        <span className="block text-[10px] font-bold text-slate-400 uppercase">Teacher</span>
+                                                                        <span className="font-semibold text-slate-700 dark:text-slate-350">{teacherName}</span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="block text-[10px] font-bold text-slate-400 uppercase">Batch</span>
+                                                                        <span className="font-semibold text-slate-700 dark:text-slate-350">{class_name}</span>
+                                                                    </div>
+                                                                </div>
                                                             )}
+                                                            
                                                             {(activeTab === 'students' || activeTab === 'pending') && (
-                                                                <>
-                                                                    <td className="px-4 py-4 text-xs font-semibold text-slate-650 dark:text-slate-350 capitalize whitespace-nowrap">
-                                                                        {user.fees_basis === 'monthly' ? 'Monthly' : user.fees_basis === 'class' ? 'Class-basis' : 'N/A'}
-                                                                    </td>
-                                                                    <td className="px-4 py-4 text-xs font-semibold text-slate-650 dark:text-slate-350 whitespace-nowrap">
-                                                                        {(() => {
-                                                                            if (user.fees_basis === 'monthly') {
-                                                                                if (user.fees_collection_date) {
-                                                                                    return `${user.fees_collection_date}th of month`;
+                                                                <div className="grid grid-cols-2 gap-2 text-xs p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-lg">
+                                                                    <div>
+                                                                        <span className="block text-[9px] font-bold text-slate-400 uppercase">Billing Plan</span>
+                                                                        <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] capitalize">
+                                                                            {user.fees_basis === 'monthly' ? 'Monthly' : user.fees_basis === 'class' ? 'Class-basis' : 'N/A'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="block text-[9px] font-bold text-slate-400 uppercase">Due Date</span>
+                                                                        <span className="font-semibold text-slate-700 dark:text-slate-350 text-[11px] whitespace-nowrap">
+                                                                            {(() => {
+                                                                                if (user.fees_basis === 'monthly') {
+                                                                                    if (user.fees_collection_date) {
+                                                                                        return `${user.fees_collection_date}th`;
+                                                                                    }
                                                                                 }
-                                                                            }
-                                                                            return 'N/A';
-                                                                        })()}
-                                                                    </td>
-                                                                </>
+                                                                                return 'N/A';
+                                                                            })()}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
                                                             )}
-
-                                                            {/* Status Badge */}
-                                                            <td className="px-4 py-4 whitespace-nowrap">
-                                                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${
+                                                            
+                                                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                                                     user.status === 'active'
-                                                                        ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30'
-                                                                        : 'bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30'
+                                                                        ? 'bg-emerald-50 text-emerald-700'
+                                                                        : 'bg-amber-50 text-amber-700'
                                                                 }`}>
-                                                                    <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'active' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></span>
-                                                                    {user.status === 'active' ? 'Approved' : 'Pending Approval'}
+                                                                    {user.status}
                                                                 </span>
-                                                            </td>
-
-                                                            {/* Actions */}
-                                                            <td className="px-4 py-4 text-right whitespace-nowrap">
-                                                                <div className="flex items-center justify-end gap-2">
-                                                                    <button
-                                                                        onClick={() => openAllocationModal(user)}
-                                                                        className="px-3 py-1.5 text-xs font-black bg-[#ecb613] hover:bg-[#d49900] text-slate-950 rounded-xl shadow-xs transition-all active:scale-[0.97] inline-flex items-center gap-1.5 shrink-0"
-                                                                    >
-                                                                        <UserCheck className="size-3.5" />
-                                                                        <span>{user.role === 'pending' ? 'Allocate' : 'Edit Allocation'}</span>
-                                                                    </button>
-                                                                    {user.role !== 'admin' && (
-                                                                        <button
-                                                                            onClick={() => handleDeleteUser(user.id, user.name || user.email)}
-                                                                            className="p-1.5 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-450 rounded-lg transition-all shadow-xs shrink-0"
-                                                                            title="Delete User"
-                                                                        >
-                                                                            <Trash2 className="size-3.5" />
+                                                                <div className="flex gap-2">
+                                                                    {activeTab === 'students' && (
+                                                                        <button onClick={() => openAllocationModal(user)} className="px-3 py-1.5 text-xs font-bold bg-[#ecb613]/10 text-[#b45309] rounded-lg">
+                                                                            Assign
                                                                         </button>
                                                                     )}
+                                                                    <button onClick={() => openAllocationModal(user)} className="px-3 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 rounded-lg">
+                                                                        Edit
+                                                                    </button>
                                                                 </div>
-                                                            </td>
-                                                        </tr>
+                                                            </div>
+                                                        </div>
                                                     );
                                                 })
                                             ) : (
-                                                <tr>
-                                                    <td colSpan={activeTab === 'students' ? 8 : 6} className="px-6 py-12 text-center text-slate-400">
-                                                        <ShieldCheck className="size-8 mx-auto text-slate-300 dark:text-slate-700 mb-2" />
-                                                        <p className="text-sm font-semibold">No accounts found in this category.</p>
-                                                    </td>
-                                                </tr>
+                                                <div className="p-8 text-center text-slate-400">
+                                                    <p className="text-sm font-bold">No users found</p>
+                                                </div>
                                             )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </>
-                        )}
+                                        </div>
+
+                                        {/* Desktop Table View */}
+                                        <div className="hidden lg:block overflow-x-auto min-h-[350px]">
+                                            <table className="w-full border-collapse text-left">
+                                                <thead>
+                                                    {/* Column Headers with Sort Toggles */}
+                                                    <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-900/60">
+                                                        <th className="px-4 py-3 text-left whitespace-nowrap">
+                                                            {renderSortHeader('User', 'name')}
+                                                        </th>
+                                                        <th className="px-4 py-3 text-left whitespace-nowrap">
+                                                            {renderSortHeader('Contact Details', 'contact')}
+                                                        </th>
+                                                        <th className="px-4 py-3 text-left whitespace-nowrap">
+                                                            {renderSortHeader('Current Role', 'role')}
+                                                        </th>
+                                                        {activeTab === 'students' && (
+                                                            <>
+                                                                <th className="px-4 py-3 text-left whitespace-nowrap">
+                                                                    {renderSortHeader('Teacher', 'teacher')}
+                                                                </th>
+                                                                <th className="px-4 py-3 text-left whitespace-nowrap">
+                                                                    {renderSortHeader('Batch Class', 'classroom')}
+                                                                </th>
+                                                            </>
+                                                        )}
+                                                        {(activeTab === 'students' || activeTab === 'pending') && (
+                                                            <>
+                                                                <th className="px-4 py-3 text-left whitespace-nowrap">
+                                                                    {renderSortHeader('Billing Plan', 'billing')}
+                                                                </th>
+                                                                <th className="px-4 py-3 text-left whitespace-nowrap">
+                                                                    {renderSortHeader('Due Date', 'dueDate')}
+                                                                </th>
+                                                            </>
+                                                        )}
+                                                        <th className="px-4 py-3 text-left whitespace-nowrap">
+                                                            {renderSortHeader('Status', 'status')}
+                                                        </th>
+                                                        <th className="px-4 py-3 text-right whitespace-nowrap">
+                                                            <span className="font-black uppercase text-[10px] tracking-wider text-slate-400 dark:text-slate-500">Actions</span>
+                                                        </th>
+                                                    </tr>
+
+                                                    {/* Column Filters Bar */}
+                                                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-850/60 text-xs">
+                                                        {/* User Filter */}
+                                                        <td className="px-3 py-2">
+                                                            <input
+                                                                type="text"
+                                                                value={colUserFilter}
+                                                                onChange={e => setColUserFilter(e.target.value)}
+                                                                placeholder="Filter name/ID..."
+                                                                className="w-full px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#ecb613] transition-all placeholder:text-slate-400"
+                                                            />
+                                                        </td>
+
+                                                        {/* Contact Filter */}
+                                                        <td className="px-3 py-2">
+                                                            <input
+                                                                type="text"
+                                                                value={colContactFilter}
+                                                                onChange={e => setColContactFilter(e.target.value)}
+                                                                placeholder="Filter email/phone..."
+                                                                className="w-full px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#ecb613] transition-all placeholder:text-slate-400"
+                                                            />
+                                                        </td>
+
+                                                        {/* Role Filter */}
+                                                        <td className="px-3 py-2">
+                                                            <select
+                                                                value={colRoleFilter}
+                                                                onChange={e => setColRoleFilter(e.target.value)}
+                                                                className="w-full px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#ecb613] transition-all cursor-pointer"
+                                                            >
+                                                                <option value="all">All Roles</option>
+                                                                <option value="student">Student</option>
+                                                                <option value="teacher">Teacher</option>
+                                                                <option value="admin">Admin</option>
+                                                                <option value="pending">Pending</option>
+                                                                <option value="mentor">Mentor</option>
+                                                            </select>
+                                                        </td>
+
+                                                        {/* Student fields filters */}
+                                                        {activeTab === 'students' && (
+                                                            <>
+                                                                {/* Teacher Filter */}
+                                                                <td className="px-3 py-2">
+                                                                    <select
+                                                                        value={colTeacherFilter}
+                                                                        onChange={e => setColTeacherFilter(e.target.value)}
+                                                                        className="w-full px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#ecb613] transition-all cursor-pointer"
+                                                                    >
+                                                                        <option value="all">All Teachers</option>
+                                                                        <option value="unassigned">Unassigned</option>
+                                                                        {teachers.map(t => (
+                                                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
+
+                                                                {/* Classroom Filter */}
+                                                                <td className="px-3 py-2">
+                                                                    <select
+                                                                        value={colClassroomFilter}
+                                                                        onChange={e => setColClassroomFilter(e.target.value)}
+                                                                        className="w-full px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#ecb613] transition-all cursor-pointer"
+                                                                    >
+                                                                        <option value="all">All Batches</option>
+                                                                        <option value="unassigned">Unassigned</option>
+                                                                        {uniqueBatches.map(b => (
+                                                                            <option key={b} value={b}>{b}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
+                                                            </>
+                                                        )}
+
+                                                        {(activeTab === 'students' || activeTab === 'pending') && (
+                                                            <>
+                                                                {/* Billing Plan Filter */}
+                                                                <td className="px-3 py-2">
+                                                                    <select
+                                                                        value={colBillingFilter}
+                                                                        onChange={e => setColBillingFilter(e.target.value)}
+                                                                        className="w-full px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#ecb613] transition-all cursor-pointer"
+                                                                    >
+                                                                        <option value="all">All Plans</option>
+                                                                        <option value="monthly">Monthly</option>
+                                                                        <option value="class">Class-basis</option>
+                                                                        <option value="none">N/A</option>
+                                                                    </select>
+                                                                </td>
+
+                                                                {/* Due Date Filter */}
+                                                                <td className="px-3 py-2">
+                                                                    <select
+                                                                        value={colDueDateFilter}
+                                                                        onChange={e => setColDueDateFilter(e.target.value)}
+                                                                        className="w-full px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#ecb613] transition-all cursor-pointer"
+                                                                    >
+                                                                        <option value="all">All Days</option>
+                                                                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                                                            <option key={day} value={String(day)}>{day}th</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
+                                                            </>
+                                                        )}
+
+                                                        {/* Status Filter */}
+                                                        <td className="px-3 py-2">
+                                                            <select
+                                                                value={colStatusFilter}
+                                                                onChange={e => setColStatusFilter(e.target.value)}
+                                                                className="w-full px-2 py-1 text-[11px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-[#ecb613] transition-all cursor-pointer"
+                                                            >
+                                                                <option value="all">All Statuses</option>
+                                                                <option value="active">Approved</option>
+                                                                <option value="pending">Pending</option>
+                                                            </select>
+                                                        </td>
+
+                                                        {/* Clear Filters Button */}
+                                                        <td className="px-3 py-2 text-right">
+                                                            {hasActiveFilters && (
+                                                                <button
+                                                                    onClick={clearAllFilters}
+                                                                    className="px-2 py-1 text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 rounded-lg transition-colors inline-flex items-center gap-1 ml-auto"
+                                                                    title="Clear all filters"
+                                                                >
+                                                                    <X className="size-3" />
+                                                                    <span>Clear</span>
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                    {filteredUsers.length > 0 ? (
+                                                        filteredUsers.map(user => {
+                                                            const classroomData = user.classroom_students?.[0]?.classrooms;
+                                                            const class_name = Array.isArray(classroomData)
+                                                                ? (classroomData[0] as any)?.name || 'Not assigned'
+                                                                : (classroomData as any)?.name || 'Not assigned';
+                                                            const teacherName = teachers.find(t => t.id === user.teacher_id)?.name || 'Not assigned';
+                                                            
+                                                            return (
+                                                                <tr key={user.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors">
+                                                                    {/* User Profile */}
+                                                                    <td className="px-4 py-4 min-w-[180px]">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div className="size-8 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800 overflow-hidden shrink-0">
+                                                                                {user.profile_pic_url ? (
+                                                                                    <img src={user.profile_pic_url} alt={user.name || user.email} className="w-full h-full object-cover" loading="lazy" />
+                                                                                ) : (
+                                                                                    <span>{user.name?.charAt(0) || user.email?.charAt(0).toUpperCase()}</span>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="flex flex-col min-w-0">
+                                                                                <p className="text-xs font-bold text-slate-900 dark:text-white leading-snug break-words">{user.name || 'Unassigned Name'}</p>
+                                                                                <p className="text-[9px] font-mono font-bold text-slate-400 mt-0.5 uppercase tracking-wide">ID: {user.id.slice(0, 8)}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+
+                                                                    {/* Contact Details */}
+                                                                    <td className="px-4 py-4 min-w-[200px] space-y-0.5">
+                                                                        <p className="text-xs text-slate-700 dark:text-slate-350 flex items-center gap-1.5 font-medium truncate" title={user.email}>
+                                                                            <Mail className="size-3.5 text-slate-400 shrink-0" />
+                                                                            <span className="truncate">{user.email}</span>
+                                                                        </p>
+                                                                        {user.phone && (
+                                                                            <p className="text-[11px] text-slate-400 flex items-center gap-1.5 font-medium">
+                                                                                <Phone className="size-3.5 text-slate-400 shrink-0" />
+                                                                                <span>{user.phone}</span>
+                                                                            </p>
+                                                                        )}
+                                                                    </td>
+
+                                                                    {/* Current Role */}
+                                                                    <td className="px-4 py-4 whitespace-nowrap">
+                                                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider inline-block whitespace-nowrap ${
+                                                                            user.role === 'admin'
+                                                                                ? 'bg-red-50 dark:bg-red-950/20 text-red-600 border border-red-100 dark:border-red-900/30'
+                                                                                : user.role === 'teacher'
+                                                                                    ? 'bg-blue-50 dark:bg-blue-950/20 text-blue-600 border border-blue-100 dark:border-blue-900/30'
+                                                                                    : user.role === 'student'
+                                                                                        ? 'bg-green-50 dark:bg-green-950/20 text-green-700 border border-green-100 dark:border-green-900/30'
+                                                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                                                                        }`}>
+                                                                            {user.role}
+                                                                        </span>
+                                                                    </td>
+
+                                                                    {/* Student Specific Fields */}
+                                                                    {activeTab === 'students' && (
+                                                                        <>
+                                                                            <td className="px-4 py-4 text-xs font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                                                                                {teacherName}
+                                                                            </td>
+                                                                            <td className="px-4 py-4 text-xs font-extrabold text-[#b45309] dark:text-[#ecb613] min-w-[150px] leading-snug">
+                                                                                {class_name}
+                                                                            </td>
+                                                                        </>
+                                                                    )}
+                                                                    {(activeTab === 'students' || activeTab === 'pending') && (
+                                                                        <>
+                                                                            <td className="px-4 py-4 text-xs font-semibold text-slate-650 dark:text-slate-350 capitalize whitespace-nowrap">
+                                                                                {user.fees_basis === 'monthly' ? 'Monthly' : user.fees_basis === 'class' ? 'Class-basis' : 'N/A'}
+                                                                            </td>
+                                                                            <td className="px-4 py-4 text-xs font-semibold text-slate-650 dark:text-slate-350 whitespace-nowrap">
+                                                                                {(() => {
+                                                                                    if (user.fees_basis === 'monthly') {
+                                                                                        if (user.fees_collection_date) {
+                                                                                            return `${user.fees_collection_date}th of month`;
+                                                                                        }
+                                                                                    }
+                                                                                    return 'N/A';
+                                                                                })()}
+                                                                            </td>
+                                                                        </>
+                                                                    )}
+
+                                                                    {/* Status Badge */}
+                                                                    <td className="px-4 py-4 whitespace-nowrap">
+                                                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider whitespace-nowrap ${
+                                                                            user.status === 'active'
+                                                                                ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30'
+                                                                                : 'bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30'
+                                                                        }`}>
+                                                                            <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'active' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></span>
+                                                                            {user.status === 'active' ? 'Approved' : 'Pending Approval'}
+                                                                        </span>
+                                                                    </td>
+
+                                                                    {/* Actions */}
+                                                                    <td className="px-4 py-4 text-right whitespace-nowrap">
+                                                                        <div className="flex items-center justify-end gap-2">
+                                                                            <button
+                                                                                onClick={() => openAllocationModal(user)}
+                                                                                className="px-3 py-1.5 text-xs font-black bg-[#ecb613] hover:bg-[#d49900] text-slate-950 rounded-xl shadow-xs transition-all active:scale-[0.97] inline-flex items-center gap-1.5 shrink-0"
+                                                                            >
+                                                                                <UserCheck className="size-3.5" />
+                                                                                <span>{user.role === 'pending' ? 'Allocate' : 'Edit Allocation'}</span>
+                                                                            </button>
+                                                                            {user.role !== 'admin' && (
+                                                                                <button
+                                                                                    onClick={() => handleDeleteUser(user.id, user.name || user.email)}
+                                                                                    className="p-1.5 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-450 rounded-lg transition-all shadow-xs shrink-0"
+                                                                                    title="Delete User"
+                                                                                >
+                                                                                    <Trash2 className="size-3.5" />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <tr>
+                                                            <td colSpan={activeTab === 'students' ? 8 : (activeTab === 'pending' ? 6 : 5)} className="px-6 py-12 text-center text-slate-400">
+                                                                <ShieldCheck className="size-8 mx-auto text-slate-300 dark:text-slate-700 mb-2" />
+                                                                <p className="text-sm font-semibold">No accounts found in this category.</p>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -667,9 +1065,18 @@ export default function RoleAllocationDashboard() {
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
                     <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="px-8 py-6 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/10">
-                            <div>
-                                <h3 className="text-lg font-black text-slate-900 dark:text-white">Allocate User Role</h3>
-                                <p className="text-xs text-slate-400 mt-1">Configuring permissions and credentials for {selectedUser.name || selectedUser.email}</p>
+                            <div className="flex items-center gap-3">
+                                <div className="size-10 rounded-xl bg-[#ecb613]/10 text-[#ecb613] font-black flex items-center justify-center border border-slate-100 dark:border-slate-800 overflow-hidden shrink-0">
+                                    {selectedUser.profile_pic_url ? (
+                                        <img src={selectedUser.profile_pic_url} alt={selectedUser.name || selectedUser.email} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span>{selectedUser.name?.charAt(0) || selectedUser.email?.charAt(0).toUpperCase()}</span>
+                                    )}
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Allocate User Role</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Configuring permissions and credentials for {selectedUser.name || selectedUser.email}</p>
+                                </div>
                             </div>
                             <button 
                                 onClick={() => { setShowAllocationModal(false); setSelectedUser(null); }}
@@ -738,7 +1145,14 @@ export default function RoleAllocationDashboard() {
                                                 required={allocatedRole === 'student'}
                                                 value={selectedClassroomId}
                                                 disabled={!selectedTeacherId}
-                                                onChange={e => setSelectedClassroomId(e.target.value)}
+                                                onChange={e => {
+                                                    const newClassroomId = e.target.value;
+                                                    setSelectedClassroomId(newClassroomId);
+                                                    const room = classrooms.find(c => c.id === newClassroomId);
+                                                    if (room) {
+                                                        setLearningMode(room.name.toLowerCase().includes('offline') ? 'offline' : 'online');
+                                                    }
+                                                }}
                                                 className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                                             >
                                                 <option value="">{selectedTeacherId ? 'Select classroom...' : 'Select a teacher first...'}</option>
@@ -761,6 +1175,19 @@ export default function RoleAllocationDashboard() {
                                                 <option value="beginner">Beginner</option>
                                                 <option value="intermediate">Intermediate</option>
                                                 <option value="advanced">Advanced</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Learning Mode */}
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Learning Mode</label>
+                                            <select
+                                                value={learningMode}
+                                                onChange={e => setLearningMode(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:ring-2 focus:ring-[#ecb613]/25 outline-none font-semibold cursor-pointer"
+                                            >
+                                                <option value="online">Online</option>
+                                                <option value="offline">Offline (In-Person)</option>
                                             </select>
                                         </div>
 

@@ -25,6 +25,7 @@ interface StudentInfo {
     profile_pic_url?: string;
     join_date: string;
     level: string;
+    learning_mode?: 'online' | 'offline';
     notes: string;
     batch_name: string;
     fees_basis?: 'monthly' | 'class';
@@ -235,6 +236,7 @@ export default function StudentProfilePage() {
                         status,
                         join_date, 
                         level, 
+                        learning_mode,
                         notes,
                         profile_pic_url,
                         fees_basis,
@@ -282,6 +284,7 @@ export default function StudentProfilePage() {
                     status: userData.status || 'active',
                     join_date: userData.join_date,
                     level: userData.level || 'beginner',
+                    learning_mode: (userData as any).learning_mode || 'online',
                     notes: userData.notes || '',
                     profile_pic_url: userData.profile_pic_url,
                     batch_name: (userData.status === 'archived' || userData.status === 'inactive') ? (batch_name || 'KFA Learning Circle') : (batch_name || 'Unassigned'),
@@ -1103,9 +1106,16 @@ export default function StudentProfilePage() {
                                 )}
                             </div>
                             <div>
-                                <div className="flex items-center gap-2 mb-1.5">
+                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                                     <h1 className="text-2xl font-bold text-slate-900 leading-none">{studentInfo.name}</h1>
                                     <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">ID: #{studentInfo.id.slice(0, 4).toUpperCase()}</span>
+                                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                                        studentInfo.learning_mode === 'offline'
+                                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                            : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                    }`}>
+                                        {studentInfo.learning_mode === 'offline' ? 'Offline (In-Person)' : 'Online Class'}
+                                    </span>
                                     {teacherProfile?.role === 'admin' && (studentInfo.status === 'archived' || studentInfo.status === 'inactive') && (
                                         <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                                             {studentInfo.status === 'archived' ? 'Archived' : 'Inactive'}
@@ -1118,34 +1128,34 @@ export default function StudentProfilePage() {
                                 </div>
                             </div>
                         </div>
-                        <div className="flex gap-3 flex-wrap">
+                        <div className="flex gap-2 sm:gap-3 flex-wrap">
                             {teacherProfile?.role !== 'student' && (
                                 <>
                                     <button 
                                         onClick={() => setIsMessageModalOpen(true)}
-                                        className="px-5 py-2.5 border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-all text-sm flex items-center gap-2 shadow-sm"
+                                        className="px-3 py-1.5 sm:px-5 sm:py-2.5 border border-slate-200 text-slate-700 font-bold rounded-lg sm:rounded-xl hover:bg-slate-50 transition-all text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 shadow-sm"
                                     >
-                                        <Mail className="size-4" /> Message
+                                        <Mail className="size-3.5 sm:size-4" /> Message
                                     </button>
                                     <Link 
                                         href={`/teacher-dashboard/students/${studentId}/edit`}
-                                        className="px-5 py-2.5 bg-[#ecb613] text-white font-bold rounded-xl hover:bg-[#ecb613]/90 shadow-lg shadow-[#ecb613]/20 transition-all text-sm flex items-center gap-2"
+                                        className="px-3 py-1.5 sm:px-5 sm:py-2.5 bg-[#ecb613] text-white font-bold rounded-lg sm:rounded-xl hover:bg-[#ecb613]/90 shadow-sm transition-all text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2"
                                     >
-                                        <Edit className="size-4" /> Edit Profile
+                                        <Edit className="size-3.5 sm:size-4" /> Edit Profile
                                     </Link>
                                     {teacherProfile?.role === 'admin' && (
                                         <button
                                             onClick={handleToggleArchive}
-                                            className={`px-5 py-2.5 font-bold rounded-xl shadow-md transition-all text-sm flex items-center gap-2 ${
+                                            className={`px-3 py-1.5 sm:px-5 sm:py-2.5 font-bold rounded-lg sm:rounded-xl shadow-sm transition-all text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 ${
                                                 studentInfo.status === 'archived' || studentInfo.status === 'inactive'
                                                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                                                     : 'bg-amber-600 hover:bg-amber-700 text-white'
                                             }`}
                                         >
-                                            <span className="material-symbols-outlined text-sm">
+                                            <span className="material-symbols-outlined text-xs sm:text-sm">
                                                 {studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'unarchive' : 'archive'}
                                             </span>
-                                            {studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'Reactivate Student' : 'Archive Student'}
+                                            {studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'Reactivate' : 'Archive Student'}
                                         </button>
                                     )}
                                 </>

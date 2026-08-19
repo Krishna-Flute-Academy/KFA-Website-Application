@@ -40,6 +40,9 @@ interface ClassroomDetails {
     teacher_name?: string;
     start_time?: string;
     end_time?: string;
+    is_live?: boolean;
+    live_meeting_link?: string | null;
+    live_session_started_at?: string | null;
 }
 
 interface ScheduleEntry {
@@ -149,7 +152,81 @@ export default function ClassroomDashboardPage({
     const [activeClassroomIds, setActiveClassroomIds] = useState<string[]>([classroomId]);
     const [classroomMessages, setClassroomMessages] = useState<any[]>([]);
     const [isSendingClassroomMessage, setIsSendingClassroomMessage] = useState(false);
+    const [isEndingSession, setIsEndingSession] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    const handleEndClassSessionInternal = async () => {
+        if (isEndingSession) return;
+        if (confirm('Are you sure you want to end this active class session?')) {
+            setIsEndingSession(true);
+
+            // Optimistically update local state & clear local storage for immediate UI feedback
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('active_class_session');
+            }
+            setClassroom(prev => prev ? { ...prev, is_live: false, live_meeting_link: null, live_session_started_at: null } : null);
+
+            try {
+                const activeSessionStr = typeof window !== 'undefined' ? localStorage.getItem('active_class_session') : null;
+                let startedAtTime = Date.now() - Math.max(0, secondsElapsed || 0) * 1000;
+                let activeDate = sessionDate || new Date().toISOString().split('T')[0];
+                let activeType = sessionType || 'online';
+
+                if (activeSessionStr) {
+                    try {
+                        const parsed = JSON.parse(activeSessionStr);
+                        if (parsed.startedAt && !isNaN(parsed.startedAt)) startedAtTime = parsed.startedAt;
+                        if (parsed.sessionDate) activeDate = parsed.sessionDate;
+                        if (parsed.sessionType) activeType = parsed.sessionType;
+                    } catch (e) {
+                        console.error('Error parsing active session:', e);
+                    }
+                }
+
+                const endedAtTime = Date.now();
+                const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
+
+                const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
+                    p_classroom_id: classroomId,
+                    p_session_date: activeDate,
+                    p_session_type: activeType,
+                    p_started_at: new Date(startedAtTime).toISOString(),
+                    p_ended_at: new Date(endedAtTime).toISOString(),
+                    p_duration_seconds: durationSecs
+                });
+
+                if (rpcErr) {
+                    console.warn('RPC end_classroom_session returned error, attempting direct table update:', rpcErr);
+                    const { error: clearErr } = await supabaseAuth
+                        .from('classrooms')
+                        .update({
+                            is_live: false,
+                            live_meeting_link: null,
+                            live_session_started_at: null
+                        })
+                        .eq('id', classroomId);
+
+                    if (clearErr) throw clearErr;
+                }
+
+                if (isMeetingView) {
+                    router.push(`/teacher-dashboard/classrooms/${classroomId}`);
+                } else {
+                    setRefreshTrigger(prev => prev + 1);
+                }
+            } catch (err: any) {
+                console.error('Error ending class session:', err);
+                setClassroom(prev => prev ? { ...prev, is_live: true } : null);
+                alert(`Failed to end session: ${err?.message || 'Please try again.'}`);
+            } finally {
+                setIsEndingSession(false);
+            }
+        }
+    };
+
+    const effectiveEndSession = onEndSession && onEndSession.toString() !== '() => {}'
+        ? onEndSession
+        : handleEndClassSessionInternal;
 
     useEffect(() => {
         if (classroomId) {
@@ -4166,10 +4243,12 @@ export default function ClassroomDashboardPage({
                                 </div>
                             </div>
                             <button
-                                onClick={onEndSession}
-                                className="px-5 py-2.5 bg-red-500 hover:bg-red-655 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-red-200 dark:shadow-none hover:scale-[1.02] active:scale-98 cursor-pointer"
+                                disabled={isEndingSession}
+                                onClick={effectiveEndSession}
+                                className="px-5 py-2.5 bg-red-500 hover:bg-red-655 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-red-200 dark:shadow-none hover:scale-[1.02] active:scale-98 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                <LogOut size={14} /> End Active Class
+                                {isEndingSession ? <Loader2 className="w-3.5 h-3.5 animate-spin text-white" /> : <LogOut size={14} />}
+                                {isEndingSession ? 'Ending...' : 'End Active Class'}
                             </button>
                         </div>
                     </header>
@@ -4223,6 +4302,41 @@ export default function ClassroomDashboardPage({
                 )}
 
                 <div className="p-4 sm:p-6 md:p-8 w-full flex-1 overflow-y-auto custom-scrollbar">
+                    {classroom?.is_live && !isMeetingView && (
+                        <div className="mb-6 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-l-4 border-[#ecb613] p-4 rounded-r-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
+                            <div className="flex items-center gap-3">
+                                <span className="relative flex h-3 w-3">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                                </span>
+                                <div>
+                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                        Class Session is Currently Live
+                                    </h4>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Students can currently see the live banner and meeting access link.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                                <Link
+                                    href={`/teacher-dashboard/classrooms/${classroomId}/meeting`}
+                                    className="flex-1 sm:flex-initial px-4 py-2 bg-[#ecb613] hover:bg-amber-500 text-slate-950 text-xs font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                    <Video className="w-3.5 h-3.5" />
+                                    Join Live View
+                                </Link>
+                                <button
+                                    disabled={isEndingSession}
+                                    onClick={effectiveEndSession}
+                                    className="flex-1 sm:flex-initial px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isEndingSession ? <Loader2 className="w-3.5 h-3.5 animate-spin text-white" /> : <LogOut size={14} />}
+                                    {isEndingSession ? 'Ending...' : 'End Class'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {/* Row-wise Tabs */}
                     <div className="flex items-center gap-8 border-b border-slate-205 dark:border-slate-800 mb-8 overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
                         {['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Class Logs', 'Chat', 'Settings'].map((tab) => (

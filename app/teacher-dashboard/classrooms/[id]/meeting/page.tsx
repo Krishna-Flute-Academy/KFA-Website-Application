@@ -32,6 +32,7 @@ export default function MeetingPage() {
 
     const [loading, setLoading] = useState(true);
     const [savingAttendance, setSavingAttendance] = useState(false);
+    const [isEnding, setIsEnding] = useState(false);
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string } | null>(null);
     const [classroomName, setClassroomName] = useState('');
     const [students, setStudents] = useState<SessionStudent[]>([]);
@@ -330,14 +331,16 @@ export default function MeetingPage() {
     };
 
     const endActiveSession = async () => {
+        if (isEnding) return;
+        setIsEnding(true);
         try {
             // Retrieve starting time from localStorage, fallback to elapsed calculation
             const activeSessionStr = localStorage.getItem('active_class_session');
-            let startedAtTime = Date.now() - secondsElapsed * 1000;
+            let startedAtTime = Date.now() - Math.max(0, secondsElapsed || 0) * 1000;
             if (activeSessionStr) {
                 try {
                     const parsed = JSON.parse(activeSessionStr);
-                    if (parsed.startedAt) {
+                    if (parsed.startedAt && !isNaN(parsed.startedAt)) {
                         startedAtTime = parsed.startedAt;
                     }
                 } catch (e) {
@@ -347,6 +350,7 @@ export default function MeetingPage() {
 
             const endedAtTime = Date.now();
             const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
+            const activeSessionDate = sessionDate || new Date().toISOString().split('T')[0];
 
             // Calculate attendance counts from the students state
             const present = students.filter(s => s.attendance === 'present').length;
@@ -356,7 +360,7 @@ export default function MeetingPage() {
 
             const { error: endError } = await supabaseAuth.rpc('end_classroom_session', {
                 p_classroom_id: classroomId,
-                p_session_date: sessionDate,
+                p_session_date: activeSessionDate,
                 p_session_type: sessionType || 'online',
                 p_started_at: new Date(startedAtTime).toISOString(),
                 p_ended_at: new Date(endedAtTime).toISOString(),
@@ -368,7 +372,7 @@ export default function MeetingPage() {
             });
 
             if (endError) {
-                console.error('RPC failed while ending session:', endError);
+                console.warn('RPC end_classroom_session failed, falling back to direct table update:', endError);
             }
 
             // Always clear the live flag directly to ensure it updates for students
@@ -381,13 +385,17 @@ export default function MeetingPage() {
                 })
                 .eq('id', classroomId);
 
-            if (clearLiveError) throw clearLiveError;
+            if (clearLiveError && endError) {
+                throw clearLiveError;
+            }
+
+            localStorage.removeItem('active_class_session');
+            router.push(`/teacher-dashboard/classrooms/${classroomId}`);
         } catch (err: any) {
             console.error('Unexpected error ending active session:', err);
             alert(`Failed to end session: ${err.message || 'Unknown error'}`);
         } finally {
-            localStorage.removeItem('active_class_session');
-            router.push(`/teacher-dashboard/classrooms/${classroomId}`);
+            setIsEnding(false);
         }
     };
 

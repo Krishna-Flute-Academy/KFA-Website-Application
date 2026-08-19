@@ -23,6 +23,14 @@ interface StudentData {
     pacing_status?: 'Consistent' | 'Improving' | 'At Risk';
     is_online?: boolean;
     created_at?: string;
+    join_date?: string | null;
+    level?: string | null;
+    learning_mode?: string | null;
+    notes?: string | null;
+    fees_basis?: string | null;
+    fees_amount?: number | null;
+    fees_collection_date?: number | null;
+    fees_classes_paid?: number | null;
     teacher_id?: string | null;
     teacher_name?: string;
     phone?: string;
@@ -231,6 +239,13 @@ export default function StudentDirectory() {
                         created_at,
                         teacher_id,
                         phone,
+                        join_date,
+                        level,
+                        notes,
+                        fees_basis,
+                        fees_amount,
+                        fees_collection_date,
+                        fees_classes_paid,
                         classroom_students(
                             classrooms(name)
                         )
@@ -367,6 +382,13 @@ export default function StudentDirectory() {
                             pacing_status: calculatedStatus,
                             is_online: onlineUserIds.has(s.id),
                             created_at: s.created_at,
+                            join_date: s.join_date,
+                            level: s.level,
+                            notes: s.notes,
+                            fees_basis: s.fees_basis,
+                            fees_amount: s.fees_amount,
+                            fees_collection_date: s.fees_collection_date,
+                            fees_classes_paid: s.fees_classes_paid,
                             teacher_id: s.teacher_id,
                             teacher_name: s.teacher_id ? (teacherMap.get(s.teacher_id) || 'Unknown Teacher') : 'Unassigned',
                             phone: s.phone || 'No Phone'
@@ -408,11 +430,19 @@ export default function StudentDirectory() {
                     .select(`
                         id,
                         name,
+                        email,
                         status,
                         profile_pic_url,
                         created_at,
                         teacher_id,
-                        phone
+                        phone,
+                        join_date,
+                        level,
+                        notes,
+                        fees_basis,
+                        fees_amount,
+                        fees_collection_date,
+                        fees_classes_paid
                     `)
                     .eq('role', 'student')
                     .is('teacher_id', null);
@@ -477,6 +507,8 @@ export default function StudentDirectory() {
                             id: s.id,
                             user_id: s.id,
                             name: s.name,
+                            email: s.email,
+                            role: s.role || 'student',
                             student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
                             batch: 'Unassigned',
                             attendance_pct: attendancePct,
@@ -485,6 +517,14 @@ export default function StudentDirectory() {
                             pacing_status: calculatedStatus,
                             is_online: onlineUserIds.has(s.id),
                             created_at: s.created_at,
+                            join_date: s.join_date,
+                            level: s.level,
+                            learning_mode: s.learning_mode,
+                            notes: s.notes,
+                            fees_basis: s.fees_basis,
+                            fees_amount: s.fees_amount,
+                            fees_collection_date: s.fees_collection_date,
+                            fees_classes_paid: s.fees_classes_paid,
                             teacher_id: s.teacher_id,
                             teacher_name: 'Unassigned',
                             phone: s.phone || 'No Phone'
@@ -1211,15 +1251,56 @@ export default function StudentDirectory() {
     const somePageSelected = paginatedStudents.some(s => selectedIds.has(s.id));
 
     const handleExportCSV = () => {
-        const headers = ['Name', 'Student ID', 'Batch', 'Attendance (%)', 'Status', 'Date Joined'];
+        const headers = [
+            'Student Name',
+            'Student ID',
+            'Email',
+            'Phone',
+            'Role',
+            'Batch Class',
+            'Assigned Teacher',
+            'Attendance (%)',
+            'Pacing Status',
+            'Account Status',
+            'Experience Level',
+            'Class Learning Mode',
+            'Billing Plan',
+            'Fees Amount (INR)',
+            'Prepaid Classes Left',
+            'Due Day of Month',
+            'Joining Date',
+            'Portal Online Status',
+            'Notes',
+            'Registration Date'
+        ];
         
+        const escapeCSV = (val: any) => {
+            if (val === null || val === undefined || val === '') return '""';
+            const str = String(val).replace(/"/g, '""');
+            return `"${str}"`;
+        };
+
         const csvRows = displayedStudents.map(student => [
-            `"${student.name}"`,
-            `"${student.student_id_formatted}"`,
-            `"${student.batch}"`,
+            escapeCSV(student.name),
+            escapeCSV(student.student_id_formatted),
+            escapeCSV(student.email || 'N/A'),
+            escapeCSV(student.phone || 'N/A'),
+            escapeCSV(student.role || 'student'),
+            escapeCSV(student.batch),
+            escapeCSV(student.teacher_name || 'Unassigned'),
             student.attendance_pct,
-            `"${student.status}"`,
-            `"${student.created_at ? new Date(student.created_at).toLocaleDateString() : 'N/A'}"`
+            escapeCSV(student.pacing_status || 'Consistent'),
+            escapeCSV(student.status),
+            escapeCSV(student.level || 'N/A'),
+            escapeCSV(student.learning_mode === 'offline' ? 'Offline (In-Person)' : 'Online Class'),
+            escapeCSV(student.fees_basis ? (student.fees_basis === 'monthly' ? 'Monthly Subscription' : 'Class-basis') : 'N/A'),
+            student.fees_amount !== null && student.fees_amount !== undefined ? student.fees_amount : 'N/A',
+            student.fees_classes_paid !== null && student.fees_classes_paid !== undefined ? student.fees_classes_paid : 'N/A',
+            student.fees_collection_date ? `${student.fees_collection_date}th` : 'N/A',
+            escapeCSV(student.join_date || 'N/A'),
+            escapeCSV(student.is_online ? 'Active' : 'Offline'),
+            escapeCSV(student.notes || ''),
+            escapeCSV(student.created_at ? new Date(student.created_at).toLocaleDateString() : 'N/A')
         ]);
 
         const csvContent = [
@@ -2134,15 +2215,15 @@ export default function StudentDirectory() {
                                                                         </div>
                                                                     </div>
                                                                 </td>
-                                                                <td className="px-6 py-4">
-                                                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 ${
                                                                         student.pacing_status === 'Consistent' 
                                                                             ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
                                                                             : student.pacing_status === 'Improving'
                                                                                 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                                                                                 : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
                                                                     }`}>
-                                                                        <span className={`size-1.5 rounded-full ${
+                                                                        <span className={`size-1.5 rounded-full shrink-0 ${
                                                                             student.pacing_status === 'Consistent' 
                                                                                 ? 'bg-emerald-500' 
                                                                                 : student.pacing_status === 'Improving'

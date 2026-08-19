@@ -43,6 +43,7 @@ export default function AddStudentPage() {
         startDate: new Date().toISOString().split('T')[0],
         batchId: '',
         level: 'beginner',
+        learningMode: 'online',
         profilePicUrl: '',
         notes: '',
         feesBasis: 'monthly',
@@ -139,6 +140,7 @@ export default function AddStudentPage() {
                     teacher_id: assignedTeacherId,
                     join_date: formData.startDate,
                     level: formData.level,
+                    learning_mode: formData.learningMode,
                     profile_pic_url: formData.profilePicUrl,
                     notes: formData.notes,
                     fees_basis: formData.feesBasis,
@@ -281,9 +283,11 @@ export default function AddStudentPage() {
                                                     onChange={(e) => {
                                                         const newBatchId = e.target.value;
                                                         const room = classrooms.find(r => r.id === newBatchId);
+                                                        const isOfflineRoom = room?.name.toLowerCase().includes('offline');
                                                         setFormData({ 
                                                             ...formData, 
                                                             batchId: newBatchId,
+                                                            learningMode: isOfflineRoom ? 'offline' : 'online',
                                                             teacherId: room?.teacher_id || formData.teacherId
                                                         });
                                                     }}
@@ -326,6 +330,21 @@ export default function AddStudentPage() {
                                                     <option value="beginner">Beginner</option>
                                                     <option value="intermediate">Intermediate</option>
                                                     <option value="advanced">Advanced</option>
+                                                </select>
+                                                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-slate-700 block">Class Learning Mode</label>
+                                            <div className="relative">
+                                                <select
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
+                                                    value={formData.learningMode}
+                                                    onChange={(e) => setFormData({ ...formData, learningMode: e.target.value })}
+                                                >
+                                                    <option value="online">Online (Live Virtual Class)</option>
+                                                    <option value="offline">Offline (In-Person Classroom)</option>
                                                 </select>
                                                 <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</span>
                                             </div>

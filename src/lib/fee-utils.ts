@@ -69,10 +69,26 @@ export function getStudentFeeStatus(
     feesBasis: string | null | undefined,
     feesCollectionDay: number | null | undefined,
     payments: { payment_date: string, status?: string }[],
-    today: Date = new Date()
+    today: Date = new Date(),
+    joinDate?: string | Date | null
 ): FeeStatusDetails | null {
-    if (feesBasis !== 'monthly' || !feesCollectionDay) {
+    if (feesBasis !== 'monthly') {
         return null;
+    }
+
+    // Determine collection day: if not explicitly set, derive from joinDate day, default to 1
+    let collectionDay = Number(feesCollectionDay);
+    if (!collectionDay || isNaN(collectionDay) || collectionDay < 1 || collectionDay > 31) {
+        if (joinDate) {
+            const jDate = new Date(joinDate);
+            if (!isNaN(jDate.getTime())) {
+                collectionDay = jDate.getDate();
+            } else {
+                collectionDay = 1;
+            }
+        } else {
+            collectionDay = 1;
+        }
     }
 
     // Check if there is any pending payment awaiting approval
@@ -96,24 +112,39 @@ export function getStudentFeeStatus(
         return date;
     };
 
-    const prevDueDate = getClampedDate(year, month - 1, feesCollectionDay);
+    const prevDueDate = getClampedDate(year, month - 1, collectionDay);
     prevDueDate.setHours(0, 0, 0, 0);
 
-    const currDueDate = getClampedDate(year, month, feesCollectionDay);
+    let currDueDate = getClampedDate(year, month, collectionDay);
     currDueDate.setHours(0, 0, 0, 0);
 
-    const nextDueDate = getClampedDate(year, month + 1, feesCollectionDay);
+    let nextDueDate = getClampedDate(year, month + 1, collectionDay);
     nextDueDate.setHours(0, 0, 0, 0);
 
+    // If joinDate is present and student joined in current or future month, clamp currDueDate to joining month's collection date
+    if (joinDate) {
+        const jDate = new Date(joinDate);
+        jDate.setHours(0, 0, 0, 0);
+        if (!isNaN(jDate.getTime()) && jDate.getTime() > currDueDate.getTime()) {
+            const jYear = jDate.getFullYear();
+            const jMonth = jDate.getMonth();
+            currDueDate = getClampedDate(jYear, jMonth, collectionDay);
+            if (currDueDate.getTime() < jDate.getTime()) {
+                currDueDate = getClampedDate(jYear, jMonth + 1, collectionDay);
+            }
+            nextDueDate = getClampedDate(currDueDate.getFullYear(), currDueDate.getMonth() + 1, collectionDay);
+        }
+    }
+
     // Helper to find which due date is closest to the payment date
-    const getClosestDueDate = (pDate: Date, collectionDay: number) => {
+    const getClosestDueDate = (pDate: Date, cDay: number) => {
         const pYear = pDate.getFullYear();
         const pMonth = pDate.getMonth();
         
         const options = [
-            getClampedDate(pYear, pMonth - 1, collectionDay),
-            getClampedDate(pYear, pMonth, collectionDay),
-            getClampedDate(pYear, pMonth + 1, collectionDay)
+            getClampedDate(pYear, pMonth - 1, cDay),
+            getClampedDate(pYear, pMonth, cDay),
+            getClampedDate(pYear, pMonth + 1, cDay)
         ];
         
         let closest = options[0];
@@ -133,7 +164,7 @@ export function getStudentFeeStatus(
     const hasPaidCurr = approvedPayments.some(p => {
         const pDate = new Date(p.payment_date);
         pDate.setHours(0, 0, 0, 0);
-        const closestDue = getClosestDueDate(pDate, feesCollectionDay);
+        const closestDue = getClosestDueDate(pDate, collectionDay);
         return closestDue.getTime() === currDueDate.getTime();
     });
 
@@ -163,7 +194,7 @@ export function getStudentFeeStatus(
     }
 
     const day = activeDueDate.getDate();
-    const monthName = activeDueDate.toLocaleString('en-US', { month: 'long' });
+    const monthName = activeDueDate.toLocaleString('en-US', { month: 'short' });
     const formattedDueDate = `${day} ${monthName}`;
 
     return {

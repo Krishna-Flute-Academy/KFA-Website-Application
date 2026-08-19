@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 import { supabaseAuth } from '../lib/supabase-auth';
 import { supabase } from '../lib/supabase';
 
@@ -48,6 +49,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
     const [unreadFeesCount, setUnreadFeesCount] = useState(0);
     const [unreadTasksCount, setUnreadTasksCount] = useState(0);
     const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+    const [isEndingSession, setIsEndingSession] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
 
     // Widget Minimize / Maximize State for active classroom session
@@ -849,61 +851,64 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     {/* Direct action triggers */}
                     <div className="flex gap-2 mt-1">
                         <button
+                            disabled={isEndingSession}
                             onClick={async () => {
+                                if (isEndingSession) return;
                                 if (confirm('Are you sure you want to end this active class session?')) {
+                                    setIsEndingSession(true);
+                                    const sessionToClear = activeSession;
+                                    // Optimistically hide active session widget immediately for instant responsiveness
+                                    localStorage.removeItem('active_class_session');
+                                    setActiveSession(null);
+
                                     try {
-                                        const startedAtTime = activeSession.startedAt;
+                                        const startedAtTime = sessionToClear.startedAt || Date.now();
                                         const endedAtTime = Date.now();
                                         const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
-                                        
-                                        // 1. Fetch attendance counts to log correctly
-                                        const { data: attData } = await supabaseAuth
-                                            .from('attendance')
-                                            .select('status')
-                                            .eq('classroom_id', activeSession.classroomId)
-                                            .eq('date', activeSession.sessionDate);
-                                        
-                                        const present = attData?.filter(a => a.status === 'present').length || 0;
-                                        const absent = attData?.filter(a => a.status === 'absent').length || 0;
-                                        const late = attData?.filter(a => a.status === 'late').length || 0;
-                                        const excused = attData?.filter(a => a.status === 'excused').length || 0;
-                                        
-                                        // 2. Call RPC to end classroom session transactionally and log history
-                                        await supabaseAuth.rpc('end_classroom_session', {
-                                            p_classroom_id: activeSession.classroomId,
-                                            p_session_date: activeSession.sessionDate,
-                                            p_session_type: activeSession.sessionType,
+                                        const sessionDateStr = sessionToClear.sessionDate || new Date().toISOString().split('T')[0];
+
+                                        // Single RPC call to end session, clear live flag & log history transactionally in Postgres
+                                        const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
+                                            p_classroom_id: sessionToClear.classroomId,
+                                            p_session_date: sessionDateStr,
+                                            p_session_type: sessionToClear.sessionType || 'online',
                                             p_started_at: new Date(startedAtTime).toISOString(),
                                             p_ended_at: new Date(endedAtTime).toISOString(),
-                                            p_duration_seconds: durationSecs,
-                                            p_present_count: present,
-                                            p_absent_count: absent,
-                                            p_late_count: late,
-                                            p_excused_count: excused
+                                            p_duration_seconds: durationSecs
                                         });
 
-                                        // 3. Clear classrooms live state
-                                        await supabaseAuth
-                                            .from('classrooms')
-                                            .update({
-                                                is_live: false,
-                                                live_meeting_link: null,
-                                                live_session_started_at: null
-                                            })
-                                            .eq('id', activeSession.classroomId);
+                                        if (rpcErr) {
+                                            console.warn('RPC end_classroom_session returned error, attempting direct live state update:', rpcErr);
+                                            const { error: clearErr } = await supabaseAuth
+                                                .from('classrooms')
+                                                .update({
+                                                    is_live: false,
+                                                    live_meeting_link: null,
+                                                    live_session_started_at: null
+                                                })
+                                                .eq('id', sessionToClear.classroomId);
 
-                                        localStorage.removeItem('active_class_session');
-                                        window.location.reload();
-                                    } catch (err) {
+                                            if (clearErr) throw clearErr;
+                                        }
+                                    } catch (err: any) {
                                         console.error('Error ending class session from sidebar:', err);
-                                        alert('Failed to end classroom session. Please try again.');
+                                        // Restore session widget if database update failed completely
+                                        setActiveSession(sessionToClear);
+                                        localStorage.setItem('active_class_session', JSON.stringify(sessionToClear));
+                                        alert(`Failed to end classroom session: ${err?.message || 'Please try again.'}`);
+                                    } finally {
+                                        setIsEndingSession(false);
                                     }
                                 }
                             }}
-                            className="flex-1 py-2 border border-rose-200 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-950/20 text-rose-600 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
+                            className="flex-1 py-2 border border-rose-200 hover:bg-rose-50 dark:border-rose-900/30 dark:hover:bg-rose-950/20 text-rose-600 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <span className="material-symbols-outlined text-sm">logout</span>
-                            End Class
+                            {isEndingSession ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                            ) : (
+                                <span className="material-symbols-outlined text-sm">logout</span>
+                            )}
+                            {isEndingSession ? 'Ending...' : 'End Class'}
                         </button>
                         <Link
                             href={`/teacher-dashboard/classrooms/${activeSession.classroomId}/meeting`}
