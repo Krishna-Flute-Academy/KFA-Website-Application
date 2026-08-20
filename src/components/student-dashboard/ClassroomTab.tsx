@@ -70,6 +70,7 @@ interface ClassroomTabProps {
     onSelectAssignment?: (asg: any) => void;
     hasUnreadClassroomMessages?: boolean;
     onMarkClassroomChatAsRead?: () => void;
+    onMarkClassroomBroadcastAsRead?: (ids: string[]) => void;
 }
 
 export default function ClassroomTab({
@@ -90,7 +91,8 @@ export default function ClassroomTab({
     onSendClassroomMessage,
     onSelectAssignment,
     hasUnreadClassroomMessages = false,
-    onMarkClassroomChatAsRead
+    onMarkClassroomChatAsRead,
+    onMarkClassroomBroadcastAsRead
 }: ClassroomTabProps) {
     const [subTab, setSubTab] = useState<'calendar' | 'logs' | 'notes' | 'assignments' | 'messages'>('calendar');
     const [messageTab, setMessageTab] = useState<'broadcasts' | 'chat'>('broadcasts');
@@ -163,9 +165,12 @@ export default function ClassroomTab({
                     }
                     return updated;
                 });
+                if (onMarkClassroomBroadcastAsRead) {
+                    onMarkClassroomBroadcastAsRead(ids);
+                }
             }
         }
-    }, [subTab, messageTab, classroomMessages.length, classroomBroadcasts, onMarkClassroomChatAsRead]);
+    }, [subTab, messageTab, classroomMessages.length, classroomBroadcasts, onMarkClassroomChatAsRead, onMarkClassroomBroadcastAsRead]);
 
     const classroomChatParticipants = useMemo(() => {
         const teacher = classroom?.teacher_id
@@ -535,7 +540,7 @@ export default function ClassroomTab({
                         { id: 'calendar', label: 'Class Calendar', icon: Calendar },
                         { id: 'assignments', label: 'Assignments', icon: BookOpen },
                         { id: 'notes', label: 'Class Notes', icon: FileText },
-                        { id: 'messages', label: 'Messages & Discussion', icon: MessageSquare, hasUnread: hasUnreadClassroomMessages },
+                        { id: 'messages', label: 'Messages & Discussion', icon: MessageSquare, hasUnread: hasUnreadClassroomMessages || hasUnreadBroadcasts },
                         { id: 'logs', label: 'Presence Logs', icon: Clock }
                     ].map(tab => {
                         const Icon = tab.icon;

@@ -207,6 +207,7 @@ export function PageClient({
         const role = userRole?.toLowerCase();
         if (role === 'admin') return '/teacher-dashboard';
         if (role === 'teacher') return '/teacher-dashboard';
+        if (role === 'pending') return '/pending-approval';
         return '/student-dashboard';
     };
 

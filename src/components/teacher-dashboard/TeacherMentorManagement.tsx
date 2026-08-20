@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-    Users, UserCheck, Plus, Trash2, Search, Sparkles, 
+    Users, UserCheck, UserPlus, UserMinus, Plus, Trash2, Search, Sparkles, 
     ShieldCheck, AlertCircle, CheckCircle2, Loader2, RefreshCw, X, Award
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
@@ -387,8 +387,9 @@ export default function TeacherMentorManagement() {
                                         <div className="flex items-center gap-2">
                                             <h4 className="font-extrabold text-xs text-slate-800 dark:text-white truncate">{user.name}</h4>
                                             {isMentor && (
-                                                <span className="text-[8px] font-black bg-amber-500 text-white px-1.5 py-0.2 rounded uppercase tracking-wider shrink-0">
-                                                    Mentor
+                                                <span className="inline-flex items-center gap-1 text-[8px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">
+                                                    <Award className="w-2.5 h-2.5" />
+                                                    <span>Mentor</span>
                                                 </span>
                                             )}
                                         </div>
@@ -398,13 +399,25 @@ export default function TeacherMentorManagement() {
 
                                     <button
                                         onClick={() => handleToggleMentorRole(user)}
-                                        className={`px-2.5 py-1.5 rounded-xl text-[10px] font-extrabold transition-all border cursor-pointer ${
+                                        className={`p-2 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] font-extrabold transition-all border cursor-pointer flex items-center justify-center gap-1 shrink-0 ${
                                             isMentor
                                                 ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 border-rose-200 dark:border-rose-900/40 hover:bg-rose-100'
                                                 : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/40 hover:bg-amber-100'
                                         }`}
+                                        title={isMentor ? 'Remove Mentor Role' : 'Promote to Mentor'}
+                                        aria-label={isMentor ? 'Remove Mentor Role' : 'Promote to Mentor'}
                                     >
-                                        {isMentor ? 'Remove Mentor Role' : 'Promote to Mentor'}
+                                        {isMentor ? (
+                                            <>
+                                                <UserMinus className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
+                                                <span className="hidden sm:inline">Remove Mentor Role</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <UserPlus className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
+                                                <span className="hidden sm:inline">Promote to Mentor</span>
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             );
@@ -467,9 +480,10 @@ export default function TeacherMentorManagement() {
                                                     <h4 className="font-extrabold text-sm text-slate-900 dark:text-white leading-tight">
                                                         {group.mentor_name}
                                                     </h4>
-                                                    <span className="text-[9px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">
-                                                        Senior Mentor
-                                                    </span>
+                                                     <span className="inline-flex items-center gap-1 text-[9px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                                                         <Award className="w-3 h-3 shrink-0" />
+                                                         <span>Senior Mentor</span>
+                                                     </span>
                                                 </div>
                                                 <p className="text-xs text-slate-400 mt-0.5">{group.mentor_email}</p>
                                             </div>
@@ -484,10 +498,12 @@ export default function TeacherMentorManagement() {
                                                     setSelectedMentorId(group.mentor_id);
                                                     setShowAssignModal(true);
                                                 }}
-                                                className="px-3 py-1 rounded-xl bg-[#7C5E3F] hover:bg-amber-800 text-white text-xs font-extrabold flex items-center gap-1 shadow-xs transition-all cursor-pointer"
+                                                className="p-2 sm:px-3 sm:py-1 rounded-xl bg-[#7C5E3F] hover:bg-amber-800 text-white text-xs font-extrabold flex items-center justify-center gap-1 shadow-xs transition-all cursor-pointer shrink-0"
+                                                title="Add Student"
+                                                aria-label="Add Student"
                                             >
-                                                <Plus className="w-3.5 h-3.5" />
-                                                <span>Add Student</span>
+                                                <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
+                                                <span className="hidden sm:inline">Add Student</span>
                                             </button>
                                         </div>
                                     </div>
@@ -516,11 +532,12 @@ export default function TeacherMentorManagement() {
 
                                                 <button
                                                     onClick={() => handleRemovePair(mentee.id)}
-                                                    className="px-2.5 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 border border-rose-200 dark:border-rose-900/40 text-[10px] font-extrabold hover:bg-rose-100 flex items-center gap-1 transition-all cursor-pointer shrink-0"
-                                                    title="Unpair student from mentor"
+                                                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 border border-rose-200 dark:border-rose-900/40 text-[10px] font-extrabold hover:bg-rose-100 flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0"
+                                                    title="Unpair Student"
+                                                    aria-label="Unpair Student"
                                                 >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                    <span>Unpair Student</span>
+                                                    <Trash2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
+                                                    <span className="hidden sm:inline">Unpair Student</span>
                                                 </button>
                                             </div>
                                         ))}

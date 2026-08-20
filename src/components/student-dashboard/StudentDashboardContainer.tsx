@@ -629,6 +629,7 @@ export default function StudentDashboardContainer() {
 
             const user = userRes.data;
             if (!user || user.role === 'teacher') { router.push('/'); return; }
+            if (user.role === 'pending') { router.push('/pending-approval'); return; }
             setProfile(user);
 
             const isNameIncomplete = !user.name || user.name.trim().toLowerCase() === 'new student';
@@ -2050,6 +2051,7 @@ export default function StudentDashboardContainer() {
         const updated = [...dismissedAdminBroadcasts, id];
         setDismissedAdminBroadcasts(updated);
         localStorage.setItem('kfa_dismissed_admin_messages', JSON.stringify(updated));
+        handleMarkClassroomBroadcastAsRead([id]);
     };
 
     // Helpers
@@ -2280,15 +2282,60 @@ export default function StudentDashboardContainer() {
         return new Set();
     });
 
+    const handleMarkClassroomBroadcastAsRead = useCallback((ids: string[]) => {
+        if (!ids || ids.length === 0) return;
+        setReadClassroomBroadcastIds(prev => {
+            const updated = new Set([...Array.from(prev), ...ids]);
+            if (typeof window !== 'undefined') {
+                try {
+                    localStorage.setItem('kfa_read_classroom_broadcast_ids', JSON.stringify(Array.from(updated)));
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+            return updated;
+        });
+
+        if (profile?.id) {
+            setNotifications(prev => prev.map(n => {
+                if (n.is_read || (n.type !== 'classroom' && !n.title?.toLowerCase().includes('new message in') && !n.title?.toLowerCase().includes('group update'))) return n;
+                return { ...n, is_read: true };
+            }));
+
+            supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', profile.id)
+                .eq('type', 'classroom')
+                .eq('is_read', false)
+                .then(() => {});
+        }
+    }, [profile?.id]);
+
     const unreadClassroomBroadcastCount = useMemo(() => {
         if (!classroom?.id || !broadcasts || broadcasts.length === 0) return 0;
 
         const classBroadcasts = broadcasts.filter((b: any) =>
-            b.recipients?.some((r: any) => r.type === 'class' && r.id === classroom.id)
+            b.recipients?.some((r: any) => (r.type === 'class' && String(r.id) === String(classroom.id)) || r.type === 'global')
         );
 
         return classBroadcasts.filter((b: any) => !readClassroomBroadcastIds.has(b.id)).length;
     }, [broadcasts, classroom?.id, readClassroomBroadcastIds]);
+
+    // Auto mark classroom announcements and messages as read when viewing My Classroom tab
+    useEffect(() => {
+        if (activeTab === 'classroom') {
+            if (classroom?.id && broadcasts && broadcasts.length > 0) {
+                const classBroadcasts = broadcasts.filter((b: any) =>
+                    b.recipients?.some((r: any) => (r.type === 'class' && String(r.id) === String(classroom.id)) || r.type === 'global')
+                );
+                if (classBroadcasts.length > 0) {
+                    handleMarkClassroomBroadcastAsRead(classBroadcasts.map((b: any) => b.id));
+                }
+            }
+            handleMarkClassroomChatAsRead();
+        }
+    }, [activeTab, classroom?.id, broadcasts, handleMarkClassroomBroadcastAsRead, handleMarkClassroomChatAsRead]);
 
     const unreadClassroomTotalCount = useMemo(() => {
         const chatCount = unreadClassroomChatCount;
@@ -2335,6 +2382,149 @@ export default function StudentDashboardContainer() {
 
         return unreadDirectCount + unreadBroadcastCount;
     }, [notifications, broadcasts, directMessages, profile?.id]);
+
+    const handleNotificationItemClick = useCallback(async (notif: any) => {
+        setShowNotificationsDropdown(false);
+
+        if (!notif.is_read) {
+            setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+            try {
+                await supabaseAuth.from('notifications').update({ is_read: true }).eq('id', notif.id);
+            } catch (e) {
+                console.error('Failed to mark notification read:', e);
+            }
+        }
+
+        const typeLower = String(notif.type || '').toLowerCase();
+        const titleLower = String(notif.title || '').toLowerCase();
+        const messageLower = String(notif.message || '').toLowerCase();
+        const fullText = `${titleLower} ${messageLower}`;
+
+        // 1. Explicit notification type routing
+        if (['task', 'assignment', 'submission', 'feedback', 'grade', 'task_review', 'task_submission'].includes(typeLower)) {
+            setActiveTab('tasks');
+            return;
+        }
+        if (['curriculum', 'chapter', 'lesson', 'course', 'module'].includes(typeLower)) {
+            setActiveTab('curriculum');
+            return;
+        }
+        if (['attendance', 'attendance_log', 'schedule', 'session', 'override', 'presence'].includes(typeLower)) {
+            setActiveTab('attendance');
+            return;
+        }
+        if (['fees', 'fee_reminder', 'payment', 'billing', 'invoice'].includes(typeLower)) {
+            setActiveTab('fees');
+            return;
+        }
+        if (['mentor', 'mentor_hub', 'mentee', 'learning_circle'].includes(typeLower)) {
+            setActiveTab('mentor_hub');
+            return;
+        }
+        if (['classroom', 'class_broadcast', 'batch'].includes(typeLower)) {
+            setActiveTab('classroom');
+            return;
+        }
+        if (['policy', 'policies'].includes(typeLower)) {
+            setActiveTab('policies');
+            return;
+        }
+        if (['tools', 'library', 'resource'].includes(typeLower)) {
+            setActiveTab('library');
+            return;
+        }
+
+        // 2. Broadcast matching lookup
+        const matchingBroadcast = broadcasts.find(b => notif.title === b.subject || notif.message === b.content);
+        if (matchingBroadcast) {
+            if (matchingBroadcast.channel === 'fee_management') {
+                setActiveTab('fees');
+                return;
+            }
+            if (matchingBroadcast.channel === 'classroom') {
+                setActiveTab('classroom');
+                return;
+            }
+
+            let feedId = 'announcements';
+            let feedName = 'Announcements';
+            if (matchingBroadcast.channel === 'custom_groups') {
+                feedId = 'custom_groups';
+                feedName = 'Group Announcements';
+            } else if (!matchingBroadcast.channel && matchingBroadcast.sender?.role !== 'admin') {
+                feedId = 'classroom';
+                feedName = 'Class Announcements';
+            } else if (matchingBroadcast.channel === 'new_joiners') {
+                feedId = 'new_joiners';
+                feedName = 'New Joiners Notices';
+            } else if (matchingBroadcast.channel === 'voice') {
+                feedId = 'voice';
+                feedName = 'Voice Notes & Tones';
+            }
+
+            setSelectedMessagesFeed({ type: 'category', id: feedId, name: feedName });
+            setActiveTab('messages');
+            return;
+        }
+
+        // 3. Keyword / Content Smart Fallback Routing
+        if (fullText.includes('task') || fullText.includes('assignment') || fullText.includes('submission') || fullText.includes('homework') || fullText.includes('practice log') || fullText.includes('review') || fullText.includes('evaluated') || fullText.includes('submitted')) {
+            setActiveTab('tasks');
+            return;
+        }
+
+        if (fullText.includes('curriculum') || fullText.includes('chapter') || fullText.includes('lesson') || fullText.includes('module') || fullText.includes('unlocked') || fullText.includes('course')) {
+            setActiveTab('curriculum');
+            return;
+        }
+
+        if (fullText.includes('attendance') || fullText.includes('absent') || fullText.includes('present') || fullText.includes('presence log') || fullText.includes('session override') || fullText.includes('makeup class') || fullText.includes('rescheduled')) {
+            setActiveTab('attendance');
+            return;
+        }
+
+        if (fullText.includes('fee') || fullText.includes('payment') || fullText.includes('billing') || fullText.includes('invoice') || fullText.includes('receipt') || fullText.includes('due') || fullText.includes('overdue') || fullText.includes('classes completed')) {
+            setActiveTab('fees');
+            return;
+        }
+
+        if (fullText.includes('mentor') || fullText.includes('mentee') || fullText.includes('learning circle') || fullText.includes('guidance')) {
+            setActiveTab('mentor_hub');
+            return;
+        }
+
+        if (fullText.includes('classroom') || fullText.includes('batch') || fullText.includes('live class') || fullText.includes('class started') || fullText.includes('meeting')) {
+            setActiveTab('classroom');
+            return;
+        }
+
+        if (fullText.includes('policy') || fullText.includes('policies') || fullText.includes('rule')) {
+            setActiveTab('policies');
+            return;
+        }
+
+        if (fullText.includes('tanpura') || fullText.includes('metronome') || fullText.includes('tuner') || fullText.includes('tool') || fullText.includes('practice suite')) {
+            setActiveTab('library');
+            return;
+        }
+
+        // 4. Direct Chat Contact match
+        const contactTitle = titleLower.replace(/^new message:\s*/i, '').trim();
+        const contact = [
+            ...(classroom?.teacher_id ? [{ id: classroom.teacher_id, name: classroom.teacher_name || 'Academy Instructor' }] : []),
+            ...admins.map((a: any) => ({ id: a.id, name: a.name })),
+            ...classmates.map((c: any) => ({ id: c.id, name: c.name }))
+        ].find(c => c.name.toLowerCase() === contactTitle || c.name.toLowerCase().includes(contactTitle) || (contactTitle && contactTitle.includes(c.name.toLowerCase())));
+
+        if (contact) {
+            setSelectedMessagesFeed({ type: 'chat', id: contact.id, name: contact.name });
+            setActiveTab('messages');
+            return;
+        }
+
+        // Default fallback to messages tab
+        setActiveTab('messages');
+    }, [broadcasts, classroom?.teacher_id, classroom?.teacher_name, admins, classmates]);
 
     if (loading) {
         return (
@@ -2584,58 +2774,7 @@ export default function StudentDashboardContainer() {
                                                 notifications.filter(n => !isVideoOrBlogRelease(n)).map((notif) => (
                                                     <div
                                                         key={notif.id}
-                                                        onClick={async () => {
-                                                            setShowNotificationsDropdown(false);
-                                                            if (!notif.is_read) {
-                                                                setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
-                                                                try {
-                                                                    await supabaseAuth.from('notifications').update({ is_read: true }).eq('id', notif.id);
-                                                                } catch (e) {
-                                                                    console.error('Failed to mark notification read:', e);
-                                                                }
-                                                            }
-
-                                                            const matchingBroadcast = broadcasts.find(b => notif.title === b.subject || notif.message === b.content);
-                                                            if (matchingBroadcast) {
-                                                                let feedId = 'announcements';
-                                                                let feedName = 'Announcements';
-                                                                if (matchingBroadcast.channel === 'custom_groups') {
-                                                                    feedId = 'custom_groups';
-                                                                    feedName = 'Group Announcements';
-                                                                } else if (matchingBroadcast.channel === 'classroom' || (!matchingBroadcast.channel && matchingBroadcast.sender?.role !== 'admin')) {
-                                                                    feedId = 'classroom';
-                                                                    feedName = 'Class Announcements';
-                                                                } else if (matchingBroadcast.channel === 'new_joiners') {
-                                                                    feedId = 'new_joiners';
-                                                                    feedName = 'New Joiners Notices';
-                                                                } else if (matchingBroadcast.channel === 'fee_management') {
-                                                                    setActiveTab('fees');
-                                                                    return;
-                                                                } else if (matchingBroadcast.channel === 'voice') {
-                                                                    feedId = 'voice';
-                                                                    feedName = 'Voice Notes & Tones';
-                                                                }
-
-                                                                setSelectedMessagesFeed({ type: 'category', id: feedId, name: feedName });
-                                                                setActiveTab('messages');
-                                                                return;
-                                                            }
-
-                                                            const contactTitle = String(notif.title || '').replace(/^New Message:\s*/i, '').trim().toLowerCase();
-                                                            const contact = [
-                                                                ...(classroom?.teacher_id ? [{ id: classroom.teacher_id, name: classroom.teacher_name || 'Academy Instructor' }] : []),
-                                                                ...admins.map((a: any) => ({ id: a.id, name: a.name })),
-                                                                ...classmates.map((c: any) => ({ id: c.id, name: c.name }))
-                                                            ].find(c => c.name.toLowerCase() === contactTitle || c.name.toLowerCase().includes(contactTitle) || contactTitle.includes(c.name.toLowerCase()));
-
-                                                            if (contact) {
-                                                                setSelectedMessagesFeed({ type: 'chat', id: contact.id, name: contact.name });
-                                                                setActiveTab('messages');
-                                                                return;
-                                                            }
-
-                                                            setActiveTab('messages');
-                                                        }}
+                                                        onClick={() => handleNotificationItemClick(notif)}
                                                         className={`px-4 py-2.5 hover:bg-[#FAF1E6]/80 transition-colors border-b border-[#F5EFE6] last:border-b-0 flex flex-col gap-0.5 text-left cursor-pointer ${!notif.is_read ? 'bg-[#FAF5EE] font-medium' : ''}`}
                                                     >
                                                         <div className="flex justify-between items-start gap-1">
@@ -2873,6 +3012,7 @@ export default function StudentDashboardContainer() {
                                     }}
                                     hasUnreadClassroomMessages={unreadClassroomChatCount > 0}
                                     onMarkClassroomChatAsRead={handleMarkClassroomChatAsRead}
+                                    onMarkClassroomBroadcastAsRead={handleMarkClassroomBroadcastAsRead}
                                 />
                             </div>
                         )}

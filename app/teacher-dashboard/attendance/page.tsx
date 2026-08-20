@@ -2308,10 +2308,10 @@ export default function AttendancePage() {
                                                     {sortedGrouped.map(([cid, group]) => (
                                                         <div key={cid}>
                                                             {/* Batch sub-header */}
-                                                            <div className="px-5 py-2.5 bg-slate-50/70 dark:bg-slate-800/40 flex items-center gap-2">
-                                                                <School className="w-3.5 h-3.5 text-[#ecb613]" />
-                                                                <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest">{group.name}</span>
-                                                                <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-wider">{group.entries.length} student{group.entries.length !== 1 ? 's' : ''}</span>
+                                                            <div className="px-3 py-2 sm:px-5 sm:py-2.5 bg-slate-50/70 dark:bg-slate-800/40 flex items-center gap-2">
+                                                                <School className="w-3.5 h-3.5 text-[#ecb613] shrink-0" />
+                                                                <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest truncate">{group.name}</span>
+                                                                <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">{group.entries.length} student{group.entries.length !== 1 ? 's' : ''}</span>
                                                             </div>
                                                             {/* Students */}
                                                             <div className="divide-y divide-slate-50 dark:divide-slate-800/20">
@@ -2327,30 +2327,30 @@ export default function AttendancePage() {
                                                                                 }
                                                                             }}
                                                                             title={status ? "Double-click marked section to unmark attendance" : undefined}
-                                                                            className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/20 transition-colors select-none"
+                                                                            className="px-3 py-2.5 sm:px-5 sm:py-3.5 flex items-center justify-between gap-2 hover:bg-slate-50/60 dark:hover:bg-slate-800/20 transition-colors select-none"
                                                                         >
-                                                                            <div className="flex items-center gap-3">
-                                                                                <div className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                                                                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                                                                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
                                                                                     {entry.student.profile_pic_url ? (
                                                                                         <img src={entry.student.profile_pic_url} alt={entry.student.name} className="w-full h-full object-cover" />
                                                                                     ) : (
-                                                                                        <span className="text-[#ecb613] font-black text-sm">{entry.student.name.charAt(0)}</span>
+                                                                                        <span className="text-[#ecb613] font-bold text-xs sm:text-sm">{entry.student.name.charAt(0)}</span>
                                                                                     )}
                                                                                 </div>
-                                                                                <div>
-                                                                                    <h6 className="font-extrabold text-slate-900 dark:text-white text-sm leading-tight">{entry.student.name}</h6>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <h6 className="font-extrabold text-slate-900 dark:text-white text-xs sm:text-sm leading-tight truncate">{entry.student.name}</h6>
                                                                                     {entry.isMakeup && (
-                                                                                        <span className="text-[9px] font-black text-blue-500 uppercase tracking-wider">Makeup Session</span>
+                                                                                        <span className="text-[8px] sm:text-[9px] font-black text-blue-500 uppercase tracking-wider block truncate">Makeup Session</span>
                                                                                     )}
                                                                                 </div>
                                                                             </div>
                                                                             {/* Attendance buttons */}
-                                                                            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-end">
+                                                                            <div className="flex items-center gap-1 shrink-0">
                                                                                 {([
-                                                                                    { key: 'present' as const, label: 'Present', shortLabel: 'P', activeClass: 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 border-emerald-500', inactiveClass: 'border-emerald-100 text-emerald-600 dark:border-emerald-950/20' },
-                                                                                    { key: 'absent' as const, label: 'Absent', shortLabel: 'A', activeClass: 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 border-rose-500', inactiveClass: 'border-rose-100 text-rose-600 dark:border-rose-950/20' },
-                                                                                    { key: 'late' as const, label: 'Late', shortLabel: 'L', activeClass: 'bg-amber-500 text-white shadow-lg shadow-amber-500/25 border-amber-500', inactiveClass: 'border-amber-100 text-amber-600 dark:border-amber-950/20' },
-                                                                                    { key: 'excused' as const, label: 'Excused', shortLabel: 'E', activeClass: 'bg-slate-600 text-white shadow-lg shadow-slate-600/25 border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-750' }
+                                                                                    { key: 'present' as const, label: 'Present', shortLabel: 'P', activeClass: 'bg-emerald-500 text-white shadow-sm border-emerald-500', inactiveClass: 'border-emerald-200/80 text-emerald-600 dark:border-emerald-900/40' },
+                                                                                    { key: 'absent' as const, label: 'Absent', shortLabel: 'A', activeClass: 'bg-rose-500 text-white shadow-sm border-rose-500', inactiveClass: 'border-rose-200/80 text-rose-600 dark:border-rose-900/40' },
+                                                                                    { key: 'late' as const, label: 'Late', shortLabel: 'L', activeClass: 'bg-amber-500 text-white shadow-sm border-amber-500', inactiveClass: 'border-amber-200/80 text-amber-600 dark:border-amber-900/40' },
+                                                                                    { key: 'excused' as const, label: 'Excused', shortLabel: 'E', activeClass: 'bg-slate-600 text-white shadow-sm border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-700' }
                                                                                 ]).map(opt => {
                                                                                     const isActive = status === opt.key;
                                                                                     return (
@@ -2365,7 +2365,7 @@ export default function AttendancePage() {
                                                                                                 e.stopPropagation();
                                                                                                 handleUnmarkDateAttendance(entry.student.id, entry.classroom_id);
                                                                                             }}
-                                                                                            className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all duration-200 cursor-pointer ${
+                                                                                            className={`w-7 h-7 sm:w-auto sm:h-auto sm:px-3.5 sm:py-1.5 rounded-lg text-xs font-black uppercase border transition-all duration-200 cursor-pointer flex items-center justify-center ${
                                                                                                 isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800`
                                                                                             }`}
                                                                                         >

@@ -51,41 +51,53 @@ function LoginContent() {
         }
 
         setLoading(true);
-        const { data, error: signInError } = await supabaseAuth.auth.signInWithPassword({
-            email,
-            password,
-        });
+        try {
+            const { data, error: signInError } = await supabaseAuth.auth.signInWithPassword({
+                email: email.trim(),
+                password,
+            });
 
-        if (signInError) {
-            setError(signInError.message);
+            if (signInError) {
+                if (signInError.message?.toLowerCase().includes('invalid login credentials')) {
+                    setError('Invalid login credentials. If you originally signed up using Google, please click "Continue with Google" above.');
+                } else {
+                    setError(typeof signInError === 'string' ? signInError : signInError.message || 'Failed to sign in. Please check your credentials.');
+                }
+                setLoading(false);
+                return;
+            }
+
+            let userRole = data.user?.user_metadata?.role;
+
+            // Always prefer the role stored in the public.users table
+            if (data.user) {
+                const { data: userData } = await supabaseAuth
+                    .from('users')
+                    .select('role')
+                    .eq('id', data.user.id)
+                    .maybeSingle();
+                if (userData?.role) userRole = userData.role;
+            }
+
+            const normalizedRole = userRole?.toString().toLowerCase();
+
+            if (normalizedRole === 'admin') {
+                localStorage.setItem('kfa-user-role', normalizedRole);
+                router.push('/teacher-dashboard');
+            } else if (normalizedRole === 'teacher') {
+                localStorage.setItem('kfa-user-role', normalizedRole);
+                router.push('/teacher-dashboard');
+            } else if (normalizedRole === 'student') {
+                router.push('/student-dashboard');
+            } else {
+                router.push('/pending-approval');
+            }
+        } catch (err: any) {
+            console.error('Login error:', err);
+            const msg = typeof err === 'string' ? err : err?.message || 'An unexpected error occurred during login.';
+            setError(msg);
+        } finally {
             setLoading(false);
-            return;
-        }
-
-        let userRole = data.user?.user_metadata?.role;
-
-        // Always prefer the role stored in the public.users table
-        if (data.user) {
-            const { data: userData } = await supabaseAuth
-                .from('users')
-                .select('role')
-                .eq('id', data.user.id)
-                .maybeSingle();
-            if (userData?.role) userRole = userData.role;
-        }
-
-        const normalizedRole = userRole?.toString().toLowerCase();
-
-        if (normalizedRole === 'admin') {
-            localStorage.setItem('kfa-user-role', normalizedRole);
-            router.push('/teacher-dashboard');
-        } else if (normalizedRole === 'teacher') {
-            localStorage.setItem('kfa-user-role', normalizedRole);
-            router.push('/teacher-dashboard');
-        } else if (normalizedRole === 'student') {
-            router.push('/student-dashboard');
-        } else {
-            router.push('/pending-approval');
         }
     };
 
@@ -143,8 +155,9 @@ function LoginContent() {
 
                         {/* Error Banner */}
                         {error && (
-                            <div className="mb-5 p-3 bg-red-100 border border-red-400 text-red-700 text-sm rounded-lg">
-                                {error}
+                            <div className="mb-5 p-3.5 bg-rose-50 border border-rose-300 text-rose-700 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-300 text-xs font-semibold rounded-xl flex items-start gap-2 shadow-xs">
+                                <span className="text-base leading-none shrink-0">⚠️</span>
+                                <span>{typeof error === 'object' ? (error as any)?.message || JSON.stringify(error) : String(error)}</span>
                             </div>
                         )}
 

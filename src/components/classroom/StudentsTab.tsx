@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { 
     Calendar, UserPlus, Trash2, Loader2, Plus, 
-    AlertTriangle, Sparkles, BarChart2
+    AlertTriangle, Sparkles, BarChart2, BookOpen
 } from 'lucide-react';
 
 interface Student {
@@ -205,6 +205,39 @@ export default function StudentsTab({
         const sum = studentAssignments.reduce((acc, curr) => acc + curr.score, 0);
         return parseFloat((sum / studentAssignments.length).toFixed(1));
     };
+
+    const atRiskStudent = React.useMemo(() => {
+        let lowest: { student: Student; rate: number } | null = null;
+        students.forEach(s => {
+            const rate = getStudentAttendanceRate(s.student_id, s.mock_attendance);
+            if (rate !== null && rate < 75) {
+                if (!lowest || rate < lowest.rate) {
+                    lowest = { student: s, rate };
+                }
+            }
+        });
+        return lowest;
+    }, [students, classroomAttendance]);
+
+    const classTasksStats = React.useMemo(() => {
+        const classAsgs = (assignments || []).filter(asg => asg.classroom_id === classroom?.id);
+        const totalTasks = classAsgs.length;
+        let totalSubmissions = 0;
+        let expectedSubmissions = totalTasks * students.length;
+
+        if (totalTasks > 0 && students.length > 0 && classroomAssignmentsStudents) {
+            classAsgs.forEach(asg => {
+                const subs = classroomAssignmentsStudents.filter(cas => 
+                    cas.assignment_id === asg.id && 
+                    (cas.status === 'submitted' || cas.status === 'reviewed' || cas.status === 'approved')
+                );
+                totalSubmissions += subs.length;
+            });
+        }
+
+        const rate = expectedSubmissions > 0 ? Math.round((totalSubmissions / expectedSubmissions) * 100) : 0;
+        return { totalTasks, rate };
+    }, [assignments, classroom, students, classroomAssignmentsStudents]);
 
     return (
         <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
@@ -456,28 +489,54 @@ export default function StudentsTab({
                 </div>
             </div>
 
-            {/* Focus Tasks / Assistant View */}
+            {/* Dynamic Classroom Insights */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:grid-cols-3">
-                <div className="bg-rose-50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/50 p-6 rounded-xl shadow-sm">
-                    <div className="flex items-center gap-3 mb-4 text-rose-800 dark:text-rose-400">
-                        <AlertTriangle className="w-5 h-5" />
-                        <h4 className="font-bold">Urgent Attention Needed</h4>
+                <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/50 p-6 rounded-xl shadow-xs flex flex-col justify-between">
+                    <div>
+                        <div className="flex items-center gap-3 mb-3 text-amber-800 dark:text-amber-400">
+                            <AlertTriangle className="w-5 h-5 shrink-0" />
+                            <h4 className="font-extrabold text-sm">Attendance & Participation</h4>
+                        </div>
+                        <p className="text-xs text-amber-900/80 dark:text-amber-200/90 mb-4 leading-relaxed font-semibold">
+                            {atRiskStudent ? (
+                                <><strong>{atRiskStudent.student.name}</strong> has a low attendance rate ({atRiskStudent.rate}%) this month and may need extra guidance.</>
+                            ) : (
+                                <>All {students.length} student(s) in {classroom?.name || 'this batch'} currently maintain active class participation.</>
+                            )}
+                        </p>
                     </div>
-                    <p className="text-sm text-rose-700 dark:text-rose-300 mb-4">Julian Chen has missed 3 consecutive classes and hasn't submitted the 'Bach Invention No. 4' assignment.</p>
-                    <button className="w-full py-2 bg-rose-600 dark:bg-rose-700 text-white rounded-lg font-bold text-sm hover:bg-rose-700 dark:hover:bg-rose-600 transition-colors">
-                        Message Guardian
+                    <button 
+                        onClick={openMakeupModal}
+                        className="w-full py-2.5 bg-[#7C5E3F] hover:bg-amber-800 text-white rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                    >
+                        <Calendar className="w-4 h-4" />
+                        <span>Schedule Makeup Class</span>
                     </button>
                 </div>
-                <div className="bg-indigo-50 dark:bg-indigo-950/10 border border-indigo-100 dark:border-indigo-900/50 p-6 rounded-xl shadow-sm">
-                    <div className="flex items-center gap-3 mb-4 text-indigo-800 dark:text-indigo-400">
-                        <Sparkles className="w-5 h-5" />
-                        <h4 className="font-bold">Next Milestone</h4>
+
+                <div className="bg-indigo-50/70 dark:bg-indigo-950/20 border border-[#c7d2fe] dark:border-indigo-900/50 p-6 rounded-xl shadow-xs flex flex-col justify-between">
+                    <div>
+                        <div className="flex items-center gap-3 mb-3 text-indigo-800 dark:text-indigo-400">
+                            <Sparkles className="w-5 h-5 shrink-0" />
+                            <h4 className="font-extrabold text-sm">Classroom Tasks & Submissions</h4>
+                        </div>
+                        <p className="text-xs text-indigo-900/80 dark:text-indigo-200/90 mb-4 leading-relaxed font-semibold">
+                            {classTasksStats.totalTasks > 0 ? (
+                                <>{classTasksStats.totalTasks} active assignment(s) created for this batch with an average submission rate of {classTasksStats.rate}%.</>
+                            ) : (
+                                <>No assignments created for this batch yet. Assign lessons or practice tasks to track student progress.</>
+                            )}
+                        </p>
                     </div>
-                    <p className="text-sm text-indigo-700 dark:text-indigo-300 mb-4">The Mid-Term Performance Exam is in 8 days. 18/{students.length || 24} students have already signed up for their time slots.</p>
-                    <button className="w-full py-2 bg-indigo-600 dark:bg-indigo-700 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors">
-                        Review Exam Schedule
-                    </button>
+                    <Link 
+                        href="/teacher-dashboard/tasks"
+                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                    >
+                        <BookOpen className="w-4 h-4" />
+                        <span>Manage Classroom Tasks</span>
+                    </Link>
                 </div>
+
                 <div className="p-6 rounded-xl shadow-lg relative overflow-hidden text-slate-900 flex flex-col justify-between" style={{ backgroundColor: '#ecb613' }}>
                     <div>
                         <BarChart2 className="w-8 h-8 mb-4 opacity-80" />
