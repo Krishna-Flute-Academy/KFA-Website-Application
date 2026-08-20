@@ -1457,34 +1457,42 @@ export default function ClassroomsPage() {
                     ) : (
                         <>
                             {/* Stats Overview */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6 mb-8">
-                                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600 dark:text-amber-400 mb-2 sm:mb-4">
-                                        <Users className="size-5 sm:size-6" />
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-5">
+                                <div className="bg-white dark:bg-slate-900 p-3 sm:p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-3">
+                                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+                                        <Users className="size-4.5 sm:size-5" />
                                     </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1">Total Students</p>
-                                    <p className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white">{displayedClassrooms.reduce((acc, r) => acc + r.student_count, 0)}</p>
+                                    <div className="min-w-0">
+                                        <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-semibold truncate leading-tight">Total Students</p>
+                                        <p className="text-base sm:text-xl font-black text-slate-900 dark:text-white leading-snug mt-0.5">{displayedClassrooms.reduce((acc, r) => acc + r.student_count, 0)}</p>
+                                    </div>
                                 </div>
-                                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 mb-2 sm:mb-4">
-                                        <Video className="size-5 sm:size-6" />
+                                <div className="bg-white dark:bg-slate-900 p-3 sm:p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-3">
+                                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+                                        <Video className="size-4.5 sm:size-5" />
                                     </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1">Online Classes</p>
-                                    <p className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white">0</p>
+                                    <div className="min-w-0">
+                                        <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-semibold truncate leading-tight">Online Classes</p>
+                                        <p className="text-base sm:text-xl font-black text-slate-900 dark:text-white leading-snug mt-0.5">0</p>
+                                    </div>
                                 </div>
-                                <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-2 sm:mb-4">
-                                        <MapPin className="size-5 sm:size-6" />
+                                <div className="bg-white dark:bg-slate-900 p-3 sm:p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-3">
+                                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                                        <MapPin className="size-4.5 sm:size-5" />
                                     </div>
-                                    <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1">Offline Classes</p>
-                                    <p className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white">{displayedClassrooms.length}</p>
+                                    <div className="min-w-0">
+                                        <p className="text-slate-500 dark:text-slate-400 text-[10px] sm:text-xs font-semibold truncate leading-tight">Offline Classes</p>
+                                        <p className="text-base sm:text-xl font-black text-slate-900 dark:text-white leading-snug mt-0.5">{displayedClassrooms.length}</p>
+                                    </div>
                                 </div>
-                                <div className="bg-[#ecb613] p-4 sm:p-6 rounded-2xl border border-[#ecb613] shadow-sm hover:shadow-md transition-shadow text-slate-900">
-                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/30 flex items-center justify-center text-slate-900 mb-2 sm:mb-4">
-                                        <Clock className="size-5 sm:size-6" />
+                                <div className="bg-[#ecb613] p-3 sm:p-3.5 rounded-xl border border-[#ecb613] shadow-xs flex items-center gap-3 text-slate-900">
+                                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white/30 flex items-center justify-center text-slate-900 shrink-0">
+                                        <Clock className="size-4.5 sm:size-5" />
                                     </div>
-                                    <p className="text-slate-900/80 text-[10px] sm:text-sm font-medium mb-0.5 sm:mb-1">Total Classes</p>
-                                    <p className="text-lg sm:text-2xl font-black">{displayedClassrooms.length}</p>
+                                    <div className="min-w-0">
+                                        <p className="text-slate-900/80 text-[10px] sm:text-xs font-semibold truncate leading-tight">Total Classes</p>
+                                        <p className="text-base sm:text-xl font-black leading-snug mt-0.5">{displayedClassrooms.length}</p>
+                                    </div>
                                 </div>
                             </div>
 

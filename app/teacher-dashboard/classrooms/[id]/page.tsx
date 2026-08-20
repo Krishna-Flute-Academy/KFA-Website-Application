@@ -10,7 +10,7 @@ import {
     FileText, Film, Lock, Music, UserPlus, AlertTriangle, Sparkles, 
     X, BookOpen, Send, ClipboardList, Download, ExternalLink, Unlock, 
     MessageSquare, Share2, LogOut, Check, Info, FileIcon, Trash, Sliders,
-    User, ChevronUp, ChevronDown, Paperclip, Upload, StickyNote, Mic
+    User, ChevronUp, ChevronDown, ChevronRight, Paperclip, Upload, StickyNote, Mic
 } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
@@ -617,6 +617,7 @@ export default function ClassroomDashboardPage({
 
     // Allocation Manager Drawer states
     const [isAllocationDrawerOpen, setIsAllocationDrawerOpen] = useState(false);
+    const [unlockModalTarget, setUnlockModalTarget] = useState<{ type: 'level' | 'chapter' | 'topic'; item: any; action: 'unlock' | 'lock' } | null>(null);
     const [allocationTargetLesson, setAllocationTargetLesson] = useState<any | null>(null);
     const [allocationTargetItemType, setAllocationTargetItemType] = useState<'level' | 'chapter' | 'topic'>('topic');
     const [allocationTargetType, setAllocationTargetType] = useState<'classwide' | 'individual'>('classwide');
@@ -624,6 +625,15 @@ export default function ClassroomDashboardPage({
     const [allocationSelectedStudents, setAllocationSelectedStudents] = useState<string[]>([]);
     const [allocationSearchQuery, setAllocationSearchQuery] = useState('');
     const [isSavingAllocation, setIsSavingAllocation] = useState(false);
+
+    const openUnlockModal = (type: 'level' | 'chapter' | 'topic', item: any) => {
+        const isLocked = getIsLocked(type, item.id);
+        setUnlockModalTarget({
+            type,
+            item,
+            action: isLocked ? 'unlock' : 'lock'
+        });
+    };
 
     const getStudentsWithStatus = (status: 'locked' | 'unlocked' | 'completed', lessonId: string) => {
         if (status === 'locked') {
@@ -2583,29 +2593,34 @@ export default function ClassroomDashboardPage({
     const getClassSummary = useCallback((
         itemType: 'level' | 'chapter' | 'topic',
         itemId: string
-    ): 'not_allocated' | 'partially_allocated' | 'allocated_to_all' | 'in_progress' | 'completed_by_all' => {
+    ): 'not_allocated' | 'locked_for_all' | 'unlocked_for_all' | 'partially_unlocked' | 'in_progress' | 'completed_by_all' => {
         const studentStatuses = getStudentStatuses(itemType, itemId);
         if (studentStatuses.length === 0) return 'not_allocated';
 
-        const allocatedCount = studentStatuses.filter(s => s.status !== 'not_allocated').length;
-        const completedCount = studentStatuses.filter(s => s.status === 'completed').length;
-        const inProgressCount = studentStatuses.filter(s => s.status === 'in_progress' || s.status === 'completed').length;
+        const allocatedStudents = studentStatuses.filter(s => s.status !== 'not_allocated');
+        if (allocatedStudents.length === 0) return 'not_allocated';
 
-        if (allocatedCount === 0) return 'not_allocated';
-        
-        if (completedCount === studentStatuses.length && studentStatuses.length > 0) {
+        const completedCount = allocatedStudents.filter(s => s.status === 'completed').length;
+        const inProgressCount = allocatedStudents.filter(s => s.status === 'in_progress').length;
+        const lockedCount = allocatedStudents.filter(s => s.status === 'locked').length;
+
+        if (completedCount === allocatedStudents.length && allocatedStudents.length > 0) {
             return 'completed_by_all';
         }
 
-        if (inProgressCount > 0) {
-            return 'in_progress';
+        if (lockedCount === allocatedStudents.length) {
+            return 'locked_for_all';
         }
 
-        if (allocatedCount === studentStatuses.length) {
-            return 'allocated_to_all';
+        if (inProgressCount + completedCount === allocatedStudents.length) {
+            return 'unlocked_for_all';
         }
 
-        return 'partially_allocated';
+        if (inProgressCount > 0 || completedCount > 0) {
+            return 'partially_unlocked';
+        }
+
+        return 'locked_for_all';
     }, [getStudentStatuses]);
 
     const selectedStudentPermissions = useMemo(() => {
@@ -2615,25 +2630,7 @@ export default function ClassroomDashboardPage({
         if (selectedStudentForCurriculum) {
             const studentId = selectedStudentForCurriculum.student_id;
             
-            // Find all lessons explicitly allocated to this student
-            const allocatedLessons = new Set<string>();
-            classroomInventoryAllocations.forEach(a => {
-                if (a.allocated_to_student_id && a.allocated_to_student_id !== studentId) return;
-                
-                if (a.lesson_id) {
-                    allocatedLessons.add(a.lesson_id);
-                } else if (a.chapter_id) {
-                    const lessons = courseLessons.filter(l => l.chapter_id === a.chapter_id);
-                    lessons.forEach(l => allocatedLessons.add(l.id));
-                } else if (a.module_id) {
-                    const chapters = courseChapters.filter(c => c.module_id === a.module_id);
-                    const chapterIds = chapters.map(c => c.id);
-                    const lessons = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
-                    lessons.forEach(l => allocatedLessons.add(l.id));
-                }
-            });
-
-            // Map progress status and include implicit progress
+            // Map progress status explicitly set for this student
             const progressMap = new Map<string, string>();
             studentProgress.forEach(p => {
                 if (p.student_id === studentId) {
@@ -2646,32 +2643,19 @@ export default function ClassroomDashboardPage({
                     }
                 }
             });
-
-            allocatedLessons.forEach(lessonId => {
-                const status = progressMap.get(lessonId);
-                if (status === 'completed') {
-                    completed.add(lessonId);
-                    unlocked.add(lessonId);
-                } else if (status === 'locked') {
-                    // locked, do not add to unlocked
-                } else {
-                    // status is 'unlocked' or undefined (not in progress table, so default to unlocked/in-progress)
-                    unlocked.add(lessonId);
-                }
-            });
         }
 
         return {
             completedLessons: completed,
             unlockedLessons: unlocked
         };
-    }, [selectedStudentForCurriculum, studentProgress, classroomInventoryAllocations, courseChapters, courseLessons]);
+    }, [selectedStudentForCurriculum, studentProgress]);
 
     const getLessonPacingStatus = useCallback((lessonId: string) => {
         let isCompleted = false;
         let isUnlocked = false;
-        let statusLabel = "Locked";
-        let cardBorder = "border-slate-200/60 dark:border-slate-800/60 bg-slate-50/10 dark:bg-slate-900/[0.02] opacity-60 hover:opacity-100 transition-all duration-300";
+        let statusLabel = "Locked for Class";
+        let cardBorder = "border-slate-200/60 dark:border-slate-800/60 bg-slate-50/10 dark:bg-slate-900/[0.02] opacity-70 transition-all duration-300";
 
         if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
             isCompleted = selectedStudentPermissions.completedLessons.has(lessonId);
@@ -2682,6 +2666,8 @@ export default function ClassroomDashboardPage({
             } else if (isUnlocked) {
                 statusLabel = "Unlocked";
                 cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
+            } else {
+                statusLabel = "Locked";
             }
         } else {
             const classSummary = getClassSummary('topic', lessonId);
@@ -2689,90 +2675,58 @@ export default function ClassroomDashboardPage({
                 statusLabel = "Completed by All";
                 cardBorder = "border-emerald-500/30 dark:border-emerald-500/20 bg-emerald-50/[0.1] dark:bg-emerald-950/[0.03] shadow-[0_2px_8px_rgba(16,185,129,0.01)] hover:border-emerald-500/50 transition-all duration-300";
                 isCompleted = true;
+            } else if (classSummary === 'unlocked_for_all') {
+                statusLabel = "Unlocked for Class";
+                cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
+                isUnlocked = true;
             } else if (classSummary === 'in_progress') {
                 statusLabel = "In Progress";
                 cardBorder = "border-amber-500/30 dark:border-[#ecb613]/25 bg-amber-50/[0.1] dark:bg-[#ecb613]/[0.01] shadow-[0_2px_8px_rgba(245,158,11,0.01)] hover:border-amber-500/50 hover:border-[#ecb613]/50 transition-all duration-300";
                 isUnlocked = true;
-            } else if (classSummary === 'allocated_to_all') {
-                statusLabel = "Allocated to All";
-                cardBorder = "border-indigo-500/30 dark:border-indigo-500/25 bg-indigo-50/[0.1] dark:bg-indigo-950/[0.01] transition-all duration-300";
-                isUnlocked = true;
-            } else if (classSummary === 'partially_allocated') {
-                statusLabel = "Partially Allocated";
+            } else if (classSummary === 'partially_unlocked') {
+                const studentStatuses = getStudentStatuses('topic', lessonId);
+                const unlockedCount = studentStatuses.filter(s => s.status === 'in_progress' || s.status === 'completed').length;
+                statusLabel = `Unlocked (${unlockedCount}/${studentStatuses.length})`;
                 cardBorder = "border-sky-500/30 dark:border-sky-500/25 bg-sky-50/[0.1] dark:bg-sky-950/[0.01] transition-all duration-300";
                 isUnlocked = true;
             } else {
-                statusLabel = "Not Allocated";
-                cardBorder = "border-slate-200/60 dark:border-slate-800/60 bg-slate-50/10 dark:bg-slate-900/[0.02] opacity-60 hover:opacity-100 transition-all duration-300";
+                statusLabel = "Locked for Class";
+                cardBorder = "border-slate-200/60 dark:border-slate-800/60 bg-slate-50/10 dark:bg-slate-900/[0.02] opacity-70 transition-all duration-300";
+                isUnlocked = false;
             }
         }
 
-        const isCompletedLabel = isCompleted;
-        const isUnlockedLabel = isUnlocked;
-
-        const badgeStyle = statusLabel === "Completed" || statusLabel === "Completed by All"
+        const badgeStyle = statusLabel.includes("Completed")
             ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 dark:border-emerald-500/30"
-            : statusLabel === "Unlocked" || statusLabel === "In Progress"
+            : statusLabel.includes("Unlocked") || statusLabel === "In Progress"
             ? "bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/20 dark:border-[#ecb613]/30"
-            : statusLabel === "Allocated to All"
-            ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20 dark:border-indigo-500/30"
-            : statusLabel === "Partially Allocated"
+            : statusLabel.includes("Partially") || statusLabel.startsWith("Unlocked (")
             ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20 dark:border-sky-500/30"
-            : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200/60 dark:border-slate-700/60";
+            : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200/60 dark:border-slate-700/60";
 
-        const textStyle = statusLabel === "Completed" || statusLabel === "Completed by All"
+        const textStyle = statusLabel.includes("Completed")
             ? "text-emerald-600 dark:text-emerald-400"
-            : statusLabel === "Unlocked" || statusLabel === "In Progress"
+            : statusLabel.includes("Unlocked") || statusLabel === "In Progress"
             ? "text-amber-600 dark:text-[#ecb613]"
-            : statusLabel === "Allocated to All"
-            ? "text-indigo-600 dark:text-indigo-400"
-            : statusLabel === "Partially Allocated"
+            : statusLabel.includes("Partially") || statusLabel.startsWith("Unlocked (")
             ? "text-sky-600 dark:text-sky-400"
-            : "text-slate-400 dark:text-slate-500";
+            : "text-slate-500 dark:text-slate-400";
 
         return {
             statusLabel,
             cardBorder,
             badgeStyle,
             textStyle,
-            isLocked: statusLabel === "Not Allocated" || statusLabel === "Locked",
-            isUnlocked: isUnlockedLabel,
-            isCompleted: isCompletedLabel
+            isLocked: !isUnlocked && !isCompleted,
+            isUnlocked,
+            isCompleted
         };
-    }, [curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress, getClassSummary]);
+    }, [curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, getClassSummary, getStudentStatuses]);
 
     const getIsLocked = useCallback((itemType: 'level' | 'chapter' | 'topic', itemId: string): boolean => {
         if (curriculumTab === 'individual') {
-            if (!selectedStudentForCurriculum) return false;
+            if (!selectedStudentForCurriculum) return true;
             const studentId = selectedStudentForCurriculum.student_id;
-            
-            if (itemType === 'topic') {
-                const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === itemId);
-                return prog ? prog.status === 'locked' : false;
-            } else if (itemType === 'chapter') {
-                const lessons = courseLessons.filter(l => l.chapter_id === itemId);
-                if (lessons.length === 0) return false;
-                return lessons.every(l => {
-                    const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === l.id);
-                    return prog ? prog.status === 'locked' : false;
-                });
-            } else {
-                const chapters = courseChapters.filter(c => c.module_id === itemId);
-                const chapterIds = chapters.map(c => c.id);
-                const lessons = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
-                if (lessons.length === 0) return false;
-                return lessons.every(l => {
-                    const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === l.id);
-                    return prog ? prog.status === 'locked' : false;
-                });
-            }
-        } else {
-            // Classwide: locked if all active students have all lessons locked
-            const activeStudentIds = [
-                ...students.map(s => s.student_id),
-                ...sessionOverrides.map(o => o.student_id)
-            ];
-            if (activeStudentIds.length === 0) return false;
             
             let lessonsToCheck: string[] = [];
             if (itemType === 'topic') {
@@ -2784,17 +2738,17 @@ export default function ClassroomDashboardPage({
                 const chapterIds = chapters.map(c => c.id);
                 lessonsToCheck = courseLessons.filter(l => chapterIds.includes(l.chapter_id)).map(l => l.id);
             }
-            
             if (lessonsToCheck.length === 0) return false;
             
             return lessonsToCheck.every(lessonId => {
-                return activeStudentIds.every(studentId => {
-                    const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
-                    return prog ? prog.status === 'locked' : false;
-                });
+                const prog = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
+                return !prog || prog.status === 'locked';
             });
+        } else {
+            const summary = getClassSummary(itemType, itemId);
+            return summary === 'locked_for_all' || summary === 'not_allocated';
         }
-    }, [curriculumTab, selectedStudentForCurriculum, studentProgress, courseLessons, courseChapters, students, sessionOverrides]);
+    }, [curriculumTab, selectedStudentForCurriculum, studentProgress, courseLessons, courseChapters, getClassSummary]);
 
     const visibleCurriculum = useMemo(() => {
         const categoriesMap: Record<string, {
@@ -3236,23 +3190,6 @@ export default function ClassroomDashboardPage({
                     setIsSavingAllocation(false);
                     return;
                 }
-
-                if (!window.confirm(`Are you sure you want to mark this ${itemTypeName} complete for all ${targetStudentIds.length} allocated students?`)) {
-                    setIsSavingAllocation(false);
-                    return;
-                }
-            } else {
-                if (!window.confirm(`Are you sure you want to mark this ${itemTypeName} complete for the selected students?`)) {
-                    setIsSavingAllocation(false);
-                    return;
-                }
-            }
-        } else {
-            const actionVerb = allocationStatus === 'locked' ? 'lock' : 'unlock';
-            const scope = allocationTargetType === 'classwide' ? 'the entire class' : `${targetStudentIds.length} selected student(s)`;
-            if (!window.confirm(`Are you sure you want to ${actionVerb} this ${itemTypeName} for ${scope}?`)) {
-                setIsSavingAllocation(false);
-                return;
             }
         }
 
@@ -3327,7 +3264,8 @@ export default function ClassroomDashboardPage({
     const handleUpdatePacingState = async (
         targetType: 'level' | 'chapter' | 'topic',
         targetId: string,
-        newStatus: 'locked' | 'unlocked' | 'completed'
+        newStatus: 'locked' | 'unlocked' | 'completed',
+        forcedScope?: 'classwide' | 'individual'
     ) => {
         if (!classroomId) return;
 
@@ -3336,8 +3274,9 @@ export default function ClassroomDashboardPage({
             ...sessionOverrides.map(o => o.student_id)
         ];
 
+        const effectiveTab = forcedScope || curriculumTab;
         let targetStudentIds: string[] = [];
-        if (curriculumTab === 'classwide') {
+        if (effectiveTab === 'classwide') {
             targetStudentIds = activeStudentIds;
         } else {
             if (!selectedStudentForCurriculum) {
@@ -3381,20 +3320,6 @@ export default function ClassroomDashboardPage({
                     alert('No students in this class have this item allocated to them.');
                     return;
                 }
-
-                if (!window.confirm(`Are you sure you want to mark this complete for all ${targetStudentIds.length} allocated students?`)) {
-                    return;
-                }
-            } else {
-                if (!window.confirm(`Are you sure you want to mark this complete?`)) {
-                    return;
-                }
-            }
-        } else {
-            const actionVerb = newStatus === 'locked' ? 'lock' : 'unlock';
-            const scope = curriculumTab === 'classwide' ? 'the entire class' : 'the selected student';
-            if (!window.confirm(`Are you sure you want to ${actionVerb} this for ${scope}?`)) {
-                return;
             }
         }
 
@@ -3563,9 +3488,38 @@ export default function ClassroomDashboardPage({
                     .from('classroom_inventory_allocation')
                     .insert(insertRows);
                 if (error) throw error;
+
+                // Also insert default locked progress records for all allocated lessons
+                const lessonItems = itemsToAllocate.filter(i => i.refType === 'lesson');
+                const progressRows: any[] = [];
+                targetStudentIds.forEach(studentId => {
+                    lessonItems.forEach(item => {
+                        const existing = studentProgress.find(p => p.student_id === studentId && p.lesson_id === item.refId);
+                        if (!existing) {
+                            progressRows.push({
+                                student_id: studentId,
+                                classroom_id: classroomId,
+                                lesson_id: item.refId,
+                                status: 'locked',
+                                unlocked_by: 'system',
+                                unlocked_at: null,
+                                completed_at: null
+                            });
+                        }
+                    });
+                });
+
+                if (progressRows.length > 0) {
+                    const { error: progErr } = await supabaseAuth
+                        .from('student_topic_progress')
+                        .upsert(progressRows, { onConflict: 'student_id,lesson_id' });
+                    if (progErr) {
+                        console.warn('Could not insert default locked progress:', progErr.message);
+                    }
+                }
             }
 
-            alert('Allocation successful!');
+            alert('Added to classroom successfully!');
             await fetchCurriculumAllocations();
         } catch (err) {
             console.error('Failed to allocate item:', err);
@@ -3587,11 +3541,13 @@ export default function ClassroomDashboardPage({
             const targetRefId = targetAlloc.module_id || targetAlloc.chapter_id || targetAlloc.lesson_id;
             const targetRefType = targetAlloc.module_id ? 'module' : (targetAlloc.chapter_id ? 'chapter' : 'lesson');
 
+            let affectedLessonIds: string[] = [];
+
             if (targetRefType === 'module') {
                 const chapters = courseChapters.filter(c => c.module_id === targetRefId);
                 const chapterIds = chapters.map(c => c.id);
                 const lessons = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
-                const lessonIds = lessons.map(l => l.id);
+                affectedLessonIds = lessons.map(l => l.id);
 
                 classroomInventoryAllocations.forEach(a => {
                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
@@ -3602,13 +3558,13 @@ export default function ClassroomDashboardPage({
                         if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
                     } else if (a.chapter_id && chapterIds.includes(a.chapter_id)) {
                         if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                    } else if (a.lesson_id && lessonIds.includes(a.lesson_id)) {
+                    } else if (a.lesson_id && affectedLessonIds.includes(a.lesson_id)) {
                         if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
                     }
                 });
             } else if (targetRefType === 'chapter') {
                 const lessons = courseLessons.filter(l => l.chapter_id === targetRefId);
-                const lessonIds = lessons.map(l => l.id);
+                affectedLessonIds = lessons.map(l => l.id);
 
                 classroomInventoryAllocations.forEach(a => {
                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
@@ -3617,12 +3573,13 @@ export default function ClassroomDashboardPage({
 
                     if (a.chapter_id === targetRefId) {
                         if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                    } else if (a.lesson_id && lessonIds.includes(a.lesson_id)) {
+                    } else if (a.lesson_id && affectedLessonIds.includes(a.lesson_id)) {
                         if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
                     }
                 });
             } else {
                 // Lesson
+                if (targetRefId) affectedLessonIds = [targetRefId];
                 classroomInventoryAllocations.forEach(a => {
                     if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
                         if (a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
@@ -3639,8 +3596,36 @@ export default function ClassroomDashboardPage({
                 .delete()
                 .in('id', idsToDelete);
             if (error) throw error;
-            
+
+            // Also delete corresponding student_topic_progress rows for affected lessons in this classroom
+            if (affectedLessonIds.length > 0) {
+                let deleteProgQuery = supabaseAuth
+                    .from('student_topic_progress')
+                    .delete()
+                    .eq('classroom_id', classroomId)
+                    .in('lesson_id', affectedLessonIds);
+
+                if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                    deleteProgQuery = deleteProgQuery.eq('student_id', selectedStudentForCurriculum.student_id);
+                }
+
+                const { error: progErr } = await deleteProgQuery;
+                if (progErr) {
+                    console.warn('[Pacing] Could not delete student_topic_progress on deallocate:', progErr.message);
+                }
+            }
+
             setClassroomInventoryAllocations(prev => prev.filter(a => !idsToDelete.includes(a.id)));
+            if (affectedLessonIds.length > 0) {
+                setStudentProgress(prev => prev.filter(p => {
+                    if (p.classroom_id !== classroomId) return true;
+                    if (!affectedLessonIds.includes(p.lesson_id)) return true;
+                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
+                        return p.student_id !== selectedStudentForCurriculum.student_id;
+                    }
+                    return false;
+                }));
+            }
         } catch (err) {
             console.error('Error deallocating item:', err);
             alert('Failed to deallocate item.');
@@ -4432,6 +4417,7 @@ export default function ClassroomDashboardPage({
                             getClassSummary={getClassSummary}
                             getStudentStatuses={getStudentStatuses}
                             getIsLocked={getIsLocked}
+                            openUnlockModal={openUnlockModal}
                         />
                     )}
 
@@ -4891,7 +4877,7 @@ export default function ClassroomDashboardPage({
                                                                             ) : (
                                                                                 <Plus className="size-3 stroke-[3]" />
                                                                             )}
-                                                                            <span>{isAllocated ? 'Allocated' : 'Allocate Module'}</span>
+                                                                            <span>{isAllocated ? 'Added to Class' : 'Add Module'}</span>
                                                                         </button>
                                                                         <div 
                                                                             onClick={() => setExpandedInventoryModules(prev => ({ ...prev, [mod.id]: !isExpanded }))}
@@ -4942,7 +4928,7 @@ export default function ClassroomDashboardPage({
                                                                                                 ) : (
                                                                                                     <Plus className="size-3 stroke-[3]" />
                                                                                                 )}
-                                                                                                <span>{isChapAllocated ? 'Allocated' : 'Allocate'}</span>
+                                                                                                <span>{isChapAllocated ? 'Added' : 'Add Chapter'}</span>
                                                                                             </button>
                                                                                         </div>
 
@@ -4985,7 +4971,7 @@ export default function ClassroomDashboardPage({
                                                                                                                 ) : (
                                                                                                                     <Plus className="size-2.5 stroke-[3]" />
                                                                                                                 )}
-                                                                                                                <span>{isLessonAllocated ? 'Allocated' : 'Allocate'}</span>
+                                                                                                                <span>{isLessonAllocated ? 'Added' : 'Add Topic'}</span>
                                                                                                             </button>
                                                                                                         </div>
                                                                                                     );
@@ -5012,6 +4998,100 @@ export default function ClassroomDashboardPage({
 
                                     return renderedCategories;
                                 })()}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* UNLOCK / LOCK CONFIRMATION MODAL */}
+                {unlockModalTarget && (
+                    <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+                        <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6 text-left animate-in zoom-in-95 duration-200">
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border shrink-0 ${
+                                        unlockModalTarget.action === 'unlock' 
+                                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' 
+                                            : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                                    }`}>
+                                        {unlockModalTarget.action === 'unlock' ? <Unlock className="size-5" /> : <Lock className="size-5" />}
+                                    </div>
+                                    <div>
+                                        <h3 className="font-extrabold text-base text-slate-900 dark:text-white leading-tight">
+                                            {unlockModalTarget.action === 'unlock' ? 'Unlock Tutorial Material' : 'Lock Tutorial Material'}
+                                        </h3>
+                                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-xs">
+                                            {unlockModalTarget.item?.title || unlockModalTarget.item?.name}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setUnlockModalTarget(null)}
+                                    className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                >
+                                    <X className="size-4" />
+                                </button>
+                            </div>
+
+                            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+                                {unlockModalTarget.action === 'unlock'
+                                    ? 'How would you like to unlock this material for your classroom?'
+                                    : 'How would you like to lock this material for your classroom?'
+                                }
+                            </p>
+
+                            <div className="space-y-3">
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const target = unlockModalTarget;
+                                        setUnlockModalTarget(null);
+                                        await handleUpdatePacingState(target.type, target.item.id, target.action === 'unlock' ? 'unlocked' : 'locked', 'classwide');
+                                    }}
+                                    className="w-full p-4 rounded-2xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-extrabold text-xs flex items-center justify-between transition-all shadow-md shadow-[#ecb613]/10 hover:-translate-y-0.5 cursor-pointer border border-[#ecb613]/20"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Users className="size-4 stroke-[2.5]" />
+                                        <div className="text-left">
+                                            <span className="block font-black uppercase tracking-wider text-[10px]">
+                                                {unlockModalTarget.action === 'unlock' ? 'Unlock for Entire Class' : 'Lock for Entire Class'}
+                                            </span>
+                                            <span className="block text-[10px] opacity-80 font-normal">Apply change to all active students in classroom</span>
+                                        </div>
+                                    </div>
+                                    <ChevronRight className="size-4" />
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const target = unlockModalTarget;
+                                        setUnlockModalTarget(null);
+                                        openAllocationDrawer(target.type, target.item);
+                                    }}
+                                    className="w-full p-4 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-100 font-extrabold text-xs flex items-center justify-between transition-all cursor-pointer border border-slate-200/80 dark:border-slate-700/60"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <UserPlus className="size-4 text-amber-500" />
+                                        <div className="text-left">
+                                            <span className="block font-black uppercase tracking-wider text-[10px]">
+                                                {unlockModalTarget.action === 'unlock' ? 'Unlock for Particular Student(s)' : 'Lock for Particular Student(s)'}
+                                            </span>
+                                            <span className="block text-[10px] text-slate-500 dark:text-slate-400 font-normal">Select specific students to receive access</span>
+                                        </div>
+                                    </div>
+                                    <ChevronRight className="size-4 text-slate-400" />
+                                </button>
+                            </div>
+
+                            <div className="pt-2 flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setUnlockModalTarget(null)}
+                                    className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
                             </div>
                         </div>
                     </div>

@@ -49,9 +49,10 @@ interface CurriculumTabProps {
         targetId: string,
         newStatus: 'locked' | 'unlocked' | 'completed'
     ) => Promise<void>;
-    getClassSummary: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => 'not_allocated' | 'partially_allocated' | 'allocated_to_all' | 'in_progress' | 'completed_by_all';
+    getClassSummary: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => 'not_allocated' | 'locked_for_all' | 'unlocked_for_all' | 'partially_unlocked' | 'in_progress' | 'completed_by_all' | 'partially_allocated' | 'allocated_to_all';
     getStudentStatuses: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => any[];
     getIsLocked: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => boolean;
+    openUnlockModal?: (targetType: 'level' | 'chapter' | 'topic', targetItem: any) => void;
 }
 
 const stripHtml = (html: string) => {
@@ -91,7 +92,8 @@ export default function CurriculumTab({
     handleUpdatePacingState,
     getClassSummary,
     getStudentStatuses,
-    getIsLocked
+    getIsLocked,
+    openUnlockModal
 }: CurriculumTabProps) {
     const [expandedStudentStatuses, setExpandedStudentStatuses] = React.useState<Record<string, boolean>>({});
 
@@ -154,40 +156,40 @@ export default function CurriculumTab({
     return (
         <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
             {/* Section 1: Dashboard Header */}
-            <section className="mb-8">
-                <div className="relative overflow-hidden p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md shadow-amber-500/[0.01]">
+            <section className="mb-4">
+                <div className="relative overflow-hidden p-5 md:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm shadow-amber-500/[0.01]">
                     {/* Decorative glowing gradient sphere */}
-                    <div className="absolute -right-16 -bottom-16 w-72 h-72 bg-gradient-to-tr from-amber-500/10 via-amber-500/[0.02] to-transparent rounded-full blur-3xl pointer-events-none select-none"></div>
-                    <div className="absolute left-1/3 top-0 w-64 h-64 bg-amber-500/[0.02] rounded-full blur-3xl pointer-events-none select-none"></div>
+                    <div className="absolute -right-16 -bottom-16 w-60 h-60 bg-gradient-to-tr from-amber-500/10 via-amber-500/[0.02] to-transparent rounded-full blur-3xl pointer-events-none select-none"></div>
+                    <div className="absolute left-1/3 top-0 w-48 h-48 bg-amber-500/[0.02] rounded-full blur-3xl pointer-events-none select-none"></div>
                     
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-                        <div className="space-y-3 text-left">
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-[10px] text-amber-600 dark:text-amber-400 font-extrabold tracking-widest uppercase select-none">
-                                <Sparkles className="size-3 text-amber-500 animate-pulse" />
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+                        <div className="space-y-1.5 text-left">
+                            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-full text-[9px] text-amber-600 dark:text-amber-400 font-extrabold tracking-widest uppercase select-none">
+                                <Sparkles className="size-2.5 text-amber-500 animate-pulse" />
                                 <span>Classroom Learning Path</span>
                             </div>
-                            <h1 className="text-3xl md:text-4xl font-black tracking-tight leading-none text-slate-900 dark:text-white">
+                            <h1 className="text-2xl md:text-3xl font-black tracking-tight leading-none text-slate-900 dark:text-white">
                                 Curriculum <span className="bg-gradient-to-r from-[#ecb613] to-amber-500 bg-clip-text text-transparent">Tutorials</span>
                             </h1>
-                            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 font-medium max-w-xl leading-relaxed">
-                                An interactive learning roadmap. Students access these modules, audio files, sheet music PDFs, and step-by-step video guides directly in their student portals.
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium max-w-xl leading-relaxed">
+                                An interactive learning roadmap for modules, audio files, sheet music PDFs, and step-by-step video guides.
                             </p>
                         </div>
                         <button 
                             onClick={() => setIsInventoryDrawerOpen(true)}
-                            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-md shadow-[#ecb613]/10 hover:-translate-y-0.5 active:translate-y-0 active:scale-98 self-start md:self-center shrink-0 border border-[#ecb613]/10 cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-sm hover:-translate-y-0.5 active:translate-y-0 shrink-0 border border-[#ecb613]/10 cursor-pointer"
                             type="button"
                         >
-                            <Plus className="size-4 stroke-[3]" />
+                            <Plus className="size-3.5 stroke-[3]" />
                             <span>Add from Inventory</span>
                         </button>
                     </div>
 
                     {/* Class-wide vs Individual Sub-tabs */}
-                    <div className="flex border-b border-slate-200 dark:border-slate-800 gap-8 mt-6">
+                    <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6 mt-4">
                         <button
                             onClick={() => setCurriculumTab('classwide')}
-                            className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${
+                            className={`pb-2 text-xs font-black uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${
                                 curriculumTab === 'classwide' 
                                     ? 'border-[#ecb613] text-[#ecb613]' 
                                     : 'border-transparent text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-400'
@@ -202,7 +204,7 @@ export default function CurriculumTab({
                                     setSelectedStudentForCurriculum(activeAttendanceRoster[0]);
                                 }
                             }}
-                            className={`pb-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${
+                            className={`pb-2 text-xs font-black uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${
                                 curriculumTab === 'individual' 
                                     ? 'border-[#ecb613] text-[#ecb613]' 
                                     : 'border-transparent text-slate-400 hover:text-slate-655 dark:text-slate-500 dark:hover:text-slate-400'
@@ -275,46 +277,46 @@ export default function CurriculumTab({
                             </p>
                         </div>
                     ) : (
-                        <div className="space-y-6">
+                        <div className="space-y-4">
                             {/* Action bar (Search & Collapse) */}
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-slate-50/50 dark:bg-slate-900/30 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-3xl shadow-sm mb-2 animate-in fade-in duration-300">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-2.5 bg-slate-50/50 dark:bg-slate-900/30 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-sm mb-1 animate-in fade-in duration-300">
                                 {/* Left: Search input */}
                                 <div className="relative flex-1 max-w-md">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-400 dark:text-slate-550" />
+                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-400 dark:text-slate-550" />
                                     <input
                                         type="text"
                                         placeholder="Search levels, chapters, topics..."
                                         value={curriculumSearchQuery}
                                         onChange={(e) => setCurriculumSearchQuery(e.target.value)}
-                                        className="w-full pl-11 pr-10 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#ecb613] focus:ring-1 focus:ring-[#ecb613]/30 transition-all font-semibold"
+                                        className="w-full pl-9 pr-9 py-1.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#ecb613] focus:ring-1 focus:ring-[#ecb613]/30 transition-all font-semibold"
                                     />
                                     {curriculumSearchQuery && (
                                         <button
                                             type="button"
                                             onClick={() => setCurriculumSearchQuery('')}
-                                            className="absolute right-3.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-405 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-405 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                                         >
-                                            <X className="size-3" />
+                                            <X className="size-2.5" />
                                         </button>
                                     )}
                                 </div>
 
                                 {/* Right: Expand/Collapse controls */}
-                                <div className="flex items-center gap-3 self-end md:self-auto">
+                                <div className="flex items-center gap-2 self-end md:self-auto">
                                     <button
                                         type="button"
                                         onClick={handleExpandAllCurriculum}
-                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-305 dark:hover:border-slate-700 text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 rounded-2xl shadow-xs transition-all hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer"
+                                        className="inline-flex items-center gap-1 px-3 py-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-305 dark:hover:border-slate-700 text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 rounded-xl shadow-xs transition-all hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer"
                                     >
-                                        <ChevronDown className="size-4 text-[#ecb613]" />
+                                        <ChevronDown className="size-3.5 text-[#ecb613]" />
                                         <span>Expand All</span>
                                     </button>
                                     <button
                                         type="button"
                                         onClick={handleCollapseAllCurriculum}
-                                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-305 dark:hover:border-slate-700 text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 rounded-2xl shadow-xs transition-all hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer"
+                                        className="inline-flex items-center gap-1 px-3 py-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-305 dark:hover:border-slate-700 text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 rounded-xl shadow-xs transition-all hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer"
                                     >
-                                        <ChevronUp className="size-4 text-[#ecb613]" />
+                                        <ChevronUp className="size-3.5 text-[#ecb613]" />
                                         <span>Collapse All</span>
                                     </button>
                                 </div>
@@ -322,50 +324,50 @@ export default function CurriculumTab({
 
                             {visibleCurriculum.length === 0 ? (
                                 /* Search empty state */
-                                <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-405 flex flex-col items-center justify-center min-h-[300px] border-dashed">
-                                    <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 animate-pulse">
-                                        <Search className="size-8 text-amber-500" />
+                                <div className="p-10 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-2xl shadow-sm text-slate-405 flex flex-col items-center justify-center min-h-[220px] border-dashed">
+                                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mb-4 animate-pulse">
+                                        <Search className="size-6 text-amber-500" />
                                     </div>
-                                    <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100">No Matching Results</h3>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 max-w-sm leading-relaxed text-center font-medium">
+                                    <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">No Matching Results</h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm leading-relaxed text-center font-medium">
                                         We couldn't find any levels, chapters, or topics matching "{curriculumSearchQuery}".
                                     </p>
                                     <button
                                         type="button"
                                         onClick={() => setCurriculumSearchQuery('')}
-                                        className="mt-6 px-5 py-2.5 bg-slate-100 dark:bg-slate-850 hover:bg-amber-500 hover:text-white border border-slate-200 dark:border-slate-800 rounded-2xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
+                                        className="mt-4 px-4 py-2 bg-slate-100 dark:bg-slate-850 hover:bg-amber-500 hover:text-white border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
                                     >
                                         Clear Search Query
                                     </button>
                                 </div>
                             ) : (
-                                <div className="space-y-12">
+                                <div className="space-y-5">
                                     {visibleCurriculum.map((group) => {
                                         const isHeadlineExpanded = expandedHeadlines[group.categoryName] !== false;
                                         return (
-                                            <div key={group.categoryName} className="space-y-6">
+                                            <div key={group.categoryName} className="space-y-3">
                                                 {/* Category / Headline Header */}
                                                 <div 
                                                     onClick={() => setExpandedHeadlines(prev => ({ ...prev, [group.categoryName]: !isHeadlineExpanded }))}
-                                                    className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 pb-3 pl-1 cursor-pointer select-none group/headline transition-all duration-300"
+                                                    className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 pb-1.5 pl-1 cursor-pointer select-none group/headline transition-all duration-300"
                                                 >
-                                                    <div className="flex items-center gap-3 text-left">
-                                                        <div className="w-2.5 h-6 rounded-full bg-gradient-to-b from-[#ecb613] to-amber-600 shadow-sm shadow-amber-500/25" />
+                                                    <div className="flex items-center gap-2.5 text-left">
+                                                        <div className="w-2 h-5 rounded-full bg-gradient-to-b from-[#ecb613] to-amber-600 shadow-xs" />
                                                         <div>
-                                                            <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-widest font-mono group-hover/headline:text-[#ecb613] transition-colors duration-200">
+                                                            <h3 className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono group-hover/headline:text-[#ecb613] transition-colors duration-200">
                                                                 {group.categoryName}
                                                             </h3>
-                                                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider font-mono mt-0.5">
+                                                            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider font-mono">
                                                                 {group.modules.length} {group.modules.length === 1 ? 'Module' : 'Modules'}
                                                             </p>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-505 group-hover/headline:bg-[#ecb613]/10 group-hover/headline:text-[#ecb613] group-hover/headline:scale-105 transition-all duration-300">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="w-6 h-6 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-505 group-hover/headline:bg-[#ecb613]/10 group-hover/headline:text-[#ecb613] transition-all duration-300">
                                                             {isHeadlineExpanded ? (
-                                                                <ChevronUp className="size-4 transition-transform duration-300" />
+                                                                <ChevronUp className="size-3.5 transition-transform duration-300" />
                                                             ) : (
-                                                                <ChevronDown className="size-4 transition-transform duration-300" />
+                                                                <ChevronDown className="size-3.5 transition-transform duration-300" />
                                                             )}
                                                         </div>
                                                     </div>
@@ -373,25 +375,25 @@ export default function CurriculumTab({
 
                                                 {/* Modules Under This Category */}
                                                 {isHeadlineExpanded && (
-                                                    <div className="space-y-8 pl-3 md:pl-6 border-l-2 border-slate-200 dark:border-slate-800 text-left">
+                                                    <div className="space-y-3 pl-2 md:pl-4 border-l-2 border-slate-200 dark:border-slate-800 text-left">
                                                         {group.modules.map((mod: any) => {
                                                             const isModuleExpanded = expandedModules[mod.id] !== false;
                                                             const hasModuleAssignment = !!mod.allocationId;
                                                             return (
-                                                                <div key={mod.id} className="space-y-4">
+                                                                <div key={mod.id} className="space-y-2">
                                                                     {/* Collapsible Module/Level Header */}
                                                                     {hasModuleAssignment ? (
                                                                         <div 
                                                                             onClick={() => setExpandedModules(prev => ({ ...prev, [mod.id]: !isModuleExpanded }))}
-                                                                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-gradient-to-r from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:shadow-amber-500/[0.02] hover:border-[#ecb613]/40 cursor-pointer select-none transition-all duration-300 text-left group/level-capsule animate-in fade-in"
+                                                                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 md:p-4 rounded-2xl bg-gradient-to-r from-white to-slate-50/50 dark:from-slate-900 dark:to-slate-900/60 border border-slate-200 dark:border-slate-800 shadow-xs hover:shadow-sm hover:border-[#ecb613]/40 cursor-pointer select-none transition-all duration-200 text-left group/level-capsule animate-in fade-in"
                                                                         >
-                                                                            <div className="flex items-center gap-4">
-                                                                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#ecb613]/20 to-[#ecb613]/5 dark:from-[#ecb613]/10 dark:to-[#ecb613]/0 border border-[#ecb613]/20 flex items-center justify-center text-[#ecb613] shadow-xs shrink-0 transition-transform duration-300 group-hover/level-capsule:scale-105">
-                                                                                    <BookOpen className="size-5" />
+                                                                            <div className="flex items-center gap-3">
+                                                                                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#ecb613]/20 to-[#ecb613]/5 dark:from-[#ecb613]/10 dark:to-[#ecb613]/0 border border-[#ecb613]/20 flex items-center justify-center text-[#ecb613] shadow-xs shrink-0 transition-transform duration-200 group-hover/level-capsule:scale-105">
+                                                                                    <BookOpen className="size-4" />
                                                                                 </div>
-                                                                                <div className="space-y-1 text-left">
-                                                                                    <div className="flex items-center gap-2.5 flex-wrap">
-                                                                                        <h3 className="font-black text-base md:text-lg text-slate-800 dark:text-white leading-tight tracking-tight">
+                                                                                <div className="space-y-0.5 text-left">
+                                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                                        <h3 className="font-extrabold text-sm md:text-base text-slate-800 dark:text-white leading-tight tracking-tight">
                                                                                             {mod.title}
                                                                                         </h3>
 {curriculumTab === 'classwide' ? (
@@ -465,7 +467,11 @@ export default function CurriculumTab({
                                                                                                     type="button"
                                                                                                     onClick={(e) => {
                                                                                                         e.stopPropagation();
-                                                                                                        handleUpdatePacingState('level', mod.id, isLevelLocked ? 'unlocked' : 'locked');
+                                                                                                        if (openUnlockModal) {
+                                                                                                            openUnlockModal('level', mod);
+                                                                                                        } else {
+                                                                                                            handleUpdatePacingState('level', mod.id, isLevelLocked ? 'unlocked' : 'locked');
+                                                                                                        }
                                                                                                     }}
                                                                                                     className={`p-1.5 rounded-lg transition-all cursor-pointer ${
                                                                                                         isLevelLocked
@@ -584,7 +590,11 @@ export default function CurriculumTab({
                                                                                                     type="button"
                                                                                                     onClick={(e) => {
                                                                                                         e.stopPropagation();
-                                                                                                        handleUpdatePacingState('level', mod.id, isLevelLocked ? 'unlocked' : 'locked');
+                                                                                                        if (openUnlockModal) {
+                                                                                                            openUnlockModal('level', mod);
+                                                                                                        } else {
+                                                                                                            handleUpdatePacingState('level', mod.id, isLevelLocked ? 'unlocked' : 'locked');
+                                                                                                        }
                                                                                                     }}
                                                                                                     className={`p-1.5 rounded-lg transition-all cursor-pointer ${
                                                                                                         isLevelLocked
@@ -639,190 +649,194 @@ export default function CurriculumTab({
                                                                         </div>
                                                                     )}
 
-                                                                    {/* Chapters Under This Module */}
-                                                                    {isModuleExpanded && (
-                                                                        <div className="space-y-6 pl-3 md:pl-6 border-l border-slate-200 dark:border-slate-800/60">
-                                                                            {mod.chapters.map((chap: any) => {
-                                                                                const isChapterExpanded = expandedChapters[chap.id] !== false;
-                                                                                const hasChapterAssignment = !!chap.allocationId;
-                                                                                return (
-                                                                                    <div 
-                                                                                        key={chap.id} 
-                                                                                        className="rounded-2xl border border-slate-200 dark:border-slate-800/80 overflow-hidden bg-slate-50/[0.1] dark:bg-slate-900/10 transition-all duration-300 hover:border-slate-250 dark:hover:border-slate-700/80 shadow-xs text-left"
-                                                                                    >
-                                                                                        {/* Chapter Header */}
+                                                                        {/* Chapters Under This Module */}
+                                                                        {isModuleExpanded && (
+                                                                            <div className="space-y-2.5 pl-2 md:pl-4 border-l border-slate-200 dark:border-slate-800/60">
+                                                                                {mod.chapters.map((chap: any) => {
+                                                                                    const isChapterExpanded = expandedChapters[chap.id] !== false;
+                                                                                    const hasChapterAssignment = !!chap.allocationId;
+                                                                                    return (
                                                                                         <div 
-                                                                                            onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapterExpanded }))}
-                                                                                            className="px-5 py-4 bg-slate-50/50 dark:bg-slate-900/20 hover:bg-slate-100/50 dark:hover:bg-slate-850/20 transition-all flex items-center justify-between cursor-pointer select-none border-b border-transparent data-[expanded=true]:border-slate-100 dark:data-[expanded=true]:border-slate-800"
-                                                                                            data-expanded={isChapterExpanded}
+                                                                                            key={chap.id} 
+                                                                                            className="rounded-xl border border-slate-200 dark:border-slate-800/80 overflow-hidden bg-slate-50/[0.1] dark:bg-slate-900/10 transition-all duration-200 hover:border-slate-250 dark:hover:border-slate-700/80 shadow-xs text-left"
                                                                                         >
-                                                                                            <div className="flex items-center gap-4">
-                                                                                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ecb613]/10 to-[#ecb613]/5 border border-[#ecb613]/20 flex items-center justify-center text-[#ecb613] text-xs font-black font-mono shadow-xs">
-                                                                                                    Ch{chap.chapter_number}
-                                                                                                </div>
-                                                                                                <div className="text-left">
-                                                                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                                                                        <h5 className="text-sm font-black text-slate-800 dark:text-slate-100 leading-tight">
-                                                                                                            {chap.title}
-                                                                                                        </h5>
-                                                                                                        {curriculumTab === 'classwide' ? (
-                                                                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
-                                                                                getClassSummary('chapter', chap.id) === 'completed_by_all'
-                                                                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                                                                                    : getClassSummary('chapter', chap.id) === 'in_progress'
-                                                                                    ? 'bg-amber-500/10 text-amber-605 dark:text-[#ecb613] border-amber-500/20'
-                                                                                    : getClassSummary('chapter', chap.id) === 'allocated_to_all'
-                                                                                    ? 'bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 border-indigo-500/20'
-                                                                                    : getClassSummary('chapter', chap.id) === 'partially_allocated'
-                                                                                    ? 'bg-sky-500/10 text-sky-655 dark:text-sky-400 border-sky-500/20'
-                                                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200/50'
-                                                                            }`}>
-                                                                                {getClassSummary('chapter', chap.id).replace('_', ' ')}
-                                                                            </span>
-                                                                        ) : (
-                                                                            hasChapterAssignment && (
-                                                                                <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-gradient-to-r from-[#ecb613]/15 to-[#ecb613]/5 text-[#ecb613] border border-[#ecb613]/20">
-                                                                                    Chapter Allocated
-                                                                                </span>
-                                                                            )
-                                                                        )}
+                                                                                            {/* Chapter Header */}
+                                                                                            <div 
+                                                                                                onClick={() => setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapterExpanded }))}
+                                                                                                className="px-3.5 py-2.5 bg-slate-50/50 dark:bg-slate-900/20 hover:bg-slate-100/50 dark:hover:bg-slate-850/20 transition-all flex items-center justify-between cursor-pointer select-none border-b border-transparent data-[expanded=true]:border-slate-100 dark:data-[expanded=true]:border-slate-800"
+                                                                                                data-expanded={isChapterExpanded}
+                                                                                            >
+                                                                                                <div className="flex items-center gap-3">
+                                                                                                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ecb613]/10 to-[#ecb613]/5 border border-[#ecb613]/20 flex items-center justify-center text-[#ecb613] text-[10px] font-black font-mono shadow-xs">
+                                                                                                        Ch{chap.chapter_number}
                                                                                                     </div>
-                                                                                                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold mt-1 uppercase tracking-wider font-mono">
-                                                                                                        {chap.lessons.length} {chap.lessons.length === 1 ? 'Study Unit' : 'Study Units'}
-                                                                                                    </p>
+                                                                                                    <div className="text-left">
+                                                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                                                            <h5 className="text-xs font-black text-slate-800 dark:text-slate-100 leading-tight">
+                                                                                                                {chap.title}
+                                                                                                            </h5>
+                                                                                                            {curriculumTab === 'classwide' ? (
+                                                                                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                                                                                    getClassSummary('chapter', chap.id) === 'completed_by_all'
+                                                                                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                                                        : getClassSummary('chapter', chap.id) === 'in_progress'
+                                                                                        ? 'bg-amber-500/10 text-amber-605 dark:text-[#ecb613] border-amber-500/20'
+                                                                                        : getClassSummary('chapter', chap.id) === 'allocated_to_all'
+                                                                                        ? 'bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 border-indigo-500/20'
+                                                                                        : getClassSummary('chapter', chap.id) === 'partially_allocated'
+                                                                                        ? 'bg-sky-500/10 text-sky-655 dark:text-sky-400 border-sky-500/20'
+                                                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200/50'
+                                                                                }`}>
+                                                                                    {getClassSummary('chapter', chap.id).replace('_', ' ')}
+                                                                                </span>
+                                                                            ) : (
+                                                                                hasChapterAssignment && (
+                                                                                    <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-gradient-to-r from-[#ecb613]/15 to-[#ecb613]/5 text-[#ecb613] border border-[#ecb613]/20">
+                                                                                        Chapter Allocated
+                                                                                    </span>
+                                                                                )
+                                                                            )}
+                                                                                                        </div>
+                                                                                                        <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider font-mono">
+                                                                                                            {chap.lessons.length} {chap.lessons.length === 1 ? 'Study Unit' : 'Study Units'}
+                                                                                                        </p>
+                                                                                                    </div>
                                                                                                 </div>
-                                                                                            </div>
-                                                                                            <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
-                                                                                                {hasChapterAssignment && (
-                                                                                                                    <button 
-                                                                                                                        onClick={(e) => {
-                                                                                                                            e.stopPropagation();
-                                                                                                                            handleDeallocateItem(chap.allocationId!);
-                                                                                                                        }}
-                                                                                                                        disabled={deletingAssignmentId === chap.allocationId}
-                                                                                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black text-rose-500 hover:text-white bg-rose-505/10 hover:bg-rose-500 transition-all duration-200 border border-transparent hover:border-rose-600/10 shadow-xs cursor-pointer text-left"
-                                                                                                                        title="Deallocate chapter from class"
-                                                                                                                        type="button"
-                                                                                                                    >
-                                                                                                                        {deletingAssignmentId === chap.allocationId ? (
-                                                                                                                            <Loader2 className="size-3 animate-spin" />
-                                                                                                                        ) : (
-                                                                                                                            <Trash2 className="size-3" />
-                                                                                                                        )}
-                                                                                                                        <span>Remove</span>
-                                                                                                                    </button>
-                                                                                                                )}
-                                                                                                {isUpdatingProgress === chap.id ? (
-                                                                                                    <Loader2 className="size-3.5 animate-spin text-[#ecb613] mx-1.5" />
-                                                                                                ) : (
-                                                                                                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-                                                                                                        {curriculumTab === 'classwide' && (
-                                                                                                            <button
-                                                                                                                type="button"
-                                                                                                                onClick={(e) => {
-                                                                                                                    e.stopPropagation();
-                                                                                                                    setExpandedStudentStatuses(prev => ({ 
-                                                                                                                        ...prev, 
-                                                                                                                        [`chapter-${chap.id}`]: !prev[`chapter-${chap.id}`] 
-                                                                                                                    }));
-                                                                                                                }}
-                                                                                                                className="text-[9px] font-black uppercase tracking-wider text-amber-550 hover:text-amber-655 hover:bg-amber-500/5 px-2 py-1 rounded-lg transition-all cursor-pointer border border-amber-500/10 mr-1"
-                                                                                                            >
-                                                                                                                {expandedStudentStatuses[`chapter-${chap.id}`] ? 'Hide' : 'Students'}
-                                                                                                            </button>
-                                                                                                        )}
-                                                                                                        {(() => {
-                                                                                                            const isChapLocked = getIsLocked('chapter', chap.id);
-                                                                                                            return (
+                                                                                                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                                                                                    {hasChapterAssignment && (
+                                                                                                                        <button 
+                                                                                                                            onClick={(e) => {
+                                                                                                                                e.stopPropagation();
+                                                                                                                                handleDeallocateItem(chap.allocationId!);
+                                                                                                                            }}
+                                                                                                                            disabled={deletingAssignmentId === chap.allocationId}
+                                                                                                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all duration-200 border border-transparent shadow-xs cursor-pointer text-left"
+                                                                                                                            title="Deallocate chapter from class"
+                                                                                                                            type="button"
+                                                                                                                        >
+                                                                                                                            {deletingAssignmentId === chap.allocationId ? (
+                                                                                                                                <Loader2 className="size-3 animate-spin" />
+                                                                                                                            ) : (
+                                                                                                                                <Trash2 className="size-3" />
+                                                                                                                            )}
+                                                                                                                            <span>Remove</span>
+                                                                                                                        </button>
+                                                                                                                    )}
+                                                                                                    {isUpdatingProgress === chap.id ? (
+                                                                                                        <Loader2 className="size-3.5 animate-spin text-[#ecb613] mx-1" />
+                                                                                                    ) : (
+                                                                                                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                                                                                                            {curriculumTab === 'classwide' && (
                                                                                                                 <button
                                                                                                                     type="button"
                                                                                                                     onClick={(e) => {
                                                                                                                         e.stopPropagation();
-                                                                                                                        handleUpdatePacingState('chapter', chap.id, isChapLocked ? 'unlocked' : 'locked');
+                                                                                                                        setExpandedStudentStatuses(prev => ({ 
+                                                                                                                            ...prev, 
+                                                                                                                            [`chapter-${chap.id}`]: !prev[`chapter-${chap.id}`] 
+                                                                                                                        }));
                                                                                                                     }}
-                                                                                                                    className={`p-1 rounded-lg transition-all cursor-pointer ${
-                                                                                                                        isChapLocked
-                                                                                                                            ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
-                                                                                                                            : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
-                                                                                                                    }`}
-                                                                                                                    title={isChapLocked ? "Unlock Chapter (Unlock all topics)" : "Lock Chapter (Lock all topics)"}
+                                                                                                                    className="text-[9px] font-black uppercase tracking-wider text-amber-550 hover:text-amber-655 hover:bg-amber-500/5 px-2 py-1 rounded-lg transition-all cursor-pointer border border-amber-500/10 mr-1"
                                                                                                                 >
-                                                                                                                    {isChapLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                                                                                                                    {expandedStudentStatuses[`chapter-${chap.id}`] ? 'Hide' : 'Students'}
                                                                                                                 </button>
-                                                                                                            );
-                                                                                                        })()}
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                handleUpdatePacingState('chapter', chap.id, 'completed');
-                                                                                                            }}
-                                                                                                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                                            title="Complete Chapter (Complete all topics)"
-                                                                                                        >
-                                                                                                            <CheckCircle className="size-3" />
-                                                                                                        </button>
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            title="Manage chapter pacing & student allocations"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                openAllocationDrawer('chapter', chap);
-                                                                                                            }}
-                                                                                                            className="p-1 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                                        >
-                                                                                                            <Sliders className="size-3" />
-                                                                                                        </button>
-                                                                                                    </div>
-                                                                                                )}
-
-                                                                                                <div 
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapterExpanded }));
-                                                                                                    }}
-                                                                                                    className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-850 flex items-center justify-center text-slate-450 hover:text-[#ecb613] hover:bg-[#ecb613]/10 transition-all duration-300 cursor-pointer"
-                                                                                                >
-                                                                                                    {isChapterExpanded ? (
-                                                                                                        <ChevronUp className="size-4" />
-                                                                                                    ) : (
-                                                                                                        <ChevronDown className="size-4" />
+                                                                                                            )}
+                                                                                                            {(() => {
+                                                                                                                const isChapLocked = getIsLocked('chapter', chap.id);
+                                                                                                                return (
+                                                                                                                    <button
+                                                                                                                        type="button"
+                                                                                                                        onClick={(e) => {
+                                                                                                                            e.stopPropagation();
+                                                                                                                            if (openUnlockModal) {
+                                                                                                                                openUnlockModal('chapter', chap);
+                                                                                                                            } else {
+                                                                                                                                handleUpdatePacingState('chapter', chap.id, isChapLocked ? 'unlocked' : 'locked');
+                                                                                                                            }
+                                                                                                                        }}
+                                                                                                                        className={`p-1 rounded-lg transition-all cursor-pointer ${
+                                                                                                                            isChapLocked
+                                                                                                                                ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
+                                                                                                                                : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
+                                                                                                                        }`}
+                                                                                                                        title={isChapLocked ? "Unlock Chapter (Unlock all topics)" : "Lock Chapter (Lock all topics)"}
+                                                                                                                    >
+                                                                                                                        {isChapLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                                                                                                                    </button>
+                                                                                                                );
+                                                                                                            })()}
+                                                                                                            <button
+                                                                                                                type="button"
+                                                                                                                onClick={(e) => {
+                                                                                                                    e.stopPropagation();
+                                                                                                                    handleUpdatePacingState('chapter', chap.id, 'completed');
+                                                                                                                }}
+                                                                                                                className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                                                title="Complete Chapter (Complete all topics)"
+                                                                                                            >
+                                                                                                                <CheckCircle className="size-3" />
+                                                                                                            </button>
+                                                                                                            <button
+                                                                                                                type="button"
+                                                                                                                title="Manage chapter pacing & student allocations"
+                                                                                                                onClick={(e) => {
+                                                                                                                    e.stopPropagation();
+                                                                                                                    openAllocationDrawer('chapter', chap);
+                                                                                                                }}
+                                                                                                                className="p-1 rounded-lg text-slate-400 hover:text-[#ecb613] hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                                            >
+                                                                                                                <Sliders className="size-3" />
+                                                                                                            </button>
+                                                                                                        </div>
                                                                                                     )}
+
+                                                                                                    <div 
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            setExpandedChapters(prev => ({ ...prev, [chap.id]: !isChapterExpanded }));
+                                                                                                        }}
+                                                                                                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-850 flex items-center justify-center text-slate-450 hover:text-[#ecb613] hover:bg-[#ecb613]/10 transition-all duration-200 cursor-pointer"
+                                                                                                    >
+                                                                                                        {isChapterExpanded ? (
+                                                                                                            <ChevronUp className="size-3.5" />
+                                                                                                        ) : (
+                                                                                                            <ChevronDown className="size-3.5" />
+                                                                                                        )}
+                                                                                                    </div>
                                                                                                 </div>
                                                                                             </div>
-                                                                                        </div>
-                                                                                        {curriculumTab === 'classwide' && expandedStudentStatuses[`chapter-${chap.id}`] && (
-                                                                                            <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/20" onClick={e => e.stopPropagation()}>
-                                                                                                {renderStudentStatuses('chapter', chap.id)}
-                                                                                            </div>
-                                                                                        )}
+                                                                                            {curriculumTab === 'classwide' && expandedStudentStatuses[`chapter-${chap.id}`] && (
+                                                                                                <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/20" onClick={e => e.stopPropagation()}>
+                                                                                                    {renderStudentStatuses('chapter', chap.id)}
+                                                                                                </div>
+                                                                                            )}
 
-                                                                                        {/* Chapter Lessons */}
-                                                                                        {isChapterExpanded && (
-                                                                                            <div className="p-5 bg-white dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-800/80 space-y-4">
-                                                                                                {chap.lessons.length === 0 ? (
-                                                                                                    <p className="text-xs text-slate-400 italic text-center py-4 bg-slate-50/50 dark:bg-slate-900/20 rounded-xl">
-                                                                                                        No lesson materials uploaded for this chapter.
-                                                                                                    </p>
-                                                                                                ) : (
-                                                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative pl-3 border-l border-slate-200/60 dark:border-slate-800">
-                                                                                                        {chap.lessons.map((lesson: any) => {
-                                                                                const isUpdating = isUpdatingProgress === lesson.id;
-                                                                                const pacing = getLessonPacingStatus(lesson.id);
+                                                                                            {/* Chapter Lessons */}
+                                                                                            {isChapterExpanded && (
+                                                                                                <div className="p-3 bg-white dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5">
+                                                                                                    {chap.lessons.length === 0 ? (
+                                                                                                        <p className="text-xs text-slate-400 italic text-center py-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
+                                                                                                            No lesson materials uploaded for this chapter.
+                                                                                                        </p>
+                                                                                                    ) : (
+                                                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 relative pl-2 border-l border-slate-200/60 dark:border-slate-800">
+                                                                                                            {chap.lessons.map((lesson: any) => {
+                                                                                    const isUpdating = isUpdatingProgress === lesson.id;
+                                                                                    const pacing = getLessonPacingStatus(lesson.id);
 
-                                                                                const isAudio = lesson.material_type === 'audio';
-                                                                                const isVideo = lesson.material_type === 'video';
-                                                                                const isPdf = lesson.material_type === 'pdf';
+                                                                                    const isAudio = lesson.material_type === 'audio';
+                                                                                    const isVideo = lesson.material_type === 'video';
+                                                                                    const isPdf = lesson.material_type === 'pdf';
 
-                                                                                return (
-                                                                                    <div 
-                                                                                        key={lesson.id} 
-                                                                                        onClick={() => setSelectedTopic(lesson)}
-                                                                                        className={`group rounded-2xl p-4 border flex flex-col gap-4 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 hover:shadow-md text-left ${pacing.cardBorder}`}
-                                                                                    >
-                                                                                        <div className="flex items-start gap-3.5 w-full">
+                                                                                    return (
+                                                                                        <div 
+                                                                                            key={lesson.id} 
+                                                                                            onClick={() => setSelectedTopic(lesson)}
+                                                                                            className={`group rounded-xl p-2.5 border flex flex-col gap-2 cursor-pointer hover:border-[#ecb613]/40 hover:bg-slate-100/40 dark:hover:bg-slate-800/40 transition-all duration-200 hover:shadow-xs text-left ${pacing.cardBorder}`}
+                                                                                        >
+                                                                                        <div className="flex items-start gap-2.5 w-full">
                                                                                             {/* Left side: Material Type Icon */}
-                                                                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
+                                                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
                                                                                                 isPdf 
                                                                                                     ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/[0.05] border-blue-500/20'
                                                                                                     : isVideo 
@@ -832,28 +846,28 @@ export default function CurriculumTab({
                                                                                                     : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
                                                                                             }`}>
                                                                                                 {isVideo ? (
-                                                                                                    <Film className="size-4.5" />
+                                                                                                    <Film className="size-3.5" />
                                                                                                 ) : isAudio ? (
-                                                                                                    <Music className="size-4.5" />
+                                                                                                    <Music className="size-3.5" />
                                                                                                 ) : (
-                                                                                                    <FileText className="size-4.5" />
+                                                                                                    <FileText className="size-3.5" />
                                                                                                 )}
                                                                                             </div>
 
                                                                                             {/* Middle: Details */}
                                                                                             <div className="text-left min-w-0 flex-1">
-                                                                                                <div className="flex items-center flex-wrap gap-2">
+                                                                                                <div className="flex items-center flex-wrap gap-1.5">
                                                                                                     <span className={`text-[9px] font-black uppercase tracking-wider font-mono whitespace-nowrap ${pacing.textStyle}`}>
                                                                                                         Topic {lesson.lesson_number}
                                                                                                     </span>
                                                                                                     {isUpdating && <Loader2 className="w-3 h-3 animate-spin text-[#ecb613]" />}
                                                                                                     {lesson.isExplicit && (
-                                                                                                        <span className="px-1.5 py-0.25 rounded text-[8px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-400 border border-slate-200 dark:border-slate-700 whitespace-nowrap">
+                                                                                                        <span className="px-1 py-0.25 rounded text-[8px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-400 border border-slate-200 dark:border-slate-700 whitespace-nowrap">
                                                                                                             Topic Allocated
                                                                                                         </span>
                                                                                                     )}
                                                                                                 </div>
-                                                                                                <h5 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug mt-0.5">{lesson.title}</h5>
+                                                                                                <h5 className="font-bold text-xs text-slate-800 dark:text-slate-100 leading-snug mt-0.5">{lesson.title}</h5>
                                                                                                 {lesson.description && (
                                                                                                     <p className="text-[10px] text-slate-505 dark:text-slate-455 line-clamp-1 leading-relaxed font-semibold mt-0.5">{stripHtml(lesson.description)}</p>
                                                                                                 )}
@@ -861,30 +875,40 @@ export default function CurriculumTab({
                                                                                         </div>
 
                                                                                         {/* Bottom side: Status indicator & actions */}
-                                                                                        <div className="flex flex-wrap items-center justify-between gap-3 w-full border-t border-slate-100 dark:border-slate-800/80 pt-3" onClick={e => e.stopPropagation()}>
-                                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                        <div className="flex flex-wrap items-center justify-between gap-2 w-full border-t border-slate-100 dark:border-slate-800/80 pt-2" onClick={e => e.stopPropagation()}>
+                                                                                            <div className="flex items-center gap-1.5 flex-wrap">
                                                                                                 {curriculumTab === 'classwide' ? (
-                                                                                                    <span className={`px-2 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border ${
-                                                                                                        getClassSummary('topic', lesson.id) === 'completed_by_all'
-                                                                                                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                                                                                                            : getClassSummary('topic', lesson.id) === 'in_progress'
-                                                                                                            ? 'bg-amber-500/10 text-amber-605 dark:text-[#ecb613] border-amber-500/20'
-                                                                                                            : getClassSummary('topic', lesson.id) === 'allocated_to_all'
-                                                                                                            ? 'bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 border-indigo-500/20'
-                                                                                                            : getClassSummary('topic', lesson.id) === 'partially_allocated'
-                                                                                                            ? 'bg-sky-500/10 text-sky-655 dark:text-sky-400 border-sky-500/20'
-                                                                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200'
-                                                                                                    }`}>
-                                                                                                        {getClassSummary('topic', lesson.id).replace('_', ' ')}
-                                                                                                    </span>
+                                                                                                    (() => {
+                                                                                                        const summary = getClassSummary('topic', lesson.id);
+                                                                                                        let label = 'Locked for Class';
+                                                                                                        let badgeClass = 'bg-rose-500/10 text-rose-500 border-rose-500/20';
+                                                                                                        if (summary === 'completed_by_all') {
+                                                                                                            label = 'Completed by All';
+                                                                                                            badgeClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+                                                                                                        } else if (summary === 'unlocked_for_all') {
+                                                                                                            label = 'Unlocked for Class';
+                                                                                                            badgeClass = 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/20';
+                                                                                                        } else if (summary === 'in_progress') {
+                                                                                                            label = 'In Progress';
+                                                                                                            badgeClass = 'bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border-amber-500/20';
+                                                                                                        } else if (summary === 'partially_unlocked') {
+                                                                                                            label = 'Partially Unlocked';
+                                                                                                            badgeClass = 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20';
+                                                                                                        }
+                                                                                                        return (
+                                                                                                            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider border ${badgeClass}`}>
+                                                                                                                {label}
+                                                                                                            </span>
+                                                                                                        );
+                                                                                                    })()
                                                                                                 ) : (
-                                                                                                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-200 border ${pacing.badgeStyle}`}>
+                                                                                                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-200 border ${pacing.badgeStyle}`}>
                                                                                                         {pacing.isLocked ? (
-                                                                                                            <Lock className="size-3" />
+                                                                                                            <Lock className="size-2.5" />
                                                                                                         ) : pacing.isUnlocked ? (
-                                                                                                            <Unlock className="size-3" />
+                                                                                                            <Unlock className="size-2.5" />
                                                                                                         ) : (
-                                                                                                            <CheckCircle className="size-3" />
+                                                                                                            <CheckCircle className="size-2.5" />
                                                                                                         )}
                                                                                                         <span>{pacing.statusLabel}</span>
                                                                                                     </div>
@@ -900,7 +924,7 @@ export default function CurriculumTab({
                                                                                                                 [`topic-${lesson.id}`]: !prev[`topic-${lesson.id}`] 
                                                                                                             }));
                                                                                                         }}
-                                                                                                        className="text-[9px] font-black uppercase tracking-wider text-amber-500 hover:text-amber-605 hover:bg-amber-500/5 px-2 py-1.5 rounded-xl border border-amber-500/10 transition-all cursor-pointer shadow-xs"
+                                                                                                        className="text-[9px] font-black uppercase tracking-wider text-amber-500 hover:text-amber-605 hover:bg-amber-500/5 px-1.5 py-0.5 rounded-lg border border-amber-500/10 transition-all cursor-pointer shadow-xs"
                                                                                                     >
                                                                                                         {expandedStudentStatuses[`topic-${lesson.id}`] ? 'Hide' : 'Students'}
                                                                                                     </button>
@@ -919,7 +943,11 @@ export default function CurriculumTab({
                                                                                                                     type="button"
                                                                                                                     onClick={(e) => {
                                                                                                                         e.stopPropagation();
-                                                                                                                        handleUpdatePacingState('topic', lesson.id, isTopicLocked ? 'unlocked' : 'locked');
+                                                                                                                        if (openUnlockModal) {
+                                                                                                                            openUnlockModal('topic', lesson);
+                                                                                                                        } else {
+                                                                                                                            handleUpdatePacingState('topic', lesson.id, isTopicLocked ? 'unlocked' : 'locked');
+                                                                                                                        }
                                                                                                                     }}
                                                                                                                     className={`p-1.5 rounded-lg transition-all cursor-pointer ${
                                                                                                                         isTopicLocked

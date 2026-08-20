@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check, Trash2, Download, FileSpreadsheet } from 'lucide-react';
+import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check, Trash2, Download, FileSpreadsheet, TrendingUp, BarChart3 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { getStudentFeeStatus, calculateClassesAdded } from '../../../src/lib/fee-utils';
@@ -137,6 +137,95 @@ export default function FeesManagementDashboard() {
         const d = new Date(yyyy, mm - 1, 1);
         return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }, [selectedMonthValue, customStartDate, customEndDate]);
+
+    // Monthly Earnings Aggregation for Bar Chart
+    const [chartTimeframe, setChartTimeframe] = useState<'6m' | '12m' | 'all'>('6m');
+
+    const monthlyEarningsData = useMemo(() => {
+        const earningsMap: Record<string, { total: number; count: number }> = {};
+
+        // Aggregate payments by year-month (YYYY-MM)
+        payments.forEach(p => {
+            if (p.payment_date) {
+                const ym = p.payment_date.split('T')[0].slice(0, 7);
+                if (ym && ym.length === 7 && ym.includes('-')) {
+                    if (!earningsMap[ym]) {
+                        earningsMap[ym] = { total: 0, count: 0 };
+                    }
+                    earningsMap[ym].total += Number(p.amount) || 0;
+                    earningsMap[ym].count += 1;
+                }
+            }
+        });
+
+        // Ensure current month is present
+        const now = new Date();
+        const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (!earningsMap[currentYm]) {
+            earningsMap[currentYm] = { total: 0, count: 0 };
+        }
+
+        // Determine list of YYYY-MM keys based on selected timeframe
+        let allYmKeys = Object.keys(earningsMap).sort((a, b) => a.localeCompare(b));
+
+        if (chartTimeframe === '6m') {
+            const last6: string[] = [];
+            for (let i = 5; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                last6.push(ym);
+            }
+            allYmKeys = last6;
+        } else if (chartTimeframe === '12m') {
+            const last12: string[] = [];
+            for (let i = 11; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                last12.push(ym);
+            }
+            allYmKeys = last12;
+        }
+
+        let maxAmount = 0;
+        let totalEarnings = 0;
+        let peakMonth = { ym: '', label: 'N/A', amount: 0 };
+
+        const items = allYmKeys.map(ym => {
+            const data = earningsMap[ym] || { total: 0, count: 0 };
+            const [yyyy, mm] = ym.split('-').map(Number);
+            const d = new Date(yyyy, mm - 1, 1);
+            const label = d.toLocaleDateString('en-US', { month: 'short' });
+            const fullLabel = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+            if (data.total > maxAmount) {
+                maxAmount = data.total;
+            }
+            if (data.total > peakMonth.amount) {
+                peakMonth = { ym, label: fullLabel, amount: data.total };
+            }
+            totalEarnings += data.total;
+
+            return {
+                ym,
+                label,
+                fullLabel,
+                year: yyyy,
+                total: data.total,
+                count: data.count
+            };
+        });
+
+        const activeMonths = items.filter(i => i.total > 0).length || 1;
+        const avgMonthly = Math.round(totalEarnings / activeMonths);
+
+        return {
+            items,
+            maxAmount: maxAmount > 0 ? maxAmount : 10000,
+            totalEarnings,
+            avgMonthly,
+            peakMonth
+        };
+    }, [payments, chartTimeframe]);
 
     // Debounce search query by 350ms to eliminate excessive network requests while typing
     useEffect(() => {
@@ -1198,7 +1287,7 @@ export default function FeesManagementDashboard() {
                                 </div>
                             </div>
 
-                            {/* Main Filter & Table Board */}
+                             {/* Main Filter & Table Board */}
                             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
                                 
                                 {/* Tabs Panel */}
@@ -1800,6 +1889,163 @@ export default function FeesManagementDashboard() {
                                         </div>
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Monthly Earnings Bar Chart Section */}
+                            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                {/* Header & Timeframe Filter */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="size-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[#b45309] dark:text-[#ecb613] flex items-center justify-center shrink-0">
+                                            <TrendingUp className="size-5" />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-base font-black text-slate-900 dark:text-white">Monthly Earnings Overview</h3>
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400">
+                                                    Revenue Bar Chart
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-400 font-medium">Per month fee collections & trend analysis (Click any month to filter table above)</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Timeframe Selector */}
+                                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 self-start sm:self-auto">
+                                        {(['6m', '12m', 'all'] as const).map(tf => {
+                                            const labels = { '6m': 'Last 6 Months', '12m': 'Last 12 Months', 'all': 'All Months' };
+                                            const isActive = chartTimeframe === tf;
+                                            return (
+                                                <button
+                                                    key={tf}
+                                                    type="button"
+                                                    onClick={() => setChartTimeframe(tf)}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                                                        isActive 
+                                                            ? 'bg-white dark:bg-slate-900 text-[#b45309] dark:text-[#ecb613] shadow-xs' 
+                                                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                                                    }`}
+                                                >
+                                                    {labels[tf]}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Key Highlights Metric Bar */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-850/60 border border-slate-200/80 dark:border-slate-800/80 mb-6">
+                                    <div className="text-left">
+                                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Total Earned ({chartTimeframe === '6m' ? '6 Months' : chartTimeframe === '12m' ? '12 Months' : 'All Time'})</p>
+                                        <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5">₹{monthlyEarningsData.totalEarnings.toLocaleString('en-IN')}</p>
+                                    </div>
+                                    <div className="text-left border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-800 pt-2 sm:pt-0 sm:pl-4">
+                                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Monthly Average</p>
+                                        <p className="text-xl font-black text-amber-600 dark:text-[#ecb613] mt-0.5">₹{monthlyEarningsData.avgMonthly.toLocaleString('en-IN')} <span className="text-xs font-bold text-slate-400">/ mo</span></p>
+                                    </div>
+                                    <div className="text-left border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-800 pt-2 sm:pt-0 sm:pl-4">
+                                        <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Peak Collection Month</p>
+                                        <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                            {monthlyEarningsData.peakMonth.amount > 0 ? `₹${monthlyEarningsData.peakMonth.amount.toLocaleString('en-IN')}` : '₹0'}
+                                            {monthlyEarningsData.peakMonth.label !== 'N/A' && (
+                                                <span className="text-xs font-bold text-slate-400 block truncate">{monthlyEarningsData.peakMonth.label}</span>
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Bar Chart Container */}
+                                <div className="space-y-2">
+                                    <div className="h-56 w-full pt-6 pb-2 flex items-end justify-between gap-2 sm:gap-4 relative border-b border-slate-200 dark:border-slate-800">
+                                        {/* Horizontal Grid lines */}
+                                        <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pb-6">
+                                            {[1, 0.75, 0.5, 0.25, 0].map((ratio) => (
+                                                <div key={ratio} className="border-b border-slate-100 dark:border-slate-800/60 w-full flex items-center justify-end pr-1">
+                                                    <span className="text-[9px] font-mono font-semibold text-slate-350 dark:text-slate-600">
+                                                        ₹{Math.round((monthlyEarningsData.maxAmount * ratio) / 1000)}k
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Chart Bars */}
+                                        {monthlyEarningsData.items.map((item) => {
+                                            const heightPercent = monthlyEarningsData.maxAmount > 0 
+                                                ? Math.max(4, Math.round((item.total / monthlyEarningsData.maxAmount) * 100)) 
+                                                : 4;
+                                            
+                                            const isCurrentSelected = selectedMonthValue === item.ym;
+                                            const isCurrentCalendarMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}` === item.ym;
+
+                                            return (
+                                                <div
+                                                    key={item.ym}
+                                                    onClick={() => {
+                                                        setSelectedMonthValue(item.ym);
+                                                        setPeriodPaymentFilter('received_only');
+                                                    }}
+                                                    className="relative flex-1 flex flex-col items-center h-full justify-end group cursor-pointer z-10"
+                                                >
+                                                    {/* Floating Hover Tooltip */}
+                                                    <div className="opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none absolute -top-14 left-1/2 -translate-x-1/2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-left px-3 py-2 rounded-xl shadow-xl z-30 whitespace-nowrap border border-slate-700 dark:border-slate-200">
+                                                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 dark:text-amber-600">{item.fullLabel}</p>
+                                                        <p className="text-xs font-black mt-0.5">₹{item.total.toLocaleString('en-IN')}</p>
+                                                        <p className="text-[9px] font-semibold opacity-80">{item.count} payment{item.count !== 1 ? 's' : ''} • Click to filter table</p>
+                                                    </div>
+
+                                                    {/* Amount label on top of bar */}
+                                                    <span className={`text-[10px] font-extrabold mb-1 font-mono transition-colors ${
+                                                        isCurrentSelected 
+                                                            ? 'text-[#b45309] dark:text-[#ecb613]' 
+                                                            : item.total > 0 
+                                                            ? 'text-slate-700 dark:text-slate-300' 
+                                                            : 'text-slate-300 dark:text-slate-600'
+                                                    }`}>
+                                                        {item.total >= 1000 ? `₹${(item.total / 1000).toFixed(item.total % 1000 === 0 ? 0 : 1)}k` : `₹${item.total}`}
+                                                    </span>
+
+                                                    {/* Bar Visual Element */}
+                                                    <div className="w-full max-w-[48px] px-1 flex items-end h-full">
+                                                        <div
+                                                            style={{ height: `${heightPercent}%` }}
+                                                            className={`w-full rounded-t-lg transition-all duration-300 relative ${
+                                                                isCurrentSelected
+                                                                    ? 'bg-gradient-to-t from-amber-600 to-[#ecb613] shadow-md shadow-amber-500/30 ring-2 ring-[#ecb613] ring-offset-1 dark:ring-offset-slate-900 scale-[1.03]'
+                                                                    : item.total > 0
+                                                                    ? 'bg-gradient-to-t from-amber-500/80 to-[#ecb613]/80 group-hover:from-amber-600 group-hover:to-[#ecb613] shadow-xs'
+                                                                    : 'bg-slate-200 dark:bg-slate-800 group-hover:bg-slate-300 dark:group-hover:bg-slate-700'
+                                                            }`}
+                                                        >
+                                                            {isCurrentCalendarMonth && (
+                                                                <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-xs" title="Current Month" />
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Month label below bar */}
+                                                    <span className={`text-xs font-black mt-2 transition-colors font-mono ${
+                                                        isCurrentSelected 
+                                                            ? 'text-[#b45309] dark:text-[#ecb613]' 
+                                                            : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
+                                                    }`}>
+                                                        {item.label}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Footer Info / Selection Hint */}
+                                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 pt-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#ecb613]" />
+                                            <span>Monthly Revenue</span>
+                                            <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 ml-2" />
+                                            <span>Current Calendar Month</span>
+                                        </div>
+                                        <span className="hidden sm:inline italic">Click any month bar to filter student fees table above</span>
+                                    </div>
+                                </div>
                             </div>
 
                         </div>
