@@ -1901,7 +1901,13 @@ export default function AttendancePage() {
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
-                <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 w-full flex-1 overflow-y-auto">
+                <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 w-full flex-1 overflow-y-auto">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                        <div>
+                            <h1 className="admin-page-title">Attendance Management</h1>
+                            <p className="admin-page-subtitle">Track daily batch attendance, leave requests, and student history.</p>
+                        </div>
+                    </div>
                     {/* Summary Cards */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                         <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
@@ -2053,11 +2059,11 @@ export default function AttendancePage() {
                             {/* ── MODE 1: CLASS MARKING (ACCORDION PATTERN) ────────────────── */}
                             {mode === 'class' && (
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between px-2">
-                                        <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight">
+                                    <div className="flex items-center justify-between px-1">
+                                        <h4 className="admin-section-title">
                                             Scheduled Batches on {formatLocalDateStr(selectedDate, true)}
                                         </h4>
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                        <span className="admin-meta-text uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full shrink-0 ml-2">
                                             {activeBatchesOnSelectedDate.length} Found
                                         </span>
                                     </div>
@@ -2072,27 +2078,29 @@ export default function AttendancePage() {
                                         return (
                                             <div 
                                                 key={batch.id} 
-                                                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-all duration-300"
+                                                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden transition-all duration-300"
                                             >
                                                 {/* Accordion Header */}
                                                 <div 
                                                     onClick={() => handleExpandBatch(batch.id, batch.type === 'temporary')}
-                                                    className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors select-none"
+                                                    className="p-3.5 sm:p-4 flex items-center justify-between gap-2.5 sm:gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors select-none"
                                                 >
-                                                    <div className="flex items-center gap-4">
-                                                        <div className={`p-3 rounded-xl flex items-center justify-center ${
+                                                    <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                                                        <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${
                                                             batch.type === 'permanent'
                                                                 ? 'bg-[#ecb613]/10 text-[#ecb613]'
                                                                 : 'bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400'
                                                         }`}>
-                                                            <School className="w-5 h-5" />
+                                                            <School className="w-4 h-4 sm:w-5 sm:h-5" />
                                                         </div>
-                                                        <div>
-                                                            <h5 className="font-bold text-slate-900 dark:text-white text-base tracking-tight">{batch.name}</h5>
-                                                            <div className="flex items-center gap-2 mt-1">
-                                                                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                                                <span className="text-xs text-slate-500 dark:text-slate-400">{batch.time}</span>
-                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                                        <div className="min-w-0 flex-1">
+                                                            <h5 className="font-bold text-xs sm:text-sm md:text-base text-slate-900 dark:text-white leading-snug truncate max-w-full">{batch.name}</h5>
+                                                            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap mt-1">
+                                                                <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
+                                                                    <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                                                    {batch.time}
+                                                                </span>
+                                                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shrink-0 ${
                                                                     batch.type === 'permanent'
                                                                         ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-600'
                                                                         : 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400'
@@ -2104,34 +2112,34 @@ export default function AttendancePage() {
                                                     </div>
 
                                                     {/* Summary Status indicator */}
-                                                    <div className="flex items-center gap-3">
+                                                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-1">
                                                         {summary && summary.total > 0 ? (
-                                                            <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 border border-emerald-100 dark:border-emerald-900 rounded-full">
+                                                            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-1 sm:px-2.5 sm:py-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 border border-emerald-100 dark:border-emerald-900 rounded-full whitespace-nowrap">
                                                                 Marked {summary.present + summary.late + summary.absent + summary.excused}/{summary.total}
                                                             </span>
                                                         ) : (
-                                                            <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 bg-slate-50 dark:bg-slate-800 text-slate-400 rounded-full">
+                                                            <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-2 py-1 sm:px-2.5 sm:py-1 bg-slate-50 dark:bg-slate-800 text-slate-400 rounded-full whitespace-nowrap">
                                                                 No Students
                                                             </span>
                                                         )}
                                                         {isExpanded ? (
-                                                            <ChevronUp className="w-5 h-5 text-slate-400" />
+                                                            <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
                                                         ) : (
-                                                            <ChevronDown className="w-5 h-5 text-slate-400" />
+                                                            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
                                                         )}
                                                     </div>
                                                 </div>
 
                                                 {/* Accordion Content */}
                                                 {isExpanded && (
-                                                    <div className="border-t border-slate-100 dark:border-slate-800 p-5 bg-slate-50/50 dark:bg-slate-850/20">
+                                                    <div className="border-t border-slate-100 dark:border-slate-800 p-3.5 sm:p-4 bg-slate-50/50 dark:bg-slate-850/20">
                                                         {isBatchLoading ? (
-                                                            <div className="flex flex-col items-center justify-center py-10">
-                                                                <Loader2 className="w-6 h-6 animate-spin text-[#ecb613] mb-2" />
+                                                            <div className="flex flex-col items-center justify-center py-6">
+                                                                <Loader2 className="w-5 h-5 animate-spin text-[#ecb613] mb-1.5" />
                                                                 <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Loading Roster...</p>
                                                             </div>
                                                         ) : batchRoster.length > 0 ? (
-                                                            <div className="space-y-3">
+                                                            <div className="space-y-2">
                                                                 {batchRoster.map((student) => {
                                                                     const status = batchAttendance[student.id];
                                                                     return (
@@ -2143,25 +2151,27 @@ export default function AttendancePage() {
                                                                                 }
                                                                             }}
                                                                             title={status ? "Double-click marked section to unmark attendance" : undefined}
-                                                                            className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs select-none"
+                                                                            className="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shadow-xs select-none"
                                                                         >
-                                                                            <div className="flex items-center gap-3">
-                                                                                <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                                                                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                                                                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
                                                                                     {student.profile_pic_url ? (
                                                                                         <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
                                                                                     ) : (
-                                                                                        <span className="text-[#ecb613] font-black text-sm">{student.name.charAt(0)}</span>
+                                                                                        <span className="text-[#ecb613] font-bold text-xs">{student.name.charAt(0)}</span>
                                                                                     )}
                                                                                 </div>
-                                                                                <h6 className="font-extrabold text-slate-900 dark:text-white text-sm">{student.name}</h6>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <h6 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-full leading-tight">{student.name}</h6>
+                                                                                </div>
                                                                             </div>
 
-                                                                            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap justify-end">
+                                                                            <div className="flex items-center gap-1 shrink-0">
                                                                                 {([
-                                                                                    { key: 'present', label: 'Present', shortLabel: 'P', activeClass: 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 border-emerald-500', inactiveClass: 'border-emerald-100 text-emerald-600 dark:border-emerald-950/20' },
-                                                                                    { key: 'absent', label: 'Absent', shortLabel: 'A', activeClass: 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 border-rose-500', inactiveClass: 'border-rose-100 text-rose-600 dark:border-rose-950/20' },
-                                                                                    { key: 'late', label: 'Late', shortLabel: 'L', activeClass: 'bg-amber-500 text-white shadow-lg shadow-amber-500/25 border-amber-500', inactiveClass: 'border-amber-100 text-amber-600 dark:border-amber-950/20' },
-                                                                                    { key: 'excused', label: 'Excused', shortLabel: 'E', activeClass: 'bg-slate-600 text-white shadow-lg shadow-slate-600/25 border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-750' }
+                                                                                    { key: 'present', label: 'Present', shortLabel: 'P', activeClass: 'bg-emerald-500 text-white shadow-sm border-emerald-500', inactiveClass: 'border-emerald-200/80 text-emerald-600 dark:border-emerald-900/40' },
+                                                                                    { key: 'absent', label: 'Absent', shortLabel: 'A', activeClass: 'bg-rose-500 text-white shadow-sm border-rose-500', inactiveClass: 'border-rose-200/80 text-rose-600 dark:border-rose-900/40' },
+                                                                                    { key: 'late', label: 'Late', shortLabel: 'L', activeClass: 'bg-amber-500 text-white shadow-sm border-amber-500', inactiveClass: 'border-amber-200/80 text-amber-600 dark:border-amber-900/40' },
+                                                                                    { key: 'excused', label: 'Excused', shortLabel: 'E', activeClass: 'bg-slate-600 text-white shadow-sm border-slate-600', inactiveClass: 'border-slate-200 text-slate-600 dark:border-slate-700' }
                                                                                 ] as const).map(opt => {
                                                                                     const isActive = status === opt.key;
                                                                                     return (
@@ -2176,8 +2186,8 @@ export default function AttendancePage() {
                                                                                                 e.stopPropagation();
                                                                                                 handleUnmarkBatchAttendance(batch.id, student.id);
                                                                                             }}
-                                                                                            className={`px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border transition-all duration-200 cursor-pointer ${
-                                                                                                isActive ? opt.activeClass : `${opt.inactiveClass} bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800`
+                                                                                            className={`w-7 h-7 sm:w-auto sm:h-auto sm:px-3 sm:py-1 rounded-lg text-xs font-bold uppercase border transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                                                                                isActive ? opt.activeClass : `${opt.inactiveClass} bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800`
                                                                                             }`}
                                                                                         >
                                                                                             <span className="hidden sm:inline">{opt.label}</span>

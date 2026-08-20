@@ -1891,25 +1891,26 @@ export default function StudentDirectory() {
                             <div className="col-span-12 lg:col-span-8 space-y-6">
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                     <div>
-                                        <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Student Directory</h2>
-                                        <p className="text-sm text-slate-500 mt-1">Manage and track progress for {students.length} enrolled students.</p>
+                                        <h1 className="admin-page-title">Student Directory</h1>
+                                        <p className="admin-page-subtitle">Manage and track progress for {students.length} enrolled students.</p>
                                     </div>
                                     {(teacherProfile?.role === 'admin' || teacherProfile?.role === 'teacher') && (
-                                        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+                                        <div className="admin-btn-group">
                                             <button
                                                 onClick={() => setShowRecycleBin(true)}
-                                                className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3 sm:px-4 h-10 sm:h-11 rounded-lg text-xs sm:text-sm font-bold shadow-xs transition-all border border-slate-200 dark:border-slate-700"
-                                                title="Recycle Bin (Deleted Students)"
+                                                className="admin-btn admin-btn-secondary"
+                                                title={`Recycle Bin (${recycleBin.length} deleted students)`}
                                             >
-                                                <span className="material-symbols-outlined text-base sm:text-lg">delete_sweep</span>
-                                                <span className="truncate">Recycle Bin ({recycleBin.length})</span>
+                                                <span className="material-symbols-outlined text-lg shrink-0">delete_sweep</span>
+                                                <span className="hidden sm:inline">Recycle Bin ({recycleBin.length})</span>
                                             </button>
                                             <Link
                                                 href="/teacher-dashboard/students/add"
-                                                className="bg-black dark:bg-[#ecb613] dark:text-slate-900 hover:bg-slate-800 text-white px-3 sm:px-5 h-10 sm:h-11 rounded-lg text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all whitespace-nowrap"
+                                                className="admin-btn admin-btn-primary"
+                                                title="Add New Student"
                                             >
-                                                <span className="material-symbols-outlined text-base sm:text-lg">person_add</span>
-                                                <span className="truncate">Add New Student</span>
+                                                <span className="material-symbols-outlined text-lg shrink-0">person_add</span>
+                                                <span className="hidden sm:inline">Add New Student</span>
                                             </Link>
                                         </div>
                                     )}
@@ -1937,30 +1938,29 @@ export default function StudentDirectory() {
                                         </div>
                                         <div className="divide-y divide-amber-100 dark:divide-amber-900/30">
                                             {pendingUsers.slice(0, 5).map(u => (
-                                                <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:px-4 sm:py-3 gap-3">
+                                                <div key={u.id} className="flex items-center justify-between p-3.5 sm:px-4 sm:py-3 gap-3">
                                                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                        <div className="w-10 h-10 rounded-full bg-amber-200/80 dark:bg-amber-800/80 flex items-center justify-center text-amber-900 dark:text-amber-100 font-black text-sm shrink-0 border border-amber-300/50">
+                                                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-200/80 dark:bg-amber-800/80 flex items-center justify-center text-amber-900 dark:text-amber-100 font-black text-xs sm:text-sm shrink-0 border border-amber-300/50">
                                                             {u.name?.charAt(0)?.toUpperCase() || '?'}
                                                         </div>
                                                         <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center justify-between sm:justify-start gap-2">
-                                                                <p className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">{u.name}</p>
-                                                                <span className="text-[11px] font-medium text-slate-400 shrink-0 sm:hidden">
-                                                                    {new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                                                                </span>
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">{u.name}</p>
                                                             </div>
-                                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{u.email}{u.phone ? ` · ${u.phone}` : ''}</p>
+                                                            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">{u.email}{u.phone ? ` · ${u.phone}` : ''}</p>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center justify-end gap-3 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-amber-200/40 dark:border-amber-900/20">
-                                                        <span className="text-xs font-medium text-slate-400 hidden sm:inline">
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        <span className="text-[11px] font-medium text-slate-400 hidden md:inline">
                                                             {new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                                                         </span>
                                                         <Link
                                                             href="/teacher-dashboard/role-allocation"
-                                                            className="w-full sm:w-auto text-center text-xs bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white px-4 py-2 sm:py-1.5 rounded-lg font-bold transition-all shadow-xs whitespace-nowrap shrink-0"
+                                                            className="admin-btn-sm admin-btn-primary whitespace-nowrap"
+                                                            title="Assign Role"
                                                         >
-                                                            Assign Role
+                                                            <span className="material-symbols-outlined text-base shrink-0">manage_accounts</span>
+                                                            <span className="hidden sm:inline">Assign Role</span>
                                                         </Link>
                                                     </div>
                                                 </div>
@@ -2137,12 +2137,12 @@ export default function StudentDirectory() {
                                                 )}
                                             </div>
 
-                                            {/* Desktop Table View */}
-                                            <div className="hidden md:block overflow-x-auto">
-                                                <table className="w-full text-left border-collapse">
+                                            {/* Desktop Table View (Fits 100% screen width with zero horizontal scrolling) */}
+                                            <div className="hidden md:block w-full overflow-hidden">
+                                                <table className="w-full table-fixed text-left border-collapse">
                                                     <thead>
-                                                        <tr className="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
-                                                            <th className="px-4 py-4 w-10">
+                                                        <tr className="bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
+                                                            <th className="px-2 py-3 w-10 text-center">
                                                                 {filterMode !== 'unassigned' ? (
                                                                     <input
                                                                         type="checkbox"
@@ -2155,21 +2155,17 @@ export default function StudentDirectory() {
                                                                     <span className="text-slate-400">—</span>
                                                                 )}
                                                             </th>
-                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student Name</th>
-                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Batch</th>
-                                                            {teacherProfile?.role === 'admin' && (
-                                                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Teacher</th>
-                                                            )}
-                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Attendance</th>
-                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Contact</th>
-                                                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                                                            <th className="px-3 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[34%]">Student Name & Status</th>
+                                                            <th className="px-3 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[28%]">Batch & Teacher</th>
+                                                            <th className="px-3 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[15%]">Attendance</th>
+                                                            <th className="px-3 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[13%]">Contact</th>
+                                                            <th className="px-2 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right w-[10%]">Actions</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                                         {paginatedStudents.map((student) => (
                                                             <tr key={student.id} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
-                                                                <td className="px-4 py-4">
+                                                                <td className="px-2 py-3 text-center">
                                                                     {filterMode !== 'unassigned' ? (
                                                                         <input
                                                                             type="checkbox"
@@ -2181,82 +2177,88 @@ export default function StudentDirectory() {
                                                                         <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
                                                                     )}
                                                                 </td>
-                                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                                    <div className="flex items-center gap-3">
+                                                                <td className="px-3 py-3">
+                                                                    <div className="flex items-center gap-2.5 min-w-0">
                                                                         <div className="relative shrink-0">
-                                                                            <div className="size-10 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-sm">
+                                                                            <div className="size-9 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs">
                                                                                 {student.profile_pic_url ? (
                                                                                     <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover rounded-full" loading="lazy" />
                                                                                 ) : (
-                                                                                    <span className="text-sm font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                                    <span className="text-xs font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
                                                                                 )}
                                                                             </div>
                                                                             {student.is_online && (
-                                                                                <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
+                                                                                <span className="absolute bottom-0 right-0 block h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
                                                                             )}
                                                                         </div>
-                                                                        <div className="min-w-0">
-                                                                            <Link href={`/teacher-dashboard/students/${student.id}`} className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors whitespace-nowrap block">
-                                                                                {student.name}
-                                                                            </Link>
-                                                                            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-tight whitespace-nowrap block">{student.student_id_formatted}</p>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                <Link href={`/teacher-dashboard/students/${student.id}`} className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors truncate max-w-[140px] sm:max-w-none">
+                                                                                    {student.name}
+                                                                                </Link>
+                                                                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold shrink-0 ${
+                                                                                    student.pacing_status === 'Consistent' 
+                                                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
+                                                                                        : student.pacing_status === 'Improving'
+                                                                                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                                                            : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
+                                                                                }`}>
+                                                                                    {student.pacing_status || 'Consistent'}
+                                                                                </span>
+                                                                            </div>
+                                                                            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-tight truncate mt-0.5">{student.student_id_formatted}</p>
                                                                         </div>
                                                                     </div>
                                                                 </td>
-                                                                <td className="px-6 py-4"><span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">{student.batch}</span></td>
-                                                                {teacherProfile?.role === 'admin' && (
-                                                                    <td className="px-6 py-4"><span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">{student.teacher_name || 'Unassigned'}</span></td>
-                                                                )}
-                                                                <td className="px-6 py-4">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-sm font-bold">{student.attendance_pct}%</span>
-                                                                        <div className="w-16 bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                                                <td className="px-3 py-3">
+                                                                    <div className="min-w-0">
+                                                                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block truncate" title={student.batch}>
+                                                                            {student.batch}
+                                                                        </span>
+                                                                        {teacherProfile?.role === 'admin' && (
+                                                                            <span className="text-[10px] font-medium text-slate-400 block truncate mt-0.5">
+                                                                                Teacher: {student.teacher_name || 'Unassigned'}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-3 py-3">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="text-xs font-bold text-slate-900 dark:text-white shrink-0">{student.attendance_pct}%</span>
+                                                                        <div className="w-12 bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden shrink-0">
                                                                             <div className={`h-1.5 rounded-full ${student.attendance_pct >= 85 ? 'bg-emerald-500' : student.attendance_pct >= 70 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${student.attendance_pct}%` }} />
                                                                         </div>
                                                                     </div>
                                                                 </td>
-                                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 ${
-                                                                        student.pacing_status === 'Consistent' 
-                                                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                                                                            : student.pacing_status === 'Improving'
-                                                                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                                                                                : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-                                                                    }`}>
-                                                                        <span className={`size-1.5 rounded-full shrink-0 ${
-                                                                            student.pacing_status === 'Consistent' 
-                                                                                ? 'bg-emerald-500' 
-                                                                                : student.pacing_status === 'Improving'
-                                                                                    ? 'bg-amber-500'
-                                                                                    : 'bg-rose-500'
-                                                                        }`} />
-                                                                        {student.pacing_status || 'Consistent'}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-6 py-4">
-                                                                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                                                <td className="px-3 py-3">
+                                                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate block">
                                                                         {student.phone || 'No Phone'}
                                                                     </span>
                                                                 </td>
-                                                                <td className="px-6 py-4 text-right">
+                                                                <td className="px-2 py-3 text-right">
                                                                     {filterMode === 'unassigned' ? (
                                                                         <div className="flex justify-end">
-                                                                            <button onClick={() => setShowClaimModal(student)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1 hover:scale-[1.02] active:scale-95">
-                                                                                <span className="material-symbols-outlined text-sm">person_add</span>
+                                                                            <button onClick={() => setShowClaimModal(student)} className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1">
                                                                                 Claim
                                                                             </button>
                                                                         </div>
                                                                     ) : (
-                                                                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                            <Link href={`/teacher-dashboard/students/${student.id}/edit`} className="p-2 text-slate-400 hover:text-[#ecb613] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Edit profile"><span className="material-symbols-outlined text-xl">edit</span></Link>
+                                                                        <div className="flex items-center justify-end gap-1">
+                                                                            <Link href={`/teacher-dashboard/students/${student.id}/edit`} className="p-1.5 text-slate-400 hover:text-[#ecb613] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Edit profile">
+                                                                                <span className="material-symbols-outlined text-base">edit</span>
+                                                                            </Link>
                                                                             <button 
                                                                                 onClick={() => router.push(`/teacher-dashboard/messages?chat=${student.id}`)}
-                                                                                className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" 
+                                                                                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" 
                                                                                 title="Message"
                                                                             >
-                                                                                <span className="material-symbols-outlined text-xl">chat</span>
+                                                                                <span className="material-symbols-outlined text-base">chat</span>
                                                                             </button>
-                                                                            <button onClick={() => setStudentToDelete({ id: student.id, name: student.name })} className="p-2 text-rose-500 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/20 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all" title="Delete"><span className="material-symbols-outlined text-xl">delete</span></button>
+                                                                            {teacherProfile?.role === 'admin' && (
+                                                                                <button onClick={() => setStudentToDelete({ id: student.id, name: student.name })} className="p-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-all" title="Delete">
+                                                                                    <span className="material-symbols-outlined text-base">delete</span>
+                                                                                </button>
+                                                                            )}
                                                                         </div>
                                                                     )}
                                                                 </td>
@@ -2264,7 +2266,7 @@ export default function StudentDirectory() {
                                                         ))}
                                                         {paginatedStudents.length === 0 && (
                                                             <tr>
-                                                                <td colSpan={teacherProfile?.role === 'admin' ? 8 : 7} className="px-6 py-10 text-center text-slate-500">
+                                                                <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-xs font-semibold">
                                                                     {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
                                                                 </td>
                                                             </tr>
@@ -2355,31 +2357,47 @@ export default function StudentDirectory() {
                                     </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                    <div className="p-6">
-                                        <h3 className="font-bold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {(teacherProfile?.role === 'admin' || teacherProfile?.role === 'teacher') && (
-                                                <>
-                                                    <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
-                                                        <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">person_add</span>
-                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Invite Student</span>
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => setShowBulkEnrollModal(true)}
-                                                        className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
-                                                        <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">assignment_ind</span>
-                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Bulk Enroll</span>
-                                                    </button>
-                                                </>
-                                            )}
-                                            <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
-                                                <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">mail</span>
-                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Announce</span>
+                                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+                                    <div className="p-5">
+                                        <h3 className="font-extrabold text-sm text-slate-900 dark:text-white mb-3 flex items-center justify-between">
+                                            <span>Quick Actions</span>
+                                            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-full uppercase tracking-wider">Directory Tools</span>
+                                        </h3>
+                                        <div className="grid grid-cols-2 gap-2.5">
+                                            <button 
+                                                onClick={() => router.push('/teacher-dashboard/students/add')}
+                                                className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-amber-500/10 hover:border-amber-500/30 transition-all text-left group cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] text-xl mb-1">person_add</span>
+                                                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">Add Student</span>
+                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Register new account</span>
                                             </button>
-                                            <button className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 hover:bg-[#ecb613]/5 hover:border-[#ecb613]/30 transition-all gap-2 group">
-                                                <span className="material-symbols-outlined text-slate-500 group-hover:text-[#ecb613]">bar_chart_4_bars</span>
-                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">View Trends</span>
+
+                                            <button 
+                                                onClick={() => setShowBulkEnrollModal(true)}
+                                                className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-amber-500/10 hover:border-amber-500/30 transition-all text-left group cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] text-xl mb-1">upload_file</span>
+                                                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">Bulk Enroll</span>
+                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Import CSV roster</span>
+                                            </button>
+
+                                            <button 
+                                                onClick={() => router.push('/teacher-dashboard/messages')}
+                                                className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-amber-500/10 hover:border-amber-500/30 transition-all text-left group cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] text-xl mb-1">campaign</span>
+                                                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">Send Broadcast</span>
+                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Announce to students</span>
+                                            </button>
+
+                                            <button 
+                                                onClick={handleExportCSV}
+                                                className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-amber-500/10 hover:border-amber-500/30 transition-all text-left group cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] text-xl mb-1">download</span>
+                                                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">Export CSV</span>
+                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Download directory</span>
                                             </button>
                                         </div>
                                     </div>

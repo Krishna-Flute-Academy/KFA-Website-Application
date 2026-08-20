@@ -462,15 +462,16 @@ export default function OverviewTab({
 
                     {/* Student Roster Table */}
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center flex-wrap gap-4">
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Student Roster</h3>
+                        <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center flex-wrap gap-4">
+                            <h3 className="admin-section-title">Student Roster</h3>
                             <div className="flex gap-3">
                                 <button 
                                     onClick={openDirectoryModal}
-                                    className="flex items-center gap-1.5 px-4 py-2 bg-[#ecb613] shadow-md shadow-[#ecb613]/20 hover:bg-[#ecb613]/90 text-slate-900 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                                    className="admin-btn admin-btn-primary admin-btn-sm"
+                                    title="Add Student from Directory"
                                 >
-                                    <UserPlus className="w-3.5 h-3.5" />
-                                    Add from Directory
+                                    <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="hidden sm:inline">Add from Directory</span>
                                 </button>
                             </div>
                         </div>

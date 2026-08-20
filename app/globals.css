@@ -397,3 +397,86 @@ body {
     -ms-overflow-style: none;  /* IE and Edge */
     scrollbar-width: none;  /* Firefox */
 }
+
+/* ==========================================================================
+   Admin Dashboard Unified Theme & Mobile Utility Classes
+   ========================================================================== */
+
+/* Typography Design System — Uniform across Admin & Teacher Portal */
+.admin-page-title {
+    @apply text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight;
+}
+
+.admin-page-subtitle {
+    @apply text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 mt-1 leading-relaxed;
+}
+
+.admin-section-title {
+    @apply text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2 leading-snug;
+}
+
+.admin-section-subtitle {
+    @apply text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400 leading-normal;
+}
+
+.admin-card-title {
+    @apply text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug;
+}
+
+.admin-card-subtitle {
+    @apply text-xs font-medium text-slate-500 dark:text-slate-400 leading-normal;
+}
+
+.admin-body-text {
+    @apply text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed;
+}
+
+.admin-meta-text {
+    @apply text-[11px] sm:text-xs text-slate-400 dark:text-slate-500 font-medium;
+}
+
+/* Admin Button Variants — Mobile touch-friendly, size-preserving (shrink-0), equal heights */
+.admin-btn {
+    @apply inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 h-10 rounded-xl font-bold text-xs sm:text-sm transition-all duration-200 shrink-0 select-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/40 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none active:scale-[0.98] whitespace-nowrap leading-none;
+}
+
+.admin-btn-sm {
+    @apply inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 h-9 rounded-lg font-bold text-xs transition-all duration-150 shrink-0 select-none cursor-pointer focus:outline-none disabled:opacity-50 active:scale-[0.98] whitespace-nowrap leading-none;
+}
+
+.admin-btn-group {
+    @apply flex items-center gap-1.5 sm:gap-2 flex-nowrap w-auto shrink-0;
+}
+
+.admin-btn-group > * {
+    @apply whitespace-nowrap h-9 sm:h-10 inline-flex items-center justify-center text-center shrink-0 px-2.5 sm:px-3.5;
+}
+
+.admin-btn-primary {
+    @apply bg-[#ecb613] hover:bg-amber-500 text-slate-950 shadow-sm hover:shadow-md active:bg-amber-600 border border-amber-400/30;
+}
+
+.admin-btn-secondary {
+    @apply bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-sm;
+}
+
+.admin-btn-danger {
+    @apply bg-rose-600 hover:bg-rose-700 text-white shadow-sm hover:shadow-md active:bg-rose-800 border border-rose-500/30;
+}
+
+.admin-btn-outline {
+    @apply border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white bg-transparent;
+}
+
+.admin-btn-ghost {
+    @apply text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white bg-transparent;
+}
+
+/* Card & Table Utilities */
+.admin-card {
+    @apply bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-6 transition-shadow;
+}
+
+.admin-table-container {
+    @apply w-full overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm scrollbar-none;
+}

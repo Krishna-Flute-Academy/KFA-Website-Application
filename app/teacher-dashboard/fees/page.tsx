@@ -1030,14 +1030,14 @@ export default function FeesManagementDashboard() {
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-12">
-                        <div className="w-full space-y-8">
+                    <div className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8">
+                        <div className="w-full space-y-6 sm:space-y-8">
                             
                             {/* Header Section */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div>
-                                    <h1 className="text-3xl font-display font-black text-slate-900 dark:text-white tracking-tight leading-none">Fees Dashboard</h1>
-                                    <p className="text-slate-500 dark:text-slate-400 mt-2.5">Track joining dates, collection cycles, payments history, and prepaid class balances.</p>
+                                    <h1 className="admin-page-title">Fees Dashboard</h1>
+                                    <p className="admin-page-subtitle">Track joining dates, collection cycles, payments history, and prepaid class balances.</p>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0">
                                     <button
@@ -1453,15 +1453,15 @@ export default function FeesManagementDashboard() {
                                     )}
                                 </div>
 
-                                {/* Table */}
-                                <div className="hidden lg:block overflow-x-auto min-h-[350px]">
-                                    <table className="w-full min-w-[1250px] border-collapse text-left">
-                                        <thead className="bg-slate-100/70 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 select-none">
+                                {/* Table (Spacious, clean, balanced layout utilizing full viewport space) */}
+                                <div className="hidden md:block w-full overflow-x-auto min-h-[350px]">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 select-none">
                                             <tr className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">
                                                 {/* STUDENT */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('name')}
-                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap min-w-[220px] w-[260px]"
+                                                    className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap min-w-[200px]"
                                                     title="Click to sort by Student Name"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1475,7 +1475,7 @@ export default function FeesManagementDashboard() {
                                                 {/* JOINING DATE */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('join_date')}
-                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Joining Date"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1486,10 +1486,10 @@ export default function FeesManagementDashboard() {
                                                     </div>
                                                 </th>
 
-                                                {/* PAYMENT RECEIVED IN PERIOD */}
+                                                {/* PAYMENT RECEIVED */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('latest_payment')}
-                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Received Payment Date in Selected Period"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1503,7 +1503,7 @@ export default function FeesManagementDashboard() {
                                                 {/* BILLING PLAN */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('fees_basis')}
-                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Billing Plan"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1517,7 +1517,7 @@ export default function FeesManagementDashboard() {
                                                 {/* PREPAID CLASSES */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('fees_classes_paid')}
-                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Prepaid Classes Left"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1531,7 +1531,7 @@ export default function FeesManagementDashboard() {
                                                 {/* NEXT COLLECTION */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('next_collection')}
-                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Next Collection Date"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1545,7 +1545,7 @@ export default function FeesManagementDashboard() {
                                                 {/* STANDARD AMOUNT */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('fees_amount')}
-                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Standard Amount"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1559,7 +1559,7 @@ export default function FeesManagementDashboard() {
                                                 {/* STATUS */}
                                                 <th 
                                                     onClick={() => handleHeaderSort('status')}
-                                                    className="px-6 py-2.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
+                                                    className="px-4 py-3.5 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors whitespace-nowrap"
                                                     title="Click to sort by Fee Status"
                                                 >
                                                     <div className="flex items-center gap-1.5">
@@ -1571,7 +1571,7 @@ export default function FeesManagementDashboard() {
                                                 </th>
 
                                                 {/* ACTIONS */}
-                                                <th className="px-6 py-2.5 text-right whitespace-nowrap">Actions</th>
+                                                <th className="px-4 py-3.5 text-right whitespace-nowrap">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1591,19 +1591,19 @@ export default function FeesManagementDashboard() {
                                                     return (
                                                         <tr key={student.id} className={`transition-colors border-b border-b-slate-100 dark:border-b-slate-800 ${rowUrgencyClass}`}>
                                                             
-                                                            {/* Student Profile */}
-                                                            <td className="px-6 py-2.5 min-w-[220px] w-[260px]">
+                                                            {/* Student Profile & Batch */}
+                                                            <td className="px-4 py-3.5 min-w-[200px]">
                                                                 <div className="flex items-center gap-3">
-                                                                    <div className="size-8 rounded-lg bg-[#ecb613]/10 text-[#ecb613] font-bold flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-800 shrink-0">
+                                                                    <div className="size-9 rounded-full bg-[#ecb613]/10 text-[#ecb613] font-bold flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0">
                                                                         {student.profile_pic_url ? (
                                                                             <img src={student.profile_pic_url} alt="" className="w-full h-full object-cover" />
                                                                         ) : (
-                                                                            <span>{student.name.charAt(0)}</span>
+                                                                            <span className="text-xs font-bold">{student.name.charAt(0)}</span>
                                                                         )}
                                                                     </div>
                                                                     <div className="min-w-0 flex-1">
-                                                                        <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight whitespace-nowrap">{student.name}</p>
-                                                                        <p className="text-[10px] font-medium text-slate-400 mt-0.5 truncate max-w-[200px]" title={student.batch_name === 'Unassigned' ? 'No Batch' : student.batch_name}>
+                                                                        <p className="text-sm font-bold text-slate-900 dark:text-white leading-tight truncate">{student.name}</p>
+                                                                        <p className="text-[11px] font-medium text-slate-400 mt-0.5 truncate" title={student.batch_name === 'Unassigned' ? 'No Batch' : student.batch_name}>
                                                                             {student.batch_name === 'Unassigned' ? 'No Batch' : student.batch_name}
                                                                         </p>
                                                                     </div>
@@ -1611,12 +1611,12 @@ export default function FeesManagementDashboard() {
                                                             </td>
 
                                                             {/* Joining Date */}
-                                                            <td className="px-6 py-2.5 text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                                            <td className="px-4 py-3.5 text-xs font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">
                                                                 {student.join_date ? new Date(student.join_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
                                                             </td>
 
                                                             {/* Payment Received Date (In Period) */}
-                                                            <td className="px-6 py-2.5 text-xs whitespace-nowrap">
+                                                            <td className="px-4 py-3.5 text-xs whitespace-nowrap">
                                                                 {(() => {
                                                                     const inPeriod = periodPaymentsMap.get(student.id) || [];
                                                                     const latestP = inPeriod[0];
@@ -1624,33 +1624,33 @@ export default function FeesManagementDashboard() {
                                                                         return (
                                                                             <div>
                                                                                 <p className="font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1 leading-tight">
-                                                                                    <Check className="size-3 text-emerald-500" />
+                                                                                    <Check className="size-3.5 text-emerald-500 shrink-0" />
                                                                                     {new Date(latestP.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                                                                 </p>
-                                                                                <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                                                                                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
                                                                                     ₹{Number(latestP.amount).toLocaleString('en-IN')} ({latestP.payment_method})
                                                                                 </p>
                                                                             </div>
                                                                         );
                                                                     }
-                                                                    return <span className="text-slate-400 italic text-[11px]">No payment in period</span>;
+                                                                    return <span className="text-slate-400 italic text-xs">No payment in period</span>;
                                                                 })()}
                                                             </td>
 
                                                             {/* Billing Plan */}
-                                                            <td className="px-6 py-2.5">
-                                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
+                                                            <td className="px-4 py-3.5 whitespace-nowrap">
+                                                                <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide ${
                                                                     student.fees_basis === 'monthly'
-                                                                        ? 'bg-purple-50 dark:bg-purple-950/20 text-purple-750 border border-purple-100 dark:border-purple-900/30'
-                                                                        : 'bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 border border-indigo-100 dark:border-indigo-900/30'
+                                                                        ? 'bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                                                        : 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
                                                                 }`}>
                                                                     {student.fees_basis === 'monthly' ? 'Monthly' : 'Class Basis'}
                                                                 </span>
                                                             </td>
 
                                                             {/* Prepaid Classes Balance */}
-                                                            <td className="px-6 py-2.5 whitespace-nowrap">
-                                                                <div className="flex items-center gap-2">
+                                                            <td className="px-4 py-3.5 whitespace-nowrap">
+                                                                <div className="flex items-center gap-1.5">
                                                                     <span className={`text-sm font-black ${
                                                                         student.fees_classes_paid <= 0
                                                                             ? 'text-rose-600 dark:text-rose-400'
@@ -1660,17 +1660,14 @@ export default function FeesManagementDashboard() {
                                                                     }`}>
                                                                         {student.fees_classes_paid}
                                                                     </span>
-                                                                    <span className="text-[10px] font-semibold text-slate-400">
-                                                                        classes left
-                                                                    </span>
+                                                                    <span className="text-xs font-medium text-slate-400">classes left</span>
                                                                 </div>
                                                             </td>
 
                                                             {/* Next Collection Date */}
-                                                            <td className="px-6 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-350 whitespace-nowrap">
+                                                            <td className="px-4 py-3.5 text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                                                                 {(() => {
-                                                                    if (student.fees_amount <= 0) return <span className="text-slate-400 italic font-medium text-[10px]">Setup Required</span>;
-                                                                    
+                                                                    if (student.fees_amount <= 0) return <span className="text-slate-400 italic font-medium text-xs">Setup Required</span>;
                                                                     if (student.fees_basis === 'monthly') {
                                                                         if (student.fees_collection_date) {
                                                                             const studentPayments = paymentsMap[student.id] || [];
@@ -1682,49 +1679,44 @@ export default function FeesManagementDashboard() {
                                                                                 student.join_date
                                                                             );
                                                                             return feeStatus ? feeStatus.formattedDueDate : 'N/A';
-                                                                        } else if (student.join_date) {
-                                                                            // Calculate 30 days from join date as estimated next collection
-                                                                            const joinD = new Date(student.join_date);
-                                                                            joinD.setDate(joinD.getDate() + 30);
-                                                                            return <span className="text-slate-400 italic">Est: {joinD.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>;
                                                                         }
                                                                     }
-                                                                    return <span className="text-slate-400 text-[10px]">Based on usage</span>;
+                                                                    return <span className="text-slate-400 text-xs font-medium">On usage</span>;
                                                                 })()}
                                                             </td>
 
-                                                            {/* Fees Amount */}
-                                                            <td className="px-6 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                                                            {/* Standard Fee Amount */}
+                                                            <td className="px-4 py-3.5 text-sm font-bold text-slate-900 dark:text-white whitespace-nowrap">
                                                                 ₹{student.fees_amount.toLocaleString('en-IN')}
                                                             </td>
 
                                                             {/* Status Badge */}
-                                                            <td className="px-6 py-2.5 whitespace-nowrap">
+                                                            <td className="px-4 py-3.5 whitespace-nowrap">
                                                                 {status === 'setup_required' && (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                                                                         Setup Required
                                                                     </span>
                                                                 )}
                                                                 {status === 'good' && (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-450 border border-emerald-100 dark:border-emerald-900/30">
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                                                                         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
                                                                         Active / Paid
                                                                     </span>
                                                                 )}
                                                                 {status === 'due_classes' && (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30">
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                                                                         <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
                                                                         Classes Expired
                                                                     </span>
                                                                 )}
                                                                 {status === 'due_date' && (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30">
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                                                                         <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
                                                                         Due Date Arrived
                                                                     </span>
                                                                 )}
                                                                 {status === 'overdue' && (
-                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-450 border border-rose-100 dark:border-rose-900/30">
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
                                                                         <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></span>
                                                                         Overdue
                                                                     </span>
@@ -1733,7 +1725,7 @@ export default function FeesManagementDashboard() {
                                                                     const pendingPayment = payments.find(p => p.student_id === student.id && p.status === 'pending_approval');
                                                                     const amountStr = pendingPayment ? ` (₹${pendingPayment.amount.toLocaleString('en-IN')})` : '';
                                                                     return (
-                                                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-450 border border-blue-100 dark:border-blue-900/30 animate-pulse">
+                                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 animate-pulse">
                                                                             <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
                                                                             Pending Review{amountStr}
                                                                         </span>
@@ -1741,67 +1733,32 @@ export default function FeesManagementDashboard() {
                                                                 })()}
                                                             </td>
 
-                                                            {/* Actions */}
-                                                            <td className="px-6 py-2.5 text-right whitespace-nowrap">
-                                                                <div className="flex items-center justify-end gap-2">
+                                                            {/* Actions (Single Line Row) */}
+                                                            <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                                                                <div className="flex items-center justify-end gap-1.5">
                                                                     {status !== 'good' && status !== 'setup_required' && (
                                                                         <button
                                                                             onClick={() => handleSendReminder(student, status === 'due_classes' ? 'classes_completed' : 'due_date')}
                                                                             title="Send Reminder Email"
-                                                                            aria-label={`Send Reminder Email to ${student.name}`}
-                                                                            className="p-2 rounded-lg border border-slate-200 hover:border-[#ecb613] dark:border-slate-800 hover:bg-[#ecb613]/5 text-slate-500 hover:text-[#ecb613] transition-colors"
+                                                                            className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 transition-colors"
                                                                         >
-                                                                            <Mail className="size-4" />
+                                                                            <Send className="size-4" />
                                                                         </button>
                                                                     )}
                                                                     <button
                                                                         onClick={() => openHistoryModal(student)}
                                                                         title="View Payment History"
-                                                                        aria-label={`View Payment History for ${student.name}`}
-                                                                        className="p-2 rounded-lg border border-slate-200 hover:border-[#ecb613] dark:border-slate-800 hover:bg-[#ecb613]/5 text-slate-500 hover:text-[#ecb613] transition-colors"
+                                                                        className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                                                                     >
                                                                         <History className="size-4" />
                                                                     </button>
-                                                                    {status === 'setup_required' ? (
-                                                                        <div className="group relative">
-                                                                            <button disabled className="px-3 py-1.5 text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 rounded-lg shadow-sm cursor-not-allowed">
-                                                                                Collect ₹
-                                                                            </button>
-                                                                            <div className="absolute bottom-full mb-2 right-0 hidden group-hover:block w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl text-center z-10 pointer-events-none">
-                                                                                No standard fee amount is configured for this student. Update their profile first.
-                                                                            </div>
-                                                                        </div>
-                                                                    ) : status === 'pending_verification' ? (
-                                                                        <div className="flex items-center gap-1.5 animate-in fade-in duration-300">
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    const pendingPayment = payments.find(p => p.student_id === student.id && p.status === 'pending_approval');
-                                                                                    if (pendingPayment) {
-                                                                                        handleRejectPayment(pendingPayment.id);
-                                                                                    }
-                                                                                }}
-                                                                                className="px-2.5 py-1.5 text-xs font-black bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition-all active:scale-[0.97]"
-                                                                            >
-                                                                                Not Received
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    const pendingPayment = payments.find(p => p.student_id === student.id && p.status === 'pending_approval');
-                                                                                    if (pendingPayment) {
-                                                                                        handleApprovePayment(pendingPayment.id, student.id, pendingPayment.amount, student.fees_basis);
-                                                                                    }
-                                                                                }}
-                                                                                className="px-2.5 py-1.5 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm transition-all active:scale-[0.97]"
-                                                                            >
-                                                                                Collect
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
+                                                                    {status !== 'setup_required' && (
                                                                         <button
                                                                             onClick={() => openPaymentModal(student)}
-                                                                            className="px-3 py-1.5 text-xs font-black bg-[#ecb613] hover:bg-[#ecb613]/90 text-white rounded-lg shadow-sm shadow-[#ecb613]/10 hover:shadow transition-all active:scale-[0.97]"
+                                                                            title="Record Payment"
+                                                                            className="px-3 py-1.5 text-xs font-bold bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 rounded-lg transition-all shadow-xs"
                                                                         >
-                                                                            Collect ₹
+                                                                            Record ₹
                                                                         </button>
                                                                     )}
                                                                 </div>
@@ -1811,12 +1768,9 @@ export default function FeesManagementDashboard() {
                                                 })
                                             ) : (
                                                 <tr>
-                                                    <td colSpan={8} className="px-6 py-16 text-center text-slate-400 bg-slate-50/50 dark:bg-slate-900/20">
-                                                        <div className="size-16 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center justify-center mx-auto shadow-sm mb-4">
-                                                            <DollarSign className="size-8 text-kfa-gold/50" />
-                                                        </div>
-                                                        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No matching students found</h3>
-                                                        <p className="text-xs text-slate-500 mt-1">Try adjusting your search filters or status selection.</p>
+                                                    <td colSpan={9} className="p-8 text-center text-slate-400">
+                                                        <DollarSign className="size-8 text-slate-300 mx-auto mb-2" />
+                                                        <p className="text-sm font-bold">No students found</p>
                                                     </td>
                                                 </tr>
                                             )}

@@ -117,7 +117,7 @@ export default function TeacherSettingsPage() {
                         <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest animate-pulse">Loading Settings...</p>
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-y-auto p-6 md:p-8">
+                    <div className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8">
                         <SettingsTab profile={teacherProfile} refreshData={refreshData} />
                     </div>
                 )}

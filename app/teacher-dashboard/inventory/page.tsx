@@ -1724,10 +1724,10 @@ export default function InventoryLibrary() {
                 </TeacherHeader>
 
                 {/* Connection Status Subtitle Bar */}
-                <div className="px-8 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-400 select-none shrink-0">
+                <div className="px-4 sm:px-8 py-2 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between text-[10px] sm:text-[11px] font-bold text-slate-400 select-none shrink-0 gap-1">
                     <div className="flex items-center gap-1.5">
                         <span className={`w-2 h-2 rounded-full ${isUsingFallback ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
-                        <span>{isUsingFallback ? 'OFFLINE INTERACTIVE MODE (LOCAL FALLBACK)' : 'CONNECTED TO SUPABASE CLOUD DATABASE'}</span>
+                        <span className="truncate">{isUsingFallback ? 'OFFLINE INTERACTIVE MODE (LOCAL FALLBACK)' : 'CONNECTED TO SUPABASE CLOUD DATABASE'}</span>
                     </div>
                     <div>
                         <span>LEVELS: 04 • CHAPTERS: {chapters.length} • MATERIALS: {lessons.length}</span>
@@ -1740,7 +1740,7 @@ export default function InventoryLibrary() {
                         <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest animate-pulse">Loading Academy Curriculum...</p>
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8">
+                    <div className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
                         
                         {/* ==================== VIEW S: SEARCH RESULTS SCREEN ==================== */}
                         {hasSearch && (
@@ -1986,13 +1986,13 @@ export default function InventoryLibrary() {
                                 {/* DYNAMIC HEADLINE CATEGORIES GRID */}
                                 {sortedCategories.map((category) => (
                                     <div key={category} className="space-y-4 text-left">
-                                        <div className="flex items-center justify-between select-none border-b border-slate-200 dark:border-slate-800 pb-2">
-                                    <div className="flex items-center gap-2">
-                                                <span className="w-1.5 h-4 bg-[#ecb613] rounded-full" />
-                                                <h2 className="font-extrabold text-xs md:text-sm tracking-wider uppercase text-slate-700 dark:text-slate-300">{category}</h2>
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between select-none border-b border-slate-200 dark:border-slate-800 pb-2 gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-1.5 h-4 bg-[#ecb613] rounded-full shrink-0" />
+                                                <h2 className="font-extrabold text-sm sm:text-base tracking-wider uppercase text-slate-800 dark:text-slate-200">{category}</h2>
                                                 <button
                                                     onClick={(e) => openCategoryRenameModal(category, e)}
-                                                    className="p-1 text-slate-400 hover:text-[#ecb613] rounded-md hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all ml-1"
+                                                    className="p-1 text-slate-400 hover:text-[#ecb613] rounded-md hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all ml-1 shrink-0"
                                                     title="Rename Headline"
                                                 >
                                                     <Edit2 className="size-3.5" />
@@ -2000,14 +2000,14 @@ export default function InventoryLibrary() {
                                             </div>
                                             <button
                                                 onClick={() => openModuleModal(undefined, category)}
-                                                className="inline-flex items-center gap-1 text-[10px] font-black text-[#ecb613] hover:text-amber-600 dark:hover:text-amber-400 uppercase tracking-widest leading-none border border-amber-500/25 bg-amber-500/5 hover:bg-amber-500/10 px-3 py-1.5 rounded-full transition-all"
+                                                className="admin-btn admin-btn-primary admin-btn-sm whitespace-nowrap self-start sm:self-auto"
                                             >
-                                                <Plus className="size-3" />
+                                                <Plus className="size-3.5 shrink-0" />
                                                 <span>Add Level / Module</span>
                                             </button>
                                         </div>
                                         
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
                                             {groupedModules[category].map((mod, idx) => {
                                                 const parsed = parseModuleCategory(mod);
                                                 const chapsInMod = getModuleChapters(mod.id);
@@ -2018,50 +2018,50 @@ export default function InventoryLibrary() {
                                                     <div
                                                         key={mod.id}
                                                         onClick={() => handleSelectModule(mod.id)}
-                                                        className="group relative rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 cursor-pointer shadow-xs hover:shadow-lg hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between min-h-[220px] overflow-hidden select-none text-left"
+                                                        className="group relative rounded-2xl p-3.5 sm:p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 cursor-pointer shadow-xs hover:shadow-md hover:border-amber-400 dark:hover:border-amber-500/40 transition-all duration-300 flex flex-col justify-between overflow-hidden select-none text-left"
                                                     >
-                                                        {/* Giant semi-transparent floating background number behind card */}
-                                                        <div className="absolute right-4 bottom-2 text-7xl md:text-8xl font-black text-slate-100 dark:text-slate-800/20 pointer-events-none transition-transform duration-500 group-hover:scale-125 group-hover:text-amber-500/10 font-mono">
+                                                        {/* Semi-transparent floating background number */}
+                                                        <div className="absolute right-3 bottom-1 text-5xl md:text-6xl font-black text-slate-100 dark:text-slate-800/20 pointer-events-none transition-transform duration-500 group-hover:scale-110 font-mono opacity-50">
                                                             {displayIdx}
                                                         </div>
 
                                                         {/* Top action buttons (Edit, Delete) */}
-                                                        <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <div className="absolute top-3 right-3 z-20 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                                             <button 
                                                                 onClick={(e) => openModuleModal(mod, category, e)}
-                                                                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                className="p-1 bg-slate-100 dark:bg-slate-800 hover:bg-[#ecb613] text-slate-800 dark:text-white hover:text-slate-950 rounded-md transition-all border border-slate-200 dark:border-slate-700 shadow-xs"
                                                                 title="Edit Module"
                                                             >
-                                                                <Edit2 className="size-3.5" />
+                                                                <Edit2 className="size-3" />
                                                             </button>
                                                             <button 
                                                                 onClick={(e) => deleteModule(mod.id, e)}
-                                                                className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 text-slate-800 dark:text-white hover:text-slate-950 rounded-lg transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                className="p-1 bg-slate-100 dark:bg-slate-800 hover:bg-red-500 text-slate-800 dark:text-white hover:text-slate-950 rounded-md transition-all border border-slate-200 dark:border-slate-700 shadow-xs"
                                                                 title="Delete Module"
                                                             >
-                                                                <Trash2 className="size-3.5" />
+                                                                <Trash2 className="size-3" />
                                                             </button>
                                                         </div>
 
                                                         {/* Level card top row */}
-                                                        <div className="relative z-10 space-y-3">
+                                                        <div className="relative z-10 space-y-2">
                                                             <div className="flex justify-between items-start">
-                                                                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/10 shrink-0">
+                                                                <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/10 shrink-0">
                                                                     {getLevelIcon(mod.module_number)}
                                                                 </div>
                                                                 {getLevelBadge(mod.module_number, category)}
                                                             </div>
                                                             
-                                                            <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight group-hover:text-[#ecb613] transition-colors font-sans">
+                                                            <h3 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white leading-snug group-hover:text-[#ecb613] transition-colors">
                                                                 {mod.title}
                                                             </h3>
-                                                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-3">
+                                                            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-sm line-clamp-2">
                                                                 {stripHtml(parsed.description)}
                                                             </p>
                                                         </div>
 
                                                         {/* Level card bottom stats */}
-                                                        <div className="relative z-10 border-t border-slate-100 dark:border-slate-800/60 pt-4 flex items-center gap-4 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
+                                                        <div className="relative z-10 border-t border-slate-100 dark:border-slate-800/60 pt-2.5 mt-3 flex items-center gap-3 text-[10px] font-bold text-slate-400 font-mono uppercase tracking-wider">
                                                             <div>
                                                                 <span className="text-slate-900 dark:text-white font-black text-xs mr-0.5">{chapsInMod.length}</span>
                                                                 Chapters

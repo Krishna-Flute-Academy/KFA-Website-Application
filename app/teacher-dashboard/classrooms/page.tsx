@@ -1065,26 +1065,26 @@ export default function ClassroomsPage() {
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
-                <div className="p-4 sm:p-6 md:p-8 w-full flex-1 overflow-y-auto">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+                <div className="p-3 sm:p-6 md:p-8 w-full flex-1 overflow-y-auto">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 sm:mb-8 gap-4">
                         <div>
-                            <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">Classroom Management</h1>
-                            <p className="text-slate-500 dark:text-slate-400 font-medium">Manage your active music sessions, schedules, and student enrollment.</p>
+                            <h1 className="admin-page-title">Classroom Management</h1>
+                            <p className="admin-page-subtitle">Manage your active music sessions, schedules, and student enrollment.</p>
                         </div>
                         {teacherProfile?.role === 'admin' && (
-                            <div className="flex items-center gap-3">
+                            <div className="admin-btn-group">
                                 <button
                                     onClick={() => setShowRecycleBin(true)}
-                                    className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-350 font-bold rounded-xl shadow-sm hover:shadow-md transition-all border border-slate-200 dark:border-slate-700"
-                                    title="Recycle Bin (Deleted Classrooms)"
+                                    className="admin-btn admin-btn-secondary"
+                                    title={`Recycle Bin (${recycleBin.length} deleted classrooms)`}
                                 >
-                                    <span className="material-symbols-outlined text-lg">delete_sweep</span>
-                                    Recycle Bin ({recycleBin.length})
+                                    <span className="material-symbols-outlined text-lg shrink-0">delete_sweep</span>
+                                    <span className="hidden sm:inline">Recycle Bin ({recycleBin.length})</span>
                                 </button>
                                 <Link href="/teacher-dashboard/classrooms/add">
-                                    <button className="flex items-center gap-2 px-6 py-2.5 bg-[#ecb613] text-slate-900 font-bold rounded-xl shadow-sm hover:shadow-md transition-all whitespace-nowrap">
-                                        <PlusCircle className="size-5" />
-                                        Configure New Class
+                                    <button className="admin-btn admin-btn-primary" title="Configure New Class">
+                                        <PlusCircle className="size-4 sm:size-5 shrink-0" />
+                                        <span className="hidden sm:inline">Configure New Class</span>
                                     </button>
                                 </Link>
                             </div>

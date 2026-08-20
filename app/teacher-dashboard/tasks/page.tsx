@@ -1718,24 +1718,24 @@ export default function TaskReviewPage() {
                     backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                 />
 
-                <div className="p-4 sm:p-6 md:p-8 grid grid-cols-12 gap-8 w-full flex-1">
+                <div className="p-3 sm:p-6 md:p-8 grid grid-cols-12 gap-6 md:gap-8 w-full flex-1">
                     {/* Left Column: Submission List */}
                     <div className="col-span-12 lg:col-span-7 space-y-6 flex flex-col h-full">
-                        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div>
-                                <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Task Review</h1>
-                                <p className="text-slate-500 dark:text-slate-400 text-sm">Review student performance and provide feedback</p>
+                        <header className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                                <h1 className="admin-page-title">Task Review</h1>
+                                <p className="admin-page-subtitle">Review student performance and provide feedback</p>
                             </div>
-                            <div className="flex gap-2 items-center flex-wrap">
+                            <div className="admin-btn-group">
                                 {selectedSubIds.length > 0 && (
                                     <button 
                                         onClick={handleDeleteBulk}
                                         disabled={isDeleting}
-                                        className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 shadow-sm active:scale-[0.98] disabled:opacity-50 animate-in fade-in duration-200"
-                                        title="Delete Selected"
+                                        className="admin-btn admin-btn-danger"
+                                        title={`Delete ${selectedSubIds.length} selected tasks`}
                                     >
-                                        <Trash2 className="w-4 h-4" />
-                                        <span>Delete ({selectedSubIds.length})</span>
+                                        <Trash2 className="w-4 h-4 shrink-0" />
+                                        <span className="hidden sm:inline">Delete ({selectedSubIds.length})</span>
                                     </button>
                                 )}
                                 <button 
@@ -1753,10 +1753,11 @@ export default function TaskReviewPage() {
                                         setCreateStudents(prev => prev.map(s => ({ ...s, selected: true })));
                                         setIsCreateModalOpen(true);
                                     }}
-                                    className="bg-[#ecb613] text-slate-900 px-4 py-2 rounded-lg text-sm font-bold hover:bg-[#ecb613]/90 transition-colors flex items-center gap-2 shadow-sm"
+                                    className="admin-btn admin-btn-primary"
+                                    title="Create Task"
                                 >
-                                    <Plus className="w-4 h-4" />
-                                    Create Task
+                                    <Plus className="w-4 h-4 shrink-0" />
+                                    <span className="hidden sm:inline">Create Task</span>
                                 </button>
                             </div>
                         </header>
@@ -1813,12 +1814,12 @@ export default function TaskReviewPage() {
                                             onClick={() => {
                                                 toggleTaskCollapse(group.taskTitle);
                                             }}
-                                            className="px-6 py-4 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100/50 dark:hover:bg-slate-800/60 transition-colors"
+                                            className="p-3.5 sm:px-6 sm:py-4 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100/50 dark:hover:bg-slate-800/60 transition-colors gap-2"
                                         >
-                                            <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
                                                 <input 
                                                     type="checkbox"
-                                                    className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer w-4 h-4 mr-1 shrink-0"
+                                                    className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer w-4 h-4 shrink-0"
                                                     checked={
                                                         group.submissions.length > 0 &&
                                                         group.submissions.every(sub => selectedSubIds.includes(sub.id))
@@ -1833,60 +1834,55 @@ export default function TaskReviewPage() {
                                                     }}
                                                     onClick={(e) => e.stopPropagation()}
                                                 />
-                                                <div className="w-10 h-10 rounded-lg bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613] shrink-0">
-                                                    <ClipboardList className="w-5 h-5" />
+                                                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613] shrink-0">
+                                                    <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5" />
                                                 </div>
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h3 className="font-bold text-slate-800 dark:text-white text-base leading-tight hover:text-[#ecb613] transition-colors">{group.taskTitle}</h3>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+                                                        <h3 className="font-bold text-xs sm:text-sm md:text-base text-slate-900 dark:text-white leading-snug truncate max-w-full hover:text-[#ecb613] transition-colors">{group.taskTitle}</h3>
                                                         {isDraft && (
-                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 tracking-wider">
+                                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
                                                                 Draft
                                                             </span>
                                                         )}
-                                                        <button 
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleEditTaskClick(group.submissions[0].task_id);
-                                                            }}
-                                                            className="text-slate-400 hover:text-[#ecb613] transition-colors p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800/80"
-                                                            title="Edit Task"
-                                                        >
-                                                            <Edit2 className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        <button 
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDeleteSingle(e, group.submissions[0].id);
-                                                            }}
-                                                            disabled={isDeleting}
-                                                            className="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800/80 disabled:opacity-50"
-                                                            title="Delete Task"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
                                                     </div>
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                                                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5 truncate">
                                                         {isDraft ? 'Saved as Draft' : `${group.submissions.length} Student${group.submissions.length !== 1 ? 's' : ''} assigned`}
-                                                        {pendingCount > 0 && ` • ${pendingCount} Pending Review`}
+                                                        {pendingCount > 0 && ` • ${pendingCount} Pending`}
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleTaskCollapse(group.taskTitle);
-                                                }}
-                                                className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors cursor-pointer"
-                                                title={isCollapsed ? "Show students list" : "Hide students list"}
-                                            >
-                                                {isCollapsed ? (
-                                                    <ChevronDown className="w-5 h-5 text-slate-500" />
-                                                ) : (
-                                                    <ChevronUp className="w-5 h-5 text-slate-500" />
-                                                )}
+
+                                            <div className="flex items-center gap-1 shrink-0 ml-2">
+                                                <button 
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleEditTaskClick(group.submissions[0].task_id);
+                                                    }}
+                                                    className="p-1.5 text-slate-400 hover:text-[#ecb613] transition-colors rounded-md hover:bg-slate-200 dark:hover:bg-slate-700"
+                                                    title="Edit Task"
+                                                >
+                                                    <Edit2 className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button 
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteSingle(e, group.submissions[0].id);
+                                                    }}
+                                                    disabled={isDeleting}
+                                                    className="p-1.5 text-slate-400 hover:text-rose-500 transition-colors rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50"
+                                                    title="Delete Task"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                                <div 
+                                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                                                    title={isCollapsed ? "Show students list" : "Hide students list"}
+                                                >
+                                                    {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                                                </div>
                                             </div>
                                         </header>
 

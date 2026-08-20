@@ -4338,15 +4338,15 @@ export default function ClassroomDashboardPage({
                         </div>
                     )}
                     {/* Row-wise Tabs */}
-                    <div className="flex items-center gap-8 border-b border-slate-205 dark:border-slate-800 mb-8 overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
+                    <div className="flex items-center gap-1 sm:gap-2 border-b border-slate-200 dark:border-slate-800 mb-6 sm:mb-8 overflow-x-auto scrollbar-none whitespace-nowrap snap-x pb-1">
                         {['Overview', 'Curriculum', 'Students', 'Assignments', 'Attendance', 'Class Logs', 'Chat', 'Settings'].map((tab) => (
                             <button 
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`pb-4 font-extrabold transition-colors border-b-2 cursor-pointer shrink-0 snap-start ${
+                                className={`px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-extrabold transition-all border-b-2 cursor-pointer shrink-0 snap-start select-none ${
                                     activeTab === tab 
-                                        ? 'text-[#ecb613] dark:text-[#ecb613] border-[#ecb613] dark:border-[#ecb613]' 
-                                        : 'text-slate-505 dark:text-slate-400 hover:text-[#ecb613]/85 border-transparent'
+                                        ? 'text-[#ecb613] dark:text-[#ecb613] border-[#ecb613] dark:border-[#ecb613] bg-amber-500/10 dark:bg-amber-500/15 rounded-t-xl' 
+                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-t-xl'
                                 }`}
                             >
                                 {tab}

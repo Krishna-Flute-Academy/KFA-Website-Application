@@ -138,7 +138,7 @@ export default function TeacherHeader({
                             <span className="material-symbols-outlined text-2xl select-none">arrow_back</span>
                         </Link>
                     )}
-                    <h2 className="text-base md:text-lg font-bold tracking-tight text-slate-800 dark:text-white shrink-0 truncate max-w-[200px] xs:max-w-[260px] sm:max-w-none">{title}</h2>
+                    <h2 className="text-sm sm:text-base md:text-lg font-bold tracking-tight text-slate-800 dark:text-white truncate max-w-[140px] xs:max-w-[200px] sm:max-w-none min-w-0">{title}</h2>
                     {onSearchChange && (
                         <div className="hidden md:flex items-center flex-1 max-w-xs sm:max-w-md w-full">
                             <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-2 shrink-0"></div>
@@ -155,26 +155,8 @@ export default function TeacherHeader({
                         </div>
                     )}
                 </div>
-                <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-2 sm:ml-4">
+                <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 ml-2">
                     {children}
-
-                    
-                    <button 
-                        onClick={async () => {
-                            if (confirm('Are you sure you want to logout?')) {
-                                if (typeof window !== 'undefined') {
-                                    localStorage.removeItem('kfa-user-role');
-                                }
-                                await supabaseAuth.auth.signOut();
-                                window.location.href = '/';
-                            }
-                        }}
-                        className="md:hidden flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition-colors rounded-lg shrink-0"
-                        title="Sign Out"
-                    >
-                        <span className="material-symbols-outlined text-base select-none">logout</span>
-                        <span className="hidden sm:inline">Logout</span>
-                    </button>
                     
                     {/* Notifications Button */}
                     <div className="relative" ref={notifDropdownRef}>
@@ -192,7 +174,7 @@ export default function TeacherHeader({
                         </button>
 
                         {showNotificationsDropdown && (
-                            <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] max-w-sm sm:w-80 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                                 <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
                                     <span className="font-bold text-sm text-slate-800 dark:text-white">Notifications</span>
                                     {unreadCount > 0 && (

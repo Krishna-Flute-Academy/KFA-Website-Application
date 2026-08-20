@@ -429,20 +429,21 @@ export default function UserSessionsDashboard() {
                         backLink="/admin-dashboard/"
                     />
 
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-12 space-y-8 font-sans">
+                    <div className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8 space-y-6 sm:space-y-8 font-sans">
                         {/* Title Section */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
-                                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Login Audit logs</h1>
-                                <p className="text-slate-500 dark:text-slate-400 mt-2.5">Monitor active users, session durations, and device logins in real-time.</p>
+                                <h1 className="admin-page-title">Login Audit Logs</h1>
+                                <p className="admin-page-subtitle">Monitor active users, session durations, and device logins in real-time.</p>
                             </div>
                             <button
                                 onClick={handleRefresh}
-                                className="self-start sm:self-center px-4 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-semibold flex items-center gap-2"
+                                className="admin-btn admin-btn-secondary self-start sm:self-center"
                                 disabled={refreshing}
+                                title="Refresh Login Sessions"
                             >
-                                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-amber-500' : 'text-slate-500'}`} />
-                                Refresh Status
+                                <RefreshCw className={`w-4 h-4 shrink-0 ${refreshing ? 'animate-spin text-amber-500' : 'text-slate-500'}`} />
+                                <span className="hidden sm:inline">Refresh Status</span>
                             </button>
                         </div>
 

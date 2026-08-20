@@ -279,10 +279,11 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         <button
                             id="new-note-btn"
                             onClick={openNewNote}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#ecb613] text-slate-900 font-bold text-xs hover:bg-[#ecb613]/90 shadow-sm shadow-[#ecb613]/20 transition-all cursor-pointer"
+                            className="admin-btn admin-btn-primary admin-btn-sm"
+                            title="Write New Note"
                         >
-                            <Plus className="w-3.5 h-3.5" />
-                            New Note
+                            <Plus className="w-3.5 h-3.5 shrink-0" />
+                            <span className="hidden sm:inline">New Note</span>
                         </button>
                     </div>
 
@@ -426,10 +427,11 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                         <button
                             id="new-assignment-btn"
                             onClick={() => setShowAssignmentModal(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#ecb613] text-slate-900 font-bold text-sm hover:bg-[#ecb613]/90 shadow-md shadow-[#ecb613]/20 transition-all self-start cursor-pointer"
+                            className="admin-btn admin-btn-primary admin-btn-sm self-start sm:self-auto"
+                            title="Create New Assignment"
                         >
-                            <Plus className="w-4 h-4" />
-                            New Assignment
+                            <Plus className="w-4 h-4 shrink-0" />
+                            <span className="hidden sm:inline">Create Assignment</span>
                         </button>
                     </div>
 

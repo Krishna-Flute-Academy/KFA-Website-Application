@@ -1324,7 +1324,7 @@ export default function TeacherDashboardContainer() {
                         userName={teacherProfile?.name}
                     />
 
-                    <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 w-full flex-1">
+                    <div className="p-3 sm:p-6 md:p-8 space-y-6 sm:space-y-8 w-full flex-1">
                         {/* Stats Widgets */}
                         <StatsSummary 
                             stats={stats} 

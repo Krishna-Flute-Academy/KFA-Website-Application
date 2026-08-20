@@ -549,24 +549,24 @@ export default function RoleAllocationDashboard() {
                         backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'}
                     />
 
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 lg:p-12">
-                        <div className="w-full space-y-8">
+                    <div className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8">
+                        <div className="w-full space-y-6 sm:space-y-8">
                             
                             {/* Header Section */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div>
-                                    <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Registration approvals</h1>
-                                    <p className="text-slate-550 dark:text-slate-400 mt-2.5">Review newly registered accounts and allocate portal roles, teachers, class batches, and fees parameters.</p>
+                                    <h1 className="admin-page-title">Registration Approvals & Role Allocation</h1>
+                                    <p className="admin-page-subtitle">Review newly registered accounts and allocate portal roles, teachers, class batches, and fees parameters.</p>
                                 </div>
                                 <button
                                     onClick={() => {
                                         exportRoleAllocationCSV(usersList, teachers, classrooms, 'All_Roles_Report');
                                     }}
-                                    className="flex items-center gap-2 px-4 py-2.5 bg-[#ecb613] hover:bg-[#d9a40e] text-slate-950 font-black rounded-xl text-xs shadow-sm transition-all cursor-pointer border border-[#d9a40e] shrink-0 self-start sm:self-center"
-                                    title="Export All Users (Students, Teachers, Admins, Mentors, Pending) to CSV File"
+                                    className="admin-btn admin-btn-primary self-start sm:self-center"
+                                    title="Export All Users to CSV File"
                                 >
-                                    <Download className="size-4" />
-                                    <span>Export CSV Report</span>
+                                    <Download className="size-4 shrink-0" />
+                                    <span className="hidden sm:inline">Export CSV Report</span>
                                 </button>
                             </div>
 

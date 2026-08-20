@@ -58,7 +58,7 @@ export default function StudentProfilePage() {
     const studentId = params.id as string;
 
     const [loading, setLoading] = useState(true);
-    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
+    const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; role: string; profile_pic_url?: string | null } | null>(null);
     const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
     const [payments, setPayments] = useState<any[]>([]);
     const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -1057,39 +1057,19 @@ export default function StudentProfilePage() {
             <TeacherSidebar teacherProfile={teacherProfile} handleLogout={handleLogout} />
 
             <main className="flex-1 flex flex-col min-w-0">
-                <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-8 sticky top-0 z-20">
-                    <div className="flex items-center gap-4">
-                        <button
-                            onClick={() => router.back()}
-                            className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors"
-                        >
-                            <ArrowLeft size={20} />
-                        </button>
-                        <div className="h-6 w-[1px] bg-slate-200"></div>
-                        <h2 className="text-slate-800 font-bold tracking-tight">Student Profile</h2>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <div className="relative hidden lg:block">
-                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-                            <input
-                                className="pl-10 pr-4 py-2 bg-slate-100 border-transparent rounded-full text-sm w-72 focus:ring-2 focus:ring-[#ecb613] focus:bg-white transition-all outline-none"
-                                placeholder="Search submissions, attendance..."
-                                type="text"
-                            />
-                        </div>
-                        <button className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors">
-                            <span className="material-symbols-outlined">notifications</span>
-                            <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 border-2 border-white rounded-full"></span>
-                        </button>
-                    </div>
-                </header>
+                <TeacherHeader 
+                    title="Student Profile" 
+                    avatarUrl={teacherProfile?.profile_pic_url}
+                    userName={teacherProfile?.name}
+                    backLink={teacherProfile?.role === 'admin' ? '/admin-dashboard/students' : '/teacher-dashboard/students'}
+                />
 
-                <div className="p-8 max-w-7xl mx-auto w-full">
+                <div className="p-3 sm:p-6 md:p-8 max-w-7xl mx-auto w-full">
                     {/* Hero Card */}
-                    <div className="bg-white border border-slate-200 rounded-2xl p-6 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
-                        <div className="flex gap-6 items-center">
-                            <div className="relative">
-                                <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#ecb613]/20 to-[#ecb613]/5 flex items-center justify-center overflow-hidden ring-4 ring-slate-50">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 mb-6 sm:mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6 shadow-sm">
+                        <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-4 sm:gap-6">
+                            <div className="relative shrink-0">
+                                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-[#ecb613]/20 to-[#ecb613]/5 flex items-center justify-center overflow-hidden ring-4 ring-slate-50 dark:ring-slate-800">
                                     {studentInfo.profile_pic_url ? (
                                         <img 
                                             src={studentInfo.profile_pic_url} 
@@ -1098,64 +1078,69 @@ export default function StudentProfilePage() {
                                             loading="lazy"
                                         />
                                     ) : (
-                                        <span className="text-[#ecb613] text-3xl font-bold">{studentInfo.name.charAt(0)}</span>
+                                        <span className="text-[#ecb613] text-2xl sm:text-3xl font-bold">{studentInfo.name.charAt(0)}</span>
                                     )}
                                 </div>
                                 {isOnline && (
-                                    <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 border-4 border-white rounded-full"></div>
+                                    <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-3 border-white dark:border-slate-900 rounded-full"></div>
                                 )}
                             </div>
                             <div>
-                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                    <h1 className="text-2xl font-bold text-slate-900 leading-none">{studentInfo.name}</h1>
-                                    <span className="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">ID: #{studentInfo.id.slice(0, 4).toUpperCase()}</span>
+                                <div className="flex items-center justify-center sm:justify-start gap-2 mb-2 flex-wrap">
+                                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-none">{studentInfo.name}</h1>
+                                    <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">ID: #{studentInfo.id.slice(0, 4).toUpperCase()}</span>
                                     <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                                         studentInfo.learning_mode === 'offline'
-                                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                                            : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                                     }`}>
                                         {studentInfo.learning_mode === 'offline' ? 'Offline (In-Person)' : 'Online Class'}
                                     </span>
                                     {teacherProfile?.role === 'admin' && (studentInfo.status === 'archived' || studentInfo.status === 'inactive') && (
-                                        <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                        <span className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                                             {studentInfo.status === 'archived' ? 'Archived' : 'Inactive'}
                                         </span>
                                     )}
                                 </div>
-                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
-                                    <span className="flex items-center gap-1.5 font-medium"><Music className="size-4" /> {studentInfo.batch_name}</span>
-                                    <span className="flex items-center gap-1.5 font-medium"><Award className="size-4" /> Level: {studentInfo.level.charAt(0).toUpperCase() + studentInfo.level.slice(1)}</span>
+                                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-4 gap-y-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                                    <span className="flex items-center gap-1.5 font-medium"><Music className="size-4 text-[#ecb613]" /> {studentInfo.batch_name}</span>
+                                    <span className="flex items-center gap-1.5 font-medium"><Award className="size-4 text-[#ecb613]" /> Level: {studentInfo.level.charAt(0).toUpperCase() + studentInfo.level.slice(1)}</span>
                                 </div>
                             </div>
                         </div>
-                        <div className="flex gap-2 sm:gap-3 flex-wrap">
+                        <div className="admin-btn-group justify-center sm:justify-end">
                             {teacherProfile?.role !== 'student' && (
                                 <>
                                     <button 
                                         onClick={() => setIsMessageModalOpen(true)}
-                                        className="px-3 py-1.5 sm:px-5 sm:py-2.5 border border-slate-200 text-slate-700 font-bold rounded-lg sm:rounded-xl hover:bg-slate-50 transition-all text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 shadow-sm"
+                                        className="admin-btn-sm admin-btn-outline"
+                                        title="Message Student"
                                     >
-                                        <Mail className="size-3.5 sm:size-4" /> Message
+                                        <Mail className="size-3.5 shrink-0" />
+                                        <span className="hidden sm:inline">Message</span>
                                     </button>
                                     <Link 
                                         href={`/teacher-dashboard/students/${studentId}/edit`}
-                                        className="px-3 py-1.5 sm:px-5 sm:py-2.5 bg-[#ecb613] text-white font-bold rounded-lg sm:rounded-xl hover:bg-[#ecb613]/90 shadow-sm transition-all text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2"
+                                        className="admin-btn-sm admin-btn-primary"
+                                        title="Edit Profile"
                                     >
-                                        <Edit className="size-3.5 sm:size-4" /> Edit Profile
+                                        <Edit className="size-3.5 shrink-0" />
+                                        <span className="hidden sm:inline">Edit Profile</span>
                                     </Link>
                                     {teacherProfile?.role === 'admin' && (
                                         <button
                                             onClick={handleToggleArchive}
-                                            className={`px-3 py-1.5 sm:px-5 sm:py-2.5 font-bold rounded-lg sm:rounded-xl shadow-sm transition-all text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 ${
+                                            className={`admin-btn-sm ${
                                                 studentInfo.status === 'archived' || studentInfo.status === 'inactive'
-                                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                                    : 'bg-amber-600 hover:bg-amber-700 text-white'
+                                                    ? 'admin-btn-secondary text-emerald-600 dark:text-emerald-400'
+                                                    : 'admin-btn-danger'
                                             }`}
+                                            title={studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'Reactivate Student' : 'Archive Student'}
                                         >
-                                            <span className="material-symbols-outlined text-xs sm:text-sm">
+                                            <span className="material-symbols-outlined text-sm shrink-0">
                                                 {studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'unarchive' : 'archive'}
                                             </span>
-                                            {studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'Reactivate' : 'Archive Student'}
+                                            <span className="hidden sm:inline">{studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'Reactivate' : 'Archive'}</span>
                                         </button>
                                     )}
                                 </>
@@ -1163,37 +1148,27 @@ export default function StudentProfilePage() {
                         </div>
                     </div>
 
-                    <div className="flex border-b border-slate-200 gap-8 mb-8 overflow-x-auto scrollbar-hide">
-                        <button
-                            onClick={() => setActiveTab('profile')}
-                            className={`pb-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'profile' ? 'border-[#ecb613] text-[#ecb613]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                        >
-                            Profile Info
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('tasks')}
-                            className={`pb-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'tasks' ? 'border-[#ecb613] text-[#ecb613]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                        >
-                            Assignments & Tasks
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('history')}
-                            className={`pb-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'history' ? 'border-[#ecb613] text-[#ecb613]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                        >
-                            Submission History
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('attendance')}
-                            className={`pb-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'attendance' ? 'border-[#ecb613] text-[#ecb613]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                        >
-                            Attendance & Feedback
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('curriculum')}
-                            className={`pb-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'curriculum' ? 'border-[#ecb613] text-[#ecb613]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                        >
-                            Curriculum Progress
-                        </button>
+                    {/* Tab Navigation */}
+                    <div className="flex items-center gap-1 sm:gap-2 border-b border-slate-200 dark:border-slate-800 mb-6 sm:mb-8 overflow-x-auto scrollbar-none whitespace-nowrap snap-x pb-1">
+                        {[
+                            { id: 'profile', label: 'Profile Info' },
+                            { id: 'tasks', label: 'Assignments & Tasks' },
+                            { id: 'history', label: 'Submission History' },
+                            { id: 'attendance', label: 'Attendance Log' },
+                            { id: 'curriculum', label: 'Curriculum Progress' }
+                        ].map((tab) => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-extrabold transition-all border-b-2 cursor-pointer shrink-0 snap-start select-none ${
+                                    activeTab === tab.id
+                                        ? 'text-[#ecb613] dark:text-[#ecb613] border-[#ecb613] dark:border-[#ecb613] bg-amber-500/10 dark:bg-amber-500/15 rounded-t-xl'
+                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border-transparent hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-t-xl'
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
                     </div>
 
                     <div className="space-y-10">

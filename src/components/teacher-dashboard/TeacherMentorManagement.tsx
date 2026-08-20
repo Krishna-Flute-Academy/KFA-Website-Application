@@ -294,29 +294,31 @@ export default function TeacherMentorManagement() {
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>Senior Student Mentorship Management</span>
                     </div>
-                    <h1 className="text-2xl font-black text-slate-800 dark:text-white">Mentor Allocation & Task Evaluation Roles</h1>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    <h1 className="admin-page-title">Mentor Allocation & Task Evaluation Roles</h1>
+                    <p className="admin-page-subtitle">
                         Promote senior students to Mentors and allocate junior students to receive guidance and task reviews.
                     </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="admin-btn-group">
                     <button
                         onClick={fetchData}
-                        className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                        title="Refresh"
+                        className="admin-btn admin-btn-secondary"
+                        title="Refresh Mentorship Data"
                     >
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-4 h-4 shrink-0 ${loading ? 'animate-spin' : ''}`} />
+                        <span className="hidden sm:inline">Refresh</span>
                     </button>
                     <button
                         onClick={() => {
                             setShowAssignModal(true);
                             if (mentorsList.length > 0) setSelectedMentorId(mentorsList[0].id);
                         }}
-                        className="px-4 py-2.5 rounded-xl bg-[#7C5E3F] hover:bg-amber-800 text-white text-xs font-extrabold shadow-md flex items-center gap-2 transition-all cursor-pointer"
+                        className="admin-btn admin-btn-primary"
+                        title="Assign Mentor to Student"
                     >
-                        <Plus className="w-4 h-4" />
-                        <span>Assign Mentor to Student</span>
+                        <Plus className="w-4 h-4 shrink-0" />
+                        <span className="hidden sm:inline">Assign Mentor to Student</span>
                     </button>
                 </div>
             </div>
