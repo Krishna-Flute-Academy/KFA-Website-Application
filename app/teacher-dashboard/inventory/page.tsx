@@ -2804,13 +2804,23 @@ export default function InventoryLibrary() {
                                     {lessonForm.material_url && (
                                         <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl flex items-center justify-between gap-4 text-[10px] font-bold font-mono text-slate-400 select-all">
                                             <span className="truncate pr-4 leading-none">{lessonForm.file_name || lessonForm.material_url}</span>
-                                            <button 
-                                                type="button" 
-                                                onClick={() => setLessonForm(prev => ({ ...prev, material_url: '', file_name: '', file_size: '', duration: '', material_type: 'file' }))}
-                                                className="p-1 hover:bg-red-500/10 rounded-lg text-red-500 transition-all shrink-0"
-                                            >
-                                                <X className="size-3.5" />
-                                            </button>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setMediaPreview({ type: lessonForm.material_type, url: lessonForm.material_url, title: lessonForm.title || 'Attachment Preview' })}
+                                                    className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                >
+                                                    <Play className="size-3" />
+                                                    Preview Attachment
+                                                </button>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setLessonForm(prev => ({ ...prev, material_url: '', file_name: '', file_size: '', duration: '', material_type: 'file' }))}
+                                                    className="p-1 hover:bg-red-500/10 rounded-lg text-red-500 transition-all shrink-0 cursor-pointer"
+                                                >
+                                                    <X className="size-3.5" />
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -2860,31 +2870,59 @@ export default function InventoryLibrary() {
                 {/* 3. INTERACTIVE MEDIA PREVIEWER OVERLAY */}
                 {mediaPreview && (
                     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4">
-                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-3xl w-full shadow-2xl text-white space-y-4 animate-scaleIn">
-                            <div className="flex justify-between items-center select-none">
-                                <h4 className="font-extrabold text-sm tracking-wide truncate pr-4 uppercase text-amber-500 font-mono">
-                                    Previewing: {mediaPreview.title}
-                                </h4>
-                                <button 
-                                    onClick={() => setMediaPreview(null)} 
-                                    className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-all"
-                                >
-                                    <X className="size-5" />
-                                </button>
-                            </div>
+                        {(() => {
+                            const cleanUrl = (mediaPreview.url || '').toLowerCase().split('?')[0];
+                            const isDocOrImage = mediaPreview.type === 'pdf' || 
+                                                 mediaPreview.type === 'image' || 
+                                                 cleanUrl.endsWith('.pdf') || 
+                                                 /\.(png|jpe?g|gif|svg|webp)$/.test(cleanUrl);
                             
-                            {/* Interactive Protected Media Frame */}
-                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative select-none">
-                                <SecureCurriculumMaterial 
-                                    url={mediaPreview.url} 
-                                    title={mediaPreview.title} 
-                                    materialType={mediaPreview.type} 
-                                    viewerName={teacherProfile?.name} 
-                                    viewerEmail={teacherProfile?.email} 
-                                    showWatermark={false} 
-                                />
-                            </div>
-                        </div>
+                            return (
+                                <div className={`bg-slate-900 border border-slate-800 rounded-3xl p-6 ${isDocOrImage ? 'max-w-5xl h-[85vh]' : 'max-w-3xl'} w-full shadow-2xl text-white flex flex-col space-y-4 animate-scaleIn`}>
+                                    <div className="flex justify-between items-center select-none shrink-0">
+                                        <h4 className="font-extrabold text-sm tracking-wide truncate pr-4 uppercase text-amber-500 font-mono flex items-center gap-2">
+                                            {mediaPreview.type === 'image' || /\.(png|jpe?g|gif|svg|webp)$/.test(cleanUrl) ? (
+                                                <ImageIcon className="size-4 text-emerald-400" />
+                                            ) : (
+                                                <FileText className="size-4 text-red-400" />
+                                            )}
+                                            Previewing: {mediaPreview.title}
+                                        </h4>
+                                        <div className="flex items-center gap-2">
+                                            {isDocOrImage && (
+                                                <a 
+                                                    href={mediaPreview.url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                                                >
+                                                    <ExternalLink className="size-3.5" />
+                                                    Open Full View
+                                                </a>
+                                            )}
+                                            <button 
+                                                onClick={() => setMediaPreview(null)} 
+                                                className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-all"
+                                            >
+                                                <X className="size-5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Interactive Protected Media Frame */}
+                                    <div className={`w-full flex-1 ${isDocOrImage ? 'h-full min-h-0' : 'aspect-video'} bg-black rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center relative select-none`}>
+                                        <SecureCurriculumMaterial 
+                                            url={mediaPreview.url} 
+                                            title={mediaPreview.title} 
+                                            materialType={mediaPreview.type} 
+                                            viewerName={teacherProfile?.name} 
+                                            viewerEmail={teacherProfile?.email} 
+                                            showWatermark={false} 
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
 

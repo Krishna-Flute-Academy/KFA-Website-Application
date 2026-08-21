@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { FileText, Info, Music, BookOpen, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { FileText, Info, Music, BookOpen, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Image as ImageIcon } from 'lucide-react';
 
 interface Props {
     url?: string | null;
@@ -119,91 +119,105 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
             ) : isYouTube ? (
                 <iframe src={getYouTubeEmbedUrl(url)} className="w-full h-full border-0" allow="accelerometer; autoplay; encrypted-media; gyroscope" referrerPolicy="strict-origin-when-cross-origin" title={title} />
             ) : isPdf ? (
-                <div 
-                    className="relative w-full h-full bg-slate-900 flex items-center justify-center overflow-hidden cursor-default select-none"
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUpOrLeave}
-                    onMouseLeave={handleMouseUpOrLeave}
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}
-                    onWheel={handleWheel}
-                >
-                    {/* Zoomable & Pannable PDF Wrapper */}
-                    <div 
-                        className="select-none flex items-center justify-center w-full h-full"
-                        style={{
-                            transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                            transition: isDragging ? 'none' : 'transform 150ms ease-out',
-                            cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
-                            transformOrigin: 'center center',
-                        }}
-                    >
-                        <iframe 
-                            src={`${url}#toolbar=0&navpanes=0&scrollbar=0`} 
-                            className="pointer-events-none w-full h-full border-0 bg-white" 
-                            tabIndex={-1} 
-                            title={title} 
-                        />
+                <div className="relative w-full h-full bg-slate-900 flex flex-col overflow-hidden select-none">
+                    {/* Top PDF Quick Action Bar */}
+                    <div className="w-full bg-slate-950/90 border-b border-slate-800 px-4 py-2 flex items-center justify-between z-10 shrink-0 text-slate-300 text-xs font-mono">
+                        <div className="flex items-center gap-2 truncate pr-2">
+                            <FileText className="size-4 text-red-400 shrink-0" />
+                            <span className="truncate font-bold text-white text-[11px]">{title}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 hover:text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                            >
+                                <ExternalLink className="size-3" />
+                                Open Full View
+                            </a>
+                        </div>
                     </div>
 
-                    {/* Protected PDF info pill */}
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 rounded-full bg-slate-950/80 px-4 py-2 text-[10px] font-bold text-white shadow-md pointer-events-none">
-                        Protected PDF preview — selection and download disabled
+                    {/* PDF Viewer Frame */}
+                    <div className="w-full flex-1 min-h-0 bg-slate-800 relative">
+                        <object
+                            data={`${url}#toolbar=1&navpanes=0&scrollbar=1&page=1&view=FitH`}
+                            type="application/pdf"
+                            className="w-full h-full border-0 bg-white"
+                        >
+                            <iframe
+                                src={`${url}#toolbar=1&navpanes=0&scrollbar=1&page=1&view=FitH`}
+                                className="w-full h-full border-0 bg-white"
+                                title={title}
+                            />
+                        </object>
                     </div>
-
-                    {/* Floating Zoom & Pan Control Bar */}
-                    <ZoomControlBar 
-                        scale={scale} 
-                        position={position} 
-                        onZoomIn={handleZoomIn} 
-                        onZoomOut={handleZoomOut} 
-                        onReset={handleZoomReset} 
-                    />
                 </div>
             ) : isAudio ? (
                 <div className="w-full h-full p-8 bg-white dark:bg-slate-900 flex flex-col items-center justify-center gap-6"><Music className="w-16 h-16 text-amber-500" /><h4 className="font-bold text-slate-800 dark:text-white">{title}</h4><audio src={url} controls controlsList="nodownload noplaybackrate" className="w-full max-w-xl" /></div>
             ) : isVideo ? (
                 <video src={url} controls controlsList="nodownload noplaybackrate nofullscreen" disablePictureInPicture className="w-full h-full object-contain bg-black" />
             ) : isImage ? (
-                <div 
-                    className="relative w-full h-full bg-slate-950 flex items-center justify-center overflow-hidden cursor-default select-none"
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUpOrLeave}
-                    onMouseLeave={handleMouseUpOrLeave}
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}
-                    onWheel={handleWheel}
-                >
-                    {/* Zoomable & Pannable Image Wrapper */}
-                    <div 
-                        className="select-none flex items-center justify-center w-full h-full"
-                        style={{
-                            transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                            transition: isDragging ? 'none' : 'transform 150ms ease-out',
-                            cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
-                            transformOrigin: 'center center',
-                        }}
-                    >
-                        <img 
-                            src={url} 
-                            alt={title} 
-                            draggable={false} 
-                            className="max-w-full max-h-full object-contain pointer-events-none select-none" 
-                        />
+                <div className="relative w-full h-full bg-slate-950 flex flex-col overflow-hidden select-none">
+                    {/* Top Image Quick Action Bar */}
+                    <div className="w-full bg-slate-950/90 border-b border-slate-800 px-4 py-2 flex items-center justify-between z-10 shrink-0 text-slate-300 text-xs font-mono">
+                        <div className="flex items-center gap-2 truncate pr-2">
+                            <ImageIcon className="size-4 text-emerald-400 shrink-0" />
+                            <span className="truncate font-bold text-white text-[11px]">{title}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 hover:text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                            >
+                                <ExternalLink className="size-3" />
+                                Open Full View
+                            </a>
+                        </div>
                     </div>
 
-                    {/* Floating Zoom & Pan Control Bar */}
-                    <ZoomControlBar 
-                        scale={scale} 
-                        position={position} 
-                        onZoomIn={handleZoomIn} 
-                        onZoomOut={handleZoomOut} 
-                        onReset={handleZoomReset} 
-                    />
+                    {/* Zoomable & Pannable Image Canvas Container */}
+                    <div 
+                        className="relative w-full flex-1 min-h-0 bg-slate-950 flex items-center justify-center overflow-hidden cursor-default select-none"
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUpOrLeave}
+                        onMouseLeave={handleMouseUpOrLeave}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                        onWheel={handleWheel}
+                    >
+                        {/* Zoomable & Pannable Image Wrapper */}
+                        <div 
+                            className="select-none flex items-center justify-center w-full h-full p-2"
+                            style={{
+                                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                                transition: isDragging ? 'none' : 'transform 150ms ease-out',
+                                cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
+                                transformOrigin: 'center center',
+                            }}
+                        >
+                            <img 
+                                src={url} 
+                                alt={title} 
+                                draggable={false} 
+                                className="max-w-full max-h-full object-contain pointer-events-none select-none rounded-lg shadow-2xl" 
+                            />
+                        </div>
+
+                        {/* Floating Zoom & Pan Control Bar */}
+                        <ZoomControlBar 
+                            scale={scale} 
+                            position={position} 
+                            onZoomIn={handleZoomIn} 
+                            onZoomOut={handleZoomOut} 
+                            onReset={handleZoomReset} 
+                        />
+                    </div>
                 </div>
             ) : isLink ? (
                 <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-slate-900">

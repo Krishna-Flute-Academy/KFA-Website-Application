@@ -4701,7 +4701,13 @@ export default function ClassroomDashboardPage({
                                     <div className="space-y-3 text-left">
                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">3. View Attachments & Material Player</h4>
                                         {hasMaterial ? (
-                                            <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center relative shadow-inner">
+                                            <div className={`w-full ${
+                                                selectedTopic?.material_type === 'pdf' || 
+                                                selectedTopic?.material_type === 'image' || 
+                                                /\.(pdf|png|jpe?g|gif|svg|webp)$/i.test((selectedTopic?.material_url || '').toLowerCase().split('?')[0]) 
+                                                    ? 'h-[700px]' 
+                                                    : 'aspect-video'
+                                            } bg-black rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center relative shadow-inner`}>
                                                 {true ? (
                                                     <SecureCurriculumMaterial url={selectedTopic.material_url} title={selectedTopic.title} materialType={selectedTopic.material_type} viewerName={teacherProfile?.name} viewerEmail={teacherProfile?.email} showWatermark={false} />
                                                 ) : isVideo ? (

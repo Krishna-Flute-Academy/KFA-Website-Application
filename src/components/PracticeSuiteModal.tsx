@@ -527,6 +527,24 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
         return audioCtxRef.current;
     };
 
+    // ── BACKGROUND AUDIO KEEP-ALIVE & MEDIA SESSION SETUP ───────────────────
+    const silentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+    // Initialize silent background audio element for iOS/Android/desktop audio session persistence
+    useEffect(() => {
+        const audio = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//7kAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+        audio.loop = true;
+        audio.volume = 0.01;
+        silentAudioRef.current = audio;
+
+        return () => {
+            if (silentAudioRef.current) {
+                silentAudioRef.current.pause();
+                silentAudioRef.current = null;
+            }
+        };
+    }, []);
+
     // ── TANPURA STATES ──────────────────────────────────────────────────────
     const [selectedPitch, setSelectedPitch] = useState(SHRU_PITCHES[1]); // Default C#
     const [selectedTuningMode, setSelectedTuningMode] = useState(TUNING_MODES[0]);
@@ -648,6 +666,97 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     useEffect(() => { selectedTaalRef.current = selectedTaal; }, [selectedTaal]);
     useEffect(() => { tablaScaleRef.current = tablaScale; }, [tablaScale]);
     useEffect(() => { tablaIsPlayingRef.current = isTablaPlaying; }, [isTablaPlaying]);
+
+    // ── BACKGROUND AUDIO SESSION & MEDIA SESSION MANAGERS ───────────────────
+    const isAnyPlaying = isTanpuraPlaying || isMetronomePlaying || isDrumsPlaying || isTablaPlaying;
+
+    // Keep silent audio playing when any tool is active to maintain browser audio session in background tabs
+    useEffect(() => {
+        if (isAnyPlaying) {
+            if (silentAudioRef.current && silentAudioRef.current.paused) {
+                silentAudioRef.current.play().catch(() => {});
+            }
+            const ctx = audioCtxRef.current;
+            if (ctx && ctx.state === 'suspended') {
+                ctx.resume().catch(() => {});
+            }
+        } else {
+            if (silentAudioRef.current && !silentAudioRef.current.paused) {
+                silentAudioRef.current.pause();
+            }
+        }
+    }, [isAnyPlaying]);
+
+    // Handle tab visibility change & window focus — auto-resume audio context when returning to tab
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            const ctx = audioCtxRef.current;
+            if (ctx && (isTanpuraPlaying || isMetronomePlaying || isDrumsPlaying || isTablaPlaying)) {
+                if (ctx.state === 'suspended') {
+                    ctx.resume().catch(() => {});
+                }
+                if (silentAudioRef.current && silentAudioRef.current.paused) {
+                    silentAudioRef.current.play().catch(() => {});
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleVisibilityChange);
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleVisibilityChange);
+        };
+    }, [isTanpuraPlaying, isMetronomePlaying, isDrumsPlaying, isTablaPlaying]);
+
+    // Media Session API integration for background/lock-screen & hardware media key controls
+    useEffect(() => {
+        if (typeof window !== 'undefined' && 'mediaSession' in navigator) {
+            if (isAnyPlaying) {
+                const toolTitle = activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Metronome' : activeTool === 'drums' ? 'Drum Beats' : 'Combo Session';
+                try {
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: `KFA ${toolTitle} (${bpm} BPM)`,
+                        artist: 'Krishna Flute Academy',
+                        album: 'Practice Suite'
+                    });
+                    navigator.mediaSession.playbackState = 'playing';
+
+                    navigator.mediaSession.setActionHandler('play', async () => {
+                        const ctx = getCtx();
+                        if (ctx.state !== 'running') await ctx.resume();
+                        if (activeTool === 'tanpura') {
+                            setIsTanpuraPlaying(true);
+                            if (typeof startTanpura === 'function') await startTanpura();
+                        } else if (activeTool === 'metronome') {
+                            setIsMetronomePlaying(true);
+                        } else if (activeTool === 'drums') {
+                            setIsDrumsPlaying(true);
+                        } else if (activeTool === 'combosetup') {
+                            setIsMetronomePlaying(true);
+                            setIsDrumsPlaying(true);
+                        }
+                    });
+
+                    const handleMediaPause = () => {
+                        setIsTanpuraPlaying(false);
+                        if (typeof stopTanpuraNodes === 'function') stopTanpuraNodes();
+                        setIsMetronomePlaying(false);
+                        setIsDrumsPlaying(false);
+                        setIsTablaPlaying(false);
+                        if (silentAudioRef.current) silentAudioRef.current.pause();
+                    };
+
+                    navigator.mediaSession.setActionHandler('pause', handleMediaPause);
+                    navigator.mediaSession.setActionHandler('stop', handleMediaPause);
+                } catch (_) {}
+            } else {
+                try {
+                    navigator.mediaSession.playbackState = 'paused';
+                } catch (_) {}
+            }
+        }
+    }, [isAnyPlaying, activeTool, bpm]);
 
     // ── TABLA AUDIO ENGINE ───────────────────────────────────────────────────
     // Synthesized strokes using Web Audio API — pitch shifted by tablaScale (same pattern as tanpura).
@@ -1472,7 +1581,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                 {/* 1. Tanpura Section */}
                 {activeTool === 'tanpura' && (
-                    <div className="flex flex-col gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5">
+                    <div className="flex flex-col gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5" onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center text-[10px]">
                             <span className="font-extrabold text-[#d46211] uppercase tracking-wider flex items-center gap-1">
                                 <Music className="w-3 h-3" /> {selectedPitch.label}
@@ -1482,7 +1591,19 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         
                         <div className="flex items-center gap-2.5">
                             <button 
-                                onClick={() => setIsTanpuraPlaying(!isTanpuraPlaying)}
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const ctx = getCtx();
+                                    if (ctx.state !== 'running') await ctx.resume();
+                                    if (isTanpuraPlaying) {
+                                        stopTanpuraNodes();
+                                        setIsTanpuraPlaying(false);
+                                    } else {
+                                        setIsTanpuraPlaying(true);
+                                        await startTanpura();
+                                    }
+                                }}
+                                onTouchStart={e => e.stopPropagation()}
                                 className={`h-7 px-3 rounded-md font-extrabold text-[11px] tracking-wide uppercase transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
                                     isTanpuraPlaying 
                                         ? 'bg-[#d46211]/20 border border-[#d46211]/40 text-[#d46211] hover:bg-[#d46211]/30' 
@@ -1510,7 +1631,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                 {/* 2. Metronome Section */}
                 {activeTool === 'metronome' && (
-                    <div className="flex flex-col gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5">
+                    <div className="flex flex-col gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5" onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between text-[10px]">
                             <span className="font-extrabold text-[#d46211] uppercase tracking-wider flex items-center gap-1">
                                 <Volume2 className="w-3 h-3" /> BEAT {metronomeBeats}/4
@@ -1534,10 +1655,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         
                         <div className="flex items-center gap-2">
                             <button 
-                                onClick={() => {
-                                    getCtx().resume();
-                                    setIsMetronomePlaying(!isMetronomePlaying);
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const ctx = getCtx();
+                                    if (ctx.state !== 'running') await ctx.resume();
+                                    setIsMetronomePlaying(prev => !prev);
                                 }}
+                                onTouchStart={e => e.stopPropagation()}
                                 className={`h-8 px-3 rounded-md font-extrabold text-[11px] tracking-wide uppercase transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
                                     isMetronomePlaying 
                                         ? 'bg-[#d46211]/20 border border-[#d46211]/40 text-[#d46211] hover:bg-[#d46211]/30' 
@@ -1553,11 +1677,11 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                             
                             <div className="flex-1 flex flex-col gap-1">
                                 <div className="flex items-center justify-between gap-0.5">
-                                    <button onClick={() => setBpm(b => Math.max(20, b - 5))} className="px-1 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold cursor-pointer">-5</button>
-                                    <button onClick={() => setBpm(b => Math.max(20, b - 1))} className="w-5 h-5 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-[11px] cursor-pointer">-</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setBpm(b => Math.max(20, b - 5)); }} className="px-1 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold cursor-pointer">-5</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setBpm(b => Math.max(20, b - 1)); }} className="w-5 h-5 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-[11px] cursor-pointer">-</button>
                                     <span className="text-[11px] font-mono text-white font-black">{bpm}</span>
-                                    <button onClick={() => setBpm(b => Math.min(240, b + 1))} className="w-5 h-5 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-[11px] cursor-pointer">+</button>
-                                    <button onClick={() => setBpm(b => Math.min(240, b + 5))} className="px-1 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold cursor-pointer">+5</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setBpm(b => Math.min(240, b + 1)); }} className="w-5 h-5 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-[11px] cursor-pointer">+</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setBpm(b => Math.min(240, b + 5)); }} className="px-1 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold cursor-pointer">+5</button>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <Volume2 className="w-3 h-3 text-white/40 shrink-0" />
@@ -1574,7 +1698,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                 {/* 3. Drum Beats Section */}
                 {activeTool === 'drums' && (
-                    <div className="flex flex-col gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5">
+                    <div className="flex flex-col gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5" onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between text-[10px]">
                             <span className="font-extrabold text-[#d46211] uppercase tracking-wider flex items-center gap-1">
                                 <span className="material-symbols-outlined text-xs font-bold">album</span> Drums
@@ -1584,7 +1708,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         
                         <div className="flex items-center gap-2">
                             <button 
-                                onClick={() => setIsDrumsPlaying(!isDrumsPlaying)}
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const ctx = getCtx();
+                                    if (ctx.state !== 'running') await ctx.resume();
+                                    setIsDrumsPlaying(prev => !prev);
+                                }}
+                                onTouchStart={e => e.stopPropagation()}
                                 className={`h-8 px-3 rounded-md font-extrabold text-[11px] tracking-wide uppercase transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
                                     isDrumsPlaying 
                                         ? 'bg-[#d46211]/20 border border-[#d46211]/40 text-[#d46211] hover:bg-[#d46211]/30' 
@@ -1600,11 +1730,11 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                             
                             <div className="flex-1 flex flex-col gap-1">
                                 <div className="flex items-center justify-between gap-0.5">
-                                    <button onClick={() => setBpm(b => Math.max(20, b - 5))} className="px-1 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold cursor-pointer">-5</button>
-                                    <button onClick={() => setBpm(b => Math.max(20, b - 1))} className="w-5 h-5 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-[11px] cursor-pointer">-</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setBpm(b => Math.max(20, b - 5)); }} className="px-1 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold cursor-pointer">-5</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setBpm(b => Math.max(20, b - 1)); }} className="w-5 h-5 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-[11px] cursor-pointer">-</button>
                                     <span className="text-[11px] font-mono text-white font-black">{bpm} BPM</span>
-                                    <button onClick={() => setBpm(b => Math.min(240, b + 1))} className="w-5 h-5 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-[11px] cursor-pointer">+</button>
-                                    <button onClick={() => setBpm(b => Math.min(240, b + 5))} className="px-1 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold cursor-pointer">+5</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setBpm(b => Math.min(240, b + 1)); }} className="w-5 h-5 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-[11px] cursor-pointer">+</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setBpm(b => Math.min(240, b + 5)); }} className="px-1 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold cursor-pointer">+5</button>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <Volume2 className="w-3 h-3 text-white/40 shrink-0" />
@@ -1621,20 +1751,65 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                 {/* 4. Combo Setup Section */}
                 {activeTool === 'combosetup' && (
-                    <div className="flex flex-col gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5">
+                    <div className="flex flex-col gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5" onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between text-[10px]">
                             <span className="font-extrabold text-[#d46211] uppercase tracking-wider flex items-center gap-1">
                                 ⊞ Combo Mixer
                             </span>
-                            <span className={`px-2 py-0.5 rounded ${isDrumsPlaying ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-white/30'}`}>Drums</span>
+                            <span className="font-bold text-white/80 font-mono bg-white/10 px-1.5 py-0.5 rounded">{bpm} BPM</span>
                         </div>
-                        
-                        <div className="flex items-center justify-between gap-1 pt-1 border-t border-white/5">
-                            <button onClick={() => setBpm(b => Math.max(20, b - 5))} className="px-1.5 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold">-5</button>
-                            <button onClick={() => setBpm(b => Math.max(20, b - 1))} className="w-6 h-6 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-xs">-</button>
-                            <span className="text-xs font-mono text-white font-black">{bpm} BPM</span>
-                            <button onClick={() => setBpm(b => Math.min(240, b + 1))} className="w-6 h-6 rounded-full border border-white/15 text-white/70 hover:bg-white/10 flex items-center justify-center font-bold text-xs">+</button>
-                            <button onClick={() => setBpm(b => Math.min(240, b + 5))} className="px-1.5 py-0.5 rounded border border-white/10 text-white/50 hover:bg-white/10 text-[9px] font-mono font-bold">+5</button>
+
+                        <div className="grid grid-cols-3 gap-1.5 pt-1">
+                            {/* Tanpura Toggle */}
+                            <button
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const ctx = getCtx();
+                                    if (ctx.state !== 'running') await ctx.resume();
+                                    if (isTanpuraPlaying) {
+                                        stopTanpuraNodes();
+                                        setIsTanpuraPlaying(false);
+                                    } else {
+                                        setIsTanpuraPlaying(true);
+                                        await startTanpura();
+                                    }
+                                }}
+                                onTouchStart={e => e.stopPropagation()}
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${isTanpuraPlaying ? 'bg-[#d46211] text-white shadow-xs' : 'bg-white/10 text-white/60 hover:text-white'}`}
+                            >
+                                {isTanpuraPlaying ? <Square className="size-2.5 fill-current" /> : <Play className="size-2.5 fill-current" />}
+                                Tanpura
+                            </button>
+
+                            {/* Metronome Toggle */}
+                            <button
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const ctx = getCtx();
+                                    if (ctx.state !== 'running') await ctx.resume();
+                                    setIsMetronomePlaying(prev => !prev);
+                                }}
+                                onTouchStart={e => e.stopPropagation()}
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${isMetronomePlaying ? 'bg-[#d46211] text-white shadow-xs' : 'bg-[#d46211]/20 text-[#d46211] hover:bg-[#d46211]/30'}`}
+                            >
+                                {isMetronomePlaying ? <Square className="size-2.5 fill-current" /> : <Play className="size-2.5 fill-current" />}
+                                Metronome
+                            </button>
+
+                            {/* Drums Toggle */}
+                            <button
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const ctx = getCtx();
+                                    if (ctx.state !== 'running') await ctx.resume();
+                                    setIsDrumsPlaying(prev => !prev);
+                                }}
+                                onTouchStart={e => e.stopPropagation()}
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${isDrumsPlaying ? 'bg-[#d46211] text-white shadow-xs' : 'bg-white/10 text-white/60 hover:text-white'}`}
+                            >
+                                {isDrumsPlaying ? <Square className="size-2.5 fill-current" /> : <Play className="size-2.5 fill-current" />}
+                                Drums
+                            </button>
                         </div>
                     </div>
                 )}
@@ -1643,47 +1818,47 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
     }
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-lg" onClick={e => e.target === e.currentTarget && setIsMinimized(true)}>
-            <div className={`relative w-full bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-3xl border border-[#d46211]/25 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${
-                activeTool === 'tanpura' ? 'max-w-md h-auto my-auto' : activeTool === 'metronome' ? 'max-w-2xl h-auto my-auto' : activeTool === 'drums' ? 'max-w-5xl h-auto my-auto' : 'max-w-4xl h-auto my-auto'
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-lg" onClick={e => e.target === e.currentTarget && setIsMinimized(true)}>
+            <div className={`relative w-full bg-gradient-to-br from-[#0c0f12] via-[#141b22] to-[#080b0d] rounded-2xl sm:rounded-3xl border border-[#d46211]/25 shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${
+                activeTool === 'tanpura' ? 'max-w-sm h-auto my-auto' : activeTool === 'metronome' ? 'max-w-xl h-auto my-auto' : activeTool === 'drums' ? 'max-w-3xl h-auto my-auto' : 'max-w-2xl h-auto my-auto'
             }`}>
                 
                 {/* Header */}
-                <div className="flex flex-wrap items-center justify-between gap-4 px-8 pt-5 pb-4 border-b border-[#d46211]/10 bg-slate-900/40">
-                    <div className="flex items-center gap-3 text-left">
-                        <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-[#d46211] border border-[#d46211]/20">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 border-b border-[#d46211]/10 bg-slate-900/40">
+                    <div className="flex items-center gap-2.5 text-left">
+                        <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-[#d46211] border border-[#d46211]/20 shrink-0">
                             {activeTool === 'tanpura' ? (
-                                <Music className="w-5 h-5" />
+                                <Music className="w-4 h-4" />
                             ) : activeTool === 'metronome' ? (
-                                <Volume2 className="w-5 h-5" />
+                                <Volume2 className="w-4 h-4" />
                             ) : (
-                                <span className="material-symbols-outlined text-xl font-bold">album</span>
+                                <span className="material-symbols-outlined text-lg font-bold">album</span>
                             )}
                         </div>
                         <div>
-                            <h2 className="text-white font-black text-sm md:text-base tracking-tight animate-in fade-in duration-300">
+                            <h2 className="text-white font-extrabold text-xs sm:text-sm tracking-tight animate-in fade-in duration-300 leading-tight">
                                 {activeTool === 'tanpura' ? 'Tanpura Drone' : activeTool === 'metronome' ? 'Practice Metronome' : activeTool === 'drums' ? 'Drum Beats Sequencer' : 'Combo Session Mixer'}
                             </h2>
-                            <p className="text-[#d46211]/60 text-xs md:text-sm animate-in fade-in duration-300">
+                            <p className="text-[#d46211]/60 text-[10px] sm:text-xs animate-in fade-in duration-300 truncate max-w-[240px] sm:max-w-none">
                                 {activeTool === 'tanpura' 
                                     ? 'Indian classical tuning & shruti drone' 
                                     : activeTool === 'metronome' 
                                         ? 'Keep perfect time with speed adjustments' 
                                         : activeTool === 'drums'
                                             ? 'Interactive step sequencer for flute play-along grooves'
-                                            : 'Club and control multiple practice tools simultaneously'}
+                                            : 'Control multiple practice tools simultaneously'}
                             </p>
                         </div>
                     </div>
 
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                         <button 
                             onClick={() => setIsMinimized(true)} 
                             title="Minimize to floating window" 
-                            className="p-2 rounded-xl border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all"
+                            className="p-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all cursor-pointer"
                         >
-                            <Minimize2 className="w-4 h-4" />
+                            <Minimize2 className="w-3.5 h-3.5" />
                         </button>
                         <button 
                             onClick={() => {
@@ -1694,15 +1869,15 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                 }
                             }} 
                             title={isMetronomePlaying || isTanpuraPlaying || isDrumsPlaying ? "Minimize to background (audio playing)" : "Close"} 
-                            className="p-2 rounded-xl border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all"
+                            className="p-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white hover:border-white/30 transition-all cursor-pointer"
                         >
-                            <X className="w-4 h-4" />
+                            <X className="w-3.5 h-3.5" />
                         </button>
                     </div>
                 </div>
 
                 {/* ── TAB NAV ── */}
-                <div className="flex items-center gap-1 px-6 pt-4 border-b border-white/5 bg-black/20">
+                <div className="flex items-center gap-1 px-4 pt-2.5 border-b border-white/5 bg-black/20">
                     {([
                         { id: 'tanpura',   label: 'Tanpura',   icon: '♪' },
                         { id: 'metronome', label: 'Metronome', icon: '♩' },
@@ -1712,13 +1887,13 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                         <button
                             key={tab.id}
                             onClick={() => setActiveTool(tab.id)}
-                            className={`px-3 py-2 text-[11px] font-extrabold tracking-wide rounded-t-lg transition-all flex items-center gap-1.5 border-b-2 ${
+                            className={`px-2.5 py-1.5 text-[10px] sm:text-[11px] font-extrabold tracking-wide rounded-t-md transition-all flex items-center gap-1 border-b-2 cursor-pointer ${
                                 activeTool === tab.id
                                     ? 'text-[#d46211] border-[#d46211] bg-[#d46211]/5'
                                     : 'text-white/35 border-transparent hover:text-white/60 hover:border-white/20'
                             }`}
                         >
-                            <span className="text-sm">{tab.icon}</span>
+                            <span className="text-xs">{tab.icon}</span>
                             <span className="hidden sm:inline">{tab.label}</span>
                         </button>
                     ))}
@@ -1728,7 +1903,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                 <div className="flex-1 flex flex-col overflow-hidden bg-black/10">
                     {/* ──── VIEW 1: TANPURA DRONE ──── */}
                     {activeTool === 'tanpura' && (
-                        <div className="w-full bg-black/30 p-6 flex flex-col justify-between overflow-y-auto text-left max-h-[80vh]">
+                        <div className="w-full bg-black/30 p-4 sm:p-5 flex flex-col justify-between overflow-y-auto text-left max-h-[70vh]">
                             <div className="space-y-5">
                                 {/* Scale/Key Select */}
                                 <div>
@@ -1841,18 +2016,18 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                     {/* ──── VIEW 2: METRONOME ──── */}
                     {activeTool === 'metronome' && (
-                        <div className="w-full p-6 flex flex-col justify-between gap-6 overflow-y-auto max-h-[85vh]">
-                            <div className="flex-1 flex flex-col lg:flex-row gap-6 animate-in fade-in duration-200">
+                        <div className="w-full p-4 sm:p-5 flex flex-col justify-between gap-4 overflow-y-auto max-h-[70vh]">
+                            <div className="flex-1 flex flex-col lg:flex-row gap-5 animate-in fade-in duration-200">
                                     
                                     {/* Left Sub-panel: Tap and Measure */}
-                                    <div className="lg:w-56 flex flex-col gap-5 text-left shrink-0">
+                                    <div className="lg:w-52 flex flex-col gap-4 text-left shrink-0">
                                         {/* Measure Beats */}
                                         <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Beats Per Measure</span>
+                                            <span className="text-[#d46211]/70 text-[11px] font-black uppercase tracking-wider block mb-1.5">Beats Per Measure</span>
                                             <div className="flex flex-wrap gap-1">
                                                 {[2,3,4,5,6,7,8].map(n => (
                                                     <button key={n} onClick={() => { setMetronomeBeats(n); setMetronomeSubdivisions(Array(n).fill(1)); }}
-                                                        className={`w-8 h-8 rounded-lg text-xs font-black transition-all ${metronomeBeats === n ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/25 text-[#d46211]/60 hover:border-[#d46211]/50'}`}>
+                                                        className={`w-7 h-7 rounded-lg text-xs font-black transition-all cursor-pointer ${metronomeBeats === n ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/25 text-[#d46211]/60 hover:border-[#d46211]/50'}`}>
                                                         {n}
                                                     </button>
                                                 ))}
@@ -1861,11 +2036,11 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                                         {/* Sound profile */}
                                         <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Metronome Sound</span>
+                                            <span className="text-[#d46211]/70 text-[11px] font-black uppercase tracking-wider block mb-1.5">Metronome Sound</span>
                                             <div className="flex flex-wrap gap-1">
                                                 {METRONOME_SOUNDS.map(s => (
                                                     <button key={s} onClick={() => setSelectedMetronomeSound(s)}
-                                                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${selectedMetronomeSound === s ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/25 text-[#d46211]/50 hover:text-[#d46211]'}`}>
+                                                        className={`px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${selectedMetronomeSound === s ? 'bg-[#d46211] text-white' : 'border border-[#d46211]/25 text-[#d46211]/50 hover:text-[#d46211]'}`}>
                                                         {s}
                                                     </button>
                                                 ))}
@@ -1874,29 +2049,29 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                                         {/* Tap Tempo */}
                                         <div>
-                                            <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Tap Tempo</span>
+                                            <span className="text-[#d46211]/70 text-[11px] font-black uppercase tracking-wider block mb-1.5">Tap Tempo</span>
                                             <button onClick={handleTapTempo}
-                                                className="w-full h-14 rounded-xl border border-[#d46211]/30 bg-gradient-to-b from-[#2a1a08] to-[#1a0e04] text-[#d46211] font-black text-sm tracking-widest hover:border-[#d46211] hover:shadow-lg hover:shadow-[#d46211]/15 active:scale-95 transition-all">
+                                                className="w-full h-11 rounded-xl border border-[#d46211]/30 bg-gradient-to-b from-[#2a1a08] to-[#1a0e04] text-[#d46211] font-black text-xs tracking-widest hover:border-[#d46211] hover:shadow-lg hover:shadow-[#d46211]/15 active:scale-95 transition-all cursor-pointer">
                                                 TAP TEMPO
                                             </button>
                                         </div>
                                     </div>
 
                                     {/* Right Sub-panel: Dial Visualizer */}
-                                    <div className="flex-1 flex flex-col items-center justify-center gap-5">
-                                        <div className="relative w-12 h-12 flex items-center justify-center">
+                                    <div className="flex-1 flex flex-col items-center justify-center gap-4">
+                                        <div className="relative w-10 h-10 flex items-center justify-center">
                                             {metronomeRipples.map(r => <Ripple key={r} id={r} />)}
-                                            <div className="w-3.5 h-3.5 rounded-full bg-[#d46211]/45 border border-[#d46211]/60 shrink-0" />
+                                            <div className="w-3 h-3 rounded-full bg-[#d46211]/45 border border-[#d46211]/60 shrink-0" />
                                         </div>
 
                                         {/* Dial */}
-                                        <div className="relative flex items-center justify-center" style={{ width: 230, height: 230 }}>
+                                        <div className="relative flex items-center justify-center" style={{ width: 190, height: 190 }}>
                                             <div className={`absolute inset-0 transition-opacity duration-300 ${isMetronomePlaying ? 'opacity-100' : 'opacity-40'}`}>
                                                 <Mandala angle={mandalaAngle} active={isMetronomePlaying} />
                                             </div>
 
                                             <div className={`absolute rounded-full border transition-all duration-300 ${isMetronomePlaying ? 'border-[#d46211]/50 shadow-xl' : 'border-[#d46211]/15'}`}
-                                                style={{ width: 170, height: 170, boxShadow: isMetronomePlaying ? '0 0 30px rgba(212,98,17,0.18)' : 'none' }} />
+                                                style={{ width: 140, height: 140, boxShadow: isMetronomePlaying ? '0 0 25px rgba(212,98,17,0.18)' : 'none' }} />
 
                                             <div 
                                                 ref={knobRef}
@@ -1904,20 +2079,20 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                                 onTouchStart={onKnobDown}
                                                 className="relative cursor-ns-resize touch-none select-none flex items-center justify-center rounded-full"
                                                 style={{
-                                                    width: 140, height: 140, zIndex: 10,
+                                                    width: 115, height: 115, zIndex: 10,
                                                     background: 'conic-gradient(from 0deg, #2a1a08, #3d2510, #2a1a08, #1a0e04, #2a1a08)',
                                                     boxShadow: '0 8px 32px rgba(0,0,0,0.6), inset 0 2px 8px rgba(255,255,255,0.05), inset 0 -2px 4px rgba(0,0,0,0.4)',
                                                     border: '2px solid rgba(212,98,17,0.3)',
                                                 }}>
-                                                <div className="absolute" style={{ width: 6, height: 6, top: 10, left: '50%', marginLeft: -3, transformOrigin: '3px 60px', transform: `rotate(${knobDeg}deg)` }}>
+                                                <div className="absolute" style={{ width: 6, height: 6, top: 8, left: '50%', marginLeft: -3, transformOrigin: '3px 50px', transform: `rotate(${knobDeg}deg)` }}>
                                                     <div className="w-1.5 h-1.5 rounded-full bg-[#d46211] shadow-lg shadow-[#d46211]/60" />
                                                 </div>
 
                                                 <div className="text-center z-10">
-                                                    <div className="text-white font-black leading-none" style={{ fontSize: 36, fontVariantNumeric: 'tabular-nums', textShadow: '0 0 15px rgba(212,98,17,0.4)' }}>
+                                                    <div className="text-white font-black leading-none" style={{ fontSize: 30, fontVariantNumeric: 'tabular-nums', textShadow: '0 0 12px rgba(212,98,17,0.4)' }}>
                                                         {bpm}
                                                     </div>
-                                                    <div className="text-[#d46211]/60 text-[10px] font-black tracking-widest uppercase mt-0.5">BPM</div>
+                                                    <div className="text-[#d46211]/60 text-[9px] font-black tracking-widest uppercase mt-0.5">BPM</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1964,8 +2139,8 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                     {/* ──── VIEW 3: DRUM SEQUENCER ──── */}
                     {activeTool === 'drums' && (
-                        <div className="w-full p-6 flex flex-col gap-6 overflow-y-auto max-h-[85vh]">
-                            <div className="flex-1 flex flex-col gap-5 animate-in fade-in duration-200 text-left">
+                        <div className="w-full p-4 sm:p-5 flex flex-col gap-4 overflow-y-auto max-h-[70vh]">
+                            <div className="flex-1 flex flex-col gap-4 animate-in fade-in duration-200 text-left">
                                 {/* Top Preset & Signature Bar */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-3 border-b border-white/5">
                                     {/* Presets */}
@@ -2138,7 +2313,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
 
                     {/* ──── VIEW 4: NEW SETUP (COMBO MIXER) ──── */}
                     {activeTool === 'combosetup' && (
-                        <div className="w-full p-6 flex flex-col gap-6 overflow-y-auto max-h-[85vh] text-left">
+                        <div className="w-full p-4 sm:p-5 flex flex-col gap-4 overflow-y-auto max-h-[70vh] text-left">
                             {/* Master Control Bar */}
                             <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/5">
                                 <div>
