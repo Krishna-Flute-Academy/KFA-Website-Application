@@ -124,6 +124,11 @@ export async function POST(req: Request) {
             }, { status: 200 });
         }
 
+        if (!studentIds || studentIds.length === 0) {
+            console.log('[API Send Notification] No active push subscriptions found for targeted students.');
+            return NextResponse.json({ success: true, sentCount: 0 });
+        }
+
         // Fetch direct push subscriptions from Supabase for all targeted student IDs
         const { data: subscriptions, error: subError } = await supabase
             .from('push_subscriptions')

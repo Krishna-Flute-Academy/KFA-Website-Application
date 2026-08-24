@@ -1,0 +1,614 @@
+{
+  "generatedAt": "2026-08-24T11:43:22.071Z",
+  "summary": {
+    "critical": 29,
+    "high": 10,
+    "medium": 45,
+    "filesScanned": 97
+  },
+  "audit001_unguarded_in_calls": [
+    {
+      "file": "app/api/notifications/send/route.ts",
+      "line": 131,
+      "code": ".in('user_id', studentIds);",
+      "variable": "studentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 288,
+      "code": ".in('classroom_id', roomIds)",
+      "variable": "roomIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 984,
+      "code": ".in('classroom_id', classroomIds)",
+      "variable": "classroomIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 985,
+      "code": ".in('student_id', studentIds)",
+      "variable": "studentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 1194,
+      "code": ".in('student_id', studentIds)",
+      "variable": "studentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 1206,
+      "code": ".in('student_id', studentIds);",
+      "variable": "studentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 1227,
+      "code": ".in('student_id', studentIds)",
+      "variable": "studentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 1228,
+      "code": ".in('status', statuses)",
+      "variable": "statuses",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/page.tsx",
+      "line": 404,
+      "code": ".in('id', permanentIds);",
+      "variable": "permanentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/page.tsx",
+      "line": 429,
+      "code": ".in('id', temporaryIds);",
+      "variable": "temporaryIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 1202,
+      "code": ".in('classroom_id', classroomIds);",
+      "variable": "classroomIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 1369,
+      "code": ".in('classroom_id', activeClassroomIds);",
+      "variable": "activeClassroomIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 1877,
+      "code": ".in('student_id', studentIds);",
+      "variable": "studentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 3480,
+      "code": ".in('id', idsToDelete);",
+      "variable": "idsToDelete",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/students/page.tsx",
+      "line": 854,
+      "code": ".in('id', ids);",
+      "variable": "ids",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/students/page.tsx",
+      "line": 867,
+      "code": ".in('id', ids);",
+      "variable": "ids",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 177,
+      "code": ".in('classroom_id', classroomIds);",
+      "variable": "classroomIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 182,
+      "code": ".in('classroom_id', classroomIds);",
+      "variable": "classroomIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 214,
+      "code": ".in('classroom_id', classroomIds);",
+      "variable": "classroomIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 225,
+      "code": ".in('classroom_id', classroomIds);",
+      "variable": "classroomIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 259,
+      "code": ".in('assignment_id', assignmentIds);",
+      "variable": "assignmentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 272,
+      "code": ".in('assignment_id', assignmentIds);",
+      "variable": "assignmentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 711,
+      "code": "supabaseAuth.from('classroom_students').select('student_id, classroom_id').in('classroom_id', classIds),",
+      "variable": "classIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 712,
+      "code": "supabaseAuth.from('session_student_overrides').select('student_id, target_classroom_id').in('target_classroom_id', classIds)",
+      "variable": "classIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 1583,
+      "code": ".in('id', uniqueTaskIds);",
+      "variable": "uniqueTaskIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/[id]/edit/page.tsx",
+      "line": 190,
+      "code": ".in('id', studentIds);",
+      "variable": "studentIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "src/components/student-dashboard/StudentDashboardContainer.tsx",
+      "line": 328,
+      "code": ".in('student_id', menteeIds)",
+      "variable": "menteeIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "src/components/teacher-dashboard/TeacherDashboardContainer.tsx",
+      "line": 544,
+      "code": ".in('classroom_id', classIds);",
+      "variable": "classIds",
+      "severity": "CRITICAL"
+    },
+    {
+      "file": "src/components/teacher-dashboard/TeacherDashboardContainer.tsx",
+      "line": 733,
+      "code": ".in('classroom_id', classIds)",
+      "variable": "classIds",
+      "severity": "CRITICAL"
+    }
+  ],
+  "audit002_missing_finally": [
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 1161,
+      "code": "setMissedLoading(true);",
+      "setter": "setMissedLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 1401,
+      "code": "setHistoryLoading(true);",
+      "setter": "setHistoryLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/page.tsx",
+      "line": 513,
+      "code": "setLoading(true);",
+      "setter": "setLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 883,
+      "code": "setLoading(true);",
+      "setter": "setLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 1170,
+      "code": "setLoading(true);",
+      "setter": "setLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "app/teacher-dashboard/messages/page.tsx",
+      "line": 939,
+      "code": "setLoading(true);",
+      "setter": "setLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "app/teacher-dashboard/students/page.tsx",
+      "line": 154,
+      "code": "setLoading(true);",
+      "setter": "setLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "app/teacher-dashboard/students/[id]/page.tsx",
+      "line": 204,
+      "code": "setLoading(true);",
+      "setter": "setLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "src/components/student-dashboard/SettingsTab.tsx",
+      "line": 101,
+      "code": "setUploading(true);",
+      "setter": "setUploading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    },
+    {
+      "file": "src/components/student-dashboard/StudentDashboardContainer.tsx",
+      "line": 995,
+      "code": "setLoading(true);",
+      "setter": "setLoading",
+      "issue": "No finally{} block found — if an error is thrown, spinner stays stuck forever",
+      "severity": "HIGH"
+    }
+  ],
+  "audit003_channel_leaks": [],
+  "audit004_n_plus_one": [
+    {
+      "file": "app/page.tsx",
+      "line": 17,
+      "code": "supabase.from('blog_posts').select('*').eq('published', true).order('published_at', { ascending: false }).limit(3),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/page.tsx",
+      "line": 18,
+      "code": "supabase.from('events').select('title, registration_link, image_url, button_text, description').eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle(),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/page.tsx",
+      "line": 19,
+      "code": "supabase.from('testimonials').select('*').order('created_at', { ascending: false }).limit(3),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/page.tsx",
+      "line": 20,
+      "code": "supabase.from('gallery_items').select('*').eq('is_active', true).order('created_at', { ascending: false })",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 430,
+      "code": "supabaseAuth.from('classroom_students').select('*', { count: 'exact', head: true }).eq('classroom_id', batch.id),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 431,
+      "code": "supabaseAuth.from('session_student_overrides').select('*', { count: 'exact', head: true }).eq('target_classroom_id', batch.id).eq('override_date', selectedDate),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 432,
+      "code": "supabaseAuth.from('attendance').select('status').eq('classroom_id', batch.id).eq('date', selectedDate)",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 441,
+      "code": "supabaseAuth.from('session_student_overrides').select('*', { count: 'exact', head: true }).eq('target_classroom_id', batch.id).eq('override_date', selectedDate),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/attendance/page.tsx",
+      "line": 442,
+      "code": "supabaseAuth.from('attendance').select('status').eq('classroom_id', batch.id).eq('date', selectedDate)",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/add/page.tsx",
+      "line": 174,
+      "code": ".from('batch_schedules')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/temp/[id]/page.tsx",
+      "line": 205,
+      "code": ".from('batch_schedules')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 895,
+      "code": "supabaseAuth.from('users').select('id, name, email, role').eq('id', session.user.id).single(),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 896,
+      "code": "supabaseAuth.from('classrooms').select('*').eq('id', classroomId).single()",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 1087,
+      "code": "supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 1088,
+      "code": "supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 1089,
+      "code": "supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true })",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 1174,
+      "code": ".from('assignment_students')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/classrooms/[id]/page.tsx",
+      "line": 1309,
+      "code": ".from('assignment_students')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/fees/page.tsx",
+      "line": 209,
+      "code": ".from('fees_payments')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 238,
+      "code": "supabaseAuth.from('course_chapters').update({ title: cleanChapterTitle(chapter.title) }).eq('id', chapter.id)",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 448,
+      "code": "const { error } = await supabaseAuth.from('course_chapters').update({ chapter_number: -100000 - index }).eq('id', sequenced[index].id);",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 452,
+      "code": "const { error } = await supabaseAuth.from('course_chapters').update({ chapter_number: chapter.chapter_number, title: chapter.title }).eq('id', chapter.id);",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 517,
+      "code": ".from('course_lessons')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 526,
+      "code": ".from('course_lessons')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 645,
+      "code": "const { error } = await supabaseAuth.from('course_chapters').insert({",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 666,
+      "code": "const { error } = await supabaseAuth.from('course_chapters').update({",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 734,
+      "code": "const { error } = await supabaseAuth.from('course_chapters').update({ chapter_number: -100000 - index }).eq('id', remainingModuleChapters[index].id);",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 738,
+      "code": "const { error } = await supabaseAuth.from('course_chapters').update({ chapter_number: chapter.chapter_number }).eq('id', chapter.id);",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 1003,
+      "code": ".from('course_modules')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 1233,
+      "code": ".from('course_lessons')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 1251,
+      "code": ".from('course_lessons')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/inventory/page.tsx",
+      "line": 1437,
+      "code": "await supabaseAuth.from('course_lessons').insert({",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/students/page.tsx",
+      "line": 1030,
+      "code": ".from('users')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 711,
+      "code": "supabaseAuth.from('classroom_students').select('student_id, classroom_id').in('classroom_id', classIds),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "app/teacher-dashboard/tasks/page.tsx",
+      "line": 712,
+      "code": "supabaseAuth.from('session_student_overrides').select('student_id, target_classroom_id').in('target_classroom_id', classIds)",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/AcademyPolicies.tsx",
+      "line": 338,
+      "code": "await supabaseAuth.from('academy_policies').insert({",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/student-dashboard/BlogNotification.tsx",
+      "line": 80,
+      "code": ".from('blog_posts')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/student-dashboard/StudentDashboardContainer.tsx",
+      "line": 588,
+      "code": "supabaseAuth.from('users').select('id, name, email, phone, level, profile_pic_url, role, status, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date').eq('id', userId).maybeSingle(),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/student-dashboard/StudentDashboardContainer.tsx",
+      "line": 591,
+      "code": "supabaseAuth.from('fees_payments').select('*').eq('student_id', userId).order('payment_date', { ascending: false }),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/teacher-dashboard/TeacherDashboardContainer.tsx",
+      "line": 295,
+      "code": "const classBaseQuery = supabaseAuth.from('classrooms').select('id, name, description, teacher_id, type');",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/teacher-dashboard/TeacherDashboardContainer.tsx",
+      "line": 298,
+      "code": "const tempBaseQuery = supabaseAuth.from('temporary_classes').select('classroom_id, class_date');",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/teacher-dashboard/TeacherDashboardContainer.tsx",
+      "line": 424,
+      "code": "supabaseAuth.from('users').select('id, name, fees_basis, fees_amount, fees_collection_date, fees_classes_paid, status, classroom_students(classrooms(name))').or('role.eq.student,role.eq.pending,role.eq.mentor').eq('status', 'active'),",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/teacher-dashboard/TeacherDashboardContainer.tsx",
+      "line": 425,
+      "code": "supabaseAuth.from('fees_payments').select('id, student_id, amount, payment_date, status')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/components/teacher-dashboard/TeacherDashboardContainer.tsx",
+      "line": 1288,
+      "code": ".from('classroom_students')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    },
+    {
+      "file": "src/lib/notifications.ts",
+      "line": 20,
+      "code": ".from('users')",
+      "issue": "Supabase query inside a loop — potential N+1 pattern, consider batching",
+      "severity": "MEDIUM"
+    }
+  ]
+}
