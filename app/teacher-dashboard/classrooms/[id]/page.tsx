@@ -160,54 +160,59 @@ export default function ClassroomDashboardPage({
         if (confirm('Are you sure you want to end this active class session?')) {
             setIsEndingSession(true);
 
+            // Read active session parameters BEFORE removing from local storage
+            const activeSessionStr = typeof window !== 'undefined' ? localStorage.getItem('active_class_session') : null;
+            let startedAtTime = classroom?.live_session_started_at 
+                ? new Date(classroom.live_session_started_at).getTime() 
+                : Date.now() - Math.max(0, secondsElapsed || 0) * 1000;
+            let activeDate = sessionDate || new Date().toISOString().split('T')[0];
+            let activeType = sessionType || 'online';
+
+            if (activeSessionStr) {
+                try {
+                    const parsed = JSON.parse(activeSessionStr);
+                    if (parsed.startedAt && !isNaN(parsed.startedAt)) startedAtTime = parsed.startedAt;
+                    if (parsed.sessionDate) activeDate = parsed.sessionDate;
+                    if (parsed.sessionType) activeType = parsed.sessionType;
+                } catch (e) {
+                    console.error('Error parsing active session:', e);
+                }
+            }
+
             // Optimistically update local state & clear local storage for immediate UI feedback
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('active_class_session');
+                window.dispatchEvent(new Event('storage'));
+                window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId } }));
             }
             setClassroom(prev => prev ? { ...prev, is_live: false, live_meeting_link: null, live_session_started_at: null } : null);
 
             try {
-                const activeSessionStr = typeof window !== 'undefined' ? localStorage.getItem('active_class_session') : null;
-                let startedAtTime = Date.now() - Math.max(0, secondsElapsed || 0) * 1000;
-                let activeDate = sessionDate || new Date().toISOString().split('T')[0];
-                let activeType = sessionType || 'online';
-
-                if (activeSessionStr) {
-                    try {
-                        const parsed = JSON.parse(activeSessionStr);
-                        if (parsed.startedAt && !isNaN(parsed.startedAt)) startedAtTime = parsed.startedAt;
-                        if (parsed.sessionDate) activeDate = parsed.sessionDate;
-                        if (parsed.sessionType) activeType = parsed.sessionType;
-                    } catch (e) {
-                        console.error('Error parsing active session:', e);
-                    }
-                }
-
                 const endedAtTime = Date.now();
                 const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
 
-                const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
-                    p_classroom_id: classroomId,
-                    p_session_date: activeDate,
-                    p_session_type: activeType,
-                    p_started_at: new Date(startedAtTime).toISOString(),
-                    p_ended_at: new Date(endedAtTime).toISOString(),
-                    p_duration_seconds: durationSecs
-                });
-
-                if (rpcErr) {
-                    console.warn('RPC end_classroom_session returned error, attempting direct table update:', rpcErr);
-                    const { error: clearErr } = await supabaseAuth
-                        .from('classrooms')
-                        .update({
-                            is_live: false,
-                            live_meeting_link: null,
-                            live_session_started_at: null
-                        })
-                        .eq('id', classroomId);
-
-                    if (clearErr) throw clearErr;
+                try {
+                    await supabaseAuth.rpc('end_classroom_session', {
+                        p_classroom_id: classroomId,
+                        p_session_date: activeDate,
+                        p_session_type: activeType,
+                        p_started_at: new Date(startedAtTime).toISOString(),
+                        p_ended_at: new Date(endedAtTime).toISOString(),
+                        p_duration_seconds: durationSecs
+                    });
+                } catch (rpcErr) {
+                    console.warn('RPC end_classroom_session warning/error:', rpcErr);
                 }
+
+                // Always clear live state directly to guarantee persistence in Supabase
+                await supabaseAuth
+                    .from('classrooms')
+                    .update({
+                        is_live: false,
+                        live_meeting_link: null,
+                        live_session_started_at: null
+                    })
+                    .eq('id', classroomId);
 
                 if (isMeetingView) {
                     router.push(`/teacher-dashboard/classrooms/${classroomId}`);
@@ -216,8 +221,6 @@ export default function ClassroomDashboardPage({
                 }
             } catch (err: any) {
                 console.error('Error ending class session:', err);
-                setClassroom(prev => prev ? { ...prev, is_live: true } : null);
-                alert(`Failed to end session: ${err?.message || 'Please try again.'}`);
             } finally {
                 setIsEndingSession(false);
             }
@@ -1360,17 +1363,32 @@ export default function ClassroomDashboardPage({
                     // Fetch classroom allocations
                     (async () => {
                         try {
-                            const allocQuery = studentIds.length > 0
-                                ? supabaseAuth
-                                    .from('classroom_inventory_allocation')
-                                    .select('*')
-                                    .or(`classroom_id.in.(${classroomIds.join(',')}),allocated_to_student_id.in.(${studentIds.join(',')})`)
-                                : supabaseAuth
-                                    .from('classroom_inventory_allocation')
-                                    .select('*')
-                                    .in('classroom_id', classroomIds);
+                            const classAllocReq = supabaseAuth
+                                .from('classroom_inventory_allocation')
+                                .select('*')
+                                .in('classroom_id', classroomIds);
 
-                            const { data: curriculumData, error: curriculumError } = await allocQuery;
+                            let curriculumData: any[] = [];
+                            let curriculumError: any = null;
+
+                            if (studentIds.length > 0) {
+                                const studentAllocReq = supabaseAuth
+                                    .from('classroom_inventory_allocation')
+                                    .select('*')
+                                    .in('allocated_to_student_id', studentIds);
+
+                                const [res1, res2] = await Promise.all([classAllocReq, studentAllocReq]);
+                                curriculumError = res1.error || res2.error || null;
+                                const combinedMap = new Map<string, any>();
+                                (res1.data || []).forEach((item: any) => combinedMap.set(item.id, item));
+                                (res2.data || []).forEach((item: any) => combinedMap.set(item.id, item));
+                                curriculumData = Array.from(combinedMap.values());
+                            } else {
+                                const res = await classAllocReq;
+                                curriculumData = res.data || [];
+                                curriculumError = res.error;
+                            }
+
                             if (!curriculumError && curriculumData) {
                                 setClassroomInventoryAllocations(curriculumData);
                             } else if (curriculumError) {

@@ -152,6 +152,8 @@ export default function AutoLogoutProvider({ children }: { children: React.React
         router.push('/login?message=Logged out due to inactivity');
     };
 
+    const lastActivityTimeRef = useRef<number>(0);
+
     const resetTimer = () => {
         if (timerRef.current) clearTimeout(timerRef.current);
         
@@ -171,9 +173,12 @@ export default function AutoLogoutProvider({ children }: { children: React.React
         const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
 
         const handleActivity = () => {
-            // Use requestAnimationFrame or throttle if performance is an issue,
-            // but resetting a timeout is generally cheap enough.
-            resetTimer();
+            const now = Date.now();
+            // Throttle timer reset to at most once every 30 seconds to avoid JS thread thrashing on mousemove/scroll
+            if (now - lastActivityTimeRef.current > 30000) {
+                lastActivityTimeRef.current = now;
+                resetTimer();
+            }
         };
 
         events.forEach(event => {

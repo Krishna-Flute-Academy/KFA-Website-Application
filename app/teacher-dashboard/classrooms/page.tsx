@@ -744,8 +744,30 @@ export default function ClassroomsPage() {
             }
         } catch (e) { console.error('Classrooms cache load error:', e); }
 
-        if (!hasCachedData) setLoading(true);
         fetchData();
+
+        const channel = supabaseAuth
+            .channel('classrooms-page-realtime')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'classrooms' },
+                () => {
+                    fetchData();
+                }
+            )
+            .subscribe();
+
+        const handleStorageOrCustomEvent = () => {
+            fetchData();
+        };
+        window.addEventListener('storage', handleStorageOrCustomEvent);
+        window.addEventListener('class_session_ended', handleStorageOrCustomEvent);
+
+        return () => {
+            supabaseAuth.removeChannel(channel);
+            window.removeEventListener('storage', handleStorageOrCustomEvent);
+            window.removeEventListener('class_session_ended', handleStorageOrCustomEvent);
+        };
     }, []);
 
     const handleLogout = async () => {
@@ -1328,7 +1350,7 @@ export default function ClassroomsPage() {
                                         ];
                                         const styleConfig = iconColors[idx % iconColors.length];
                                         const IconComponent = styleConfig.icon;
-                                        const isOngoing = activeSession && activeSession.classroomId === room.id;
+                                        const isOngoing = Boolean(room.is_live || (activeSession && (activeSession.classroomId === room.id || (room.classroom_id && activeSession.classroomId === room.classroom_id))));
 
                                         return (
                                             <div key={`${room.id}-${idx}`} className={`p-4 sm:p-6 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group ${
@@ -1409,7 +1431,7 @@ export default function ClassroomsPage() {
                                                         <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} className="flex-1 md:flex-initial">
                                                             <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center justify-center gap-1.5 animate-pulse">
                                                                 <Activity className="size-3.5 animate-spin" />
-                                                                Maximize
+                                                                Started (Join)
                                                             </button>
                                                         </Link>
                                                     ) : (
@@ -1605,7 +1627,7 @@ export default function ClassroomsPage() {
                                                             <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                                 <button className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5">
                                                                     <Activity className="size-3 animate-spin" />
-                                                                    Maximize
+                                                                    Started (Join)
                                                                 </button>
                                                             </Link>
                                                         ) : (
@@ -1688,7 +1710,7 @@ export default function ClassroomsPage() {
                                                 const mockTime = room.schedule && room.schedule.includes('•') ? room.schedule.split('•') : [room.schedule || 'Days Not Set', '09:00 AM - 10:30 AM'];
                                                 const days = mockTime[0]?.trim() || 'Mon, Wed';
                                                 const times = mockTime[1]?.trim() || '10:00 AM - 11:30 AM';
-                                                const isOngoing = activeSession && activeSession.classroomId === room.id;
+                                                const isOngoing = Boolean(room.is_live || (activeSession && (activeSession.classroomId === room.id || (room.classroom_id && activeSession.classroomId === room.classroom_id))));
 
                                                 return (
                                                     <tr key={room.id} className={`transition-colors group border-b border-slate-100 dark:border-slate-800/50 ${
@@ -1880,7 +1902,7 @@ export default function ClassroomsPage() {
                                                                     <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                                         <button className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center gap-1.5 animate-pulse">
                                                                             <Activity className="size-3.5 animate-spin" />
-                                                                            Maximize
+                                                                            Started (Join)
                                                                         </button>
                                                                     </Link>
                                                                 ) : (

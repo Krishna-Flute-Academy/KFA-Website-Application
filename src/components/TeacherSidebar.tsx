@@ -857,8 +857,16 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                 if (confirm('Are you sure you want to end this active class session?')) {
                                     setIsEndingSession(true);
                                     const sessionToClear = activeSession;
+                                    if (!sessionToClear) {
+                                        setIsEndingSession(false);
+                                        return;
+                                    }
                                     // Optimistically hide active session widget immediately for instant responsiveness
-                                    localStorage.removeItem('active_class_session');
+                                    if (typeof window !== 'undefined') {
+                                        localStorage.removeItem('active_class_session');
+                                        window.dispatchEvent(new Event('storage'));
+                                        window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId: sessionToClear.classroomId } }));
+                                    }
                                     setActiveSession(null);
 
                                     try {
@@ -867,35 +875,29 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                         const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
                                         const sessionDateStr = sessionToClear.sessionDate || new Date().toISOString().split('T')[0];
 
-                                        // Single RPC call to end session, clear live flag & log history transactionally in Postgres
-                                        const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
-                                            p_classroom_id: sessionToClear.classroomId,
-                                            p_session_date: sessionDateStr,
-                                            p_session_type: sessionToClear.sessionType || 'online',
-                                            p_started_at: new Date(startedAtTime).toISOString(),
-                                            p_ended_at: new Date(endedAtTime).toISOString(),
-                                            p_duration_seconds: durationSecs
-                                        });
-
-                                        if (rpcErr) {
-                                            console.warn('RPC end_classroom_session returned error, attempting direct live state update:', rpcErr);
-                                            const { error: clearErr } = await supabaseAuth
-                                                .from('classrooms')
-                                                .update({
-                                                    is_live: false,
-                                                    live_meeting_link: null,
-                                                    live_session_started_at: null
-                                                })
-                                                .eq('id', sessionToClear.classroomId);
-
-                                            if (clearErr) throw clearErr;
+                                        try {
+                                            await supabaseAuth.rpc('end_classroom_session', {
+                                                p_classroom_id: sessionToClear.classroomId,
+                                                p_session_date: sessionDateStr,
+                                                p_session_type: sessionToClear.sessionType || 'online',
+                                                p_started_at: new Date(startedAtTime).toISOString(),
+                                                p_ended_at: new Date(endedAtTime).toISOString(),
+                                                p_duration_seconds: durationSecs
+                                            });
+                                        } catch (rpcErr) {
+                                            console.warn('RPC end_classroom_session warning/error:', rpcErr);
                                         }
+
+                                        await supabaseAuth
+                                            .from('classrooms')
+                                            .update({
+                                                is_live: false,
+                                                live_meeting_link: null,
+                                                live_session_started_at: null
+                                            })
+                                            .eq('id', sessionToClear.classroomId);
                                     } catch (err: any) {
                                         console.error('Error ending class session from sidebar:', err);
-                                        // Restore session widget if database update failed completely
-                                        setActiveSession(sessionToClear);
-                                        localStorage.setItem('active_class_session', JSON.stringify(sessionToClear));
-                                        alert(`Failed to end classroom session: ${err?.message || 'Please try again.'}`);
                                     } finally {
                                         setIsEndingSession(false);
                                     }

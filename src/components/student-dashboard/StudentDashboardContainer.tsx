@@ -790,13 +790,33 @@ export default function StudentDashboardContainer() {
                     : Promise.resolve({ data: [] }),
 
                 // P9: Curriculum allocations (student-specific and class-wide)
-                allClassroomIds.length > 0
-                    ? supabaseAuth.from('classroom_inventory_allocation')
-                        .select('*')
-                        .or(`allocated_to_student_id.eq.${userId},and(classroom_id.in.(${allClassroomIds.join(',')}),allocated_to_student_id.is.null)`)
-                    : supabaseAuth.from('classroom_inventory_allocation')
-                        .select('*')
-                        .eq('allocated_to_student_id', userId)
+                (async () => {
+                    try {
+                        const studentAllocReq = supabaseAuth
+                            .from('classroom_inventory_allocation')
+                            .select('*')
+                            .eq('allocated_to_student_id', userId);
+
+                        if (allClassroomIds.length === 0) {
+                            return await studentAllocReq;
+                        }
+
+                        const classAllocReq = supabaseAuth
+                            .from('classroom_inventory_allocation')
+                            .select('*')
+                            .in('classroom_id', allClassroomIds)
+                            .is('allocated_to_student_id', null);
+
+                        const [res1, res2] = await Promise.all([studentAllocReq, classAllocReq]);
+                        const combinedMap = new Map<string, any>();
+                        (res1.data || []).forEach((item: any) => combinedMap.set(item.id, item));
+                        (res2.data || []).forEach((item: any) => combinedMap.set(item.id, item));
+                        return { data: Array.from(combinedMap.values()), error: res1.error || res2.error || null };
+                    } catch (e) {
+                        console.error('Error fetching allocations:', e);
+                        return { data: [], error: null };
+                    }
+                })()
             ];
 
             const [
@@ -994,8 +1014,13 @@ export default function StudentDashboardContainer() {
     useEffect(() => {
         const init = async () => {
             setLoading(true);
-            await refreshData();
-            setLoading(false);
+            try {
+                await refreshData();
+            } catch (err) {
+                console.error('Error initializing student dashboard:', err);
+            } finally {
+                setLoading(false);
+            }
         };
         init();
     }, []);

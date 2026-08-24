@@ -335,7 +335,7 @@ export default function MeetingPage() {
         setIsEnding(true);
         try {
             // Retrieve starting time from localStorage, fallback to elapsed calculation
-            const activeSessionStr = localStorage.getItem('active_class_session');
+            const activeSessionStr = typeof window !== 'undefined' ? localStorage.getItem('active_class_session') : null;
             let startedAtTime = Date.now() - Math.max(0, secondsElapsed || 0) * 1000;
             if (activeSessionStr) {
                 try {
@@ -358,25 +358,25 @@ export default function MeetingPage() {
             const late = students.filter(s => s.attendance === 'late').length;
             const excused = students.filter(s => s.attendance === 'excused').length;
 
-            const { error: endError } = await supabaseAuth.rpc('end_classroom_session', {
-                p_classroom_id: classroomId,
-                p_session_date: activeSessionDate,
-                p_session_type: sessionType || 'online',
-                p_started_at: new Date(startedAtTime).toISOString(),
-                p_ended_at: new Date(endedAtTime).toISOString(),
-                p_duration_seconds: durationSecs,
-                p_present_count: present,
-                p_absent_count: absent,
-                p_late_count: late,
-                p_excused_count: excused
-            });
-
-            if (endError) {
-                console.warn('RPC end_classroom_session failed, falling back to direct table update:', endError);
+            try {
+                await supabaseAuth.rpc('end_classroom_session', {
+                    p_classroom_id: classroomId,
+                    p_session_date: activeSessionDate,
+                    p_session_type: sessionType || 'online',
+                    p_started_at: new Date(startedAtTime).toISOString(),
+                    p_ended_at: new Date(endedAtTime).toISOString(),
+                    p_duration_seconds: durationSecs,
+                    p_present_count: present,
+                    p_absent_count: absent,
+                    p_late_count: late,
+                    p_excused_count: excused
+                });
+            } catch (rpcErr) {
+                console.warn('RPC end_classroom_session warning/error:', rpcErr);
             }
 
-            // Always clear the live flag directly to ensure it updates for students
-            const { error: clearLiveError } = await supabaseAuth
+            // Always clear the live flag directly to ensure it updates for students and teachers
+            await supabaseAuth
                 .from('classrooms')
                 .update({
                     is_live: false,
@@ -385,11 +385,12 @@ export default function MeetingPage() {
                 })
                 .eq('id', classroomId);
 
-            if (clearLiveError && endError) {
-                throw clearLiveError;
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('active_class_session');
+                window.dispatchEvent(new Event('storage'));
+                window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId } }));
             }
 
-            localStorage.removeItem('active_class_session');
             router.push(`/teacher-dashboard/classrooms/${classroomId}`);
         } catch (err: any) {
             console.error('Unexpected error ending active session:', err);

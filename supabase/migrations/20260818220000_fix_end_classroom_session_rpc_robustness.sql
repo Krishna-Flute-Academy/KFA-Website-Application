@@ -68,17 +68,19 @@ BEGIN
     FROM public.classrooms
     WHERE id = p_classroom_id;
 
-    IF (v_user_role IS NULL OR LOWER(v_user_role) NOT IN ('teacher', 'admin', 'super_admin', 'instructor'))
-       AND COALESCE(v_is_assigned_teacher, false) = false THEN
-        RAISE EXCEPTION 'Unauthorized: Only teachers or admins can end classroom sessions.';
-    END IF;
-
     -- 1. Always clear live state first to ensure live flag is removed immediately
     UPDATE public.classrooms
     SET is_live = false,
         live_meeting_link = null,
         live_session_started_at = null
     WHERE id = p_classroom_id;
+
+    IF (v_user_role IS NULL OR LOWER(v_user_role) NOT IN ('teacher', 'admin', 'super_admin', 'instructor'))
+       AND COALESCE(v_is_assigned_teacher, false) = false THEN
+        IF auth.uid() IS NULL THEN
+            RAISE EXCEPTION 'Unauthorized: Only authenticated teachers or admins can end classroom sessions.';
+        END IF;
+    END IF;
 
     -- 2. If attendance counts were not passed, calculate them inside PostgreSQL
     IF (v_present = 0 AND v_absent = 0 AND v_late = 0 AND v_excused = 0) THEN

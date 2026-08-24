@@ -345,11 +345,31 @@ export default function StudentProfilePage() {
                 setStudentProgress(progressData || []);
 
                 // Fetch inventory allocations for this student or classroom
-                const { data: allocsData } = await supabaseAuth
-                    .from('classroom_inventory_allocation')
-                    .select('*')
-                    .or(`allocated_to_student_id.eq.${studentId}${studentClassroomId ? `,and(classroom_id.eq.${studentClassroomId},allocated_to_student_id.is.null)` : ''}`);
-                setStudentAllocations(allocsData || []);
+                const fetchStudentAllocsData = async () => {
+                    const directAllocReq = supabaseAuth
+                        .from('classroom_inventory_allocation')
+                        .select('*')
+                        .eq('allocated_to_student_id', studentId);
+
+                    if (!studentClassroomId) {
+                        const { data } = await directAllocReq;
+                        return data || [];
+                    }
+
+                    const classAllocReq = supabaseAuth
+                        .from('classroom_inventory_allocation')
+                        .select('*')
+                        .eq('classroom_id', studentClassroomId)
+                        .is('allocated_to_student_id', null);
+
+                    const [res1, res2] = await Promise.all([directAllocReq, classAllocReq]);
+                    const combinedMap = new Map<string, any>();
+                    (res1.data || []).forEach((item: any) => combinedMap.set(item.id, item));
+                    (res2.data || []).forEach((item: any) => combinedMap.set(item.id, item));
+                    return Array.from(combinedMap.values());
+                };
+                const allocsData = await fetchStudentAllocsData();
+                setStudentAllocations(allocsData);
 
                 if (studentClassroomId) {
                     // Fetch classroom assignments to check sequential unlocks/visual indicator permissions

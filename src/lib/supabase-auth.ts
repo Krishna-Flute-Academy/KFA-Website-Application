@@ -31,7 +31,7 @@ if (typeof window !== 'undefined') {
     let _activeSessionPromise: Promise<any> | null = null;
     let _cachedSession: any = null;
     let _cacheTime = 0;
-    const SESSION_CACHE_MS = 2000; // 2 seconds — safe window to de-duplicate burst calls on mount
+    const SESSION_CACHE_MS = 10000; // 10 seconds — window to de-duplicate burst calls on mount and navigation
 
     supabaseAuth.auth.getSession = async () => {
         const now = Date.now();
