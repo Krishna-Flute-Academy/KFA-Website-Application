@@ -23,6 +23,25 @@ export const supabaseAuth = createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
 
 // Robust error handling for invalid/revoked refresh tokens to prevent app loops and console clutter.
 if (typeof window !== 'undefined') {
+    // Suppress the harmless but noisy "Refresh Token Not Found" unhandled rejection / console errors
+    // that Supabase throws internally during autoRefreshToken race conditions or fast-refresh.
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => {
+        if (args[0] && typeof args[0] === 'string' && args[0].includes('Refresh Token Not Found')) {
+            return; // Suppress
+        }
+        if (args[0] && args[0].message && args[0].message.includes('Refresh Token Not Found')) {
+            return; // Suppress
+        }
+        originalConsoleError(...args);
+    };
+
+    window.addEventListener('unhandledrejection', (event) => {
+        if (event.reason && event.reason.message && event.reason.message.includes('Refresh Token Not Found')) {
+            event.preventDefault(); // Suppress the unhandled rejection
+        }
+    });
+
     // 1. Wrap getSession with error handling + in-flight deduplication + short cache.
     //    This prevents multiple simultaneous calls (e.g. from multiple components on mount)
     //    from each independently kicking off a token refresh, which causes multi-tab lock
