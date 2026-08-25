@@ -39,6 +39,7 @@ interface CurriculumTabProps {
     getTopicBreadcrumbs: (topic: any) => string;
     setShowMaterialPopup: (show: boolean) => void;
     classmates: Classmate[];
+    onRefreshCurriculum?: () => void;
 }
 
 const stripHtml = (html: string) => {
@@ -81,9 +82,11 @@ export default function CurriculumTab({
     handleToggleLessonComplete,
     getTopicBreadcrumbs,
     setShowMaterialPopup,
-    classmates
+    classmates,
+    onRefreshCurriculum
 }: CurriculumTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const isOnline = classroom?.description?.includes('[delivery_format:online]');
     const isOffline = classroom?.description?.includes('[delivery_format:offline]');
@@ -174,6 +177,23 @@ export default function CurriculumTab({
                             <div className="bg-amber-500/10 text-amber-700 text-[10px] sm:text-xs font-extrabold px-2.5 sm:px-3 py-1.5 rounded-full shrink-0 text-center">
                                 Completed: {completedLessonsCount} / {totalAllocatedLessons}
                             </div>
+                            {onRefreshCurriculum && (
+                                <button 
+                                    onClick={async () => {
+                                        setIsRefreshing(true);
+                                        await onRefreshCurriculum();
+                                        setIsRefreshing(false);
+                                    }}
+                                    disabled={isRefreshing}
+                                    className="p-1.5 sm:p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-500 transition-colors disabled:opacity-50"
+                                    title="Refresh Curriculum"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isRefreshing ? 'animate-spin' : ''}>
+                                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                                        <path d="M3 3v5h5"/>
+                                    </svg>
+                                </button>
+                            )}
                         </div>
                     </div>
                     <div className="p-6">

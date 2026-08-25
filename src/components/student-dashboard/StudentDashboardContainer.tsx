@@ -3062,6 +3062,7 @@ export default function StudentDashboardContainer() {
                                     getTopicBreadcrumbs={getTopicBreadcrumbs}
                                     setShowMaterialPopup={setShowMaterialPopup}
                                     classmates={classmates}
+                                    onRefreshCurriculum={refreshData}
                                 />
                             </div>
                         )}
