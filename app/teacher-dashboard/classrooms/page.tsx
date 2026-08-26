@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, Search, ChevronLeft, ChevronRight, PlusCircle, Filter, Calendar, List, MapPin, Activity, Link as LinkIcon, Mic, Disc, Music, Trash2, Check, Info, Edit } from 'lucide-react';
+import { Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, Search, ChevronLeft, ChevronRight, PlusCircle, Filter, Calendar, List, MapPin, Activity, Link as LinkIcon, Mic, Disc, Music, Trash2, Check, Info, Edit, Square } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
@@ -370,6 +370,75 @@ export default function ClassroomsPage() {
             });
         } finally {
             setIsDeletingId(null);
+        }
+    };
+
+    const [endingSessionId, setEndingSessionId] = useState<string | null>(null);
+
+    const handleEndClassSession = async (room: any) => {
+        const targetRoomId = room.type === 'permanent' ? room.id : (room.classroom_id || room.id);
+        const roomName = room.name || room.title || 'this class';
+
+        if (!window.confirm(`Are you sure you want to stop/end the live class session for "${roomName}"?`)) {
+            return;
+        }
+
+        setEndingSessionId(room.id);
+        try {
+            // 1. Update classrooms table to set is_live = false
+            await supabaseAuth
+                .from('classrooms')
+                .update({
+                    is_live: false,
+                    live_meeting_link: null,
+                    live_session_started_at: null
+                })
+                .eq('id', targetRoomId);
+
+            // 2. Try calling RPC end_classroom_session if available
+            try {
+                await supabaseAuth.rpc('end_classroom_session', {
+                    p_classroom_id: targetRoomId,
+                    p_session_date: new Date().toISOString().split('T')[0],
+                    p_session_type: 'online',
+                    p_started_at: new Date().toISOString(),
+                    p_ended_at: new Date().toISOString(),
+                    p_duration_seconds: 0,
+                    p_present_count: 0,
+                    p_absent_count: 0,
+                    p_late_count: 0,
+                    p_excused_count: 0
+                });
+            } catch (_) {}
+
+            // 3. Clear localStorage session tracker & dispatch events
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('active_class_session');
+                window.dispatchEvent(new Event('storage'));
+                window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId: targetRoomId } }));
+            }
+
+            // 4. Update local state
+            setActiveSession(null);
+            setClassrooms(prev => prev.map(c => {
+                if (c.id === room.id || c.id === targetRoomId) {
+                    return { ...c, is_live: false, live_meeting_link: null, live_session_started_at: null };
+                }
+                return c;
+            }));
+
+            setToast({
+                type: 'success',
+                message: `Live class session for "${roomName}" has been stopped.`
+            });
+        } catch (err: any) {
+            console.error('Error ending class session:', err);
+            setToast({
+                type: 'error',
+                message: `Failed to end session: ${err.message || 'Unknown error'}`
+            });
+        } finally {
+            setEndingSessionId(null);
         }
     };
 
@@ -1428,12 +1497,27 @@ export default function ClassroomsPage() {
                                                         </button>
                                                     </Link>
                                                     {isOngoing ? (
-                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} className="flex-1 md:flex-initial">
-                                                            <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center justify-center gap-1.5 animate-pulse">
-                                                                <Activity className="size-3.5 animate-spin" />
-                                                                Started (Join)
+                                                        <div className="flex items-center gap-1.5 flex-1 md:flex-initial">
+                                                            <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
+                                                                <button className="px-3 sm:px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center justify-center gap-1.5 animate-pulse cursor-pointer">
+                                                                    <Activity className="size-3.5 animate-spin" />
+                                                                    Started (Join)
+                                                                </button>
+                                                            </Link>
+                                                            <button
+                                                                onClick={() => handleEndClassSession(room)}
+                                                                disabled={endingSessionId === room.id}
+                                                                className="px-3 py-2 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 text-xs font-extrabold rounded-lg transition-colors border border-rose-300 dark:border-rose-800 flex items-center justify-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                                                                title="Stop/End Live Session"
+                                                            >
+                                                                {endingSessionId === room.id ? (
+                                                                    <Loader2 className="size-3.5 animate-spin" />
+                                                                ) : (
+                                                                    <Square className="size-3 fill-current" />
+                                                                )}
+                                                                End Class
                                                             </button>
-                                                        </Link>
+                                                        </div>
                                                     ) : (
                                                         <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} className="flex-1 md:flex-initial">
                                                             <button 
@@ -1624,12 +1708,27 @@ export default function ClassroomsPage() {
                                                             </button>
                                                         </Link>
                                                         {isOngoing ? (
-                                                            <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                <button className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5">
-                                                                    <Activity className="size-3 animate-spin" />
-                                                                    Started (Join)
+                                                            <div className="flex items-center gap-1">
+                                                                <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
+                                                                    <button className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5 text-xs cursor-pointer">
+                                                                        <Activity className="size-3 animate-spin" />
+                                                                        Started
+                                                                    </button>
+                                                                </Link>
+                                                                <button
+                                                                    onClick={() => handleEndClassSession(room)}
+                                                                    disabled={endingSessionId === room.id}
+                                                                    className="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 font-extrabold rounded-md transition-colors border border-rose-300 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                                                    title="Stop/End Live Session"
+                                                                >
+                                                                    {endingSessionId === room.id ? (
+                                                                        <Loader2 className="size-3 animate-spin" />
+                                                                    ) : (
+                                                                        <Square className="size-2.5 fill-current" />
+                                                                    )}
+                                                                    Stop
                                                                 </button>
-                                                            </Link>
+                                                            </div>
                                                         ) : (
                                                             <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                                 <button 
@@ -1899,12 +1998,27 @@ export default function ClassroomsPage() {
                                                                     </button>
                                                                 </Link>
                                                                 {isOngoing ? (
-                                                                    <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                        <button className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center gap-1.5 animate-pulse">
-                                                                            <Activity className="size-3.5 animate-spin" />
-                                                                            Started (Join)
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
+                                                                            <button className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center gap-1.5 animate-pulse cursor-pointer">
+                                                                                <Activity className="size-3.5 animate-spin" />
+                                                                                Started (Join)
+                                                                            </button>
+                                                                        </Link>
+                                                                        <button
+                                                                            onClick={() => handleEndClassSession(room)}
+                                                                            disabled={endingSessionId === room.id}
+                                                                            className="px-3 py-2 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 text-xs font-extrabold rounded-lg transition-colors border border-rose-300 dark:border-rose-800 flex items-center justify-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                                                                            title="Stop/End Live Session"
+                                                                        >
+                                                                            {endingSessionId === room.id ? (
+                                                                                <Loader2 className="size-3.5 animate-spin" />
+                                                                            ) : (
+                                                                                <Square className="size-3 fill-current" />
+                                                                            )}
+                                                                            End Class
                                                                         </button>
-                                                                    </Link>
+                                                                    </div>
                                                                 ) : (
                                                                     <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
                                                                         <button 

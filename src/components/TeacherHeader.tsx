@@ -50,10 +50,15 @@ export default function TeacherHeader({
                     .order('created_at', { ascending: false })
                     .limit(30);
 
-                if (error) throw error;
+                if (error) {
+                    console.warn('Notice loading notifications:', error.message || error);
+                    setNotifications([]);
+                    return;
+                }
                 setNotifications(data || []);
-            } catch (err) {
-                console.error('Error loading notifications:', err);
+            } catch (err: any) {
+                console.warn('Notice loading notifications:', err?.message || err);
+                setNotifications([]);
             }
         };
 
@@ -113,8 +118,8 @@ export default function TeacherHeader({
                 .eq('user_id', currentUserId);
             if (error) throw error;
             setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-        } catch (err) {
-            console.error('Error marking notifications as read:', err);
+        } catch (err: any) {
+            console.warn('Notice marking notifications as read:', err?.message || err);
         }
     };
 

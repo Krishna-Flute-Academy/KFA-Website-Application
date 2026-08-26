@@ -1289,12 +1289,29 @@ export default function ClassroomDashboardPage({
                     return chap;
                 });
 
+                const normalizedLessons = (dbLessonsData || []).map((les: any) => {
+                    if (normalizedChapters.some((c: any) => c.id === les.chapter_id)) {
+                        return les;
+                    }
+                    const initChap = INITIAL_CHAPTERS.find(ic => ic.id === les.chapter_id);
+                    if (initChap) {
+                        const matchingChap = normalizedChapters.find((c: any) => 
+                            c.chapter_number === initChap.chapter_number ||
+                            c.title?.toLowerCase() === initChap.title?.toLowerCase()
+                        );
+                        if (matchingChap) {
+                            return { ...les, chapter_id: matchingChap.id };
+                        }
+                    }
+                    return les;
+                });
+
                 if (dbModulesData.length === INITIAL_MODULES.length) {
                     setCategories(INITIAL_CATEGORIES);
                 }
                 setCourseModules(dbModulesData);
                 setCourseChapters(normalizedChapters);
-                setCourseLessons(dbLessonsData);
+                setCourseLessons(normalizedLessons);
 
                 // 4. Fetch Home Classroom IDs of all students (so we can get curriculum allocations)
                 let classroomIds = [classroomId];
@@ -1340,20 +1357,27 @@ export default function ClassroomDashboardPage({
                     (async () => {
                         try {
                             const asgData = asgRes.data || [];
-                            const enriched = await Promise.all(asgData.map(async (a: Assignment) => {
+                            const individualAsgIds = asgData.filter((a: Assignment) => a.target_type === 'individual').map((a: Assignment) => a.id);
+                            let allAsData: any[] = [];
+                            if (individualAsgIds.length > 0) {
+                                const { data: asData } = await supabaseAuth
+                                    .from('assignment_students')
+                                    .select('*')
+                                    .in('assignment_id', individualAsgIds);
+                                allAsData = asData || [];
+                            }
+
+                            const enriched = asgData.map((a: Assignment) => {
                                 if (a.target_type === 'individual') {
-                                    const { data: asData } = await supabaseAuth
-                                        .from('assignment_students')
-                                        .select('*')
-                                        .eq('assignment_id', a.id);
-                                    const enrichedStudents = (asData || []).map((as: AssignmentStudent) => {
+                                    const matchingRows = allAsData.filter((as: any) => as.assignment_id === a.id);
+                                    const enrichedStudents = matchingRows.map((as: AssignmentStudent) => {
                                         const match = formattedRoster.find(s => s.student_id === as.student_id);
                                         return { ...as, student_name: match?.name || 'Unknown', student_pic: match?.profile_pic_url || null };
                                     });
                                     return { ...a, assignment_students: enrichedStudents };
                                 }
                                 return { ...a, assignment_students: [] };
-                            }));
+                            });
                             setAssignments(enriched);
                         } catch (ae) {
                             console.warn('Could not enrich assignments:', ae);
@@ -1491,13 +1515,19 @@ export default function ClassroomDashboardPage({
                 return;
             }
 
-            const enriched = await Promise.all((asgData || []).map(async (a: Assignment) => {
+            const asgList = asgData || [];
+            const asgIds = asgList.map((a: Assignment) => a.id);
+            let allAsData: any[] = [];
+            if (asgIds.length > 0) {
                 const { data: asData } = await supabaseAuth
                     .from('assignment_students')
                     .select('*')
-                    .eq('assignment_id', a.id);
-                
-                const existingRows = asData || [];
+                    .in('assignment_id', asgIds);
+                allAsData = asData || [];
+            }
+
+            const enriched = asgList.map((a: Assignment) => {
+                const existingRows = allAsData.filter(row => row.assignment_id === a.id);
 
                 if (a.target_type === 'individual') {
                     const enrichedStudents = existingRows.map((as: AssignmentStudent) => {
@@ -1536,7 +1566,7 @@ export default function ClassroomDashboardPage({
                     });
                     return { ...a, assignment_students: enrichedStudents };
                 }
-            }));
+            });
 
             setAssignments(enriched);
         } catch (err: any) {
@@ -2409,15 +2439,12 @@ export default function ClassroomDashboardPage({
             };
         });
 
-        const activeStudentIds = new Set([
-            ...students.map(s => s.student_id),
-            ...sessionOverrides.map(o => o.student_id)
-        ]);
+        const activeStudentIds = new Set(students.map(s => s.student_id));
 
         if (curriculumTab === 'classwide') {
-            // For classwide view, collect both classwide allocations and any individual student allocations for students currently in this class
+            // For classwide view, collect classwide allocations for THIS classroom and any individual student allocations for students currently in this class
             const items = inventoryItems.filter(a => {
-                if (a.target_type === 'all') return true;
+                if (a.target_type === 'all' && a.classroom_id === classroomId) return true;
                 return a.assignment_students?.some(s => activeStudentIds.has(s.student_id));
             });
 
@@ -2465,6 +2492,9 @@ export default function ClassroomDashboardPage({
         } else {
             if (!selectedStudentForCurriculum) return [];
             const studentItems = inventoryItems.filter(a => {
+                if (a.target_type === 'all') {
+                    return a.classroom_id === classroomId || activeClassroomIds.includes(a.classroom_id);
+                }
                 return a.assignment_students?.some(
                     s => s.student_id === selectedStudentForCurriculum.student_id
                 );
@@ -2514,10 +2544,11 @@ export default function ClassroomDashboardPage({
         itemType: 'level' | 'chapter' | 'topic',
         itemId: string
     ) => {
-        const activeRoster = [
-            ...students.map(s => ({ student_id: s.student_id, name: s.name || 'Student', profile_pic_url: s.profile_pic_url || null })),
-            ...sessionOverrides.map(o => ({ student_id: o.student_id, name: o.name || o.users?.name || 'Student', profile_pic_url: o.profile_pic_url || o.users?.profile_pic_url || null }))
-        ];
+        const activeRoster = students.map(s => ({
+            student_id: s.student_id,
+            name: s.name || 'Student',
+            profile_pic_url: s.profile_pic_url || null
+        }));
 
         return activeRoster.map(student => {
             const studentId = student.student_id;
@@ -2606,7 +2637,7 @@ export default function ClassroomDashboardPage({
                 status
             };
         });
-    }, [students, sessionOverrides, classroomInventoryAllocations, studentProgress, courseChapters, courseLessons]);
+    }, [students, sessionOverrides, attendanceDate, classroomInventoryAllocations, studentProgress, courseChapters, courseLessons]);
 
     const getClassSummary = useCallback((
         itemType: 'level' | 'chapter' | 'topic',
@@ -2793,9 +2824,14 @@ export default function ClassroomDashboardPage({
         };
 
         courseModules.forEach(mod => {
-            const modAlloc = allocatedInventoryItems.find(
-                a => a.inventory_ref_type === 'module' && a.inventory_ref_id === mod.id
-            );
+            const modAlloc = allocatedInventoryItems.find(a => {
+                if (a.inventory_ref_type !== 'module') return false;
+                if (a.inventory_ref_id === mod.id) return true;
+                if (a.inventory_ref_title && a.inventory_ref_title.toLowerCase() === mod.title.toLowerCase()) return true;
+                const initMod = INITIAL_MODULES.find(im => im.id === a.inventory_ref_id);
+                if (initMod && (initMod.module_number === mod.module_number || initMod.title?.toLowerCase() === mod.title?.toLowerCase())) return true;
+                return false;
+            });
 
             const { categoryName, categoryOrder } = getCategoryInfo(mod);
             const isCategoryMatch = query ? categoryName.toLowerCase().includes(query) : false;
@@ -2805,9 +2841,23 @@ export default function ClassroomDashboardPage({
             const chapterNodes: any[] = [];
 
             modChapters.forEach(chap => {
-                const chapAlloc = allocatedInventoryItems.find(
-                    a => a.inventory_ref_type === 'chapter' && a.inventory_ref_id === chap.id
-                );
+                const chapAlloc = allocatedInventoryItems.find(a => {
+                    if (a.inventory_ref_type === 'module') {
+                        if (a.inventory_ref_id === mod.id) return true;
+                        if (a.inventory_ref_title && a.inventory_ref_title.toLowerCase() === mod.title.toLowerCase()) return true;
+                        const initMod = INITIAL_MODULES.find(im => im.id === a.inventory_ref_id);
+                        if (initMod && (initMod.module_number === mod.module_number || initMod.title?.toLowerCase() === mod.title?.toLowerCase())) return true;
+                        return false;
+                    }
+                    if (a.inventory_ref_type === 'chapter') {
+                        if (a.inventory_ref_id === chap.id) return true;
+                        if (a.inventory_ref_title && a.inventory_ref_title.toLowerCase() === chap.title.toLowerCase()) return true;
+                        const initChap = INITIAL_CHAPTERS.find(ic => ic.id === a.inventory_ref_id);
+                        if (initChap && (initChap.chapter_number === chap.chapter_number || initChap.title?.toLowerCase() === chap.title?.toLowerCase())) return true;
+                        return false;
+                    }
+                    return false;
+                });
 
                 const isChapterMatch = query ? (
                     chap.title.toLowerCase().includes(query) ||
@@ -2819,13 +2869,16 @@ export default function ClassroomDashboardPage({
                 const lessonNodes: any[] = [];
 
                 chapLessons.forEach(lesson => {
-                    const lessonAlloc = allocatedInventoryItems.find(
-                        a => a.inventory_ref_type === 'lesson' &&
-                             a.inventory_ref_id === lesson.id &&
-                             !a.id.toString().startsWith('implicit-')
-                    );
+                    const lessonAlloc = allocatedInventoryItems.find(a => {
+                        if (a.inventory_ref_type !== 'lesson') return false;
+                        if (a.inventory_ref_id === lesson.id) return true;
+                        if (a.inventory_ref_title && a.inventory_ref_title.toLowerCase() === lesson.title.toLowerCase()) return true;
+                        const initLes = INITIAL_LESSONS.find(il => il.id === a.inventory_ref_id);
+                        if (initLes && (initLes.lesson_number === lesson.lesson_number || initLes.title?.toLowerCase() === lesson.title?.toLowerCase())) return true;
+                        return false;
+                    });
 
-                    const isLessonAllocated = !!lessonAlloc;
+                    const isLessonAllocated = !!lessonAlloc || !!chapAlloc || !!modAlloc;
 
                     if (isLessonAllocated) {
                         const isLessonMatch = query ? (
@@ -2839,26 +2892,28 @@ export default function ClassroomDashboardPage({
                         if (matchesSearch) {
                             lessonNodes.push({
                                 ...lesson,
-                                allocationId: lessonAlloc ? lessonAlloc.id : null,
+                                allocationId: lessonAlloc ? lessonAlloc.id : (chapAlloc ? chapAlloc.id : (modAlloc ? modAlloc.id : null)),
                                 isExplicit: !!lessonAlloc
                             });
                         }
                     }
                 });
 
-                const isChapterVisible = !!chapAlloc || lessonNodes.length > 0;
+                const isChapterVisible = !!chapAlloc || !!modAlloc || lessonNodes.length > 0;
 
                 if (isChapterVisible && (!query || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
                     chapterNodes.push({
                         ...chap,
-                        allocationId: chapAlloc ? chapAlloc.id : null,
+                        allocationId: chapAlloc ? chapAlloc.id : (modAlloc ? modAlloc.id : null),
                         isExplicit: !!chapAlloc,
                         lessons: lessonNodes.sort((a, b) => a.lesson_number - b.lesson_number)
                     });
                 }
             });
 
-            const isModuleVisible = !!modAlloc || chapterNodes.length > 0;
+            const moduleStatus = getClassSummary('level', mod.id);
+            const isModuleAllocated = !!modAlloc || moduleStatus !== 'not_allocated';
+            const isModuleVisible = isModuleAllocated && (!!modAlloc || chapterNodes.length > 0);
 
             if (isModuleVisible && (!query || isCategoryMatch || isModuleMatch || chapterNodes.length > 0)) {
                 if (!categoriesMap[categoryName]) {
@@ -3158,7 +3213,7 @@ export default function ClassroomDashboardPage({
 
         const activeStudentIds = [
             ...students.map(s => s.student_id),
-            ...sessionOverrides.map(o => o.student_id)
+            ...sessionOverrides.filter(o => o.override_date === attendanceDate).map(o => o.student_id)
         ];
 
         let targetStudentIds: string[] = [];
@@ -3289,7 +3344,7 @@ export default function ClassroomDashboardPage({
 
         const activeStudentIds = [
             ...students.map(s => s.student_id),
-            ...sessionOverrides.map(o => o.student_id)
+            ...sessionOverrides.filter(o => o.override_date === attendanceDate).map(o => o.student_id)
         ];
 
         const effectiveTab = forcedScope || curriculumTab;
@@ -3425,7 +3480,7 @@ export default function ClassroomDashboardPage({
 
         const activeStudentIds = [
             ...students.map(s => s.student_id),
-            ...sessionOverrides.map(o => o.student_id)
+            ...sessionOverrides.filter(o => o.override_date === attendanceDate).map(o => o.student_id)
         ];
 
         if (activeStudentIds.length === 0) {
@@ -5173,7 +5228,7 @@ export default function ClassroomDashboardPage({
                                                 setAllocationTargetType('classwide');
                                                 const activeStudentIds = [
                                                     ...students.map(s => s.student_id),
-                                                    ...sessionOverrides.map(o => o.student_id)
+                                                    ...sessionOverrides.filter(o => o.override_date === attendanceDate).map(o => o.student_id)
                                                 ];
                                                 setAllocationSelectedStudents(activeStudentIds);
                                             }}
@@ -5218,7 +5273,7 @@ export default function ClassroomDashboardPage({
                                         <div className="text-left">
                                             <span className="text-[9px] font-black uppercase text-amber-500 font-mono tracking-wider">Setting Pacing For</span>
                                             <h5 className="text-xs font-black text-slate-855 dark:text-slate-200 mt-0.5 leading-none">
-                                                All Class Students ({students.length + sessionOverrides.length})
+                                                All Class Students ({students.length + sessionOverrides.filter(o => o.override_date === attendanceDate).length})
                                             </h5>
                                         </div>
                                     </div>

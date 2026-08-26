@@ -1094,7 +1094,7 @@ export default function CurriculumTab({
                                         <div className="space-y-3">
                                             <h5 className="font-extrabold text-sm text-emerald-950 leading-snug">{livePreviewData.currentlyLearning.title}</h5>
                                             {livePreviewData.currentlyLearning.description && (
-                                                <p className="text-[11px] text-emerald-900/80 font-medium leading-relaxed line-clamp-3">{livePreviewData.currentlyLearning.description}</p>
+                                                <p className="text-[11px] text-emerald-900/80 font-medium leading-relaxed line-clamp-3">{stripHtml(livePreviewData.currentlyLearning.description)}</p>
                                             )}
                                             
                                             {/* Media content indicator */}

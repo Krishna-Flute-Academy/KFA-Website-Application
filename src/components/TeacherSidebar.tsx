@@ -313,17 +313,13 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 const { count, error } = await supabaseAuth
                     .from('users')
                     .select('id', { count: 'exact', head: true })
-                    .or('role.eq.student,role.eq.pending,role.eq.mentor')
+                    .in('role', ['student', 'pending', 'mentor'])
                     .is('teacher_id', null);
                 
                 if (error) throw error;
                 if (count !== null) setUnassignedCount(count);
             } catch (error: any) {
-                if (isNetworkError(error)) {
-                    console.warn('Network issue fetching unassigned count (will retry):', error?.message || error);
-                } else {
-                    console.error('Error fetching unassigned count:', error?.message || error);
-                }
+                console.warn('Notice fetching unassigned count:', error?.message || error);
             }
         };
 
@@ -353,11 +349,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 if (error) throw error;
                 if (count !== null) setPendingPaymentsCount(count);
             } catch (error: any) {
-                if (isNetworkError(error)) {
-                    console.warn('Network issue fetching pending payments count (will retry):', error?.message || error);
-                } else {
-                    console.error('Error fetching pending payments count:', error?.message || error);
-                }
+                console.warn('Notice fetching pending payments count:', error?.message || error);
             }
         };
 
@@ -414,11 +406,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     }
                 }
             } catch (error: any) {
-                if (isNetworkError(error)) {
-                    console.warn('Network issue fetching pending leave requests count (will retry):', error?.message || error?.details || error);
-                } else {
-                    console.error('Error fetching pending leave requests count:', error?.message || error?.details || error);
-                }
+                console.warn('Notice fetching pending leave requests count:', error?.message || error);
             }
         };
 
@@ -455,11 +443,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 setUnreadTasksCount(tasks);
                 setUnreadMessagesCount(messages);
             } catch (err: any) {
-                if (isNetworkError(err)) {
-                    console.warn('Network issue fetching notification counts in sidebar (will retry):', err?.message || err);
-                } else {
-                    console.error('Error fetching notification counts in sidebar:', err);
-                }
+                console.warn('Notice fetching notification counts in sidebar:', err?.message || err);
             }
         };
 
@@ -525,8 +509,8 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                 } else {
                     setActiveSession(null);
                 }
-            } catch (err) {
-                console.error('Error fetching active session from DB:', err);
+            } catch (err: any) {
+                console.warn('Notice fetching active session from DB:', err?.message || err);
             }
         };
 
