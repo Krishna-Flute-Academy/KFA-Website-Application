@@ -325,15 +325,10 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
         fetchUnassignedCount();
 
-        // Realtime: refresh count when users table changes (new signup or teacher_id assignment)
-        const channel = supabaseAuth
-            .channel('sidebar-unassigned-users')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
-                fetchUnassignedCount();
-            })
-            .subscribe();
+        // Polling: refresh count every 30 seconds instead of using heavy realtime subscriptions
+        const intervalId = setInterval(fetchUnassignedCount, 30000);
 
-        return () => { supabaseAuth.removeChannel(channel); };
+        return () => { clearInterval(intervalId); };
     }, [userRole]);
 
     useEffect(() => {
@@ -355,15 +350,10 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
         fetchPendingPaymentsCount();
 
-        // Realtime: refresh count when fees_payments table changes
-        const channel = supabaseAuth
-            .channel('sidebar-pending-payments')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'fees_payments' }, () => {
-                fetchPendingPaymentsCount();
-            })
-            .subscribe();
+        // Polling: refresh count every 30 seconds instead of using heavy realtime subscriptions
+        const intervalId = setInterval(fetchPendingPaymentsCount, 30000);
 
-        return () => { supabaseAuth.removeChannel(channel); };
+        return () => { clearInterval(intervalId); };
     }, [userRole]);
 
     useEffect(() => {
@@ -449,29 +439,15 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
         fetchNotificationCounts();
 
-        // Subscribe to real-time notification changes (INSERT, UPDATE, DELETE) for this user
-        const notifChannel = supabaseAuth
-            .channel(`sidebar-notifications-${teacherProfile.id}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'notifications',
-                    filter: `user_id=eq.${teacherProfile.id}`
-                },
-                () => {
-                    fetchNotificationCounts();
-                }
-            )
-            .subscribe();
+        // Polling: refresh notifications every 30 seconds instead of heavy realtime subscriptions
+        const intervalId = setInterval(fetchNotificationCounts, 30000);
 
         return () => {
-            supabaseAuth.removeChannel(notifChannel);
+            clearInterval(intervalId);
         };
     }, [teacherProfile?.id]);
 
-    // Fetch active session from classrooms table and subscribe to realtime updates
+    // Fetch active session from classrooms table and use polling
     useEffect(() => {
         if (!teacherProfile?.id) return;
 
@@ -516,21 +492,8 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
         checkActiveSessionInDB();
 
-        // Realtime subscription to classrooms table to detect start/end of sessions
-        const classroomsChannel = supabaseAuth
-            .channel('sidebar-active-classrooms')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'classrooms' },
-                () => {
-                    checkActiveSessionInDB();
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabaseAuth.removeChannel(classroomsChannel);
-        };
+        const pollingInterval = setInterval(checkActiveSessionInDB, 30000);
+        return () => clearInterval(pollingInterval);
     }, [teacherProfile?.id, userRole]);
 
     // Timer effect for the active session widget

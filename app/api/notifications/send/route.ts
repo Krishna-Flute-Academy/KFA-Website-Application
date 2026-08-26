@@ -155,6 +155,7 @@ export async function POST(req: Request) {
         console.log(`[API Send Notification] Sending push notification to ${subscriptions.length} active device(s).`);
 
         // Send notifications in parallel
+        const expiredEndpoints: string[] = [];
         const pushPromises = subscriptions.map(async (subRecord: any) => {
             try {
                 await webpush.sendNotification(subRecord.subscription_json, payload);
@@ -162,10 +163,7 @@ export async function POST(req: Request) {
                 // If subscription has expired or is invalid (404 or 410), clean it up from Supabase DB
                 if (err.statusCode === 404 || err.statusCode === 410) {
                     console.log(`[API Send Notification] Pruning expired subscription: ${subRecord.endpoint}`);
-                    await supabase
-                        .from('push_subscriptions')
-                        .delete()
-                        .eq('endpoint', subRecord.endpoint);
+                    expiredEndpoints.push(subRecord.endpoint);
                 } else {
                     console.error('[API Send Notification] Push error for subscriber:', err);
                 }
@@ -173,6 +171,13 @@ export async function POST(req: Request) {
         });
 
         await Promise.all(pushPromises);
+
+        if (expiredEndpoints.length > 0) {
+            await supabase
+                .from('push_subscriptions')
+                .delete()
+                .in('endpoint', expiredEndpoints);
+        }
 
         return NextResponse.json({ success: true, sentCount: subscriptions.length });
     } catch (err: any) {
