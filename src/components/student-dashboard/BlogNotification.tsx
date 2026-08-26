@@ -30,6 +30,21 @@ interface BlogNotificationProps {
     broadcasts?: any[];
 }
 
+const stripHtml = (html: string) => {
+    if (!html) return '';
+    return html
+        .replace(/<[^>]*>?/gm, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+};
+
 const BLOG_KEY  = 'kfa-student-seen-blog';
 const VIDEO_KEY = 'kfa-student-seen-video';
 
@@ -98,7 +113,7 @@ export default function BlogNotification({ studentId, broadcasts }: BlogNotifica
                     id: blogBc.id,
                     title: blogBc.subject,
                     slug: meta.target_url || '/blog',
-                    excerpt: blogBc.content ? blogBc.content.replace(/<[^>]*>?/gm, '') : '',
+                    excerpt: stripHtml(blogBc.content || ''),
                     featured_image: meta.image_url || undefined,
                     target_url: meta.target_url || '/blog'
                 };
@@ -128,7 +143,7 @@ export default function BlogNotification({ studentId, broadcasts }: BlogNotifica
                 const video: YouTubeVideo = {
                     videoId: videoBc.id,
                     title: videoBc.subject,
-                    description: videoBc.content ? videoBc.content.replace(/<[^>]*>?/gm, '') : '',
+                    description: stripHtml(videoBc.content || ''),
                     thumbnail: meta.image_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80',
                     url: meta.target_url || 'https://www.youtube.com'
                 };

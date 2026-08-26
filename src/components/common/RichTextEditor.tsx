@@ -189,6 +189,42 @@ export default function RichTextEditor({
         setShowTableModal(false);
     };
 
+    const handlePasteCanvas = (e: React.ClipboardEvent) => {
+        const items = Array.from(e.clipboardData?.items || []);
+        const imageItem = items.find(item => item.type.startsWith('image/'));
+        if (imageItem) {
+            e.preventDefault();
+            const file = imageItem.getAsFile();
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const base64 = event.target?.result as string;
+                    if (base64) {
+                        insertImageHtml(base64, file.name);
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    };
+
+    const handleDropCanvas = (e: React.DragEvent) => {
+        if (e.dataTransfer?.files && e.dataTransfer.files[0]) {
+            const file = e.dataTransfer.files[0];
+            if (file.type.startsWith('image/')) {
+                e.preventDefault();
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const base64 = event.target?.result as string;
+                    if (base64) {
+                        insertImageHtml(base64, file.name);
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    };
+
     return (
         <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden flex flex-col bg-white dark:bg-slate-900 shadow-2xs">
             {/* Toolbar */}
@@ -432,6 +468,8 @@ export default function RichTextEditor({
                 ref={editorRef}
                 contentEditable
                 onInput={handleInput}
+                onPaste={handlePasteCanvas}
+                onDrop={handleDropCanvas}
                 className="p-4 text-xs font-semibold leading-relaxed text-slate-800 dark:text-slate-200 outline-none overflow-y-auto focus:ring-0 select-text"
                 style={{ minHeight, fontFamily: 'Lexend, sans-serif' }}
                 data-placeholder={placeholder}

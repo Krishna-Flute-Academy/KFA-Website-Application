@@ -12,8 +12,17 @@ import { INITIAL_MODULES } from '../../inventory/initial-data';
 
 const stripHtml = (html: string) => {
     if (!html) return '';
-    const clean = html.replace(/<[^>]*>?/gm, ' ');
-    return clean.replace(/\s+/g, ' ').trim();
+    return html
+        .replace(/<[^>]*>?/gm, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
 };
 
 interface StudentInfo {

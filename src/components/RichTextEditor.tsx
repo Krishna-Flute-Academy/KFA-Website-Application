@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
@@ -10,11 +10,12 @@ import { Color } from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
+import ImageExtension from '@tiptap/extension-image';
 import { LineHeight } from '../lib/tiptap-extensions';
 import { 
     Bold, Italic, Underline as UnderlineIcon, Type,
     List, ListOrdered, AlignLeft, AlignCenter, AlignRight,
-    Highlighter
+    Highlighter, Image as ImageIcon, Upload, X, Link as LinkIcon
 } from 'lucide-react';
 
 // Custom Font Size extension
@@ -81,6 +82,10 @@ interface RichTextEditorProps {
 }
 
 export default function RichTextEditor({ value, onChange, placeholder }: RichTextEditorProps) {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [showImageModal, setShowImageModal] = useState(false);
+    const [imageUrlInput, setImageUrlInput] = useState('');
+
     const editor = useEditor({
         extensions: [
             StarterKit,
@@ -102,6 +107,13 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                 types: ['heading', 'paragraph'],
                 defaultLineHeight: 'normal',
             }),
+            ImageExtension.configure({
+                inline: true,
+                allowBase64: true,
+                HTMLAttributes: {
+                    class: 'max-w-full h-auto rounded-xl border border-slate-200 dark:border-slate-700 my-2 shadow-xs inline-block',
+                },
+            }),
         ],
         content: value || '',
         onUpdate: ({ editor }) => {
@@ -112,6 +124,44 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                 class: 'prose prose-sm dark:prose-invert focus:outline-none max-w-none p-4 min-h-[140px] max-h-[300px] overflow-y-auto leading-relaxed text-slate-800 dark:text-slate-200 text-xs md:text-sm font-medium border border-t-0 border-slate-200 dark:border-slate-700 rounded-b-xl bg-white dark:bg-slate-950',
                 placeholder: placeholder || '',
             },
+            handlePaste: (view, event) => {
+                const items = Array.from(event.clipboardData?.items || []);
+                const imageItem = items.find(item => item.type.startsWith('image/'));
+                if (imageItem) {
+                    event.preventDefault();
+                    const file = imageItem.getAsFile();
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const base64 = e.target?.result as string;
+                            if (base64 && editor) {
+                                editor.chain().focus().setImage({ src: base64 }).run();
+                            }
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                    return true;
+                }
+                return false;
+            },
+            handleDrop: (view, event, slice, moved) => {
+                if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]) {
+                    const file = event.dataTransfer.files[0];
+                    if (file.type.startsWith('image/')) {
+                        event.preventDefault();
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const base64 = e.target?.result as string;
+                            if (base64 && editor) {
+                                editor.chain().focus().setImage({ src: base64 }).run();
+                            }
+                        };
+                        reader.readAsDataURL(file);
+                        return true;
+                    }
+                }
+                return false;
+            }
         },
     });
 
@@ -122,6 +172,7 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
     }, [value, editor]);
 
     const getActiveFontSize = () => {
+        if (!editor) return 14;
         const size = editor.getAttributes('textStyle').fontSize;
         if (size) {
             return parseInt(size, 10);
@@ -130,9 +181,33 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
     };
 
     const changeFontSize = (delta: number) => {
+        if (!editor) return;
         const currentSize = getActiveFontSize();
         const newSize = Math.max(8, Math.min(72, currentSize + delta));
         editor.chain().focus().setFontSize(`${newSize}px`).run();
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !editor) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const base64 = event.target?.result as string;
+            if (base64) {
+                editor.chain().focus().setImage({ src: base64 }).run();
+            }
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+        setShowImageModal(false);
+    };
+
+    const insertImageUrl = () => {
+        if (imageUrlInput.trim() && editor) {
+            editor.chain().focus().setImage({ src: imageUrlInput.trim() }).run();
+            setImageUrlInput('');
+            setShowImageModal(false);
+        }
     };
 
     if (!editor) return null;
@@ -140,7 +215,16 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
     const colors = ['#000000', '#EE4444', '#22AA55', '#3366FF', '#FF9900', '#9933FF'];
 
     return (
-        <div className="flex flex-col rounded-xl overflow-hidden">
+        <div className="flex flex-col rounded-xl overflow-hidden relative">
+            {/* Hidden File Input for Image Upload */}
+            <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/*"
+                className="hidden"
+            />
+
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-0.5 p-1.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 rounded-t-xl select-none">
                 <div className="flex items-center gap-0.5 pr-1 border-r border-slate-200 dark:border-slate-700">
@@ -295,7 +379,7 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                     </button>
                 </div>
 
-                <div className="flex items-center gap-1 pl-1.5">
+                <div className="flex items-center gap-1 px-1 border-r border-slate-200 dark:border-slate-700">
                     {colors.map(color => (
                         <button
                             key={color}
@@ -319,10 +403,91 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                         <Highlighter size={13} />
                     </button>
                 </div>
+
+                {/* Insert Image Button */}
+                <div className="flex items-center gap-0.5 pl-1">
+                    <button
+                        type="button"
+                        onClick={() => setShowImageModal(true)}
+                        className={`p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 text-slate-600 dark:text-slate-400`}
+                        title="Insert Image (or paste with Ctrl+V / Cmd+V)"
+                    >
+                        <ImageIcon size={14} className="text-amber-600 dark:text-amber-400" />
+                        <span className="text-[10px] font-bold">Image</span>
+                    </button>
+                </div>
             </div>
 
             {/* Editor Content Area */}
             <EditorContent editor={editor} />
+
+            {/* Image Upload/Link Modal */}
+            {showImageModal && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-sm animate-in zoom-in-95 duration-200 text-left">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                <ImageIcon className="w-4 h-4 text-amber-500" />
+                                Insert Picture into Description
+                            </h4>
+                            <button type="button" onClick={() => setShowImageModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">1. Upload Image File</label>
+                                <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="w-full py-3 bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-amber-400 rounded-xl transition-all font-bold text-xs text-slate-600 dark:text-slate-300 flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    <Upload className="w-4 h-4 text-amber-500" /> Pick Image from Computer
+                                </button>
+                            </div>
+
+                            <div className="relative flex py-1 items-center">
+                                <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+                                <span className="flex-shrink mx-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">OR Paste Image URL</span>
+                                <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">2. Image Link (URL)</label>
+                                <div className="relative">
+                                    <LinkIcon className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    <input
+                                        type="url"
+                                        placeholder="https://example.com/image.png"
+                                        value={imageUrlInput}
+                                        onChange={(e) => setImageUrlInput(e.target.value)}
+                                        className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 font-medium"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowImageModal(false)}
+                                className="px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!imageUrlInput.trim()}
+                                onClick={insertImageUrl}
+                                className="px-4 py-1.5 bg-[#ecb613] hover:bg-[#d8a310] text-slate-950 text-xs font-black rounded-xl transition-all shadow-xs disabled:opacity-40"
+                            >
+                                Insert Image
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
