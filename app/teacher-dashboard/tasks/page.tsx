@@ -3,11 +3,12 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircle, Save, X, ClipboardList, Plus, ChevronLeft, ChevronRight, Trash2, ChevronDown, ChevronUp, Edit2, Download, Upload, Library, Paperclip, Send, FileText, Clock, BookOpen, Video, Music, Image as ImageIcon, Mic } from 'lucide-react';
+import { Loader2, Search, Bell, UserCircle, Filter, Info, PlayCircle, CheckCircle, Save, X, ClipboardList, Plus, ChevronLeft, ChevronRight, Trash2, ChevronDown, ChevronUp, Edit2, Download, Upload, Library, Paperclip, Send, FileText, Clock, BookOpen, Video, Music, Image as ImageIcon, Mic, ExternalLink, Folder } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sendClassroomNotification } from '../../../src/lib/notifications';
+import { checkAndSendTaskDueReminders } from '../../../src/lib/task-reminders';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 import AudioRecorderWidget from '../../../src/components/AudioRecorderWidget';
 
@@ -102,6 +103,39 @@ export default function TaskReviewPage() {
     const [createSelectAll, setCreateSelectAll] = useState(true);
     const [createStudentSearch, setCreateStudentSearch] = useState('');
     const [createStudentPage, setCreateStudentPage] = useState(1);
+
+    const formatDateForInput = (dateVal: any): string => {
+        if (!dateVal) return '';
+        const str = String(dateVal).trim();
+        if (str.includes('T')) return str.split('T')[0];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+        const d = new Date(str);
+        if (isNaN(d.getTime())) return '';
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+
+    const handleQuickUpdateDueDate = async (taskId: string, newDueDate: string) => {
+        try {
+            const { error } = await supabaseAuth
+                .from('assignments')
+                .update({ due_date: newDueDate || null })
+                .eq('id', taskId);
+
+            if (error) throw error;
+
+            setSubmissions(prev => prev.map(s => s.task_id === taskId ? { ...s, due_date: newDueDate || null } : s));
+            setFilteredSubmissions(prev => prev.map(s => s.task_id === taskId ? { ...s, due_date: newDueDate || null } : s));
+            if (selectedSub && selectedSub.task_id === taskId) {
+                setSelectedSub(prev => prev ? { ...prev, due_date: newDueDate || null } : null);
+            }
+        } catch (err) {
+            console.error('Error updating task due date:', err);
+            alert('Could not update due date.');
+        }
+    };
     
     // Suggestion and previous tasks state
     const [previousTasks, setPreviousTasks] = useState<any[]>([]);
@@ -144,6 +178,9 @@ export default function TaskReviewPage() {
     const fetchSubmissions = useCallback(async (userId: string, isAdmin: boolean = false) => {
         console.log('Fetching submissions for teacher:', userId, 'isAdmin:', isAdmin);
         
+        // Trigger automated 2-day pre-due-date task reminders in background
+        checkAndSendTaskDueReminders().catch(err => console.error('Error running task reminders:', err));
+
         try {
             // Step 1: Get classroom IDs and names (filtered if not admin)
             let classroomQuery = supabaseAuth
@@ -809,7 +846,7 @@ export default function TaskReviewPage() {
                             id: item.id,
                             name: item.name || 'Unknown Student',
                             profile_pic_url: item.profile_pic_url || null,
-                            selected: true,
+                            selected: false,
                             classroom_ids: studentClassroomMap[item.id] || []
                         }));
                     setCreateStudents(formatted);
@@ -833,6 +870,18 @@ export default function TaskReviewPage() {
         }
         return result;
     }, [createStudents, createSelectedClassroom, createStudentSearch]);
+
+    useEffect(() => {
+        setCreateStudentPage(1);
+    }, [createSelectedClassroom, createStudentSearch]);
+
+    const selectedInFilteredCount = useMemo(() => {
+        return filteredCreateStudents.filter(s => s.selected).length;
+    }, [filteredCreateStudents]);
+
+    const isAllFilteredSelected = useMemo(() => {
+        return filteredCreateStudents.length > 0 && filteredCreateStudents.every(s => s.selected);
+    }, [filteredCreateStudents]);
 
     const filteredPreviousTasks = React.useMemo(() => {
         const seen = new Set<string>();
@@ -1004,79 +1053,45 @@ export default function TaskReviewPage() {
     const handleSelectPreviousTask = async (task: any) => {
         setCreateTitle(task.title || '');
         setCreateDescription(task.description || '');
-        if (task.due_date) {
-            const d = new Date(task.due_date);
-            setCreateDueDate(d.toISOString().split('T')[0]);
-        } else {
-            setCreateDueDate('');
-        }
-        setCreateSelectedClassroom(task.classroom_id || 'all');
+        // Do not copy previous task due date - leave empty so teacher selects a new submission date
+        setCreateDueDate('');
+        
         setSelectedPreviousTaskId(task.id);
         setShowSuggestions(false);
 
-        // Restore file/reference fields
+        // Restore attachments, recorded voice, and curriculum references
         setCreateFileUrl(task.file_url || '');
         setCreateFileName(task.file_name || '');
         setCreateFileSize(task.file_size || null);
         setCreateSelectedLessonId(task.inventory_ref_id || null);
         setCreateSelectedLessonTitle(task.inventory_ref_title || null);
-
-        // Fetch currently assigned students for this task to pre-check them
-        try {
-            const { data: currentMappings } = await supabaseAuth
-                .from('assignment_students')
-                .select('student_id')
-                .eq('assignment_id', task.id);
-
-            if (currentMappings) {
-                const assignedIds = new Set(currentMappings.map(m => m.student_id));
-                setCreateStudents(prev => prev.map(s => ({
-                    ...s,
-                    selected: assignedIds.has(s.id)
-                })));
-            }
-        } catch (err) {
-            console.error('Error fetching assignees for previous task:', err);
-        }
     };
 
     const handleClassroomChange = (classroomId: string) => {
         setCreateSelectedClassroom(classroomId);
         setCreateStudentPage(1);
-        
-        if (classroomId === 'all') {
-            setCreateStudents(prev => prev.map(s => ({ ...s, selected: true })));
-        } else {
-            setCreateStudents(prev => prev.map(s => ({
-                ...s,
-                selected: s.classroom_ids?.includes(classroomId) || false
-            })));
-        }
-        setCreateSelectAll(true);
+        setCreateStudents(prev => prev.map(s => ({ ...s, selected: false })));
     };
 
     const handleToggleStudent = (studentId: string) => {
-        setCreateStudents(prev => {
-            const next = prev.map(s => 
-                s.id === studentId ? { ...s, selected: !s.selected } : s
-            );
-            const filteredIds = new Set(filteredCreateStudents.map(s => s.id));
-            const allFilteredSelected = filteredCreateStudents.length > 0 && 
-                next.filter(s => filteredIds.has(s.id)).every(s => s.selected);
-            setCreateSelectAll(allFilteredSelected);
-            return next;
-        });
+        setCreateStudents(prev => prev.map(s => 
+            s.id === studentId ? { ...s, selected: !s.selected } : s
+        ));
+    };
+
+    const handleSelectSingleStudentOnly = (studentId: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setCreateStudents(prev => prev.map(s => ({
+            ...s,
+            selected: s.id === studentId
+        })));
     };
 
     const handleToggleAll = (checked: boolean) => {
-        setCreateSelectAll(checked);
         const filteredIds = new Set(filteredCreateStudents.map(s => s.id));
         setCreateStudents(prev => prev.map(s => {
             if (filteredIds.has(s.id)) {
                 return { ...s, selected: checked };
-            }
-            if (createSelectedClassroom && createSelectedClassroom !== 'all') {
-                return { ...s, selected: false };
             }
             return s;
         }));
@@ -1146,13 +1161,7 @@ export default function TaskReviewPage() {
             setCreateTitle(asg.title || '');
             setCreateDescription(asg.description || '');
             
-            if (asg.due_date) {
-                const d = new Date(asg.due_date);
-                const formattedDate = d.toISOString().split('T')[0];
-                setCreateDueDate(formattedDate);
-            } else {
-                setCreateDueDate('');
-            }
+            setCreateDueDate(formatDateForInput(asg.due_date));
 
             setCreateSelectedClassroom(asg.classroom_id || 'all');
             setCreateSelectAll(asg.target_type === 'all');
@@ -1202,6 +1211,13 @@ export default function TaskReviewPage() {
         }
 
         let selectedStudents = createStudents.filter(s => s.selected);
+
+        // If active search query exists, strictly filter selection by search term
+        if (createStudentSearch.trim() !== '') {
+            const lowerQuery = createStudentSearch.toLowerCase().trim();
+            selectedStudents = selectedStudents.filter(s => s.name.toLowerCase().includes(lowerQuery));
+        }
+
         if (createSelectedClassroom && createSelectedClassroom !== 'all') {
             selectedStudents = selectedStudents.filter(s => s.classroom_ids?.includes(createSelectedClassroom));
         }
@@ -1245,7 +1261,7 @@ export default function TaskReviewPage() {
                     due_date: createDueDate || null,
                     classroom_id: classId,
                     teacher_id: classTeacherId,
-                    target_type: createSelectedClassroom === 'all' && createSelectAll ? 'all' : 'individual',
+                    target_type: createSelectedClassroom === 'all' && isAllFilteredSelected ? 'all' : 'individual',
                     status: isDraft ? 'draft' : 'active',
                     file_url: createFileUrl || null,
                     file_name: createFileName || null,
@@ -1342,11 +1358,7 @@ export default function TaskReviewPage() {
                     }
                 }
             } else {
-                const originalTask = previousTasks.find(t => t.id === selectedPreviousTaskId);
-
                 for (const [classId, studentIds] of Object.entries(studentsByClass)) {
-                    const isReusedTask = selectedPreviousTaskId && originalTask && classId === originalTask.classroom_id;
-
                     let assignmentIdToUse = '';
                     let assignmentError = null;
 
@@ -1358,7 +1370,7 @@ export default function TaskReviewPage() {
                         description: createDescription,
                         due_date: createDueDate || null,
                         teacher_id: classTeacherId,
-                        target_type: createSelectedClassroom === 'all' && createSelectAll ? 'all' : 'individual',
+                        target_type: createSelectedClassroom === 'all' && isAllFilteredSelected ? 'all' : 'individual',
                         status: isDraft ? 'draft' : 'active',
                         file_url: createFileUrl || null,
                         file_name: createFileName || null,
@@ -1368,127 +1380,67 @@ export default function TaskReviewPage() {
                         inventory_ref_type: createSelectedLessonId ? 'lesson' : null
                     };
 
-                    if (isReusedTask) {
-                        assignmentIdToUse = selectedPreviousTaskId!;
-                        const { error } = await supabaseAuth
-                            .from('assignments')
-                            .update(updateData)
-                            .eq('id', assignmentIdToUse);
+                    const insertData = {
+                        classroom_id: classId,
+                        teacher_id: classTeacherId,
+                        ...updateData,
+                        created_at: new Date().toISOString()
+                    };
 
-                        assignmentError = error;
+                    let { data: newAsg, error: newAsgError } = await supabaseAuth
+                        .from('assignments')
+                        .insert(insertData)
+                        .select()
+                        .single();
 
-                        if (assignmentError && (assignmentError.code === '42703' || assignmentError.message?.includes('status'))) {
-                            delete updateData.status;
-                            const fallback = await supabaseAuth
-                                .from('assignments')
-                                .update(updateData)
-                                .eq('id', assignmentIdToUse);
-                            assignmentError = fallback.error;
-                        }
-                    } else {
-                        const insertData = {
-                            classroom_id: classId,
-                            teacher_id: classTeacherId,
-                            ...updateData,
-                            created_at: new Date().toISOString()
-                        };
+                    assignmentError = newAsgError;
 
-                        let { data: newAsg, error: newAsgError } = await supabaseAuth
+                    if (newAsgError && (newAsgError.code === '42703' || newAsgError.message?.includes('status'))) {
+                        delete insertData.status;
+                        let fallback = await supabaseAuth
                             .from('assignments')
                             .insert(insertData)
                             .select()
                             .single();
-
-                        assignmentError = newAsgError;
-
-                        if (newAsgError && (newAsgError.code === '42703' || newAsgError.message?.includes('status'))) {
-                            delete insertData.status;
-                            let fallback = await supabaseAuth
+                        
+                        if (fallback.error && fallback.error.code === '42703') {
+                            delete insertData.file_url;
+                            delete insertData.file_name;
+                            delete insertData.file_size;
+                            delete insertData.inventory_ref_id;
+                            delete insertData.inventory_ref_title;
+                            delete insertData.inventory_ref_type;
+                            
+                            fallback = await supabaseAuth
                                 .from('assignments')
                                 .insert(insertData)
                                 .select()
                                 .single();
-                            
-                            if (fallback.error && fallback.error.code === '42703') {
-                                delete insertData.file_url;
-                                delete insertData.file_name;
-                                delete insertData.file_size;
-                                delete insertData.inventory_ref_id;
-                                delete insertData.inventory_ref_title;
-                                delete insertData.inventory_ref_type;
-                                
-                                fallback = await supabaseAuth
-                                    .from('assignments')
-                                    .insert(insertData)
-                                    .select()
-                                    .single();
-                            }
-                            
-                            newAsg = fallback.data;
-                            assignmentError = fallback.error;
                         }
+                        
+                        newAsg = fallback.data;
+                        assignmentError = fallback.error;
+                    }
 
-                        if (newAsg) {
-                            assignmentIdToUse = newAsg.id;
-                        }
+                    if (newAsg) {
+                        assignmentIdToUse = newAsg.id;
                     }
 
                     if (assignmentError) throw assignmentError;
 
-                    // Sync assignment student mappings
-                    if (isReusedTask) {
-                        const { data: currentMappings } = await supabaseAuth
+                    // Insert assignment student mappings for new task
+                    if (!isDraft && studentIds.length > 0 && assignmentIdToUse) {
+                        const studentMappings = studentIds.map(studentId => ({
+                            assignment_id: assignmentIdToUse,
+                            student_id: studentId,
+                            status: 'pending'
+                        }));
+
+                        const { error: mappingError } = await supabaseAuth
                             .from('assignment_students')
-                            .select('student_id')
-                            .eq('assignment_id', assignmentIdToUse);
+                            .insert(studentMappings);
 
-                        const existingStudentIds = new Set((currentMappings || []).map(m => m.student_id));
-                        const targetStudentIds = new Set(studentIds);
-
-                        const toRemove = [...existingStudentIds].filter(id => !targetStudentIds.has(id));
-                        if (toRemove.length > 0) {
-                            await supabaseAuth
-                                .from('assignment_students')
-                                .delete()
-                                .eq('assignment_id', assignmentIdToUse)
-                                .in('student_id', toRemove);
-                        }
-
-                        const toAdd = studentIds.filter(id => !existingStudentIds.has(id));
-                        if (toAdd.length > 0 && !isDraft) {
-                            const newMappings = toAdd.map(studentId => ({
-                                assignment_id: assignmentIdToUse,
-                                student_id: studentId,
-                                status: 'pending'
-                            }));
-
-                            const { error: mappingError } = await supabaseAuth
-                                .from('assignment_students')
-                                .insert(newMappings);
-
-                            if (mappingError) throw mappingError;
-                        }
-                        
-                        if (isDraft) {
-                            await supabaseAuth
-                                .from('assignment_students')
-                                .delete()
-                                .eq('assignment_id', assignmentIdToUse);
-                        }
-                    } else {
-                        if (!isDraft && studentIds.length > 0) {
-                            const studentMappings = studentIds.map(studentId => ({
-                                assignment_id: assignmentIdToUse,
-                                student_id: studentId,
-                                status: 'pending'
-                            }));
-
-                            const { error: mappingError } = await supabaseAuth
-                                .from('assignment_students')
-                                .insert(studentMappings);
-
-                            if (mappingError) throw mappingError;
-                        }
+                        if (mappingError) throw mappingError;
                     }
                 }
 
@@ -1750,7 +1702,7 @@ export default function TaskReviewPage() {
                                         setCreateSelectedLessonId(null);
                                         setCreateSelectedLessonTitle(null);
                                         setSelectedPreviousTaskId(null);
-                                        setCreateStudents(prev => prev.map(s => ({ ...s, selected: true })));
+                                        setCreateStudents(prev => prev.map(s => ({ ...s, selected: false })));
                                         setIsCreateModalOpen(true);
                                     }}
                                     className="admin-btn admin-btn-primary"
@@ -1946,7 +1898,8 @@ export default function TaskReviewPage() {
                                                                 </th>
                                                                 <th className="px-6 py-4">Student Name</th>
                                                                 <th className="px-6 py-4">Classroom</th>
-                                                                <th className="px-6 py-4">Date</th>
+                                                                <th className="px-6 py-4">Assigned Date</th>
+                                                                <th className="px-6 py-4">Due Date</th>
                                                                 <th className="px-6 py-4">Status</th>
                                                                 <th className="px-6 py-4 text-right">Actions</th>
                                                             </tr>
@@ -1990,8 +1943,20 @@ export default function TaskReviewPage() {
                                                                         </div>
                                                                     </td>
                                                                     <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 truncate max-w-[200px]">{sub.classroom_name || 'Individual'}</td>
-                                                                    <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">
-                                                                        {new Date(sub.submitted_at).toLocaleDateString()}
+                                                                    <td className="px-6 py-4 text-xs font-semibold text-slate-500 whitespace-nowrap">
+                                                                         {new Date(sub.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                     </td>
+                                                                    <td className="px-6 py-4 text-xs font-bold whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                                        <div className="inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-955/30 px-2.5 py-1 rounded-lg border border-amber-200/60 dark:border-amber-900/30">
+                                                                            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                                            <input 
+                                                                                type="date"
+                                                                                value={formatDateForInput(sub.due_date)}
+                                                                                onChange={(e) => handleQuickUpdateDueDate(sub.task_id, e.target.value)}
+                                                                                className="bg-transparent text-amber-900 dark:text-amber-300 font-mono text-xs font-bold outline-none cursor-pointer"
+                                                                                title="Change Due Date for this student"
+                                                                            />
+                                                                        </div>
                                                                     </td>
                                                                     <td className="px-6 py-4">
                                                                         <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${
@@ -2177,14 +2142,53 @@ export default function TaskReviewPage() {
                                                 }
                                                 // Google Drive
                                                 if (url.includes('drive.google.com')) {
+                                                    const isFolder = url.includes('/folders/') || url.includes('/drive/folders');
+                                                    if (isFolder) {
+                                                        return (
+                                                            <div className="bg-amber-50/60 dark:bg-amber-955/10 border border-amber-200 dark:border-amber-900/30 p-4 rounded-xl space-y-3">
+                                                                <div className="flex items-start gap-3">
+                                                                    <div className="p-2 bg-amber-100 dark:bg-amber-900/30 rounded-lg text-amber-600 dark:text-amber-400 shrink-0">
+                                                                        <Folder className="w-5 h-5" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Google Drive Folder Submitted</h4>
+                                                                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                                                                            Google Drive folder links cannot be embedded in an iframe preview. Click below to open and view the folder directly in Google Drive.
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <a 
+                                                                    href={url} 
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer" 
+                                                                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-extrabold text-xs rounded-xl shadow-sm transition-all"
+                                                                >
+                                                                    <ExternalLink className="w-4 h-4" />
+                                                                    Open Folder in Google Drive
+                                                                </a>
+                                                            </div>
+                                                        );
+                                                    }
+
                                                     const embedUrl = url.replace(/\/view.*$/, '/preview');
                                                     return (
-                                                        <iframe 
-                                                            className="w-full aspect-[4/3] w-full rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 bg-slate-100"
-                                                            src={embedUrl}
-                                                            title="Student Submission Video"
-                                                            allow="autoplay"
-                                                        ></iframe>
+                                                        <div className="space-y-2">
+                                                            <iframe 
+                                                                className="w-full aspect-[4/3] rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 bg-slate-100"
+                                                                src={embedUrl}
+                                                                title="Student Submission Video"
+                                                                allow="autoplay"
+                                                            ></iframe>
+                                                            <a 
+                                                                href={url} 
+                                                                target="_blank" 
+                                                                rel="noopener noreferrer" 
+                                                                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
+                                                            >
+                                                                <ExternalLink className="w-3.5 h-3.5 text-amber-500" />
+                                                                Open in Google Drive (If preview is restricted)
+                                                            </a>
+                                                        </div>
                                                     );
                                                 }
                                                 // Direct Audio/Video (Supabase Storage or direct link)
@@ -2540,16 +2544,27 @@ export default function TaskReviewPage() {
                                     {/* Student Search & List */}
                                     <div>
                                         <div className="flex justify-between items-center mb-2">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Students</label>
-                                            <label className="inline-flex items-center cursor-pointer select-none">
-                                                <span className="mr-2 text-[10px] font-extrabold text-slate-500">Select All</span>
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono shrink-0">Students</label>
+                                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-955/40 text-amber-700 dark:text-amber-300 font-mono truncate">
+                                                    {selectedInFilteredCount}/{filteredCreateStudents.length} selected
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleToggleAll(!isAllFilteredSelected)}
+                                                    className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer select-none"
+                                                >
+                                                    {isAllFilteredSelected ? 'Deselect All' : 'Select All'}
+                                                </button>
                                                 <input 
                                                     type="checkbox" 
-                                                    checked={createSelectAll}
+                                                    checked={isAllFilteredSelected}
                                                     onChange={(e) => handleToggleAll(e.target.checked)}
-                                                    className="rounded border-slate-300 dark:border-slate-705 text-amber-600 focus:ring-amber-505 w-4 h-4 cursor-pointer"
+                                                    className="rounded border-slate-300 dark:border-slate-700 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
                                                 />
-                                            </label>
+                                            </div>
                                         </div>
                                         
                                         <div className="relative mb-2">
@@ -2558,34 +2573,68 @@ export default function TaskReviewPage() {
                                                 type="text"
                                                 placeholder="Search student list..."
                                                 value={createStudentSearch}
-                                                onChange={(e) => setCreateStudentSearch(e.target.value)}
-                                                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-805 text-xs focus:ring-2 focus:ring-amber-500 outline-none transition-all placeholder:text-slate-400"
+                                                onChange={(e) => {
+                                                    setCreateStudentSearch(e.target.value);
+                                                    setCreateStudentPage(1);
+                                                }}
+                                                className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-805 text-xs focus:ring-2 focus:ring-amber-500 outline-none transition-all placeholder:text-slate-400"
                                             />
+                                            {createStudentSearch && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setCreateStudentSearch('');
+                                                        setCreateStudentPage(1);
+                                                    }}
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-full"
+                                                    title="Clear search"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
                                         </div>
 
                                         <div className="p-3 bg-white dark:bg-slate-805 rounded-xl border border-slate-200 dark:border-slate-700 max-h-48 overflow-y-auto space-y-1">
                                             {filteredCreateStudents.slice((createStudentPage - 1) * ITEMS_PER_PAGE, createStudentPage * ITEMS_PER_PAGE).map(student => (
-                                                <label key={student.id} className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer border border-transparent hover:border-slate-100 dark:hover:border-slate-600">
-                                                    <input 
-                                                        className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 border-slate-300 dark:border-slate-600 cursor-pointer" 
-                                                        type="checkbox" 
-                                                        checked={student.selected}
-                                                        onChange={() => handleToggleStudent(student.id)}
-                                                    />
-                                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20 shadow-sm shrink-0">
-                                                        {student.profile_pic_url ? (
-                                                            <img 
-                                                                src={student.profile_pic_url} 
-                                                                alt={student.name} 
-                                                                className="w-full h-full object-cover rounded-full"
-                                                                loading="lazy"
-                                                            />
-                                                        ) : (
-                                                            <div className="text-primary text-[8px] font-black">{student.name.charAt(0)}</div>
-                                                        )}
-                                                    </div>
-                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">{student.name}</span>
-                                                </label>
+                                                <div 
+                                                    key={student.id} 
+                                                    className={`flex items-center justify-between p-1.5 rounded-lg transition-all border ${
+                                                        student.selected 
+                                                            ? 'bg-amber-50/60 dark:bg-amber-955/20 border-amber-200/70 dark:border-amber-900/30' 
+                                                            : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 border-transparent hover:border-slate-100 dark:hover:border-slate-600'
+                                                    }`}
+                                                >
+                                                    <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer select-none">
+                                                        <input 
+                                                            className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 border-slate-300 dark:border-slate-600 cursor-pointer" 
+                                                            type="checkbox" 
+                                                            checked={student.selected}
+                                                            onChange={() => handleToggleStudent(student.id)}
+                                                        />
+                                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20 shadow-sm shrink-0">
+                                                            {student.profile_pic_url ? (
+                                                                <img 
+                                                                    src={student.profile_pic_url} 
+                                                                    alt={student.name} 
+                                                                    className="w-full h-full object-cover rounded-full"
+                                                                    loading="lazy"
+                                                                />
+                                                            ) : (
+                                                                <div className="text-primary text-[8px] font-black">{student.name.charAt(0)}</div>
+                                                            )}
+                                                        </div>
+                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">{student.name}</span>
+                                                    </label>
+                                                    
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => handleSelectSingleStudentOnly(student.id, e)}
+                                                        className="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 px-1.5 py-0.5 rounded transition-all shrink-0 ml-1 border border-slate-200 dark:border-slate-700 hover:border-amber-300 font-mono"
+                                                        title={`Select only ${student.name} and uncheck others`}
+                                                    >
+                                                        Only
+                                                    </button>
+                                                </div>
                                             ))}
                                             {filteredCreateStudents.length === 0 && (
                                                 <p className="text-[10px] text-slate-500 text-center py-4 italic font-medium">No students in this class.</p>

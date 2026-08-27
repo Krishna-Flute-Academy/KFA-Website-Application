@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../../src/lib/supabase-auth';
 import { 
@@ -178,8 +178,8 @@ export default function EditTaskPage() {
                 
                 // Format date for input: YYYY-MM-DD
                 if (assignmentData.due_date) {
-                    const d = new Date(assignmentData.due_date);
-                    const formattedDate = d.toISOString().split('T')[0];
+                    const str = String(assignmentData.due_date).trim();
+                    const formattedDate = str.includes('T') ? str.split('T')[0] : str;
                     setDueDate(formattedDate);
                 } else {
                     setDueDate('');
@@ -279,6 +279,14 @@ export default function EditTaskPage() {
         setCurrentPage(1);
     }, [selectedClassroom, studentSearch]);
 
+    const selectedInFilteredCount = useMemo(() => {
+        return filteredStudents.filter(s => s.selected).length;
+    }, [filteredStudents]);
+
+    const isAllFilteredSelected = useMemo(() => {
+        return filteredStudents.length > 0 && filteredStudents.every(s => s.selected);
+    }, [filteredStudents]);
+
     const handleClassroomChange = (classroomId: string) => {
         setSelectedClassroom(classroomId);
         setCurrentPage(1);
@@ -291,31 +299,27 @@ export default function EditTaskPage() {
                 selected: s.classroom_ids?.includes(classroomId) || false
             })));
         }
-        setSelectAll(true);
     };
 
     const handleToggleStudent = (studentId: string) => {
-        setStudents(prev => {
-            const next = prev.map(s => 
-                s.id === studentId ? { ...s, selected: !s.selected } : s
-            );
-            const filteredIds = new Set(filteredStudents.map(s => s.id));
-            const allFilteredSelected = filteredStudents.length > 0 && 
-                next.filter(s => filteredIds.has(s.id)).every(s => s.selected);
-            setSelectAll(allFilteredSelected);
-            return next;
-        });
+        setStudents(prev => prev.map(s => 
+            s.id === studentId ? { ...s, selected: !s.selected } : s
+        ));
+    };
+
+    const handleSelectSingleStudentOnly = (studentId: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setStudents(prev => prev.map(s => ({
+            ...s,
+            selected: s.id === studentId
+        })));
     };
 
     const handleToggleAll = (checked: boolean) => {
-        setSelectAll(checked);
         const filteredIds = new Set(filteredStudents.map(s => s.id));
         setStudents(prev => prev.map(s => {
             if (filteredIds.has(s.id)) {
                 return { ...s, selected: checked };
-            }
-            if (selectedClassroom && selectedClassroom !== 'all') {
-                return { ...s, selected: false };
             }
             return s;
         }));
@@ -390,7 +394,7 @@ export default function EditTaskPage() {
                 due_date: dueDate || null,
                 classroom_id: primaryClassId,
                 teacher_id: primaryTeacherId,
-                target_type: selectedClassroom === 'all' && selectAll ? 'all' : 'individual',
+                target_type: selectedClassroom === 'all' && isAllFilteredSelected ? 'all' : 'individual',
                 status: isDraft ? 'draft' : 'active',
                 file_url: fileUrl || null,
                 file_name: fileName || null,
@@ -712,49 +716,74 @@ export default function EditTaskPage() {
                                                     className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] outline-none transition-all placeholder:text-slate-400"
                                                 />
                                             </div>
-                                            <div className="flex justify-between items-center mb-3">
-                                                <label className="text-xs font-black text-slate-500 uppercase tracking-widest Inter">Students</label>
-                                                <label className="inline-flex items-center cursor-pointer">
-                                                    <span className="mr-3 text-xs font-bold text-slate-600 dark:text-slate-400">All Students</span>
-                                                    <div className="relative">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            className="sr-only peer" 
-                                                            checked={selectAll}
-                                                            onChange={(e) => handleToggleAll(e.target.checked)}
-                                                        />
-                                                        <div className="w-10 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-amber-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
-                                                    </div>
-                                                </label>
-                                            </div>
-                                            <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 max-h-64 overflow-y-auto space-y-2">
-                                                {filteredStudents.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE).map(student => (
-                                                    <label key={student.id} className="flex items-center gap-3 p-3 hover:bg-white dark:hover:bg-slate-700 rounded-xl transition-all cursor-pointer border border-transparent hover:border-slate-100 dark:hover:border-slate-600 shadow-sm hover:shadow-md">
-                                                        <input 
-                                                            className="rounded-md text-amber-600 focus:ring-amber-500 w-5 h-5 border-slate-300 dark:border-slate-600" 
-                                                            type="checkbox" 
-                                                            checked={student.selected}
-                                                            onChange={() => handleToggleStudent(student.id)}
-                                                        />
-                                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20 shadow-sm">
-                                                            {student.profile_pic_url ? (
-                                                                <img 
-                                                                    src={student.profile_pic_url} 
-                                                                    alt={student.name} 
-                                                                    className="w-full h-full object-cover rounded-full"
-                                                                    loading="lazy"
-                                                                />
-                                                            ) : (
-                                                                <div className="text-primary text-[10px] font-black">{student.name.charAt(0)}</div>
-                                                            )}
-                                                        </div>
-                                                        <span className={`text-sm font-bold tracking-tight transition-colors ${student.selected ? 'text-primary' : 'text-slate-600'}`}>{student.name}</span>
-                                                    </label>
-                                                ))}
-                                                {filteredStudents.length === 0 && (
-                                                    <p className="text-xs text-slate-500 text-center py-4 italic font-medium">No students found.</p>
-                                                )}
-                                            </div>
+                                             <div className="flex justify-between items-center mb-3">
+                                                 <div className="flex items-center gap-2">
+                                                     <label className="text-xs font-black text-slate-500 uppercase tracking-widest Inter">Students</label>
+                                                     <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-955/40 text-amber-700 dark:text-amber-300 font-mono">
+                                                         {selectedInFilteredCount}/{filteredStudents.length} selected
+                                                     </span>
+                                                 </div>
+                                                 <div className="flex items-center gap-2">
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => handleToggleAll(!isAllFilteredSelected)}
+                                                         className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer select-none"
+                                                     >
+                                                         {isAllFilteredSelected ? 'Deselect All' : 'Select All'}
+                                                     </button>
+                                                     <input 
+                                                         type="checkbox" 
+                                                         checked={isAllFilteredSelected}
+                                                         onChange={(e) => handleToggleAll(e.target.checked)}
+                                                         className="rounded border-slate-300 dark:border-slate-700 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                                                     />
+                                                 </div>
+                                             </div>
+                                             <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 max-h-64 overflow-y-auto space-y-2">
+                                                 {filteredStudents.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE).map(student => (
+                                                     <div 
+                                                         key={student.id} 
+                                                         className={`flex items-center justify-between p-2.5 rounded-xl transition-all border shadow-sm ${
+                                                             student.selected
+                                                                 ? 'bg-amber-50/70 dark:bg-amber-955/20 border-amber-200/80 dark:border-amber-900/40'
+                                                                 : 'hover:bg-white dark:hover:bg-slate-700 border-transparent hover:border-slate-100 dark:hover:border-slate-600'
+                                                         }`}
+                                                     >
+                                                         <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer select-none">
+                                                             <input 
+                                                                 className="rounded-md text-amber-600 focus:ring-amber-500 w-5 h-5 border-slate-300 dark:border-slate-600 cursor-pointer" 
+                                                                 type="checkbox" 
+                                                                 checked={student.selected}
+                                                                 onChange={() => handleToggleStudent(student.id)}
+                                                             />
+                                                             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20 shadow-sm shrink-0">
+                                                                 {student.profile_pic_url ? (
+                                                                     <img 
+                                                                         src={student.profile_pic_url} 
+                                                                         alt={student.name} 
+                                                                         className="w-full h-full object-cover rounded-full"
+                                                                         loading="lazy"
+                                                                     />
+                                                                 ) : (
+                                                                     <div className="text-primary text-[10px] font-black">{student.name.charAt(0)}</div>
+                                                                 )}
+                                                             </div>
+                                                             <span className={`text-sm font-bold tracking-tight transition-colors truncate ${student.selected ? 'text-amber-800 dark:text-amber-300' : 'text-slate-600'}`}>{student.name}</span>
+                                                         </label>
+                                                         <button
+                                                             type="button"
+                                                             onClick={(e) => handleSelectSingleStudentOnly(student.id, e)}
+                                                             className="text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 px-2 py-1 rounded transition-all shrink-0 ml-1 border border-slate-200 dark:border-slate-700 hover:border-amber-300 font-mono"
+                                                             title={`Select only ${student.name} and uncheck others`}
+                                                         >
+                                                             Only
+                                                         </button>
+                                                     </div>
+                                                 ))}
+                                                 {filteredStudents.length === 0 && (
+                                                     <p className="text-xs text-slate-500 text-center py-4 italic font-medium">No students found.</p>
+                                                 )}
+                                             </div>
                                             {/* Pagination Controls */}
                                             {filteredStudents.length > ITEMS_PER_PAGE && (
                                                 <div className="flex items-center justify-between mt-4 px-2">

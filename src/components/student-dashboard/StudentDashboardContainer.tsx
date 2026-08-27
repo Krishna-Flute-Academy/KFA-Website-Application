@@ -23,6 +23,7 @@ const LibraryTab = dynamic(() => import('./LibraryTab'), { ssr: false });
 const ClassroomTab = dynamic(() => import('./ClassroomTab'), { ssr: false });
 const FeesTab = dynamic(() => import('./FeesTab'), { ssr: false });
 const PoliciesTab = dynamic(() => import('./PoliciesTab'), { ssr: false });
+import { checkAndSendTaskDueReminders } from '../../lib/task-reminders';
 const AcademyPolicies = dynamic(() => import('../AcademyPolicies'), { ssr: false });
 const SettingsTab = dynamic(() => import('./SettingsTab'), { ssr: false });
 const MentorHubTab = dynamic(() => import('./MentorHubTab'), { ssr: false });
@@ -566,6 +567,9 @@ export default function StudentDashboardContainer() {
             if (!session) { router.push('/login'); return; }
 
             const userId = session.user.id;
+
+            // Trigger automated 2-day pre-due-date task reminders in background
+            checkAndSendTaskDueReminders().catch(err => console.error('Error running task reminders:', err));
 
             // Phase 1 Parallel Fetch (Queries dependent only on userId or static data)
             const [
