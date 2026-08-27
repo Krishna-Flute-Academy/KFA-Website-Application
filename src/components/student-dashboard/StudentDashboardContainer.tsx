@@ -3276,6 +3276,7 @@ export default function StudentDashboardContainer() {
                     setSubmitAudioBlob={setSubmitAudioBlob}
                     isSubmittingTask={isSubmittingTask}
                     handleSubmitTask={handleSubmitTask}
+                    studentName={profile?.name || 'Unknown Student'}
                 />
             )}
         </>

@@ -34,6 +34,7 @@ interface SubmitTaskModalProps {
     setSubmitAudioBlob: (blob: Blob | null) => void;
     isSubmittingTask: boolean;
     handleSubmitTask: (e?: React.FormEvent, overrideUrl?: string) => Promise<void>;
+    studentName: string;
 }
 
 export default function SubmitTaskModal({
@@ -46,7 +47,8 @@ export default function SubmitTaskModal({
     submitAudioBlob,
     setSubmitAudioBlob,
     isSubmittingTask,
-    handleSubmitTask
+    handleSubmitTask,
+    studentName
 }: SubmitTaskModalProps) {
     if (!selectedAssignment) return null;
 
@@ -230,8 +232,14 @@ export default function SubmitTaskModal({
             const { access_token, folder_id } = await tokenRes.json();
 
             // 2. Start Resumable Upload Session
+            const safeStudentName = studentName.replace(/[^a-zA-Z0-9 ]/g, '').trim();
+            const safeAssignmentTitle = selectedAssignment.title.replace(/[^a-zA-Z0-9 ]/g, '').trim();
+            
+            // Format: "John Doe - Basic Scales.mp4"
+            const finalFileName = `${safeStudentName} - ${safeAssignmentTitle}.${videoFile.name.split('.').pop()}`;
+            
             const metadata = {
-                name: `Submission_${selectedAssignment.title.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.${videoFile.name.split('.').pop()}`,
+                name: finalFileName,
                 parents: [folder_id]
             };
 
