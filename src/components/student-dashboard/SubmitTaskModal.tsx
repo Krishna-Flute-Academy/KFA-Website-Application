@@ -199,10 +199,14 @@ export default function SubmitTaskModal({
     };
 
         const handleOpenPicker = () => {
+        console.log("Client ID:", process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
+        console.log("Developer Key:", process.env.NEXT_PUBLIC_GOOGLE_API_KEY);
+        
         openPicker({
             clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "",
             developerKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY || "",
             viewId: "DOCS",
+            customScopes: ['https://www.googleapis.com/auth/drive.file'],
             showUploadView: true,
             showUploadFolders: true,
             supportDrives: true,
@@ -278,8 +282,8 @@ export default function SubmitTaskModal({
                             onClick={() => setSubmissionType('upload')}
                             className={`flex-1 min-w-max px-2 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all ${submissionType === 'upload' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
                         >
-                            <LinkIcon className="w-3 h-3 shrink-0" />
-                            Provide Link
+                            <UploadCloud className="w-3 h-3 shrink-0" />
+                            Upload Video
                         </button>
 
                         <button
