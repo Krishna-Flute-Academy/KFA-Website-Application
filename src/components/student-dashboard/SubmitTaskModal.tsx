@@ -364,14 +364,6 @@ export default function SubmitTaskModal({
                         </button>
                         <button
                             type="button"
-                            onClick={() => setSubmissionType('link')}
-                            className={`flex-1 min-w-max px-2 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all ${submissionType === 'link' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-                        >
-                            <LinkIcon className="w-3.5 h-3.5" />
-                            Provide Link
-                        </button>
-                        <button
-                            type="button"
                             onClick={() => setSubmissionType('audio')}
                             className={`flex-1 min-w-max px-2 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all ${submissionType === 'audio' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
                         >
@@ -435,38 +427,6 @@ export default function SubmitTaskModal({
                         </div>
                     )}
 
-                    {submissionType === 'link' && (
-                        <div className="space-y-1.5 animate-in slide-in-from-right-4 duration-200">
-                            <label htmlFor="video-url" className="text-[10px] font-black text-slate-500 dark:text-slate-455 uppercase tracking-widest block font-mono">Video / Recording Link</label>
-                            <input 
-                                id="video-url"
-                                type="url"
-                                className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
-                                placeholder="e.g., YouTube, Google Drive, Soundcloud, or Vimeo link"
-                                value={submitVideoUrl}
-                                onChange={(e) => setSubmitVideoUrl(e.target.value)}
-                                required={submissionType === 'link'}
-                            />
-                            
-                            {/* Guidelines for uploading */}
-                            <details className="mt-3 group rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 open:bg-white dark:open:bg-slate-800 transition-all overflow-hidden cursor-pointer">
-                                <summary className="flex items-center gap-2 px-3 py-2 text-[10px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-500 transition-colors list-none outline-none">
-                                    <span className="material-symbols-outlined text-sm text-amber-500 transition-transform group-open:rotate-90">play_circle</span>
-                                    Need help submitting via YouTube?
-                                </summary>
-                                <div className="px-3 pb-3 pt-1 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 space-y-2 border-t border-slate-200 dark:border-slate-700 ml-1">
-                                    <p className="font-semibold text-slate-700 dark:text-slate-300">How to upload an "Unlisted" YouTube video (Free & Private):</p>
-                                    <ol className="list-decimal pl-4 space-y-1.5 marker:text-amber-500 marker:font-bold">
-                                        <li>Record your practice session using your phone or computer.</li>
-                                        <li>Open the YouTube app or website and click the <b>"+"</b> (Create) button.</li>
-                                        <li>Select <b>"Upload video"</b> and choose your recording.</li>
-                                        <li>Under "Visibility", select <b>"Unlisted"</b> (so only people with the link can watch it).</li>
-                                        <li>Wait for the upload to finish, then copy the video link and paste it in the box above!</li>
-                                    </ol>
-                                </div>
-                            </details>
-                        </div>
-                    )}
 
                     {submissionType === 'audio' && (
                         <div className="space-y-4 animate-in slide-in-from-left-4 duration-200 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center">

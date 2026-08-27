@@ -384,7 +384,7 @@ export default function StudentDashboardContainer() {
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
-    const [submissionType, setSubmissionType] = useState<'link' | 'audio' | 'video'>('link');
+    const [submissionType, setSubmissionType] = useState<'link' | 'audio' | 'video'>('video');
     const [submitVideoUrl, setSubmitVideoUrl] = useState('');
     const [submitAudioBlob, setSubmitAudioBlob] = useState<Blob | null>(null);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
