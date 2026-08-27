@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Loader2, Mic, Square, Trash2, Link as LinkIcon, Video, UploadCloud, CheckCircle2 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAuth } from '../../lib/supabase-auth';
 
 export interface EnrichedAssignment {
     id: string;
@@ -213,10 +213,7 @@ export default function SubmitTaskModal({
 
         try {
             // Get session from Supabase to authenticate with our API route
-            const supabaseAuth = createClient(
-                process.env.NEXT_PUBLIC_AUTH_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                process.env.NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-            );
+            // Get session from Supabase to authenticate with our API route
             const { data: { session } } = await supabaseAuth.auth.getSession();
             if (!session) throw new Error('Not authenticated');
 
