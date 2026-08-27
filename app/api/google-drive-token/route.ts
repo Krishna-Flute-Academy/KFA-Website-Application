@@ -31,10 +31,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const clientEmail = getEnvVariable('GOOGLE_CLIENT_EMAIL');
-        const privateKeyRaw = getEnvVariable('GOOGLE_PRIVATE_KEY');
+        const clientEmail = process.env.GOOGLE_CLIENT_EMAIL || getEnvVariable('GOOGLE_CLIENT_EMAIL');
+        const privateKeyRaw = process.env.GOOGLE_PRIVATE_KEY || getEnvVariable('GOOGLE_PRIVATE_KEY');
         const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
-        const folderId = getEnvVariable('GOOGLE_DRIVE_FOLDER_ID');
+        const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || getEnvVariable('GOOGLE_DRIVE_FOLDER_ID');
         
         if (!clientEmail || !privateKey || !folderId) {
             console.error('Missing Google Drive credentials:', { hasEmail: !!clientEmail, hasKey: !!privateKey, hasFolder: !!folderId });
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
         const client = new JWT({
             email: clientEmail,
             key: privateKey,
-            scopes: ['https://www.googleapis.com/auth/drive.file'],
+            scopes: ['https://www.googleapis.com/auth/drive'],
         });
 
         const tokenInfo = await client.getAccessToken();
