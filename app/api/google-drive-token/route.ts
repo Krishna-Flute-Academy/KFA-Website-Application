@@ -34,7 +34,10 @@ export async function POST(req: Request) {
         const clientEmail = getEnvVariable('GOOGLE_CLIENT_EMAIL');
         const privateKeyRaw = getEnvVariable('GOOGLE_PRIVATE_KEY');
         const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
-        const folderId = getEnvVariable('GOOGLE_DRIVE_FOLDER_ID');
+        const folderIdRaw = getEnvVariable('GOOGLE_DRIVE_FOLDER_ID');
+        // Accept either a bare ID or a full Drive URL like https://drive.google.com/drive/folders/<ID>
+        const folderIdMatch = folderIdRaw.match(/[-\w]{25,}/);
+        const folderId = folderIdMatch ? folderIdMatch[0] : folderIdRaw;
         
         if (!clientEmail || !privateKey || !folderId) {
             console.error('Missing Google Drive credentials:', { hasEmail: !!clientEmail, hasKey: !!privateKey, hasFolder: !!folderId });

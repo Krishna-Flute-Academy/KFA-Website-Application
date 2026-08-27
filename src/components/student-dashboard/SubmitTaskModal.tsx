@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Loader2, Mic, Square, Trash2, Link as LinkIcon, Video, UploadCloud, CheckCircle2 } from 'lucide-react';
-import { supabaseAuth } from '../../lib/supabase-auth';
+import { X, Loader2, Mic, Square, Trash2, Link as LinkIcon, Video } from 'lucide-react';
 
 export interface EnrichedAssignment {
     id: string;
@@ -28,13 +27,19 @@ interface SubmitTaskModalProps {
     setSelectedAssignment: (asg: EnrichedAssignment | null) => void;
     submitVideoUrl: string;
     setSubmitVideoUrl: (url: string) => void;
-    submissionType: 'link' | 'audio' | 'video';
-    setSubmissionType: (type: 'link' | 'audio' | 'video') => void;
+    submitVideoFile: File | null;
+    setSubmitVideoFile: (file: File | null) => void;
+    submissionType: 'link' | 'upload' | 'audio';
+    setSubmissionType: (type: 'link' | 'upload' | 'audio') => void;
     submitAudioBlob: Blob | null;
     setSubmitAudioBlob: (blob: Blob | null) => void;
     isSubmittingTask: boolean;
-    handleSubmitTask: (e?: React.FormEvent, overrideUrl?: string) => Promise<void>;
-    studentName: string;
+    handleSubmitTask: (e: React.FormEvent) => Promise<void>;
+}
+
+function formatBytes(bytes: number): string {
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 export default function SubmitTaskModal({
@@ -42,13 +47,14 @@ export default function SubmitTaskModal({
     setSelectedAssignment,
     submitVideoUrl,
     setSubmitVideoUrl,
+    submitVideoFile,
+    setSubmitVideoFile,
     submissionType,
     setSubmissionType,
     submitAudioBlob,
     setSubmitAudioBlob,
     isSubmittingTask,
-    handleSubmitTask,
-    studentName
+    handleSubmitTask
 }: SubmitTaskModalProps) {
     if (!selectedAssignment) return null;
 
@@ -59,12 +65,7 @@ export default function SubmitTaskModal({
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<BlobPart[]>([]);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Video Upload States
-    const [videoFile, setVideoFile] = useState<File | null>(null);
-    const [uploadProgress, setUploadProgress] = useState(0);
-    const [isUploading, setIsUploading] = useState(false);
-    const [uploadError, setUploadError] = useState('');
+    const videoFileInputRef = useRef<HTMLInputElement>(null);
 
     // Clean up audio URL on unmount
     useEffect(() => {
@@ -115,6 +116,7 @@ export default function SubmitTaskModal({
                 } 
             });
             
+            // Determine optimal MIME type supported by the browser
             let mimeType = 'audio/webm';
             let options = {};
             if (typeof MediaRecorder !== 'undefined') {
@@ -122,7 +124,7 @@ export default function SubmitTaskModal({
                     mimeType = 'audio/webm';
                     options = { mimeType };
                 } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-                    mimeType = 'audio/mp4'; 
+                    mimeType = 'audio/mp4'; // Standard iOS Safari format
                     options = { mimeType };
                 } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
                     mimeType = 'audio/ogg';
@@ -149,6 +151,7 @@ export default function SubmitTaskModal({
                 const url = URL.createObjectURL(audioBlob);
                 setAudioUrl(url);
                 
+                // Stop all tracks to release microphone
                 stream.getTracks().forEach(track => track.stop());
             };
 
@@ -178,148 +181,16 @@ export default function SubmitTaskModal({
         setRecordingTime(0);
     };
 
+    const handleVideoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0] || null;
+        setSubmitVideoFile(file);
+    };
+
     const handleClose = () => {
-        if (isUploading) {
-            if (!confirm("Upload is in progress. Are you sure you want to cancel?")) return;
-        }
         setSelectedAssignment(null);
         setSubmitVideoUrl('');
-        setVideoFile(null);
-        setUploadError('');
-        setIsUploading(false);
-        setUploadProgress(0);
+        setSubmitVideoFile(null);
         discardRecording();
-    };
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files.length > 0) {
-            const file = e.target.files[0];
-            // Max size 500MB
-            if (file.size > 500 * 1024 * 1024) {
-                alert('File is too large! Please upload a video under 500MB.');
-                return;
-            }
-            setVideoFile(file);
-            setUploadError('');
-        }
-    };
-
-    const uploadToGoogleDrive = async (): Promise<string> => {
-        if (!videoFile) throw new Error('No video file selected.');
-        
-        setIsUploading(true);
-        setUploadProgress(0);
-        setUploadError('');
-
-        try {
-            // Get session from Supabase to authenticate with our API route
-            // Get session from Supabase to authenticate with our API route
-            const { data: { session } } = await supabaseAuth.auth.getSession();
-            if (!session) throw new Error('Not authenticated');
-
-            // 1. Get Google Drive Access Token
-            const tokenRes = await fetch('/api/google-drive-token', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
-            });
-            if (!tokenRes.ok) {
-                const err = await tokenRes.json();
-                throw new Error(err.error || 'Failed to get upload token');
-            }
-            const { access_token, folder_id } = await tokenRes.json();
-
-            // 2. Start Resumable Upload Session
-            const safeStudentName = studentName.replace(/[^a-zA-Z0-9 ]/g, '').trim();
-            const safeAssignmentTitle = selectedAssignment.title.replace(/[^a-zA-Z0-9 ]/g, '').trim();
-            
-            // Format: "John Doe - Basic Scales.mp4"
-            const finalFileName = `${safeStudentName} - ${safeAssignmentTitle}.${videoFile.name.split('.').pop()}`;
-            
-            const metadata = {
-                name: finalFileName,
-                parents: [folder_id]
-            };
-
-            const sessionRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${access_token}`,
-                    'Content-Type': 'application/json',
-                    'X-Upload-Content-Type': videoFile.type,
-                    'X-Upload-Content-Length': videoFile.size.toString()
-                },
-                body: JSON.stringify(metadata)
-            });
-
-            if (!sessionRes.ok) throw new Error('Failed to initialize upload session');
-            const uploadUrl = sessionRes.headers.get('Location');
-            if (!uploadUrl) throw new Error('No upload URL returned from Google');
-
-            // 3. Upload File Chunks directly from Browser -> Google Drive
-            return new Promise((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                xhr.open('PUT', uploadUrl, true);
-                
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        const percentComplete = Math.round((e.loaded / e.total) * 100);
-                        setUploadProgress(percentComplete);
-                    }
-                };
-
-                xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        try {
-                            const response = JSON.parse(xhr.responseText);
-                            // Get the viewable link
-                            fetch(`https://www.googleapis.com/drive/v3/files/${response.id}?fields=webViewLink`, {
-                                headers: { 'Authorization': `Bearer ${access_token}` }
-                            }).then(res => res.json()).then(data => {
-                                resolve(data.webViewLink || `https://drive.google.com/file/d/${response.id}/view`);
-                            }).catch(err => {
-                                resolve(`https://drive.google.com/file/d/${response.id}/view`);
-                            });
-                        } catch (err) {
-                            resolve(`https://drive.google.com/file/d/unknown/view`);
-                        }
-                    } else {
-                        reject(new Error(`Upload failed with status ${xhr.status}`));
-                    }
-                };
-
-                xhr.onerror = () => reject(new Error('Network error during upload'));
-                xhr.send(videoFile);
-            });
-            
-        } catch (error: any) {
-            setIsUploading(false);
-            setUploadError(error.message || 'Upload failed');
-            throw error;
-        }
-    };
-
-    const handleFormSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        
-        if (submissionType === 'video') {
-            if (!videoFile) {
-                alert('Please select a video file to upload.');
-                return;
-            }
-            try {
-                const driveLink = await uploadToGoogleDrive();
-                setSubmitVideoUrl(driveLink);
-                // Call parent submit with the new link override
-                await handleSubmitTask(undefined, driveLink);
-                setIsUploading(false); // Reset upload state after successful submission
-                return;
-            } catch (err) {
-                console.error('Upload error', err);
-                return; // Stop submission on upload error
-            }
-        }
-        
-        handleSubmitTask(e);
     };
 
     return (
@@ -333,15 +204,14 @@ export default function SubmitTaskModal({
                     </div>
                     <button 
                         onClick={handleClose} 
-                        disabled={isUploading}
-                        className="p-1.5 hover:bg-slate-105 dark:hover:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500 transition-colors disabled:opacity-50"
+                        className="p-1.5 hover:bg-slate-105 dark:hover:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500 transition-colors"
                     >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
                 {/* Modal Body */}
-                <form onSubmit={handleFormSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
+                <form onSubmit={handleSubmitTask} className="p-6 space-y-5 overflow-y-auto flex-1">
                     <div className="space-y-1.5 bg-slate-55 dark:bg-slate-850 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                         <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">Assignment Brief</h4>
                         <p className="text-xs text-slate-550 dark:text-slate-400 leading-relaxed line-clamp-3 mt-1">
@@ -349,81 +219,63 @@ export default function SubmitTaskModal({
                         </p>
                     </div>
 
-                    {/* Submission Type Toggle */}
-                    <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl overflow-x-auto no-scrollbar">
+                    {/* Submission Type Toggle — 3 tabs */}
+                    <div className="flex gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
                         <button
                             type="button"
-                            onClick={() => setSubmissionType('video')}
-                            className={`flex-1 min-w-max px-2 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all ${submissionType === 'video' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                            onClick={() => setSubmissionType('link')}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all ${submissionType === 'link' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
                         >
-                            <UploadCloud className="w-3.5 h-3.5" />
-                            Upload Video
+                            <LinkIcon className="w-3 h-3 shrink-0" />
+                            Provide Link
                         </button>
+
                         <button
                             type="button"
                             onClick={() => setSubmissionType('audio')}
-                            className={`flex-1 min-w-max px-2 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all ${submissionType === 'audio' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all ${submissionType === 'audio' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
                         >
-                            <Mic className="w-3.5 h-3.5" />
+                            <Mic className="w-3 h-3 shrink-0" />
                             Record Audio
                         </button>
                     </div>
 
-                    {submissionType === 'video' && (
-                        <div className="space-y-3 animate-in slide-in-from-left-4 duration-200 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-6 text-center bg-slate-50 dark:bg-slate-800/20">
-                            {isUploading ? (
-                                <div className="space-y-4 py-4">
-                                    <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden relative">
-                                        <div 
-                                            className="bg-amber-500 h-3 rounded-full transition-all duration-300 relative overflow-hidden" 
-                                            style={{ width: `${uploadProgress}%` }}
-                                        >
-                                            <div className="absolute inset-0 bg-white/20 animate-shimmer" style={{
-                                                backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
-                                                backgroundSize: '200% 100%'
-                                            }} />
-                                        </div>
-                                    </div>
-                                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                                        Uploading... {uploadProgress}%
-                                    </p>
-                                    <p className="text-[10px] text-slate-500 italic">Please do not close this window.</p>
+                    {/* ── PROVIDE LINK ── */}
+                    {submissionType === 'link' && (
+                        <div className="space-y-1.5 animate-in slide-in-from-right-4 duration-200">
+                            <label htmlFor="video-url" className="text-[10px] font-black text-slate-500 dark:text-slate-455 uppercase tracking-widest block font-mono">Video / Recording Link</label>
+                            <input 
+                                id="video-url"
+                                type="url"
+                                className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                                placeholder="e.g., YouTube, Google Drive, Soundcloud, or Vimeo link"
+                                value={submitVideoUrl}
+                                onChange={(e) => setSubmitVideoUrl(e.target.value)}
+                                required={submissionType === 'link'}
+                            />
+                            
+                            {/* Guidelines for uploading */}
+                            <details className="mt-3 group rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 open:bg-white dark:open:bg-slate-800 transition-all overflow-hidden cursor-pointer">
+                                <summary className="flex items-center gap-2 px-3 py-2 text-[10px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-500 transition-colors list-none outline-none">
+                                    <span className="material-symbols-outlined text-sm text-amber-500 transition-transform group-open:rotate-90">play_circle</span>
+                                    Need help submitting via YouTube?
+                                </summary>
+                                <div className="px-3 pb-3 pt-1 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 space-y-2 border-t border-slate-200 dark:border-slate-700 ml-1">
+                                    <p className="font-semibold text-slate-700 dark:text-slate-300">How to upload an &quot;Unlisted&quot; YouTube video (Free &amp; Private):</p>
+                                    <ol className="list-decimal pl-4 space-y-1.5 marker:text-amber-500 marker:font-bold">
+                                        <li>Record your practice session using your phone or computer.</li>
+                                        <li>Open the YouTube app or website and click the <b>&quot;+&quot;</b> (Create) button.</li>
+                                        <li>Select <b>&quot;Upload video&quot;</b> and choose your recording.</li>
+                                        <li>Under &quot;Visibility&quot;, select <b>&quot;Unlisted&quot;</b> (so only people with the link can watch it).</li>
+                                        <li>Wait for the upload to finish, then copy the video link and paste it in the box above!</li>
+                                    </ol>
+                                    <p className="text-[9px] text-slate-400 italic mt-2">Alternatively, you can share a Google Drive link. Just make sure the link access is set to &quot;Anyone with the link&quot;.</p>
                                 </div>
-                            ) : (
-                                <>
-                                    <input 
-                                        type="file" 
-                                        accept="video/*" 
-                                        id="video-upload" 
-                                        className="hidden" 
-                                        onChange={handleFileChange}
-                                    />
-                                    <label htmlFor="video-upload" className="cursor-pointer flex flex-col items-center justify-center gap-3 py-4">
-                                        <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-500">
-                                            {videoFile ? <CheckCircle2 className="w-6 h-6" /> : <UploadCloud className="w-6 h-6" />}
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
-                                                {videoFile ? videoFile.name : 'Select video from device'}
-                                            </p>
-                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                                                {videoFile ? `${(videoFile.size / (1024 * 1024)).toFixed(2)} MB` : 'MP4, MOV, WEBM (Max 500MB)'}
-                                            </p>
-                                        </div>
-                                        <div className="mt-2 px-4 py-1.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold rounded-lg hover:opacity-90 transition-opacity">
-                                            {videoFile ? 'Change File' : 'Browse Files'}
-                                        </div>
-                                    </label>
-                                    {uploadError && (
-                                        <div className="text-xs text-red-500 font-semibold p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                                            {uploadError}
-                                        </div>
-                                    )}
-                                </>
-                            )}
+                            </details>
                         </div>
                     )}
 
+                    {/* ── RECORD AUDIO ── */}
 
                     {submissionType === 'audio' && (
                         <div className="space-y-4 animate-in slide-in-from-left-4 duration-200 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center">
@@ -469,7 +321,7 @@ export default function SubmitTaskModal({
                                                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 dark:bg-red-950/30 rounded-lg hover:bg-red-100 transition-colors"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
-                                                Discard & Re-record
+                                                Discard &amp; Re-record
                                             </button>
                                         </div>
                                     </div>
@@ -497,7 +349,7 @@ export default function SubmitTaskModal({
                             </div>
                             {selectedAssignment.feedback_text && (
                                 <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed italic">
-                                    "{selectedAssignment.feedback_text}"
+                                    &quot;{selectedAssignment.feedback_text}&quot;
                                 </p>
                             )}
                         </div>
@@ -508,18 +360,17 @@ export default function SubmitTaskModal({
                         <button 
                             type="button"
                             onClick={handleClose}
-                            disabled={isUploading}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-655 dark:text-slate-300 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-655 dark:text-slate-300 text-xs font-bold rounded-xl transition-all"
                         >
                             Cancel
                         </button>
                         <button 
                             type="submit" 
-                            disabled={isSubmittingTask || isUploading || (submissionType === 'video' && !videoFile)}
+                            disabled={isSubmittingTask}
                             className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-md hover:shadow-lg disabled:bg-stone-300 disabled:text-slate-500 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0"
                         >
-                            {(isSubmittingTask || isUploading) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Video className="w-3.5 h-3.5" />}
-                            {isUploading ? 'Uploading...' : selectedAssignment.status === 'pending' ? 'Submit Recording' : 'Resubmit Recording'}
+                            {isSubmittingTask ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Video className="w-3.5 h-3.5" />}
+                            {selectedAssignment.status === 'pending' ? 'Submit Recording' : 'Resubmit Recording'}
                         </button>
                     </div>
                 </form>
