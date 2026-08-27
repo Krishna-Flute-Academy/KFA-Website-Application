@@ -35,6 +35,8 @@ interface CurriculumTabProps {
     getLessonStatus: (lessonId: string, chapterId: string, moduleId?: string) => 'completed' | 'unlocked' | 'locked';
     selectedTopic: any | null;
     setSelectedTopic: (topic: any) => void;
+    submissionType: 'link' | 'audio' | 'video';
+    setSubmissionType: (type: 'link' | 'audio' | 'video') => void;
     handleToggleLessonComplete: (lessonId: string, currentStatus: string) => Promise<void>;
     getTopicBreadcrumbs: (topic: any) => string;
     setShowMaterialPopup: (show: boolean) => void;
