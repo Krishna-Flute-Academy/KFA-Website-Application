@@ -25,8 +25,8 @@ interface TasksTabProps {
     setSelectedAssignment: (asg: EnrichedAssignment | null) => void;
     submitVideoUrl: string;
     setSubmitVideoUrl: (url: string) => void;
-    submissionType: 'link' | 'audio' | 'video';
-    setSubmissionType: (type: 'link' | 'audio' | 'video') => void;
+    submissionType: 'link' | 'upload' | 'audio';
+    setSubmissionType: (type: 'link' | 'upload' | 'audio') => void;
     submitAudioBlob: Blob | null;
     setSubmitAudioBlob: (blob: Blob | null) => void;
     isSubmittingTask: boolean;

@@ -384,8 +384,9 @@ export default function StudentDashboardContainer() {
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
-    const [submissionType, setSubmissionType] = useState<'link' | 'audio' | 'video'>('video');
+    const [submissionType, setSubmissionType] = useState<'link' | 'upload' | 'audio'>('link');
     const [submitVideoUrl, setSubmitVideoUrl] = useState('');
+    const [submitVideoFile, setSubmitVideoFile] = useState<File | null>(null);
     const [submitAudioBlob, setSubmitAudioBlob] = useState<Blob | null>(null);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
@@ -1530,19 +1531,24 @@ export default function StudentDashboardContainer() {
     };
 
     // Submit assignment
-    const handleSubmitTask = async (e?: React.FormEvent, overrideUrl?: string) => {
-        if (e) e.preventDefault();
+    const handleSubmitTask = async (e: React.FormEvent) => {
+        e.preventDefault();
         if (!profile || !selectedAssignment || isSubmittingTask) return;
 
         let finalSubmissionUrl = '';
 
-        if (submissionType === 'link' || submissionType === 'video') {
-            const videoUrlStr = overrideUrl || submitVideoUrl.trim();
+        if (submissionType === 'link') {
+            const videoUrlStr = submitVideoUrl.trim();
             if (!videoUrlStr) {
                 alert('Please provide a recording link or upload a video!');
                 return;
             }
             finalSubmissionUrl = videoUrlStr;
+        } else if (submissionType === 'upload') {
+            if (!submitVideoFile) {
+                alert('Please select a video file to upload!');
+                return;
+            }
         } else {
             if (!submitAudioBlob) {
                 alert('Please record audio first!');
@@ -1553,7 +1559,84 @@ export default function StudentDashboardContainer() {
         setIsSubmittingTask(true);
 
         try {
-            if (submissionType === 'audio' && submitAudioBlob) {
+            if (submissionType === 'upload' && submitVideoFile) {
+                // Upload video to Google Drive via server-side token
+                const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500 MB
+                if (submitVideoFile.size > MAX_VIDEO_SIZE) {
+                    alert('Video file is too large (max 500MB). Please compress or use a link instead.');
+                    setIsSubmittingTask(false);
+                    return;
+                }
+
+                // Get a short-lived Google Drive upload token from the server
+                const { data: { session } } = await supabaseAuth.auth.getSession();
+                const tokenRes = await fetch('/api/google-drive-token', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                });
+                if (!tokenRes.ok) {
+                    const tokenErr = await tokenRes.json();
+                    throw new Error(tokenErr.error || 'Failed to get upload token');
+                }
+                const { access_token, folder_id } = await tokenRes.json();
+
+                // Build the file metadata
+                const fileExt = submitVideoFile.name.split('.').pop() || 'mp4';
+                const safeName = `${profile.name}-${selectedAssignment.title}-${Date.now()}.${fileExt}`
+                    .replace(/[^\w.\-]/g, '_'); // sanitise for Drive filename
+                const driveMetadata = {
+                    name: safeName,
+                    parents: [folder_id]
+                };
+
+                // Google Drive requires multipart/related (NOT multipart/form-data).
+                // We construct the body manually so the parents field is honoured.
+                const boundary = 'kfa_drive_boundary_' + Date.now();
+                const metaJson = JSON.stringify(driveMetadata);
+                const mimeType = submitVideoFile.type || 'video/mp4';
+
+                const fileBuffer = await submitVideoFile.arrayBuffer();
+                const enc = new TextEncoder();
+
+                const metaPart = enc.encode(
+                    `--${boundary}\r\n` +
+                    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+                    metaJson + `\r\n`
+                );
+                const filePart = enc.encode(
+                    `--${boundary}\r\n` +
+                    `Content-Type: ${mimeType}\r\n\r\n`
+                );
+                const closing = enc.encode(`\r\n--${boundary}--`);
+
+                const body = new Uint8Array(
+                    metaPart.byteLength + filePart.byteLength + fileBuffer.byteLength + closing.byteLength
+                );
+                let off = 0;
+                body.set(metaPart, off);      off += metaPart.byteLength;
+                body.set(filePart, off);      off += filePart.byteLength;
+                body.set(new Uint8Array(fileBuffer), off); off += fileBuffer.byteLength;
+                body.set(closing, off);
+
+                const uploadRes = await fetch(
+                    `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${access_token}`,
+                            'Content-Type': `multipart/related; boundary="${boundary}"`,
+                        },
+                        body: body
+                    }
+                );
+                if (!uploadRes.ok) {
+                    const uploadErr = await uploadRes.json();
+                    throw new Error(uploadErr.error?.message || 'Failed to upload video to Google Drive');
+                }
+                const driveFile = await uploadRes.json();
+                finalSubmissionUrl = driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`;
+
+            } else if (submissionType === 'audio' && submitAudioBlob) {
                 // Limit audio file to 20MB (roughly 20-30 mins of audio) to save storage
                 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
                 if (submitAudioBlob.size > MAX_FILE_SIZE) {
@@ -1685,6 +1768,7 @@ export default function StudentDashboardContainer() {
 
             setSelectedAssignment(null);
             setSubmitVideoUrl('');
+            setSubmitVideoFile(null);
             setSubmitAudioBlob(null);
         } catch (err: any) {
             console.error('Error submitting assignment:', err);
@@ -3270,13 +3354,14 @@ export default function StudentDashboardContainer() {
                     setSelectedAssignment={setSelectedAssignment}
                     submitVideoUrl={submitVideoUrl}
                     setSubmitVideoUrl={setSubmitVideoUrl}
+                    submitVideoFile={submitVideoFile}
+                    setSubmitVideoFile={setSubmitVideoFile}
                     submissionType={submissionType}
                     setSubmissionType={setSubmissionType}
                     submitAudioBlob={submitAudioBlob}
                     setSubmitAudioBlob={setSubmitAudioBlob}
                     isSubmittingTask={isSubmittingTask}
                     handleSubmitTask={handleSubmitTask}
-                    studentName={profile?.name || 'Unknown Student'}
                 />
             )}
         </>
