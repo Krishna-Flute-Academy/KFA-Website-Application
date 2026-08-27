@@ -384,7 +384,7 @@ export default function StudentDashboardContainer() {
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
-    const [submissionType, setSubmissionType] = useState<'link' | 'audio'>('link');
+    const [submissionType, setSubmissionType] = useState<'link' | 'audio' | 'video'>('link');
     const [submitVideoUrl, setSubmitVideoUrl] = useState('');
     const [submitAudioBlob, setSubmitAudioBlob] = useState<Blob | null>(null);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
@@ -1530,16 +1530,16 @@ export default function StudentDashboardContainer() {
     };
 
     // Submit assignment
-    const handleSubmitTask = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmitTask = async (e?: React.FormEvent, overrideUrl?: string) => {
+        if (e) e.preventDefault();
         if (!profile || !selectedAssignment || isSubmittingTask) return;
 
         let finalSubmissionUrl = '';
 
-        if (submissionType === 'link') {
-            const videoUrlStr = submitVideoUrl.trim();
+        if (submissionType === 'link' || submissionType === 'video') {
+            const videoUrlStr = overrideUrl || submitVideoUrl.trim();
             if (!videoUrlStr) {
-                alert('Please provide a recording link!');
+                alert('Please provide a recording link or upload a video!');
                 return;
             }
             finalSubmissionUrl = videoUrlStr;
