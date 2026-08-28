@@ -11,6 +11,7 @@ import { sendClassroomNotification } from '../../../src/lib/notifications';
 import { checkAndSendTaskDueReminders } from '../../../src/lib/task-reminders';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 import AudioRecorderWidget from '../../../src/components/AudioRecorderWidget';
+import AutoLinkText from '../../../src/components/common/AutoLinkText';
 
 interface Classroom {
     id: string;
@@ -2070,7 +2071,7 @@ export default function TaskReviewPage() {
                                             Task Brief
                                         </h3>
                                         <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                                            {selectedSub.task_description || 'No description provided for this task.'}
+                                            <AutoLinkText text={selectedSub.task_description || 'No description provided for this task.'} preserveNewlines />
                                         </p>
                                     </section>
 
@@ -2391,7 +2392,7 @@ export default function TaskReviewPage() {
                                                 >
                                                     <div className="flex-1 min-w-0 pr-4">
                                                         <div className="font-bold text-sm text-slate-800 dark:text-slate-205 truncate group-hover:text-amber-600 transition-colors">{task.title}</div>
-                                                        <div className="text-xs text-slate-505 dark:text-slate-400 truncate mt-0.5">{task.description}</div>
+                                                        <div className="text-xs text-slate-505 dark:text-slate-400 truncate mt-0.5"><AutoLinkText text={task.description} /></div>
                                                     </div>
                                                     {task.status === 'draft' && (
                                                         <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 dark:bg-slate-800 text-slate-505 tracking-wider shrink-0">Draft</span>

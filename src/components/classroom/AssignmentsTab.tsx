@@ -7,6 +7,7 @@ import {
     NotebookPen, Plus, GripVertical, Edit3, Trash2, Download, Filter,
     Calendar, ChevronUp, ChevronDown
 } from 'lucide-react';
+import AutoLinkText from '../common/AutoLinkText';
 
 interface Student {
     id: string;
@@ -344,7 +345,9 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         {/* Note body */}
                                         <div className="px-4 py-3">
                                             {note.content && (
-                                                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap line-clamp-4">{note.content}</p>
+                                                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap line-clamp-4">
+                                                    <AutoLinkText text={note.content} preserveNewlines />
+                                                </p>
                                             )}
                                             {/* File chip */}
                                             {note.file_url && (
@@ -520,7 +523,9 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                     )}
                                                 </div>
                                                 {asg.description && (
-                                                    <p className="text-xs text-slate-550 dark:text-slate-400 leading-relaxed line-clamp-2">{asg.description}</p>
+                                                    <p className="text-xs text-slate-550 dark:text-slate-400 leading-relaxed line-clamp-2">
+                                                        <AutoLinkText text={asg.description} />
+                                                    </p>
                                                 )}
                                                 {asg.inventory_ref_id ? (
                                                     <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-450 select-none">

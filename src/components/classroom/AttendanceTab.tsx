@@ -170,7 +170,12 @@ export default function AttendanceTab({
                                         </div>
                                         <div className="text-left">
                                             <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight">{student.name}</h4>
-                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Joined {formatLocalDate(student.joined_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
+                                                {student.is_makeup 
+                                                    ? 'Makeup Student' 
+                                                    : (student.joined_at ? `Joined ${formatLocalDate(student.joined_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Enrolled Student')
+                                                }
+                                            </p>
                                         </div>
                                     </div>
 

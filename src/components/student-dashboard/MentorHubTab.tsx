@@ -7,6 +7,7 @@ import {
     Send, ChevronRight, AlertCircle, Sparkles, X, Loader2, Check
 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
+import AutoLinkText from '../common/AutoLinkText';
 
 interface Mentee {
     id: string;
@@ -344,7 +345,7 @@ export default function MentorHubTab({
                                                 </div>
 
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-2">
-                                                    {sub.assignment_description || 'No specific instructions provided.'}
+                                                    <AutoLinkText text={sub.assignment_description || 'No specific instructions provided.'} />
                                                 </p>
 
                                                 <div className="flex items-center gap-4 text-[10px] text-slate-400 flex-wrap">

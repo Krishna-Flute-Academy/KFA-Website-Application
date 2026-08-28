@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { X, Loader2, Link as LinkIcon, Video, UploadCloud, CheckCircle2 } from 'lucide-react';
 import useDrivePicker from '../../lib/useDrivePicker';
+import AutoLinkText from '../common/AutoLinkText';
 
 export interface EnrichedAssignment {
     id: string;
@@ -104,7 +105,7 @@ export default function SubmitTaskModal({
                     <div className="space-y-1.5 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                         <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">Assignment Brief</h4>
                         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 mt-1">
-                            {selectedAssignment.description || 'No instruction notes provided by the teacher.'}
+                            <AutoLinkText text={selectedAssignment.description || 'No instruction notes provided by the teacher.'} preserveNewlines />
                         </p>
                     </div>
 
@@ -179,7 +180,7 @@ export default function SubmitTaskModal({
                             </div>
                             {selectedAssignment.feedback_text && (
                                 <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed italic">
-                                    &quot;{selectedAssignment.feedback_text}&quot;
+                                    &quot;<AutoLinkText text={selectedAssignment.feedback_text} preserveNewlines />&quot;
                                 </p>
                             )}
                         </div>

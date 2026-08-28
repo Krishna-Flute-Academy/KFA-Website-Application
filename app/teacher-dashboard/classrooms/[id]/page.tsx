@@ -19,6 +19,7 @@ import { sendClassroomNotification } from '../../../../src/lib/notifications';
 import { htmlToPlainText, sanitizeHtml } from '../../../../src/lib/text-utils';
 import SecureCurriculumMaterial from '../../../../src/components/SecureCurriculumMaterial';
 import AudioRecorderWidget from '../../../../src/components/AudioRecorderWidget';
+import AutoLinkText from '../../../../src/components/common/AutoLinkText';
 
 import dynamic from 'next/dynamic';
 
@@ -1243,13 +1244,28 @@ export default function ClassroomDashboardPage({
     const [sessionLogs, setSessionLogs] = useState<any[]>([]);
     const [sessionLogsLoading, setSessionLogsLoading] = useState(false);
 
+    const normalizeDateStr = (dateVal: any): string => {
+        if (!dateVal) return '';
+        if (typeof dateVal === 'string') {
+            return dateVal.split('T')[0].trim();
+        }
+        if (dateVal instanceof Date) {
+            return dateVal.toISOString().split('T')[0];
+        }
+        return String(dateVal).split('T')[0].trim();
+    };
+
     const activeAttendanceRoster = useMemo(() => {
         const list = [...students];
-        const matchingOverrides = sessionOverrides.filter(
-            o => o.override_date === attendanceDate
+        const targetDate = normalizeDateStr(attendanceDate);
+
+        const matchingOverrides = (sessionOverrides || []).filter(
+            o => o && o.override_date && normalizeDateStr(o.override_date) === targetDate
         );
+
         matchingOverrides.forEach(o => {
-            if (!list.some(s => s.student_id === o.student_id)) {
+            const isAlreadyInList = list.some(s => s.student_id === o.student_id);
+            if (!isAlreadyInList) {
                 const level = o.users?.level || 'Level 1';
                 const mock_score = 8.0;
                 const mock_progress = 75;
@@ -2066,19 +2082,36 @@ export default function ClassroomDashboardPage({
         if (!classroomId) return;
         setAttendanceLoading(true);
         try {
-            const { data, error } = await supabaseAuth
-                .from('attendance')
-                .select('student_id, status')
-                .eq('classroom_id', classroomId)
-                .eq('date', attendanceDate);
+            const [attRes, overridesRes] = await Promise.all([
+                supabaseAuth
+                    .from('attendance')
+                    .select('student_id, status')
+                    .eq('classroom_id', classroomId)
+                    .eq('date', attendanceDate),
+                supabaseAuth
+                    .from('session_student_overrides')
+                    .select(`
+                        id,
+                        student_id,
+                        override_date,
+                        reason,
+                        users!student_id(name, profile_pic_url, level)
+                    `)
+                    .eq('target_classroom_id', classroomId)
+                    .order('override_date', { ascending: true })
+            ]);
 
-            if (error) {
-                console.error('Error fetching classroom attendance:', error.message);
+            if (overridesRes.data) {
+                setSessionOverrides(overridesRes.data);
+            }
+
+            if (attRes.error) {
+                console.error('Error fetching classroom attendance:', attRes.error.message);
                 return;
             }
 
             const recordsMap: Record<string, 'present' | 'absent' | 'late' | 'excused'> = {};
-            (data || []).forEach((row: any) => {
+            (attRes.data || []).forEach((row: any) => {
                 recordsMap[row.student_id] = row.status;
             });
             setAttendanceRecords(recordsMap);
@@ -5135,7 +5168,7 @@ export default function ClassroomDashboardPage({
                                                             <div className="w-4 h-4 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 mt-0.5 text-[#ecb613] font-black text-[8px]">
                                                                 ✓
                                                             </div>
-                                                            <span className="leading-tight">{pt}</span>
+                                                            <span className="leading-tight"><AutoLinkText text={pt} /></span>
                                                         </li>
                                                     ))}
                                                 </ul>

@@ -17,6 +17,7 @@ import {
     BookOpen, Youtube, RefreshCw, Link2, Image as ImageIcon
 } from 'lucide-react';
 import RichTextEditor from '../../../src/components/common/RichTextEditor';
+import AutoLinkText from '../../../src/components/common/AutoLinkText';
 
 interface Broadcast {
     id: string;
@@ -2385,7 +2386,9 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                                             : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 self-start rounded-tl-none border border-slate-100 dark:border-slate-750'
                                                                     }`}
                                                                 >
-                                                                    <p className="whitespace-pre-wrap select-text font-medium">{msg.message_text}</p>
+                                                                    <p className="whitespace-pre-wrap select-text font-medium">
+                                                                        <AutoLinkText text={msg.message_text} preserveNewlines />
+                                                                    </p>
                                                                     <div className="flex justify-end items-center gap-1 mt-1">
                                                                         <span className={`text-[8px] ${isMe ? 'text-teal-100/60' : 'text-slate-455'}`}>
                                                                             {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

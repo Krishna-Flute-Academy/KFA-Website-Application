@@ -11,6 +11,7 @@ import { getStudentFeeStatus } from '../../../../src/lib/fee-utils';
 import { INITIAL_MODULES } from '../../inventory/initial-data';
 
 import { stripHtml } from '../../../../src/lib/text-utils';
+import AutoLinkText from '../../../../src/components/common/AutoLinkText';
 
 interface StudentInfo {
     id: string;
@@ -2083,7 +2084,7 @@ export default function StudentProfilePage() {
                                             )}
                                             {selectedStudentTask.feedback_text && (
                                                 <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-105/50 dark:border-slate-800/80 whitespace-pre-line font-semibold">
-                                                    {selectedStudentTask.feedback_text}
+                                                    <AutoLinkText text={selectedStudentTask.feedback_text} preserveNewlines />
                                                 </p>
                                             )}
                                         </div>

@@ -5,6 +5,7 @@ import {
     Loader2, MessageSquare, Search, Send, Users, X, Info, Smile, 
     Paperclip, MoreVertical, CheckCheck, ArrowLeft 
 } from 'lucide-react';
+import AutoLinkText from '../common/AutoLinkText';
 
 interface ClassroomChatMessage {
     id: string;
@@ -424,7 +425,7 @@ export default function ClassroomChatTab({
                                                 ? 'text-[#00254d] dark:text-[#eef7ff]'
                                                 : 'text-slate-900 dark:text-[#e9edef]'
                                         }`}>
-                                            {message.message_text}
+                                            <AutoLinkText text={message.message_text} preserveNewlines />
                                         </p>
                                         
                                         {/* Time and Blue checks (Explicit high-contrast colors, absolute aligned to avoid text overlap) */}
