@@ -17,13 +17,16 @@ const withPWA = withPWAInit({
 const nextConfig = {
     // Vercel handles trailing slashes natively, enforcing it can cause redirect loops.
 
-    // Image Configuration: allow images from any remote host
+    // Image Configuration: restrict to known trusted hosts only
     images: {
         remotePatterns: [
-            {
-                protocol: 'https',
-                hostname: '**',
-            },
+            // Supabase Storage (both projects)
+            { protocol: 'https', hostname: 'cmjyqvyzxthnjnuxbufz.supabase.co' },
+            { protocol: 'https', hostname: 'sevtycwrmhzyfxvxkkgc.supabase.co' },
+            // Google profile pictures (OAuth sign-in)
+            { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
+            // Google user content (additional OAuth avatar domains)
+            { protocol: 'https', hostname: '*.googleusercontent.com' },
         ],
     },
 

@@ -31,6 +31,7 @@ import SubmitTaskModal from './SubmitTaskModal';
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import BlogNotification from './BlogNotification';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
+import { htmlToPlainText, truncatePlainText } from '../../lib/text-utils';
 import ProfileCompletionModal from '../common/ProfileCompletionModal';
 import { INITIAL_MODULES } from '../../../app/teacher-dashboard/inventory/initial-data';
 
@@ -134,6 +135,7 @@ export default function StudentDashboardContainer() {
     const [loading, setLoading] = useState(true);
     const [profile, setProfile] = useState<StudentProfile | null>(null);
     const [payments, setPayments] = useState<any[]>([]);
+    const [feeDataLoaded, setFeeDataLoaded] = useState(false);
     const [classroom, setClassroom] = useState<ClassroomInfo | null>(null);
     const [classmates, setClassmates] = useState<Classmate[]>([]);
     const [assignments, setAssignments] = useState<EnrichedAssignment[]>([]);
@@ -156,6 +158,8 @@ export default function StudentDashboardContainer() {
     const [pushPermission, setPushPermission] = useState<boolean | null>(null);
     const notifDropdownRef = useRef<HTMLDivElement>(null);
     const refreshDataRef = useRef<() => Promise<void>>(null as any);
+    const lastRefreshAtRef = useRef<number>(Date.now());
+    const isRefreshingRef = useRef<boolean>(false);
     const classroomIdsRef = useRef<string[]>([]);
     const audioCtxRef = useRef<any>(null);
     useEffect(() => {
@@ -384,18 +388,17 @@ export default function StudentDashboardContainer() {
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
-    const [submissionType, setSubmissionType] = useState<'link' | 'upload' | 'audio'>('link');
+    const [submissionType, setSubmissionType] = useState<'link' | 'upload'>('link');
     const [submitVideoUrl, setSubmitVideoUrl] = useState('');
     const [submitVideoFile, setSubmitVideoFile] = useState<File | null>(null);
-    const [submitAudioBlob, setSubmitAudioBlob] = useState<Blob | null>(null);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
 
     // Fee Notification State
     const feeStatus = useMemo(() => {
-        if (!profile) return null;
+        if (!profile || !feeDataLoaded) return null;
         return getStudentFeeStatus(profile.fees_basis, profile.fees_collection_date, payments);
-    }, [profile, payments]);
+    }, [profile, payments, feeDataLoaded]);
 
     // Audio voice broadcast states
     const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -436,6 +439,38 @@ export default function StudentDashboardContainer() {
             else setMyLeaveRequests(data || []);
         } catch (err) {
             console.error('Error fetching student leave requests:', err);
+        }
+    }, [profile?.id]);
+
+    const fetchStudentFeeData = useCallback(async () => {
+        const studentId = profile?.id;
+        if (!studentId) return;
+        try {
+            const [userRes, payRes] = await Promise.all([
+                supabaseAuth
+                    .from('users')
+                    .select('fees_basis, fees_amount, fees_classes_paid, fees_collection_date')
+                    .eq('id', studentId)
+                    .maybeSingle(),
+                supabaseAuth
+                    .from('fees_payments')
+                    .select('*')
+                    .eq('student_id', studentId)
+                    .order('payment_date', { ascending: false })
+            ]);
+
+            if (userRes.data) {
+                setProfile(prev => prev ? { ...prev, ...userRes.data } : prev);
+            }
+            if (payRes.data) {
+                setPayments(payRes.data);
+                setFeeDataLoaded(true);
+            } else if (!payRes.error) {
+                setPayments([]);
+                setFeeDataLoaded(true);
+            }
+        } catch (err) {
+            console.error('Error refreshing student fee data:', err);
         }
     }, [profile?.id]);
 
@@ -562,6 +597,8 @@ export default function StudentDashboardContainer() {
     };
 
     const refreshData = async () => {
+        if (isRefreshingRef.current) return;
+        isRefreshingRef.current = true;
         refreshDataRef.current = refreshData;
         try {
             const { data: { session } } = await supabaseAuth.auth.getSession();
@@ -572,64 +609,20 @@ export default function StudentDashboardContainer() {
             // Trigger automated 2-day pre-due-date task reminders in background
             checkAndSendTaskDueReminders().catch(err => console.error('Error running task reminders:', err));
 
-            // Phase 1 Parallel Fetch (Queries dependent only on userId or static data)
+            // CRITICAL PHASE 1 (Identity & Classroom Routing): Only what is strictly necessary to render the shell
             const [
                 userRes,
-                payRes,
                 csRes,
-                overridesRes,
-                attRes,
-                broadcastsRes,
-                notifRes,
-                modulesRes,
-                chaptersRes,
-                lessonsRes,
-                progressRes,
-                messagesRes,
-                studentAssignmentsRes,
-                adminsRes
+                overridesRes
             ] = await Promise.all([
                 // 1. Profile
                 supabaseAuth.from('users').select('id, name, email, phone, level, profile_pic_url, role, status, teacher_id, fees_basis, fees_amount, fees_classes_paid, fees_collection_date').eq('id', userId).maybeSingle(),
 
-                // 2. Payments
-                supabaseAuth.from('fees_payments').select('*').eq('student_id', userId).order('payment_date', { ascending: false }),
-
-                // 3. Classroom Mapping
+                // 2. Classroom Mapping
                 supabaseAuth.from('classroom_students').select('classroom_id, classrooms(id, name, type, description, teacher_id, is_live, live_meeting_link, live_session_started_at, status, users!classrooms_teacher_id_fkey(name, email))').eq('student_id', userId),
 
-                // 4. Overrides
-                supabaseAuth.from('session_student_overrides').select('id, student_id, override_date, reason, target_classroom_id, classrooms (id, name, description, status)').eq('student_id', userId),
-
-                // 5. Attendance
-                supabaseAuth.from('attendance').select('*').eq('student_id', userId).order('date', { ascending: false }).limit(100),
-
-                // 6. Broadcasts
-                supabaseAuth.from('broadcasts').select('*, sender:users!teacher_id(name, role)').order('created_at', { ascending: false }),
-
-                // 7. Notifications
-                supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-
-                // 8. Modules
-                supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
-
-                // 9. Chapters
-                supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
-
-                // 10. Lessons
-                supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true }),
-
-                // 11. Curriculum Progress
-                supabaseAuth.from('student_topic_progress').select('*').eq('student_id', userId),
-
-                // 12. Direct Messages
-                supabaseAuth.from('messages').select('*').or(`sender_id.eq.${userId},receiver_id.eq.${userId}`).order('created_at', { ascending: false }).limit(100),
-
-                // 13. Student Assignment mappings
-                supabaseAuth.from('assignment_students').select('id, assignment_id, status, feedback_text, score, submitted_at, video_url').eq('student_id', userId),
-
-                // 14. Admins list
-                supabaseAuth.from('users').select('id, name, email').eq('role', 'admin')
+                // 3. Overrides
+                supabaseAuth.from('session_student_overrides').select('id, student_id, override_date, reason, target_classroom_id, classrooms (id, name, description, status)').eq('student_id', userId)
             ]);
 
             const user = userRes.data;
@@ -646,7 +639,158 @@ export default function StudentDashboardContainer() {
             } else {
                 setShowProfileModal(false);
             }
-            setPayments(payRes.data || []);
+
+            // Process classroom mapping fallbacks if empty
+            let csData: any = csRes.data;
+            const csError = csRes.error;
+
+            if (csError || !csData || csData.length === 0) {
+                csData = [];
+            }
+
+            const filteredCsData = (csData || []).filter((row: any) => {
+                const roomInfo = Array.isArray(row.classrooms) ? row.classrooms[0] : row.classrooms;
+                if (row.classroom_id === 'synthetic-classroom') return true;
+                return roomInfo && roomInfo.status !== 'inactive' && roomInfo.status !== 'archived';
+            });
+            const cs = filteredCsData.length > 0 ? filteredCsData[0] : null;
+
+            let classroomId = '';
+            let cls: any = null;
+            if (cs?.classrooms) {
+                cls = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
+                if (cls) {
+                    classroomId = cls.id;
+                }
+            } else if (user?.status === 'archived' || user?.status === 'inactive') {
+                cls = {
+                    id: 'kfa-learning-circle',
+                    name: 'KFA Learning Circle',
+                    description: 'Community & Self-Paced Learning Circle',
+                    type: 'learning_circle',
+                    teacher_name: 'Krishna Flute Academy'
+                };
+            }
+
+            // Set initial minimal classroom shell state if available
+            if (cls) {
+                const teacherUser = Array.isArray(cls.users) ? cls.users[0] : cls.users;
+                setClassroom(prev => prev || {
+                    id: cls.id,
+                    name: cls.name,
+                    type: cls.type || 'permanent',
+                    description: cls.description || '',
+                    teacher_id: cls.teacher_id,
+                    teacher_name: teacherUser?.name || cls.teacher_name || 'Academy Instructor',
+                    teacher_email: teacherUser?.email || '',
+                    is_live: cls.is_live || false,
+                    live_meeting_link: cls.live_meeting_link || null,
+                    live_session_started_at: cls.live_session_started_at || null,
+                    live_classroom_name: cls.is_live ? cls.name : null
+                });
+            }
+
+            // Session student overrides
+            const overridesData = overridesRes.data || [];
+            const activeOverrides = overridesData.filter((o: any) => {
+                const roomInfo = Array.isArray(o.classrooms) ? o.classrooms[0] : o.classrooms;
+                return roomInfo && roomInfo.status !== 'inactive' && roomInfo.status !== 'archived';
+            });
+
+            const targetClassroomIds = activeOverrides.map(o => o.target_classroom_id).filter(Boolean);
+            const memberClassroomIds = filteredCsData
+                .map((row: any) => {
+                    const r = Array.isArray(row.classrooms) ? row.classrooms[0] : row.classrooms;
+                    return row.classroom_id || r?.id;
+                })
+                .filter(Boolean);
+
+            const allClassroomIds = Array.from(new Set([
+                classroomId,
+                ...memberClassroomIds,
+                ...targetClassroomIds
+            ])).filter(id => id && id !== 'synthetic-classroom');
+            classroomIdsRef.current = allClassroomIds;
+
+            // PROGRESSIVE RENDERING: Minimum critical identity & classroom resolved -> UNBLOCK SHELL IMMEDIATELY!
+            setLoading(false);
+
+            // SECONDARY BACKGROUND LOADING: Asynchronously fetch and hydrate all secondary datasets
+            loadSecondaryData(userId, user, cls, classroomId, allClassroomIds, targetClassroomIds, activeOverrides);
+
+        } catch (err) {
+            console.error('Error fetching dashboard data:', err);
+            setLoading(false);
+            lastRefreshAtRef.current = Date.now();
+            isRefreshingRef.current = false;
+        }
+    };
+
+    const loadSecondaryData = async (
+        userId: string,
+        user: any,
+        cls: any,
+        classroomId: string,
+        allClassroomIds: string[],
+        targetClassroomIds: string[],
+        activeOverrides: any[]
+    ) => {
+        try {
+            // Phase 2A Parallel Fetch (Independent secondary datasets)
+            const [
+                payRes,
+                attRes,
+                broadcastsRes,
+                notifRes,
+                modulesRes,
+                chaptersRes,
+                lessonsRes,
+                progressRes,
+                messagesRes,
+                studentAssignmentsRes,
+                adminsRes
+            ] = await Promise.all([
+                // 1. Payments
+                supabaseAuth.from('fees_payments').select('*').eq('student_id', userId).order('payment_date', { ascending: false }),
+
+                // 2. Attendance
+                supabaseAuth.from('attendance').select('*').eq('student_id', userId).order('date', { ascending: false }).limit(100),
+
+                // 3. Broadcasts
+                supabaseAuth.from('broadcasts').select('*, sender:users!teacher_id(name, role)').order('created_at', { ascending: false }),
+
+                // 4. Notifications
+                supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+
+                // 5. Modules
+                supabaseAuth.from('course_modules').select('id, title, description, module_number').order('module_number', { ascending: true }),
+
+                // 6. Chapters
+                supabaseAuth.from('course_chapters').select('id, module_id, title, description, chapter_number').order('chapter_number', { ascending: true }),
+
+                // 7. Lessons
+                supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, link_url, file_size, duration, bullet_points').order('lesson_number', { ascending: true }),
+
+                // 8. Curriculum Progress
+                supabaseAuth.from('student_topic_progress').select('*').eq('student_id', userId),
+
+                // 9. Direct Messages
+                supabaseAuth.from('messages').select('*').or(`sender_id.eq.${userId},receiver_id.eq.${userId}`).order('created_at', { ascending: false }).limit(100),
+
+                // 10. Student Assignment mappings
+                supabaseAuth.from('assignment_students').select('id, assignment_id, status, feedback_text, score, submitted_at, video_url').eq('student_id', userId),
+
+                // 11. Admins list
+                supabaseAuth.from('users').select('id, name, email').eq('role', 'admin')
+            ]);
+
+            if (payRes.data) {
+                setPayments(payRes.data);
+                setFeeDataLoaded(true);
+            } else if (!payRes.error) {
+                setPayments([]);
+                setFeeDataLoaded(true);
+            }
             setAttendance(attRes.data || []);
             setNotifications(notifRes.data || []);
             setCourseModules(modulesRes.data || []);
@@ -683,60 +827,6 @@ export default function StudentDashboardContainer() {
             }
             setAdmins(adminsRes.data || []);
 
-            // Process classroom mapping fallbacks if empty
-            let csData: any = csRes.data;
-            const csError = csRes.error;
-
-            if (csError || !csData || csData.length === 0) {
-                csData = [];
-            }
-
-            const filteredCsData = (csData || []).filter((row: any) => {
-                const roomInfo = Array.isArray(row.classrooms) ? row.classrooms[0] : row.classrooms;
-                if (row.classroom_id === 'synthetic-classroom') return true;
-                return roomInfo && roomInfo.status !== 'inactive' && roomInfo.status !== 'archived';
-            });
-            const cs = filteredCsData.length > 0 ? filteredCsData[0] : null;
-
-            let classroomId = '';
-            let cls: any = null;
-            if (cs?.classrooms) {
-                cls = Array.isArray(cs.classrooms) ? cs.classrooms[0] : cs.classrooms;
-                if (cls) {
-                    classroomId = cls.id;
-                }
-            } else if (user?.status === 'archived' || user?.status === 'inactive') {
-                cls = {
-                    id: 'kfa-learning-circle',
-                    name: 'KFA Learning Circle',
-                    description: 'Community & Self-Paced Learning Circle',
-                    type: 'learning_circle',
-                    teacher_name: 'Krishna Flute Academy'
-                };
-            }
-
-            // Session student overrides
-            const overridesData = overridesRes.data || [];
-            const activeOverrides = overridesData.filter((o: any) => {
-                const roomInfo = Array.isArray(o.classrooms) ? o.classrooms[0] : o.classrooms;
-                return roomInfo && roomInfo.status !== 'inactive' && roomInfo.status !== 'archived';
-            });
-
-            const targetClassroomIds = activeOverrides.map(o => o.target_classroom_id).filter(Boolean);
-            const memberClassroomIds = filteredCsData
-                .map((row: any) => {
-                    const r = Array.isArray(row.classrooms) ? row.classrooms[0] : row.classrooms;
-                    return row.classroom_id || r?.id;
-                })
-                .filter(Boolean);
-
-            const allClassroomIds = Array.from(new Set([
-                classroomId,
-                ...memberClassroomIds,
-                ...targetClassroomIds
-            ])).filter(id => id && id !== 'synthetic-classroom');
-            classroomIdsRef.current = allClassroomIds;
-
             // Student Assignments Map setup
             const studentAssignments = studentAssignmentsRes.data || [];
             const studentAssignmentMap = new Map<string, any>();
@@ -745,8 +835,8 @@ export default function StudentDashboardContainer() {
             });
             const studentAssignmentIds = studentAssignments.map((sa: any) => sa.assignment_id).filter(Boolean);
 
-            // Phase 2 Parallel Fetch (Classroom & Batch specific details)
-            const promisesPhase2: any[] = [
+            // Phase 2B Parallel Fetch (Classroom & Batch specific details)
+            const promisesPhase2B: any[] = [
                 // P0: temporary_classes details
                 targetClassroomIds.length > 0
                     ? supabaseAuth.from('temporary_classes').select('*').in('classroom_id', targetClassroomIds)
@@ -835,11 +925,10 @@ export default function StudentDashboardContainer() {
                 schedulesRes,
                 cmRes,
                 allocationsRes
-            ] = await Promise.all(promisesPhase2);
+            ] = await Promise.all(promisesPhase2B);
 
             setStudentAllocations(allocationsRes.data || []);
 
-            // Process Phase 2
             const tempClasses = tempClassesRes.data || [];
             const activeRooms = (activeRoomsRes.data || []).filter((r: any) => r.status !== 'inactive' && r.status !== 'archived');
 
@@ -1012,7 +1101,10 @@ export default function StudentDashboardContainer() {
             await fetchMentorshipData(userId);
 
         } catch (err) {
-            console.error('Error fetching dashboard data:', err);
+            console.error('Error fetching secondary dashboard data:', err);
+        } finally {
+            lastRefreshAtRef.current = Date.now();
+            isRefreshingRef.current = false;
         }
     };
 
@@ -1023,7 +1115,6 @@ export default function StudentDashboardContainer() {
                 await refreshData();
             } catch (err) {
                 console.error('Error initializing student dashboard:', err);
-            } finally {
                 setLoading(false);
             }
         };
@@ -1086,9 +1177,11 @@ export default function StudentDashboardContainer() {
                             return [newNotif, ...prev];
                         });
 
-                        // Auto-refresh data if notification is related to fees/payments
-                        if (newNotif.title && (newNotif.title.includes('Fee') || newNotif.title.includes('Payment'))) {
-                            refreshDataRef.current();
+                        // Targeted refresh of fee and payment data if notification is related to fees/payments
+                        const notifTitle = (newNotif.title || '').toLowerCase();
+                        const notifMsg = (newNotif.message || '').toLowerCase();
+                        if (notifTitle.includes('fee') || notifTitle.includes('payment') || notifMsg.includes('fee') || notifMsg.includes('payment')) {
+                            fetchStudentFeeData();
                         }
 
                         // Play a soft flute-like chime sound using the browser's Web Audio API
@@ -1122,7 +1215,7 @@ export default function StudentDashboardContainer() {
                         // Show native browser notification if allowed
                         if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
                             new Notification(newNotif.title, {
-                                body: newNotif.message,
+                                body: htmlToPlainText(newNotif.message),
                                 icon: '/favicon.png'
                             });
                         }
@@ -1140,7 +1233,7 @@ export default function StudentDashboardContainer() {
         return () => {
             supabaseAuth.removeChannel(notifChannel);
         };
-    }, [profile?.id]);
+    }, [profile?.id, fetchStudentFeeData]);
 
 
 
@@ -1148,48 +1241,35 @@ export default function StudentDashboardContainer() {
     // to significantly reduce PostgreSQL connection/RAM overhead on the micro tier.
     // Realtime is now ONLY used for push notifications and leave requests.
 
-    // Re-sync data on window focus or visibility change ONLY if the page was hidden for 5+ minutes.
-    // Realtime subscriptions keep data live for shorter absences — no need to hammer the DB every tab switch.
+    // Re-sync data on window focus or visibility change ONLY if at least 5 minutes have elapsed since the last sync.
+    // Realtime subscriptions keep data live for shorter absences — no need to hammer the DB on rapid tab switches.
     useEffect(() => {
-        let hiddenAt: number | null = null;
         const REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'hidden') {
-                hiddenAt = Date.now();
-            } else if (document.visibilityState === 'visible') {
-                if (hiddenAt !== null && Date.now() - hiddenAt >= REFRESH_THRESHOLD_MS) {
-                    if (refreshDataRef.current) {
-                        refreshDataRef.current();
-                    }
-                }
-                hiddenAt = null;
-            }
-        };
-
-        const handleFocus = () => {
-            if (hiddenAt !== null && Date.now() - hiddenAt >= REFRESH_THRESHOLD_MS) {
+        const handleFocusOrVisible = () => {
+            const now = Date.now();
+            if (
+                now - lastRefreshAtRef.current >= REFRESH_THRESHOLD_MS &&
+                !isRefreshingRef.current &&
+                document.visibilityState !== 'hidden'
+            ) {
                 if (refreshDataRef.current) {
                     refreshDataRef.current();
                 }
-                hiddenAt = null;
             }
         };
 
-        window.addEventListener('focus', handleFocus);
+        window.addEventListener('focus', handleFocusOrVisible);
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                handleFocusOrVisible();
+            }
+        };
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        // Background poll every 60 seconds as a fallback for missed realtime events
-        const intervalId = setInterval(() => {
-            if (document.visibilityState === 'visible' && refreshDataRef.current) {
-                refreshDataRef.current();
-            }
-        }, 60000); // 60 seconds
-
         return () => {
-            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('focus', handleFocusOrVisible);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
-            clearInterval(intervalId);
         };
     }, []);
 
@@ -1342,7 +1422,7 @@ export default function StudentDashboardContainer() {
                     await supabaseAuth.from('notifications').insert({
                         user_id: receiverId,
                         title: `New Message: ${profile.name}`,
-                        message: text.trim().length > 60 ? `${text.trim().substring(0, 60)}...` : text.trim(),
+                        message: truncatePlainText(text, 60),
                         type: 'messages',
                         is_read: false
                     });
@@ -1361,15 +1441,33 @@ export default function StudentDashboardContainer() {
 
         setIsSendingClassroomMessage(true);
         try {
-            const { error } = await supabaseAuth
+            const { data: insertedMsg, error } = await supabaseAuth
                 .from('classroom_messages')
                 .insert({
                     classroom_id: classroom.id,
                     sender_id: profile.id,
                     message_text: messageText.trim()
-                });
+                })
+                .select('id, classroom_id, sender_id, message_text, created_at')
+                .single();
 
             if (error) throw error;
+
+            // Immediately update local state with sender details and deduplication
+            if (insertedMsg) {
+                const newMsg = {
+                    ...insertedMsg,
+                    sender: {
+                        name: profile.name,
+                        role: profile.role,
+                        profile_pic_url: profile.profile_pic_url
+                    }
+                };
+                setClassroomMessages(prev => {
+                    if (prev.some(m => m.id === newMsg.id)) return prev;
+                    return [...prev, newMsg];
+                });
+            }
 
             // Send notification to teacher and admins
             try {
@@ -1391,7 +1489,7 @@ export default function StudentDashboardContainer() {
                     const notificationsToInsert = Array.from(recipientIds).map(uid => ({
                         user_id: uid,
                         title: `New Classroom Message: ${profile.name}`,
-                        message: messageText.trim().length > 60 ? `${messageText.trim().substring(0, 60)}...` : messageText.trim(),
+                        message: truncatePlainText(messageText, 60),
                         type: 'messages',
                         is_read: false
                     }));
@@ -1401,8 +1499,6 @@ export default function StudentDashboardContainer() {
             } catch (notifErr) {
                 console.error('Failed to create notifications for classroom message:', notifErr);
             }
-
-            await refreshData();
         } catch (error) {
             console.error('Failed to send classroom message:', error);
             alert('Failed to send classroom message.');
@@ -1535,62 +1631,16 @@ export default function StudentDashboardContainer() {
         e.preventDefault();
         if (!profile || !selectedAssignment || isSubmittingTask) return;
 
-        let finalSubmissionUrl = '';
-
-        if (submissionType === 'link' || submissionType === 'upload') {
-            const videoUrlStr = submitVideoUrl.trim();
-            if (!videoUrlStr) {
-                alert(submissionType === 'upload' ? 'Please select a video from Google Drive!' : 'Please provide a valid video link!');
-                return;
-            }
-            finalSubmissionUrl = videoUrlStr;
-        } else {
-            if (!submitAudioBlob) {
-                alert('Please record audio first!');
-                return;
-            }
+        const videoUrlStr = submitVideoUrl.trim();
+        if (!videoUrlStr) {
+            alert(submissionType === 'upload' ? 'Please select a video from Google Drive!' : 'Please provide a valid video link!');
+            return;
         }
 
+        const finalSubmissionUrl = videoUrlStr;
         setIsSubmittingTask(true);
 
         try {
-            if (submissionType === 'audio' && submitAudioBlob) {
-                // Limit audio file to 20MB (roughly 20-30 mins of audio) to save storage
-                const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
-                if (submitAudioBlob.size > MAX_FILE_SIZE) {
-                    alert('Your recording is too large (max 20MB). Please record a shorter practice session.');
-                    setIsSubmittingTask(false);
-                    return;
-                }
-
-                // Determine file extension and content type based on the recorded blob's MIME type
-                const mimeType = submitAudioBlob.type || 'audio/webm';
-                let fileExt = 'webm';
-                if (mimeType.includes('mp4')) {
-                    fileExt = 'mp4';
-                } else if (mimeType.includes('mpeg')) {
-                    fileExt = 'mp3';
-                } else if (mimeType.includes('ogg')) {
-                    fileExt = 'ogg';
-                } else if (mimeType.includes('wav')) {
-                    fileExt = 'wav';
-                }
-
-                // Upload blob to Supabase storage in inventory_materials bucket under submissions folder prefix
-                const fileName = `${profile.id}-${Date.now()}.${fileExt}`;
-                const filePath = `submissions/${fileName}`;
-                const { error: uploadError } = await supabaseAuth.storage
-                    .from('inventory_materials')
-                    .upload(filePath, submitAudioBlob, { contentType: mimeType });
-
-                if (uploadError) throw uploadError;
-
-                const { data } = supabaseAuth.storage
-                    .from('inventory_materials')
-                    .getPublicUrl(filePath);
-
-                finalSubmissionUrl = data.publicUrl;
-            }
 
             const { data: existingMapping } = await supabaseAuth
                 .from('assignment_students')
@@ -1687,7 +1737,6 @@ export default function StudentDashboardContainer() {
             setSelectedAssignment(null);
             setSubmitVideoUrl('');
             setSubmitVideoFile(null);
-            setSubmitAudioBlob(null);
         } catch (err: any) {
             console.error('Error submitting assignment:', err);
             alert(`Failed to submit practice recording: ${err.message}`);
@@ -2593,7 +2642,7 @@ export default function StudentDashboardContainer() {
                                                                 {new Date(notif.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                                                             </span>
                                                         </div>
-                                                        <span className="text-xs text-slate-655 line-clamp-2 leading-relaxed">{notif.message}</span>
+                                                        <span className="text-xs text-slate-655 line-clamp-2 leading-relaxed">{htmlToPlainText(notif.message)}</span>
                                                     </div>
                                                 ))
                                             )}
@@ -2654,7 +2703,7 @@ export default function StudentDashboardContainer() {
                         )}
 
                         {/* Fee Notification Banner */}
-                        {feeStatus && activeTab !== 'fees' && profile && profile.status !== 'archived' && profile.status !== 'inactive' && (
+                        {feeDataLoaded && feeStatus && activeTab !== 'fees' && profile && profile.status !== 'archived' && profile.status !== 'inactive' && (
                             <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
                                 {(() => {
                                     const classesLeft = profile.fees_classes_paid || 0;
@@ -2862,8 +2911,6 @@ export default function StudentDashboardContainer() {
                                     setSubmitVideoUrl={setSubmitVideoUrl}
                                     submissionType={submissionType}
                                     setSubmissionType={setSubmissionType}
-                                    submitAudioBlob={submitAudioBlob}
-                                    setSubmitAudioBlob={setSubmitAudioBlob}
                                     isSubmittingTask={isSubmittingTask}
                                     handleSubmitTask={handleSubmitTask}
                                 />
@@ -3213,7 +3260,7 @@ export default function StudentDashboardContainer() {
                         {/* Body */}
                         <div className="p-6 space-y-4 text-center">
                             <p className="text-sm font-medium text-slate-600 dark:text-slate-300 leading-relaxed">
-                                {activeFeeReminderNotification.message}
+                                {htmlToPlainText(activeFeeReminderNotification.message)}
                             </p>
 
                             <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-150 dark:border-amber-900/30 rounded-2xl p-4 text-left flex items-start gap-3">
@@ -3276,8 +3323,6 @@ export default function StudentDashboardContainer() {
                     setSubmitVideoFile={setSubmitVideoFile}
                     submissionType={submissionType}
                     setSubmissionType={setSubmissionType}
-                    submitAudioBlob={submitAudioBlob}
-                    setSubmitAudioBlob={setSubmitAudioBlob}
                     isSubmittingTask={isSubmittingTask}
                     handleSubmitTask={handleSubmitTask}
                 />

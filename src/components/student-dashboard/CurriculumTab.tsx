@@ -42,20 +42,7 @@ interface CurriculumTabProps {
     onRefreshCurriculum?: () => void;
 }
 
-const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html
-        .replace(/<[^>]*>?/gm, ' ')
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-};
+import { stripHtml, sanitizeHtml } from '../../lib/text-utils';
 
 const cleanModuleDescription = (desc: string) => {
     if (!desc) return '';
@@ -421,7 +408,7 @@ export default function CurriculumTab({
                                         {selectedTopic.description && (
                                             <div 
                                                 className="text-xs text-slate-500 leading-relaxed tutorial-content max-w-none"
-                                                dangerouslySetInnerHTML={{ __html: selectedTopic.description }}
+                                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedTopic.description) }}
                                             />
                                         )}
 

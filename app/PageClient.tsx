@@ -164,7 +164,9 @@ export function PageClient({
                     if (userData?.role) {
                         setUserRole(userData.role);
                     } else {
-                        setUserRole(session.user.user_metadata?.role || 'student');
+                        // SECURITY: Never fall back to user_metadata — it is user-editable.
+                        // Default to 'pending' so unverified users can't claim elevated roles.
+                        setUserRole('pending');
                     }
                 }
             } catch (err) {
@@ -186,11 +188,13 @@ export function PageClient({
                     if (data?.role) {
                         setUserRole(data.role);
                     } else {
-                        setUserRole(session.user.user_metadata?.role || 'student');
+                        // SECURITY: Never fall back to user_metadata — it is user-editable.
+                        setUserRole('pending');
                     }
                 } catch (err) {
                     console.error('Error getting role on auth change:', err);
-                    setUserRole(session.user.user_metadata?.role || 'student');
+                    // SECURITY: Never fall back to user_metadata on error — default to 'pending'.
+                    setUserRole('pending');
                 }
             } else {
                 setUserRole(null);

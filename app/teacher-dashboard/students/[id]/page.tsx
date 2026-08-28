@@ -10,20 +10,7 @@ import Link from 'next/link';
 import { getStudentFeeStatus } from '../../../../src/lib/fee-utils';
 import { INITIAL_MODULES } from '../../inventory/initial-data';
 
-const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html
-        .replace(/<[^>]*>?/gm, ' ')
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-};
+import { stripHtml } from '../../../../src/lib/text-utils';
 
 interface StudentInfo {
     id: string;

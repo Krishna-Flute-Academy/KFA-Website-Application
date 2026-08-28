@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, User, Eye, Tag, ArrowLeft, Home, Share2, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { supabase, BlogPost } from '../lib/supabase';
+import { sanitizeHtml } from '../lib/text-utils';
 import ReadingProgressBar from './ReadingProgressBar';
 import TableOfContents from './TableOfContents';
 
@@ -249,7 +250,7 @@ export const Blog: React.FC<BlogProps> = ({ initialPostId, onBack }) => {
                                         [&_img]:rounded-xl [&_img]:shadow-md
                                         [&_table]:block [&_table]:overflow-x-auto [&_table]:whitespace-nowrap [&_table]:w-full [&_table]:border-collapse [&_th]:bg-blue-50 [&_th]:p-3 [&_td]:p-3 [&_td]:border [&_th]:border [&_th]:min-w-[120px] [&_td]:min-w-[120px] [&_td]:border-blue-200 [&_th]:border-blue-200
                                         [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&_li::marker]:text-blue-600"
-                                            dangerouslySetInnerHTML={{ __html: processedContent || selectedPost.content }}
+                                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(processedContent || selectedPost.content) }}
                                         />
                                     </div>
                                 </div>

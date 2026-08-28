@@ -16,18 +16,50 @@ import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { CourseCategory, INITIAL_CATEGORIES, INITIAL_MODULES, INITIAL_CHAPTERS, INITIAL_LESSONS } from '../../inventory/initial-data';
 import { sendClassroomNotification } from '../../../../src/lib/notifications';
+import { htmlToPlainText, sanitizeHtml } from '../../../../src/lib/text-utils';
 import SecureCurriculumMaterial from '../../../../src/components/SecureCurriculumMaterial';
 import AudioRecorderWidget from '../../../../src/components/AudioRecorderWidget';
 
+import dynamic from 'next/dynamic';
+
 // Tab components
 import OverviewTab from '../../../../src/components/classroom/OverviewTab';
-import CurriculumTab from '../../../../src/components/classroom/CurriculumTab';
-import StudentsTab from '../../../../src/components/classroom/StudentsTab';
-import AssignmentsTab from '../../../../src/components/classroom/AssignmentsTab';
-import AttendanceTab from '../../../../src/components/classroom/AttendanceTab';
-import ClassLogsTab from '../../../../src/components/classroom/ClassLogsTab';
-import SettingsTab from '../../../../src/components/classroom/SettingsTab';
-import ClassroomChatTab from '../../../../src/components/classroom/ClassroomChatTab';
+
+const TabLoadingFallback = () => (
+    <div className="w-full py-16 flex flex-col items-center justify-center gap-3">
+        <Loader2 className="w-7 h-7 animate-spin text-[#ecb613]" />
+        <span className="text-xs font-semibold text-slate-400">Loading section...</span>
+    </div>
+);
+
+const CurriculumTab = dynamic(
+    () => import('../../../../src/components/classroom/CurriculumTab'),
+    { ssr: false, loading: TabLoadingFallback }
+);
+const StudentsTab = dynamic(
+    () => import('../../../../src/components/classroom/StudentsTab'),
+    { ssr: false, loading: TabLoadingFallback }
+);
+const AssignmentsTab = dynamic(
+    () => import('../../../../src/components/classroom/AssignmentsTab'),
+    { ssr: false, loading: TabLoadingFallback }
+);
+const AttendanceTab = dynamic(
+    () => import('../../../../src/components/classroom/AttendanceTab'),
+    { ssr: false, loading: TabLoadingFallback }
+);
+const ClassLogsTab = dynamic(
+    () => import('../../../../src/components/classroom/ClassLogsTab'),
+    { ssr: false, loading: TabLoadingFallback }
+);
+const SettingsTab = dynamic(
+    () => import('../../../../src/components/classroom/SettingsTab'),
+    { ssr: false, loading: TabLoadingFallback }
+);
+const ClassroomChatTab = dynamic(
+    () => import('../../../../src/components/classroom/ClassroomChatTab'),
+    { ssr: false, loading: TabLoadingFallback }
+);
 
 interface ClassroomDetails {
     id: string;
@@ -154,6 +186,8 @@ export default function ClassroomDashboardPage({
     const [isSendingClassroomMessage, setIsSendingClassroomMessage] = useState(false);
     const [isEndingSession, setIsEndingSession] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const lastRefreshAtRef = useRef<number>(Date.now());
+    const refreshInProgressRef = useRef<boolean>(false);
 
     const handleEndClassSessionInternal = async () => {
         if (isEndingSession) return;
@@ -270,6 +304,21 @@ export default function ClassroomDashboardPage({
         }
     }, [classroom, messageSubject]);
 
+    const teacherProfileRef = useRef(teacherProfile);
+    useEffect(() => {
+        teacherProfileRef.current = teacherProfile;
+    }, [teacherProfile]);
+
+    const studentsRef = useRef(students);
+    useEffect(() => {
+        studentsRef.current = students;
+    }, [students]);
+
+    const sessionOverridesRef = useRef(sessionOverrides);
+    useEffect(() => {
+        sessionOverridesRef.current = sessionOverrides;
+    }, [sessionOverrides]);
+
     // Fetch broadcasts for this class & listen to real-time updates
     useEffect(() => {
         if (!teacherProfile?.id || !classroomId) return;
@@ -292,13 +341,146 @@ export default function ClassroomDashboardPage({
 
         fetchClassroomBroadcasts();
 
+        const targetsClassroom = (recipients: any, targetRoomId: string): boolean => {
+            if (!recipients || !targetRoomId) return false;
+            if (Array.isArray(recipients)) {
+                return recipients.some((r: any) => {
+                    if (typeof r === 'string') return r === targetRoomId;
+                    if (r && typeof r === 'object') return r.id === targetRoomId;
+                    return false;
+                });
+            }
+            if (typeof recipients === 'string') {
+                try {
+                    const parsed = JSON.parse(recipients);
+                    return targetsClassroom(parsed, targetRoomId);
+                } catch {
+                    return recipients === targetRoomId;
+                }
+            }
+            return false;
+        };
+
         const channel = supabaseAuth
             .channel(`classroom-broadcasts-${classroomId}`)
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'broadcasts' },
-                () => {
-                    fetchClassroomBroadcasts();
+                (payload) => {
+                    if (payload.eventType === 'DELETE') {
+                        const deletedId = (payload.old as any)?.id;
+                        if (deletedId) {
+                            setClassBroadcasts(prev => prev.filter(b => b.id !== deletedId));
+                            setSelectedAnnouncement(prev => (prev?.id === deletedId ? null : prev));
+                        }
+                        return;
+                    }
+
+                    if (payload.eventType === 'UPDATE') {
+                        const updatedRow = payload.new as any;
+                        if (!updatedRow?.id) return;
+                        const nowTargets = targetsClassroom(updatedRow.recipients, classroomId);
+
+                        if (!nowTargets) {
+                            // Case C: no longer belongs to this classroom -> remove locally
+                            setClassBroadcasts(prev => prev.filter(b => b.id !== updatedRow.id));
+                            setSelectedAnnouncement(prev => (prev?.id === updatedRow.id ? null : prev));
+                            return;
+                        }
+
+                        // Case A & B: still or newly belongs to this classroom -> update or add locally
+                        let senderObj = updatedRow.sender;
+                        const currentTeacher = teacherProfileRef.current;
+                        if (!senderObj) {
+                            if (updatedRow.teacher_id === currentTeacher?.id) {
+                                senderObj = {
+                                    name: currentTeacher.name,
+                                    role: currentTeacher.role || 'teacher'
+                                };
+                            }
+                        }
+
+                        const upsertBroadcast = (item: any) => {
+                            setClassBroadcasts(prev => {
+                                const exists = prev.some(b => b.id === item.id);
+                                const updated = exists
+                                    ? prev.map(b => b.id === item.id ? { ...b, ...item, sender: b.sender || item.sender } : b)
+                                    : [item, ...prev];
+                                return updated.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                            });
+                            setSelectedAnnouncement(prev => (prev?.id === item.id ? { ...prev, ...item } : prev));
+                        };
+
+                        if (senderObj) {
+                            upsertBroadcast({ ...updatedRow, sender: senderObj });
+                        } else {
+                            (async () => {
+                                let fetchedSender = { name: 'Teacher', role: 'teacher' };
+                                if (updatedRow.teacher_id) {
+                                    try {
+                                        const { data } = await supabaseAuth
+                                            .from('users')
+                                            .select('name, role')
+                                            .eq('id', updatedRow.teacher_id)
+                                            .maybeSingle();
+                                        if (data) fetchedSender = data;
+                                    } catch (e) {
+                                        console.warn('Failed to fetch sender for updated broadcast:', e);
+                                    }
+                                }
+                                upsertBroadcast({ ...updatedRow, sender: fetchedSender });
+                            })();
+                        }
+                        return;
+                    }
+
+                    if (payload.eventType === 'INSERT') {
+                        const newRow = payload.new as any;
+                        if (!newRow?.id) return;
+                        if (!targetsClassroom(newRow.recipients, classroomId)) return;
+
+                        let senderObj = newRow.sender;
+                        const currentTeacher = teacherProfileRef.current;
+                        if (!senderObj) {
+                            if (newRow.teacher_id === currentTeacher?.id) {
+                                senderObj = {
+                                    name: currentTeacher.name,
+                                    role: currentTeacher.role || 'teacher'
+                                };
+                            }
+                        }
+
+                        const appendBroadcast = (item: any) => {
+                            setClassBroadcasts(prev => {
+                                if (prev.some(b => b.id === item.id)) {
+                                    return prev.map(b => b.id === item.id ? { ...b, ...item, sender: b.sender || item.sender } : b);
+                                }
+                                const updated = [item, ...prev];
+                                return updated.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                            });
+                        };
+
+                        if (senderObj) {
+                            appendBroadcast({ ...newRow, sender: senderObj });
+                        } else {
+                            (async () => {
+                                let fetchedSender = { name: 'Teacher', role: 'teacher' };
+                                if (newRow.teacher_id) {
+                                    try {
+                                        const { data } = await supabaseAuth
+                                            .from('users')
+                                            .select('name, role')
+                                            .eq('id', newRow.teacher_id)
+                                            .maybeSingle();
+                                        if (data) fetchedSender = data;
+                                    } catch (e) {
+                                        console.warn('Failed to fetch sender for new broadcast:', e);
+                                    }
+                                }
+                                appendBroadcast({ ...newRow, sender: fetchedSender });
+                            })();
+                        }
+                    }
                 }
             )
             .subscribe();
@@ -336,14 +518,91 @@ export default function ClassroomDashboardPage({
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'classroom_messages'
+                    table: 'classroom_messages',
+                    filter: `classroom_id=eq.${classroomId}`
                 },
                 (payload) => {
-                    const newMsg = payload.new as any;
-                    const oldMsg = payload.old as any;
-                    const targetRoomId = newMsg?.classroom_id || oldMsg?.classroom_id;
-                    if (targetRoomId === classroomId) {
-                        fetchClassroomMessages();
+                    if (payload.eventType === 'DELETE') {
+                        const deletedId = (payload.old as any)?.id;
+                        if (deletedId) {
+                            setClassroomMessages(prev => prev.filter(m => m.id !== deletedId));
+                        }
+                        return;
+                    }
+
+                    if (payload.eventType === 'UPDATE') {
+                        const updatedRawMsg = payload.new as any;
+                        if (updatedRawMsg?.id) {
+                            setClassroomMessages(prev => prev.map(m => {
+                                if (m.id === updatedRawMsg.id) {
+                                    return {
+                                        ...m,
+                                        ...updatedRawMsg,
+                                        sender: m.sender || updatedRawMsg.sender
+                                    };
+                                }
+                                return m;
+                            }));
+                        }
+                        return;
+                    }
+
+                    if (payload.eventType === 'INSERT') {
+                        const newRawMsg = payload.new as any;
+                        if (!newRawMsg?.id) return;
+
+                        const currentTeacher = teacherProfileRef.current;
+                        const currentStudents = studentsRef.current;
+
+                        let senderObj = newRawMsg.sender;
+                        if (!senderObj) {
+                            if (newRawMsg.sender_id === currentTeacher?.id) {
+                                senderObj = {
+                                    name: currentTeacher.name,
+                                    role: currentTeacher.role || 'teacher',
+                                    profile_pic_url: null
+                                };
+                            } else {
+                                const matchedStudent = currentStudents.find(s => s.student_id === newRawMsg.sender_id);
+                                if (matchedStudent) {
+                                    senderObj = {
+                                        name: matchedStudent.name,
+                                        role: 'student',
+                                        profile_pic_url: matchedStudent.profile_pic_url
+                                    };
+                                }
+                            }
+                        }
+
+                        const appendMessage = (enrichedMsg: any) => {
+                            setClassroomMessages(prev => {
+                                if (prev.some(m => m.id === enrichedMsg.id)) {
+                                    return prev.map(m => m.id === enrichedMsg.id ? { ...m, ...enrichedMsg, sender: m.sender || enrichedMsg.sender } : m);
+                                }
+                                const updated = [...prev, enrichedMsg];
+                                return updated.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                            });
+                        };
+
+                        if (senderObj) {
+                            appendMessage({ ...newRawMsg, sender: senderObj });
+                        } else {
+                            // Targeted single-user lookup only when sender not found in local state
+                            (async () => {
+                                let fetchedSender = { name: 'Class member', role: 'student', profile_pic_url: null };
+                                try {
+                                    const { data } = await supabaseAuth
+                                        .from('users')
+                                        .select('name, role, profile_pic_url')
+                                        .eq('id', newRawMsg.sender_id)
+                                        .maybeSingle();
+                                    if (data) fetchedSender = data;
+                                } catch (e) {
+                                    console.warn('Failed to fetch sender profile for single message:', e);
+                                }
+                                appendMessage({ ...newRawMsg, sender: fetchedSender });
+                            })();
+                        }
                     }
                 }
             )
@@ -359,15 +618,33 @@ export default function ClassroomDashboardPage({
 
         setIsSendingClassroomMessage(true);
         try {
-            const { error } = await supabaseAuth
+            const { data, error } = await supabaseAuth
                 .from('classroom_messages')
                 .insert({
                     classroom_id: classroomId,
                     sender_id: teacherProfile.id,
                     message_text: messageText.trim()
-                });
+                })
+                .select('*, sender:users!classroom_messages_sender_id_fkey(name, role, profile_pic_url)')
+                .single();
 
             if (error) throw error;
+
+            if (data) {
+                const insertedMsg = {
+                    ...data,
+                    sender: data.sender || {
+                        name: teacherProfile.name,
+                        role: teacherProfile.role || 'teacher',
+                        profile_pic_url: null
+                    }
+                };
+                setClassroomMessages(prev => {
+                    if (prev.some(m => m.id === insertedMsg.id)) return prev;
+                    const updated = [...prev, insertedMsg];
+                    return updated.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                });
+            }
 
             // Notify enrolled students in notifications table so their Bell Icon highlights
             try {
@@ -386,7 +663,7 @@ export default function ClassroomDashboardPage({
                             user_id: sid,
                             type: 'classroom',
                             title: `New Message in ${classroom?.name || 'Classroom'}`,
-                            message: `${teacherProfile.name || 'Instructor'}: ${messageText.trim().slice(0, 100)}`,
+                            message: `${teacherProfile.name || 'Instructor'}: ${htmlToPlainText(messageText).slice(0, 100)}`,
                             is_read: false
                         }));
                         await supabaseAuth.from('notifications').insert(notifPayloads);
@@ -395,8 +672,6 @@ export default function ClassroomDashboardPage({
             } catch (notifErr) {
                 console.warn('Failed to insert notifications for classroom chat:', notifErr);
             }
-
-            await fetchClassroomMessages();
         } finally {
             setIsSendingClassroomMessage(false);
         }
@@ -434,11 +709,22 @@ export default function ClassroomDashboardPage({
             const { data, error } = await supabaseAuth
                 .from('broadcasts')
                 .insert(payload)
-                .select();
+                .select('*, sender:users!teacher_id(name, role)');
             if (error) throw error;
             
             if (data && data.length > 0) {
-                setClassBroadcasts(prev => [data[0], ...prev]);
+                const insertedBroadcast = {
+                    ...data[0],
+                    sender: data[0].sender || {
+                        name: teacherProfile.name,
+                        role: teacherProfile.role || 'teacher'
+                    }
+                };
+                setClassBroadcasts(prev => {
+                    if (prev.some(b => b.id === insertedBroadcast.id)) return prev;
+                    const updated = [insertedBroadcast, ...prev];
+                    return updated.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                });
                 sendClassroomNotification({
                     teacherId: teacherProfile.id,
                     recipients: [{ id: classroomId, name: classroom.name, type: 'class' }],
@@ -1003,17 +1289,44 @@ export default function ClassroomDashboardPage({
         setCurrentPage(1);
     }, [activeTab]);
 
-    const reEvaluateOnlineStatus = async () => {
+    const fetchOnlineStudentIds = async (targetStudentIds: string[]): Promise<Set<string>> => {
+        if (!targetStudentIds || targetStudentIds.length === 0) {
+            return new Set<string>();
+        }
         try {
             const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-            const { data: activeSessions } = await supabaseAuth
+            const { data: activeSessions, error } = await supabaseAuth
                 .from('user_sessions')
                 .select('user_id')
+                .in('user_id', targetStudentIds)
                 .is('logout_at', null)
                 .gt('last_activity_at', fiveMinutesAgo);
-            
-            const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
-            
+
+            if (error) {
+                console.warn('Error fetching online user sessions:', error);
+                return new Set<string>();
+            }
+
+            return new Set<string>((activeSessions || []).map(sess => sess.user_id));
+        } catch (e) {
+            console.error('Failed to fetch online status:', e);
+            return new Set<string>();
+        }
+    };
+
+    const reEvaluateOnlineStatus = async () => {
+        try {
+            const currentStudents = studentsRef.current || [];
+            const currentOverrides = sessionOverridesRef.current || [];
+            const targetStudentIds = Array.from(new Set([
+                ...currentStudents.map(s => s.student_id),
+                ...currentOverrides.map(o => o.student_id)
+            ])).filter(Boolean);
+
+            if (targetStudentIds.length === 0) return;
+
+            const onlineUserIds = await fetchOnlineStudentIds(targetStudentIds);
+
             setStudents(prev => prev.map(s => ({
                 ...s,
                 is_online: onlineUserIds.has(s.student_id)
@@ -1083,87 +1396,18 @@ export default function ClassroomDashboardPage({
                     throw new Error('Unauthorized classroom access');
                 }
 
-                // Fetch active sessions from the last 5 minutes
-                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-                const { data: activeSessions } = await supabaseAuth
-                    .from('user_sessions')
-                    .select('user_id')
-                    .is('logout_at', null)
-                    .gt('last_activity_at', fiveMinutesAgo);
-                const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
-
-                // 3. Run Core Queries in Parallel (Phase 2)
-                const promises: any[] = [
-                    // P0: Teacher name if teacher_id is set
+                // Fetch minimal teacher name and temporary class info in parallel if needed
+                const [teacherRes, tempClassRes] = await Promise.all([
                     roomData.teacher_id
                         ? supabaseAuth.from('users').select('name').eq('id', roomData.teacher_id).maybeSingle()
                         : Promise.resolve({ data: null }),
-
-                    // P1: Roster check
                     roomData.type === 'temporary'
                         ? supabaseAuth.from('temporary_classes').select('id, class_date, start_time, end_time').eq('classroom_id', classroomId).maybeSingle()
-                        : Promise.resolve({ data: null }),
+                        : Promise.resolve({ data: null })
+                ]);
 
-                    // P2: Enrolled students list
-                    roomData.type === 'temporary'
-                        ? supabaseAuth.from('session_student_overrides').select(`
-                            id,
-                            student_id,
-                            users!student_id(name, profile_pic_url, level)
-                          `).eq('target_classroom_id', classroomId)
-                        : supabaseAuth.from('classroom_students').select(`
-                            id,
-                            student_id,
-                            joined_at,
-                            users!student_id(name, profile_pic_url, level)
-                          `).eq('classroom_id', classroomId),
-
-                    // P3: Session Student Overrides list
-                    supabaseAuth.from('session_student_overrides').select(`
-                        id,
-                        student_id,
-                        override_date,
-                        reason,
-                        users!student_id(name, profile_pic_url, level)
-                    `).eq('target_classroom_id', classroomId).order('override_date', { ascending: true }),
-
-                    // P4: Batch schedules
-                    supabaseAuth.from('batch_schedules').select('*').eq('classroom_id', classroomId).order('day_of_week', { ascending: true }).order('start_time', { ascending: true }),
-
-                    // P5: Categories
-                    supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true }),
-
-                    // P6: Modules
-                    supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
-
-                    // P7: Chapters
-                    supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
-
-                    // P8: Lessons
-                    supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true }),
-
-                    // P9: Assignments
-                    supabaseAuth.from('assignments').select('*').eq('classroom_id', classroomId).order('created_at', { ascending: false })
-                ];
-
-                const [
-                    teacherRes,
-                    tempClassRes,
-                    rosterRes,
-                    overridesRes,
-                    schedulesRes,
-                    categoriesRes,
-                    modulesRes,
-                    chaptersRes,
-                    lessonsRes,
-                    asgRes
-                ] = await Promise.all(promises);
-
-                // Process P0 (Teacher Name)
                 const teacherName = teacherRes.data?.name || '';
                 const tempClassData = tempClassRes.data;
-                const roster = rosterRes.data || [];
-                const overridesData = overridesRes.data || [];
 
                 const classroomData = { 
                     ...roomData, 
@@ -1176,11 +1420,6 @@ export default function ClassroomDashboardPage({
                     } : {})
                 };
                 setClassroom(classroomData);
-
-                // Map temporary classes date onto roster if temporary
-                const finalRoster = (roomData.type === 'temporary' && tempClassData)
-                    ? roster.map((r: any) => ({ ...r, joined_at: tempClassData.class_date }))
-                    : roster;
 
                 // Process metadata edit form
                 const cleanDesc = (roomData.description || '')
@@ -1197,6 +1436,75 @@ export default function ClassroomDashboardPage({
                     start_time: classroomData.start_time ? classroomData.start_time.slice(0, 5) : '10:00',
                     end_time: classroomData.end_time ? classroomData.end_time.slice(0, 5) : '11:00',
                 });
+
+                // Progressive Rendering: Minimum critical data ready, unblock dashboard shell immediately
+                setLoading(false);
+
+                // 3. Load secondary data in background (non-blocking)
+                loadSecondaryData(roomData, tempClassData);
+
+            } catch (err) {
+                console.error('Error fetching classroom data:', err);
+                router.push('/teacher-dashboard/classrooms');
+                setLoading(false);
+            }
+        };
+
+        const loadSecondaryData = async (roomData: any, tempClassData: any) => {
+            if (refreshInProgressRef.current) return;
+            refreshInProgressRef.current = true;
+            try {
+                // Phase 2 background parallel queries
+                const [
+                    rosterRes,
+                    overridesRes,
+                    schedulesRes,
+                    categoriesRes,
+                    modulesRes,
+                    chaptersRes,
+                    lessonsRes,
+                    asgRes
+                ] = await Promise.all([
+                    roomData.type === 'temporary'
+                        ? supabaseAuth.from('session_student_overrides').select(`
+                            id,
+                            student_id,
+                            users!student_id(name, profile_pic_url, level)
+                          `).eq('target_classroom_id', classroomId)
+                        : supabaseAuth.from('classroom_students').select(`
+                            id,
+                            student_id,
+                            joined_at,
+                            users!student_id(name, profile_pic_url, level)
+                          `).eq('classroom_id', classroomId),
+                    supabaseAuth.from('session_student_overrides').select(`
+                        id,
+                        student_id,
+                        override_date,
+                        reason,
+                        users!student_id(name, profile_pic_url, level)
+                    `).eq('target_classroom_id', classroomId).order('override_date', { ascending: true }),
+                    supabaseAuth.from('batch_schedules').select('*').eq('classroom_id', classroomId).order('day_of_week', { ascending: true }).order('start_time', { ascending: true }),
+                    supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true }),
+                    supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
+                    supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
+                    supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, bullet_points').order('lesson_number', { ascending: true }),
+                    supabaseAuth.from('assignments').select('*').eq('classroom_id', classroomId).order('created_at', { ascending: false })
+                ]);
+
+                const roster = rosterRes.data || [];
+                const overridesData = overridesRes.data || [];
+                const allClassStudentIds = Array.from(new Set([
+                    ...roster.map((r: any) => r.student_id),
+                    ...overridesData.map((o: any) => o.student_id)
+                ])).filter(Boolean);
+
+                const onlineUserIds = await fetchOnlineStudentIds(allClassStudentIds);
+
+                // Map temporary classes date onto roster if temporary
+                const finalRoster = (roomData.type === 'temporary' && tempClassData)
+                    ? roster.map((r: any) => ({ ...r, joined_at: tempClassData.class_date }))
+                    : roster;
 
                 // Build Enrolled Students with Mock metrics
                 const milestoneOptions = ['Alankars Mastery', 'Breath Control II', 'Fingering Basics', 'Rhythm Training', 'Raag Yaman Intros'];
@@ -1245,9 +1553,9 @@ export default function ClassroomDashboardPage({
                 }
                 setCategories(loadedCats);
 
-                let dbModulesData = modulesRes.data || [];
-                let dbChaptersData = chaptersRes.data || [];
-                let dbLessonsData = lessonsRes.data || [];
+                let dbModulesData: any[] = modulesRes.data || [];
+                let dbChaptersData: any[] = chaptersRes.data || [];
+                let dbLessonsData: any[] = lessonsRes.data || [];
 
                 if (dbModulesData.length === 0) {
                     try {
@@ -1258,7 +1566,7 @@ export default function ClassroomDashboardPage({
                         const [seedModules, seedChapters, seedLessons] = await Promise.all([
                             supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true }),
                             supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true }),
-                            supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true })
+                            supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, bullet_points').order('lesson_number', { ascending: true })
                         ]);
 
                         dbModulesData = seedModules.data || [];
@@ -1313,30 +1621,36 @@ export default function ClassroomDashboardPage({
                 setCourseChapters(normalizedChapters);
                 setCourseLessons(normalizedLessons);
 
-                // 4. Fetch Home Classroom IDs of all students (so we can get curriculum allocations)
+                // Determine Home Classroom IDs of all students (so we can get curriculum allocations)
                 let classroomIds = [classroomId];
                 const studentIds = [
                     ...formattedRoster.map(s => s.student_id),
                     ...(overridesData || []).map((o: any) => o.student_id)
                 ];
-                
-                if (studentIds.length > 0) {
+
+                // Check if any makeup/override student has a different home classroom
+                const permanentStudentIds = new Set(formattedRoster.map(s => s.student_id));
+                const externalOverrideStudentIds = (overridesData || [])
+                    .map((o: any) => o.student_id)
+                    .filter((id: string) => id && !permanentStudentIds.has(id));
+
+                if (externalOverrideStudentIds.length > 0) {
                     try {
                         const { data: homeRooms } = await supabaseAuth
                             .from('classroom_students')
                             .select('classroom_id')
-                            .in('student_id', studentIds);
+                            .in('student_id', externalOverrideStudentIds);
                         if (homeRooms) {
                             const ids = homeRooms.map(r => r.classroom_id).filter(Boolean);
                             classroomIds = Array.from(new Set([classroomId, ...ids]));
                         }
                     } catch (e) {
-                        console.error('Failed to load home classrooms:', e);
+                        console.error('Failed to load external home classrooms:', e);
                     }
                 }
                 setActiveClassroomIds(classroomIds);
 
-                // 5. Phase 3 Parallel Fetches (Dependent on Student IDs / Classroom IDs list)
+                // Phase 3 Parallel Fetches (Dependent on Student IDs / Classroom IDs list)
                 const phase3Promises: Promise<any>[] = [
                     // progressQuery
                     (async () => {
@@ -1353,18 +1667,24 @@ export default function ClassroomDashboardPage({
                         }
                     })(),
 
-                    // Enriched Assignments query
+                    // Consolidated Assignments & Assignment-Students query
                     (async () => {
                         try {
                             const asgData = asgRes.data || [];
-                            const individualAsgIds = asgData.filter((a: Assignment) => a.target_type === 'individual').map((a: Assignment) => a.id);
                             let allAsData: any[] = [];
-                            if (individualAsgIds.length > 0) {
-                                const { data: asData } = await supabaseAuth
+
+                            if (studentIds.length > 0) {
+                                const { data: asData, error } = await supabaseAuth
                                     .from('assignment_students')
                                     .select('*')
-                                    .in('assignment_id', individualAsgIds);
-                                allAsData = asData || [];
+                                    .in('student_id', studentIds);
+
+                                if (!error && asData) {
+                                    allAsData = asData;
+                                    setClassroomAssignmentsStudents(asData);
+                                }
+                            } else {
+                                setClassroomAssignmentsStudents([]);
                             }
 
                             const enriched = asgData.map((a: Assignment) => {
@@ -1429,7 +1749,7 @@ export default function ClassroomDashboardPage({
                         try {
                             const { data, error } = await supabaseAuth
                                 .from('attendance')
-                                .select('*')
+                                .select('student_id, date, status')
                                 .eq('classroom_id', classroomId);
                             if (!error) {
                                 setClassroomAttendance(data || []);
@@ -1437,63 +1757,44 @@ export default function ClassroomDashboardPage({
                         } catch (e) {
                             console.warn('Could not fetch classroom attendance logs:', e);
                         }
-                    })(),
-
-                    // Fetch all assignment student mappings for the enrolled students
-                    (async () => {
-                        try {
-                            if (studentIds.length > 0) {
-                                const { data, error } = await supabaseAuth
-                                    .from('assignment_students')
-                                    .select('*')
-                                    .in('student_id', studentIds);
-                                if (!error) {
-                                    setClassroomAssignmentsStudents(data || []);
-                                }
-                            }
-                        } catch (e) {
-                            console.warn('Could not fetch assignment_students:', e);
-                        }
                     })()
                 ];
 
                 await Promise.all(phase3Promises);
 
-            } catch (err) {
-                console.error('Error fetching classroom data:', err);
-                router.push('/teacher-dashboard/classrooms');
+            } catch (bgErr) {
+                console.error('Error fetching secondary classroom data:', bgErr);
             } finally {
-                setLoading(false);
+                lastRefreshAtRef.current = Date.now();
+                refreshInProgressRef.current = false;
             }
         };
 
         fetchData();
     }, [classroomId, router, refreshTrigger]);
 
-    // Re-sync classroom data on window focus, visibility change, or periodic background poll
+    // Re-sync classroom data on window focus or visibility change (throttled to at most once per 5 minutes)
     useEffect(() => {
         const handleFocusOrVisible = () => {
-            console.log('[Teacher Sync] Window focused or visible. Triggering dashboard refresh...');
-            setRefreshTrigger(prev => prev + 1);
+            const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+            const now = Date.now();
+            if (now - lastRefreshAtRef.current >= COOLDOWN_MS && !refreshInProgressRef.current) {
+                console.log('[Teacher Sync] Window focused or visible (after 5m cooldown). Triggering dashboard background refresh...');
+                setRefreshTrigger(prev => prev + 1);
+            }
         };
 
         window.addEventListener('focus', handleFocusOrVisible);
-        document.addEventListener('visibilitychange', () => {
+        const handleVisibility = () => {
             if (document.visibilityState === 'visible') {
                 handleFocusOrVisible();
             }
-        });
-
-        // Periodic background poll every 60 seconds as an ultimate fallback
-        const intervalId = setInterval(() => {
-            console.log('[Teacher Sync] Running periodic background poll...');
-            setRefreshTrigger(prev => prev + 1);
-        }, 60000);
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
 
         return () => {
             window.removeEventListener('focus', handleFocusOrVisible);
-            document.removeEventListener('visibilitychange', handleFocusOrVisible);
-            clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', handleVisibility);
         };
     }, []);
 
@@ -1580,20 +1881,40 @@ export default function ClassroomDashboardPage({
     const fetchCurriculumAllocations = useCallback(async () => {
         if (!classroomId) return;
         try {
-            const { data, error } = await supabaseAuth
+            const classAllocReq = supabaseAuth
                 .from('classroom_inventory_allocation')
                 .select('*')
                 .in('classroom_id', activeClassroomIds);
-            if (error) {
-                console.error('Error fetching curriculum allocations:', error.message);
-                setDbSetupError(true);
-                return;
+
+            const studentIds = students.map(s => s.student_id);
+            let curriculumData: any[] = [];
+            let curriculumError: any = null;
+
+            if (studentIds.length > 0) {
+                const studentAllocReq = supabaseAuth
+                    .from('classroom_inventory_allocation')
+                    .select('*')
+                    .in('allocated_to_student_id', studentIds);
+
+                const [res1, res2] = await Promise.all([classAllocReq, studentAllocReq]);
+                curriculumError = res1.error || res2.error || null;
+                const combinedMap = new Map<string, any>();
+                (res1.data || []).forEach((item: any) => combinedMap.set(item.id, item));
+                (res2.data || []).forEach((item: any) => combinedMap.set(item.id, item));
+                curriculumData = Array.from(combinedMap.values());
+            } else {
+                const res = await classAllocReq;
+                curriculumData = res.data || [];
+                curriculumError = res.error;
             }
-            setClassroomInventoryAllocations(data || []);
+
+            if (!curriculumError && curriculumData) {
+                setClassroomInventoryAllocations(curriculumData);
+            }
         } catch (err: any) {
             console.error('Error fetching curriculum allocations (exception):', err?.message || err);
         }
-    }, [classroomId, activeClassroomIds]);
+    }, [classroomId, activeClassroomIds, students]);
 
     const handleOpenReviewModal = (student: AssignmentStudent, assignment: Assignment) => {
         setSelectedReviewStudent(student);
@@ -1813,6 +2134,7 @@ export default function ClassroomDashboardPage({
             delete next[studentId];
             return next;
         });
+        setClassroomAttendance(prev => prev.filter(a => !(a.student_id === studentId && a.date === attendanceDate)));
         setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
 
         try {
@@ -1829,6 +2151,7 @@ export default function ClassroomDashboardPage({
             alert(`Failed to unmark attendance: ${err.message || err}`);
             if (prevStatus) {
                 setAttendanceRecords(prev => ({ ...prev, [studentId]: prevStatus }));
+                setClassroomAttendance(prev => [...prev, { student_id: studentId, date: attendanceDate, status: prevStatus }]);
             }
         } finally {
             setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: false }));
@@ -1846,6 +2169,15 @@ export default function ClassroomDashboardPage({
 
         // Optimistically update status
         setAttendanceRecords(prev => ({ ...prev, [studentId]: status as any }));
+        setClassroomAttendance(prev => {
+            const idx = prev.findIndex(a => a.student_id === studentId && a.date === attendanceDate);
+            if (idx >= 0) {
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], status: status.toLowerCase() };
+                return updated;
+            }
+            return [...prev, { student_id: studentId, date: attendanceDate, status: status.toLowerCase() }];
+        });
         setIsSavingAttendanceMap(prev => ({ ...prev, [studentId]: true }));
 
         try {
@@ -2042,15 +2374,8 @@ export default function ClassroomDashboardPage({
 
             if (error) throw error;
 
-            // Fetch online/active user sessions
-            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-            const { data: activeSessions } = await supabaseAuth
-                .from('user_sessions')
-                .select('user_id')
-                .is('logout_at', null)
-                .gt('last_activity_at', fiveMinutesAgo);
-
-            const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
+            const availableUserIds = (data || []).map((u: any) => u.id).filter(Boolean);
+            const onlineUserIds = await fetchOnlineStudentIds(availableUserIds);
 
             const available = (data || [])
                 .map((s: any) => ({
@@ -2397,148 +2722,62 @@ export default function ClassroomDashboardPage({
     }, [assignments, assignmentFilter]);
 
     const allocatedInventoryItems = useMemo(() => {
-        const inventoryItems = classroomInventoryAllocations.map(item => {
-            let type: 'module' | 'chapter' | 'lesson' = 'module';
-            let refId = '';
-            let title = '';
-            let description = '';
-
-            if (item.module_id) {
-                type = 'module';
-                refId = item.module_id;
-                const mod = courseModules.find(m => m.id === refId);
-                title = mod?.title || 'Unknown Module';
-                description = mod?.description || '';
-            } else if (item.chapter_id) {
-                type = 'chapter';
-                refId = item.chapter_id;
-                const chap = courseChapters.find(c => c.id === refId);
-                title = chap?.title || 'Unknown Chapter';
-                description = chap?.description || '';
-            } else if (item.lesson_id) {
-                type = 'lesson';
-                refId = item.lesson_id;
-                const les = courseLessons.find(l => l.id === refId);
-                title = les?.title || 'Unknown Lesson';
-                description = les?.description || '';
-            }
-
-            return {
-                id: item.id,
-                classroom_id: item.classroom_id,
-                teacher_id: item.allocated_by,
-                title: title,
-                description: description,
-                due_date: null,
-                target_type: item.allocated_to_student_id ? 'individual' : 'all',
-                created_at: item.created_at,
-                inventory_ref_type: type,
-                inventory_ref_id: refId,
-                inventory_ref_title: title,
-                assignment_students: item.allocated_to_student_id ? [{ student_id: item.allocated_to_student_id }] : []
-            };
-        });
-
         const activeStudentIds = new Set(students.map(s => s.student_id));
 
-        if (curriculumTab === 'classwide') {
-            // For classwide view, collect classwide allocations for THIS classroom and any individual student allocations for students currently in this class
-            const items = inventoryItems.filter(a => {
-                if (a.target_type === 'all' && a.classroom_id === classroomId) return true;
-                return a.assignment_students?.some(s => activeStudentIds.has(s.student_id));
-            });
-
-            // Add implicit allocations for any student currently in the class who has progress
-            const classProg = studentProgress.filter(p => activeStudentIds.has(p.student_id));
-            classProg.forEach(prog => {
-                const lessonId = prog.lesson_id;
-                const studentId = prog.student_id;
-                const alreadyAllocated = items.some(a => {
-                    const isForSameStudent = a.target_type === 'all' || a.assignment_students?.some(s => s.student_id === studentId);
-                    if (!isForSameStudent) return false;
-
-                    if (a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lessonId) return true;
-                    const lesson = courseLessons.find(l => l.id === lessonId);
-                    if (lesson) {
-                        if (a.inventory_ref_type === 'chapter' && a.inventory_ref_id === lesson.chapter_id) return true;
-                        const chap = courseChapters.find(c => c.id === lesson.chapter_id);
-                        if (chap && a.inventory_ref_type === 'module' && a.inventory_ref_id === chap.module_id) return true;
-                    }
-                    return false;
-                });
-
-                if (!alreadyAllocated) {
-                    const lesson = courseLessons.find(l => l.id === lessonId);
-                    if (lesson) {
-                        items.push({
-                            id: `implicit-${prog.id}`,
-                            classroom_id: classroomId,
-                            teacher_id: null,
-                            title: lesson.title,
-                            description: lesson.description || '',
-                            due_date: null,
-                            target_type: 'individual',
-                            created_at: prog.unlocked_at || prog.completed_at || new Date().toISOString(),
-                            inventory_ref_type: 'lesson',
-                            inventory_ref_id: lessonId,
-                            inventory_ref_title: lesson.title,
-                            assignment_students: [{ student_id: studentId }]
-                        });
-                    }
+        return classroomInventoryAllocations
+            .filter(item => {
+                if (item.classroom_id !== classroomId) return false;
+                if (curriculumTab === 'classwide') {
+                    if (!item.allocated_to_student_id) return true;
+                    return activeStudentIds.has(item.allocated_to_student_id);
+                } else {
+                    if (!selectedStudentForCurriculum) return false;
+                    if (!item.allocated_to_student_id) return true;
+                    return item.allocated_to_student_id === selectedStudentForCurriculum.student_id;
                 }
-            });
+            })
+            .map(item => {
+                let type: 'module' | 'chapter' | 'lesson' = 'module';
+                let refId = '';
+                let title = '';
+                let description = '';
 
-            return items;
-        } else {
-            if (!selectedStudentForCurriculum) return [];
-            const studentItems = inventoryItems.filter(a => {
-                if (a.target_type === 'all') {
-                    return a.classroom_id === classroomId || activeClassroomIds.includes(a.classroom_id);
+                if (item.module_id) {
+                    type = 'module';
+                    refId = item.module_id;
+                    const mod = courseModules.find(m => m.id === refId);
+                    title = mod?.title || 'Unknown Module';
+                    description = mod?.description || '';
+                } else if (item.chapter_id) {
+                    type = 'chapter';
+                    refId = item.chapter_id;
+                    const chap = courseChapters.find(c => c.id === refId);
+                    title = chap?.title || 'Unknown Chapter';
+                    description = chap?.description || '';
+                } else if (item.lesson_id) {
+                    type = 'lesson';
+                    refId = item.lesson_id;
+                    const les = courseLessons.find(l => l.id === refId);
+                    title = les?.title || 'Unknown Lesson';
+                    description = les?.description || '';
                 }
-                return a.assignment_students?.some(
-                    s => s.student_id === selectedStudentForCurriculum.student_id
-                );
+
+                return {
+                    id: item.id,
+                    classroom_id: item.classroom_id,
+                    teacher_id: item.allocated_by,
+                    title,
+                    description,
+                    due_date: null,
+                    target_type: item.allocated_to_student_id ? 'individual' : 'all',
+                    created_at: item.created_at,
+                    inventory_ref_type: type,
+                    inventory_ref_id: refId,
+                    inventory_ref_title: title,
+                    assignment_students: item.allocated_to_student_id ? [{ student_id: item.allocated_to_student_id }] : []
+                };
             });
-
-            // Add implicit allocations from studentProgress for this student
-            const studentProg = studentProgress.filter(p => p.student_id === selectedStudentForCurriculum.student_id);
-            studentProg.forEach(prog => {
-                const lessonId = prog.lesson_id;
-                const alreadyAllocated = studentItems.some(a => {
-                    if (a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lessonId) return true;
-                    const lesson = courseLessons.find(l => l.id === lessonId);
-                    if (lesson) {
-                        if (a.inventory_ref_type === 'chapter' && a.inventory_ref_id === lesson.chapter_id) return true;
-                        const chap = courseChapters.find(c => c.id === lesson.chapter_id);
-                        if (chap && a.inventory_ref_type === 'module' && a.inventory_ref_id === chap.module_id) return true;
-                    }
-                    return false;
-                });
-
-                if (!alreadyAllocated) {
-                    const lesson = courseLessons.find(l => l.id === lessonId);
-                    if (lesson) {
-                        studentItems.push({
-                            id: `implicit-${prog.id}`,
-                            classroom_id: classroomId,
-                            teacher_id: null,
-                            title: lesson.title,
-                            description: lesson.description || '',
-                            due_date: null,
-                            target_type: 'individual',
-                            created_at: prog.unlocked_at || prog.completed_at || new Date().toISOString(),
-                            inventory_ref_type: 'lesson',
-                            inventory_ref_id: lessonId,
-                            inventory_ref_title: lesson.title,
-                            assignment_students: [{ student_id: selectedStudentForCurriculum.student_id }]
-                        });
-                    }
-                }
-            });
-
-            return studentItems;
-        }
-    }, [classroomInventoryAllocations, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons, studentProgress, students, sessionOverrides, classroomId]);
+    }, [classroomInventoryAllocations, classroomId, curriculumTab, students, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons]);
 
     const getStudentStatuses = useCallback((
         itemType: 'level' | 'chapter' | 'topic',
@@ -2800,13 +3039,12 @@ export default function ClassroomDashboardPage({
     }, [curriculumTab, selectedStudentForCurriculum, studentProgress, courseLessons, courseChapters, getClassSummary]);
 
     const visibleCurriculum = useMemo(() => {
+        const query = curriculumSearchQuery.toLowerCase().trim();
         const categoriesMap: Record<string, {
             categoryName: string;
             categoryOrder: number;
             modules: any[];
         }> = {};
-
-        const query = curriculumSearchQuery.toLowerCase().trim();
 
         const getCategoryInfo = (moduleObj: any) => {
             const parsed = parseModuleCategory(moduleObj);
@@ -2824,14 +3062,7 @@ export default function ClassroomDashboardPage({
         };
 
         courseModules.forEach(mod => {
-            const modAlloc = allocatedInventoryItems.find(a => {
-                if (a.inventory_ref_type !== 'module') return false;
-                if (a.inventory_ref_id === mod.id) return true;
-                if (a.inventory_ref_title && a.inventory_ref_title.toLowerCase() === mod.title.toLowerCase()) return true;
-                const initMod = INITIAL_MODULES.find(im => im.id === a.inventory_ref_id);
-                if (initMod && (initMod.module_number === mod.module_number || initMod.title?.toLowerCase() === mod.title?.toLowerCase())) return true;
-                return false;
-            });
+            const modAlloc = allocatedInventoryItems.find(a => a.inventory_ref_type === 'module' && a.inventory_ref_id === mod.id);
 
             const { categoryName, categoryOrder } = getCategoryInfo(mod);
             const isCategoryMatch = query ? categoryName.toLowerCase().includes(query) : false;
@@ -2841,23 +3072,7 @@ export default function ClassroomDashboardPage({
             const chapterNodes: any[] = [];
 
             modChapters.forEach(chap => {
-                const chapAlloc = allocatedInventoryItems.find(a => {
-                    if (a.inventory_ref_type === 'module') {
-                        if (a.inventory_ref_id === mod.id) return true;
-                        if (a.inventory_ref_title && a.inventory_ref_title.toLowerCase() === mod.title.toLowerCase()) return true;
-                        const initMod = INITIAL_MODULES.find(im => im.id === a.inventory_ref_id);
-                        if (initMod && (initMod.module_number === mod.module_number || initMod.title?.toLowerCase() === mod.title?.toLowerCase())) return true;
-                        return false;
-                    }
-                    if (a.inventory_ref_type === 'chapter') {
-                        if (a.inventory_ref_id === chap.id) return true;
-                        if (a.inventory_ref_title && a.inventory_ref_title.toLowerCase() === chap.title.toLowerCase()) return true;
-                        const initChap = INITIAL_CHAPTERS.find(ic => ic.id === a.inventory_ref_id);
-                        if (initChap && (initChap.chapter_number === chap.chapter_number || initChap.title?.toLowerCase() === chap.title?.toLowerCase())) return true;
-                        return false;
-                    }
-                    return false;
-                });
+                const chapAlloc = allocatedInventoryItems.find(a => a.inventory_ref_type === 'chapter' && a.inventory_ref_id === chap.id);
 
                 const isChapterMatch = query ? (
                     chap.title.toLowerCase().includes(query) ||
@@ -2869,14 +3084,7 @@ export default function ClassroomDashboardPage({
                 const lessonNodes: any[] = [];
 
                 chapLessons.forEach(lesson => {
-                    const lessonAlloc = allocatedInventoryItems.find(a => {
-                        if (a.inventory_ref_type !== 'lesson') return false;
-                        if (a.inventory_ref_id === lesson.id) return true;
-                        if (a.inventory_ref_title && a.inventory_ref_title.toLowerCase() === lesson.title.toLowerCase()) return true;
-                        const initLes = INITIAL_LESSONS.find(il => il.id === a.inventory_ref_id);
-                        if (initLes && (initLes.lesson_number === lesson.lesson_number || initLes.title?.toLowerCase() === lesson.title?.toLowerCase())) return true;
-                        return false;
-                    });
+                    const lessonAlloc = allocatedInventoryItems.find(a => a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lesson.id);
 
                     const isLessonAllocated = !!lessonAlloc || !!chapAlloc || !!modAlloc;
 
@@ -2899,7 +3107,7 @@ export default function ClassroomDashboardPage({
                     }
                 });
 
-                const isChapterVisible = !!chapAlloc || !!modAlloc || lessonNodes.length > 0;
+                const isChapterVisible = lessonNodes.length > 0 || !!chapAlloc;
 
                 if (isChapterVisible && (!query || isCategoryMatch || isModuleMatch || isChapterMatch || lessonNodes.length > 0)) {
                     chapterNodes.push({
@@ -2911,9 +3119,7 @@ export default function ClassroomDashboardPage({
                 }
             });
 
-            const moduleStatus = getClassSummary('level', mod.id);
-            const isModuleAllocated = !!modAlloc || moduleStatus !== 'not_allocated';
-            const isModuleVisible = isModuleAllocated && (!!modAlloc || chapterNodes.length > 0);
+            const isModuleVisible = chapterNodes.length > 0 || !!modAlloc;
 
             if (isModuleVisible && (!query || isCategoryMatch || isModuleMatch || chapterNodes.length > 0)) {
                 if (!categoriesMap[categoryName]) {
@@ -3536,17 +3742,19 @@ export default function ClassroomDashboardPage({
             }
 
             const insertRows: any[] = [];
-            targetStudentIds.forEach(studentId => {
+
+            if (curriculumTab === 'classwide') {
+                // 1. Insert classwide allocations (allocated_to_student_id: null)
                 itemsToAllocate.forEach(item => {
-                    const isAlready = classroomInventoryAllocations.some(a => {
+                    const isAlreadyClasswide = classroomInventoryAllocations.some(a => {
                         const sameId = a.module_id === item.refId || a.chapter_id === item.refId || a.lesson_id === item.refId;
-                        return sameId && a.allocated_to_student_id === studentId;
+                        return sameId && a.classroom_id === classroomId && !a.allocated_to_student_id;
                     });
-                    if (!isAlready) {
+                    if (!isAlreadyClasswide) {
                         const row: any = {
                             classroom_id: classroomId,
                             allocated_by: teacherProfile.id,
-                            allocated_to_student_id: studentId
+                            allocated_to_student_id: null
                         };
                         if (item.refType === 'module') row.module_id = item.refId;
                         else if (item.refType === 'chapter') row.chapter_id = item.refId;
@@ -3554,7 +3762,49 @@ export default function ClassroomDashboardPage({
                         insertRows.push(row);
                     }
                 });
-            });
+
+                // 2. Insert for active enrolled students
+                targetStudentIds.forEach(studentId => {
+                    itemsToAllocate.forEach(item => {
+                        const isAlready = classroomInventoryAllocations.some(a => {
+                            const sameId = a.module_id === item.refId || a.chapter_id === item.refId || a.lesson_id === item.refId;
+                            return sameId && a.allocated_to_student_id === studentId;
+                        });
+                        if (!isAlready) {
+                            const row: any = {
+                                classroom_id: classroomId,
+                                allocated_by: teacherProfile.id,
+                                allocated_to_student_id: studentId
+                            };
+                            if (item.refType === 'module') row.module_id = item.refId;
+                            else if (item.refType === 'chapter') row.chapter_id = item.refId;
+                            else if (item.refType === 'lesson') row.lesson_id = item.refId;
+                            insertRows.push(row);
+                        }
+                    });
+                });
+            } else {
+                // Individual student allocation
+                targetStudentIds.forEach(studentId => {
+                    itemsToAllocate.forEach(item => {
+                        const isAlready = classroomInventoryAllocations.some(a => {
+                            const sameId = a.module_id === item.refId || a.chapter_id === item.refId || a.lesson_id === item.refId;
+                            return sameId && a.allocated_to_student_id === studentId;
+                        });
+                        if (!isAlready) {
+                            const row: any = {
+                                classroom_id: classroomId,
+                                allocated_by: teacherProfile.id,
+                                allocated_to_student_id: studentId
+                            };
+                            if (item.refType === 'module') row.module_id = item.refId;
+                            else if (item.refType === 'chapter') row.chapter_id = item.refId;
+                            else if (item.refType === 'lesson') row.lesson_id = item.refId;
+                            insertRows.push(row);
+                        }
+                    });
+                });
+            }
 
             if (insertRows.length > 0) {
                 const { error } = await supabaseAuth
@@ -3562,7 +3812,7 @@ export default function ClassroomDashboardPage({
                     .insert(insertRows);
                 if (error) throw error;
 
-                // Also insert default locked progress records for all allocated lessons
+                // Also insert default locked progress records for all allocated lessons for active students
                 const lessonItems = itemsToAllocate.filter(i => i.refType === 'lesson');
                 const progressRows: any[] = [];
                 targetStudentIds.forEach(studentId => {
@@ -3592,7 +3842,6 @@ export default function ClassroomDashboardPage({
                 }
             }
 
-            alert('Added to classroom successfully!');
             await fetchCurriculumAllocations();
         } catch (err) {
             console.error('Failed to allocate item:', err);
@@ -3602,106 +3851,229 @@ export default function ClassroomDashboardPage({
         }
     };
 
-    const handleDeallocateItem = async (id: string) => {
-        if (!window.confirm('Deallocate this item from the classroom?')) return;
-        
-        const targetAlloc = classroomInventoryAllocations.find(a => a.id === id);
-        if (!targetAlloc) return;
+    const handleDeallocateItem = async (typeOrId: 'level' | 'chapter' | 'topic' | string, itemParam?: any) => {
+        let type: 'level' | 'chapter' | 'topic' = 'topic';
+        let item: any = itemParam;
 
-        setDeletingAssignmentId(id);
+        if (typeOrId === 'level' || typeOrId === 'chapter' || typeOrId === 'topic') {
+            type = typeOrId;
+        } else {
+            // fallback for passing an ID string
+            const alloc = classroomInventoryAllocations.find(a => a.id === typeOrId);
+            if (alloc) {
+                if (alloc.module_id) {
+                    type = 'level';
+                    item = courseModules.find(m => m.id === alloc.module_id) || { id: alloc.module_id };
+                } else if (alloc.chapter_id) {
+                    type = 'chapter';
+                    item = courseChapters.find(c => c.id === alloc.chapter_id) || { id: alloc.chapter_id };
+                } else if (alloc.lesson_id) {
+                    type = 'topic';
+                    item = courseLessons.find(l => l.id === alloc.lesson_id) || { id: alloc.lesson_id };
+                }
+            } else {
+                item = { id: typeOrId };
+            }
+        }
+
+        if (!item || !item.id) return;
+
+        const itemName = item.title || (type === 'level' ? 'Level' : (type === 'chapter' ? 'Chapter' : 'Topic'));
+        if (!window.confirm(`Are you sure you want to remove "${itemName}" from this classroom?`)) return;
+
+        const itemId = item.id;
+        setDeletingAssignmentId(itemId);
+
         try {
-            const idsToDelete: string[] = [id];
-            const targetRefId = targetAlloc.module_id || targetAlloc.chapter_id || targetAlloc.lesson_id;
-            const targetRefType = targetAlloc.module_id ? 'module' : (targetAlloc.chapter_id ? 'chapter' : 'lesson');
+            const isIndividual = curriculumTab === 'individual' && selectedStudentForCurriculum;
+            const targetStudentIds = isIndividual 
+                ? [selectedStudentForCurriculum.student_id] 
+                : students.map(s => s.student_id);
 
             let affectedLessonIds: string[] = [];
+            const rowsToInsert: any[] = [];
+            const allocIdsToDelete: string[] = [];
 
-            if (targetRefType === 'module') {
-                const chapters = courseChapters.filter(c => c.module_id === targetRefId);
-                const chapterIds = chapters.map(c => c.id);
-                const lessons = courseLessons.filter(l => chapterIds.includes(l.chapter_id));
+            if (type === 'level') {
+                const chaps = courseChapters.filter(c => c.module_id === itemId);
+                const chapIds = chaps.map(c => c.id);
+                const lessons = courseLessons.filter(l => chapIds.includes(l.chapter_id));
                 affectedLessonIds = lessons.map(l => l.id);
 
                 classroomInventoryAllocations.forEach(a => {
-                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                        if (a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
-                    }
-
-                    if (a.module_id === targetRefId) {
-                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                    } else if (a.chapter_id && chapterIds.includes(a.chapter_id)) {
-                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                    } else if (a.lesson_id && affectedLessonIds.includes(a.lesson_id)) {
-                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                    if (isIndividual && a.allocated_to_student_id && a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
+                    if (a.module_id === itemId || (a.chapter_id && chapIds.includes(a.chapter_id)) || (a.lesson_id && affectedLessonIds.includes(a.lesson_id))) {
+                        allocIdsToDelete.push(a.id);
                     }
                 });
-            } else if (targetRefType === 'chapter') {
-                const lessons = courseLessons.filter(l => l.chapter_id === targetRefId);
+            } else if (type === 'chapter') {
+                const chap = courseChapters.find(c => c.id === itemId);
+                const parentModuleId = chap?.module_id;
+                const lessons = courseLessons.filter(l => l.chapter_id === itemId);
                 affectedLessonIds = lessons.map(l => l.id);
 
-                classroomInventoryAllocations.forEach(a => {
-                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                        if (a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
-                    }
+                // If parent module was allocated directly, explode into remaining sibling chapters
+                if (parentModuleId) {
+                    const siblingChapters = courseChapters.filter(c => c.module_id === parentModuleId && c.id !== itemId);
+                    const parentModAllocs = classroomInventoryAllocations.filter(a => {
+                        if (isIndividual && a.allocated_to_student_id && a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return false;
+                        return a.module_id === parentModuleId;
+                    });
 
-                    if (a.chapter_id === targetRefId) {
-                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
-                    } else if (a.lesson_id && affectedLessonIds.includes(a.lesson_id)) {
-                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                    parentModAllocs.forEach(parentAlloc => {
+                        allocIdsToDelete.push(parentAlloc.id);
+                        siblingChapters.forEach(sc => {
+                            rowsToInsert.push({
+                                classroom_id: classroomId,
+                                chapter_id: sc.id,
+                                allocated_by: teacherProfile.id,
+                                allocated_to_student_id: parentAlloc.allocated_to_student_id || null
+                            });
+                        });
+                    });
+                }
+
+                classroomInventoryAllocations.forEach(a => {
+                    if (isIndividual && a.allocated_to_student_id && a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
+                    if (a.chapter_id === itemId || (a.lesson_id && affectedLessonIds.includes(a.lesson_id))) {
+                        allocIdsToDelete.push(a.id);
                     }
                 });
             } else {
-                // Lesson
-                if (targetRefId) affectedLessonIds = [targetRefId];
-                classroomInventoryAllocations.forEach(a => {
-                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                        if (a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
-                    }
+                // Topic / Lesson
+                affectedLessonIds = [itemId];
+                const les = courseLessons.find(l => l.id === itemId);
+                const parentChapId = les?.chapter_id;
+                const parentChap = courseChapters.find(c => c.id === parentChapId);
+                const parentModuleId = parentChap?.module_id;
 
-                    if (a.lesson_id === targetRefId) {
-                        if (!idsToDelete.includes(a.id)) idsToDelete.push(a.id);
+                // If parent chapter was allocated directly, explode into remaining sibling lessons
+                if (parentChapId) {
+                    const siblingLessons = courseLessons.filter(l => l.chapter_id === parentChapId && l.id !== itemId);
+                    const parentChapAllocs = classroomInventoryAllocations.filter(a => {
+                        if (isIndividual && a.allocated_to_student_id && a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return false;
+                        return a.chapter_id === parentChapId;
+                    });
+
+                    parentChapAllocs.forEach(parentAlloc => {
+                        allocIdsToDelete.push(parentAlloc.id);
+                        siblingLessons.forEach(sl => {
+                            rowsToInsert.push({
+                                classroom_id: classroomId,
+                                lesson_id: sl.id,
+                                allocated_by: teacherProfile.id,
+                                allocated_to_student_id: parentAlloc.allocated_to_student_id || null
+                            });
+                        });
+                    });
+                }
+
+                // If parent module was allocated directly, explode into remaining chapters and sibling lessons
+                if (parentModuleId && parentChapId) {
+                    const siblingChapters = courseChapters.filter(c => c.module_id === parentModuleId && c.id !== parentChapId);
+                    const siblingLessons = courseLessons.filter(l => l.chapter_id === parentChapId && l.id !== itemId);
+                    const parentModAllocs = classroomInventoryAllocations.filter(a => {
+                        if (isIndividual && a.allocated_to_student_id && a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return false;
+                        return a.module_id === parentModuleId;
+                    });
+
+                    parentModAllocs.forEach(parentAlloc => {
+                        allocIdsToDelete.push(parentAlloc.id);
+                        siblingChapters.forEach(sc => {
+                            rowsToInsert.push({
+                                classroom_id: classroomId,
+                                chapter_id: sc.id,
+                                allocated_by: teacherProfile.id,
+                                allocated_to_student_id: parentAlloc.allocated_to_student_id || null
+                            });
+                        });
+                        siblingLessons.forEach(sl => {
+                            rowsToInsert.push({
+                                classroom_id: classroomId,
+                                lesson_id: sl.id,
+                                allocated_by: teacherProfile.id,
+                                allocated_to_student_id: parentAlloc.allocated_to_student_id || null
+                            });
+                        });
+                    });
+                }
+
+                classroomInventoryAllocations.forEach(a => {
+                    if (isIndividual && a.allocated_to_student_id && a.allocated_to_student_id !== selectedStudentForCurriculum.student_id) return;
+                    if (a.lesson_id === itemId) {
+                        allocIdsToDelete.push(a.id);
                     }
                 });
             }
 
-            const { error } = await supabaseAuth
-                .from('classroom_inventory_allocation')
-                .delete()
-                .in('id', idsToDelete);
-            if (error) throw error;
+            // 1. Delete matching allocations from database
+            if (allocIdsToDelete.length > 0) {
+                await supabaseAuth
+                    .from('classroom_inventory_allocation')
+                    .delete()
+                    .in('id', allocIdsToDelete);
+            }
 
-            // Also delete corresponding student_topic_progress rows for affected lessons in this classroom
+            // 2. Insert any exploded replacement allocations (e.g. remaining topics in chapter)
+            if (rowsToInsert.length > 0) {
+                await supabaseAuth
+                    .from('classroom_inventory_allocation')
+                    .insert(rowsToInsert);
+            }
+
+            // 3. Delete progress for affected lessons
             if (affectedLessonIds.length > 0) {
-                let deleteProgQuery = supabaseAuth
+                if (targetStudentIds.length > 0) {
+                    await supabaseAuth
+                        .from('student_topic_progress')
+                        .delete()
+                        .in('student_id', targetStudentIds)
+                        .in('lesson_id', affectedLessonIds);
+                }
+                await supabaseAuth
                     .from('student_topic_progress')
                     .delete()
                     .eq('classroom_id', classroomId)
                     .in('lesson_id', affectedLessonIds);
-
-                if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                    deleteProgQuery = deleteProgQuery.eq('student_id', selectedStudentForCurriculum.student_id);
-                }
-
-                const { error: progErr } = await deleteProgQuery;
-                if (progErr) {
-                    console.warn('[Pacing] Could not delete student_topic_progress on deallocate:', progErr.message);
-                }
             }
 
-            setClassroomInventoryAllocations(prev => prev.filter(a => !idsToDelete.includes(a.id)));
+            // 4. Also delete student session overrides
+            try {
+                if (affectedLessonIds.length > 0 && targetStudentIds.length > 0) {
+                    await supabaseAuth
+                        .from('session_student_overrides')
+                        .delete()
+                        .in('student_id', targetStudentIds)
+                        .in('lesson_id', affectedLessonIds);
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            // 5. Update local studentProgress state
             if (affectedLessonIds.length > 0) {
                 setStudentProgress(prev => prev.filter(p => {
-                    if (p.classroom_id !== classroomId) return true;
-                    if (!affectedLessonIds.includes(p.lesson_id)) return true;
-                    if (curriculumTab === 'individual' && selectedStudentForCurriculum) {
-                        return p.student_id !== selectedStudentForCurriculum.student_id;
+                    if (isIndividual) {
+                        if (p.student_id === selectedStudentForCurriculum.student_id && affectedLessonIds.includes(p.lesson_id)) {
+                            return false;
+                        }
+                        return true;
                     }
-                    return false;
+                    if (targetStudentIds.includes(p.student_id) && affectedLessonIds.includes(p.lesson_id)) {
+                        return false;
+                    }
+                    if (p.classroom_id === classroomId && affectedLessonIds.includes(p.lesson_id)) {
+                        return false;
+                    }
+                    return true;
                 }));
             }
-        } catch (err) {
+
+            // 6. Refresh allocations from DB
+            await fetchCurriculumAllocations();
+        } catch (err: any) {
             console.error('Error deallocating item:', err);
-            alert('Failed to deallocate item.');
+            alert(`Failed to remove item: ${err?.message || err}`);
         } finally {
             setDeletingAssignmentId(null);
         }
@@ -4746,7 +5118,7 @@ export default function ClassroomDashboardPage({
                                         <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none font-mono">1. Lesson Overview</h4>
                                         <div className="p-5 rounded-2xl bg-slate-50/60 dark:bg-slate-950/20 border border-slate-200/50 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold leading-relaxed tutorial-content max-w-none">
                                             {selectedTopic.description ? (
-                                                <div dangerouslySetInnerHTML={{ __html: selectedTopic.description }} />
+                                                <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedTopic.description) }} />
                                             ) : (
                                                 'No detailed instructions uploaded. Follow general study guides for this level.'
                                             )}

@@ -8,6 +8,7 @@ import { supabase } from '../../../src/lib/supabase';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { sendClassroomNotification } from '../../../src/lib/notifications';
+import { htmlToPlainText, sanitizeHtml } from '../../../src/lib/text-utils';
 import { 
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
@@ -1537,7 +1538,7 @@ function MessagesDashboardContent() {
                     const notificationRows = targetStudentIds.map(sid => ({
                         user_id: sid,
                         title: `New Message: ${teacherProfile.name}`,
-                        message: content.trim(),
+                        message: htmlToPlainText(content),
                         type: 'messages',
                         is_read: false
                     }));
@@ -2825,7 +2826,7 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                     </span>
                                                 </div>
                                                 <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">{bc.subject}</h4>
-                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl overflow-x-auto select-text" dangerouslySetInnerHTML={{ __html: bc.content }} />
+                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl overflow-x-auto select-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(bc.content) }} />
                                                 {(bc as any).audio_attachment && (
                                                     <div className="flex items-center gap-2 mt-3 select-none">
                                                         <button 

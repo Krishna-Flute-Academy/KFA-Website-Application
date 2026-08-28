@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
+import { htmlToPlainText } from '../../../../src/lib/text-utils';
 import fs from 'fs';
 import path from 'path';
 
@@ -146,8 +147,8 @@ export async function POST(req: Request) {
         }
 
         const payload = JSON.stringify({
-            title,
-            body: message,
+            title: htmlToPlainText(title),
+            body: htmlToPlainText(message),
             url: '/student-dashboard',
             tag: 'class-session'
         });

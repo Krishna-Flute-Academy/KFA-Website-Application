@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { supabaseAuth } from '../lib/supabase-auth';
+import { htmlToPlainText } from '../lib/text-utils';
 
 interface TeacherHeaderProps {
     title: string;
@@ -209,7 +210,7 @@ export default function TeacherHeader({
                                                         {new Date(notif.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                                                     </span>
                                                 </div>
-                                                <span className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{notif.message}</span>
+                                                <span className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{htmlToPlainText(notif.message)}</span>
                                             </div>
                                         ))
                                     )}

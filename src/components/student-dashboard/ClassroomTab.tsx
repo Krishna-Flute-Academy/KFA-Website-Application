@@ -7,6 +7,7 @@ import {
     BookOpen, Megaphone
 } from 'lucide-react';
 import ClassroomChatTab from '../classroom/ClassroomChatTab';
+import { sanitizeHtml } from '../../lib/text-utils';
 
 interface StudentProfile {
     id: string;
@@ -1147,7 +1148,7 @@ export default function ClassroomTab({
                                                 </div>
                                                 <div 
                                                     className="text-xs text-slate-650 dark:text-slate-300 leading-relaxed overflow-x-auto"
-                                                    dangerouslySetInnerHTML={{ __html: broadcast.content }}
+                                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(broadcast.content) }}
                                                 />
                                             </article>
                                         );

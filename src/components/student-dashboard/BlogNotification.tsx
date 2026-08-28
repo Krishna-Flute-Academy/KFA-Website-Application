@@ -30,20 +30,7 @@ interface BlogNotificationProps {
     broadcasts?: any[];
 }
 
-const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html
-        .replace(/<[^>]*>?/gm, ' ')
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-};
+import { stripHtml } from '../../lib/text-utils';
 
 const BLOG_KEY  = 'kfa-student-seen-blog';
 const VIDEO_KEY = 'kfa-student-seen-video';

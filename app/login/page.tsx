@@ -67,9 +67,10 @@ function LoginContent() {
                 return;
             }
 
-            let userRole = data.user?.user_metadata?.role;
+            // SECURITY: Do NOT read role from user_metadata — it is user-editable.
+            // Always use the role from public.users as the single source of truth.
+            let userRole: string | null = null;
 
-            // Always prefer the role stored in the public.users table
             if (data.user) {
                 const { data: userData } = await supabaseAuth
                     .from('users')

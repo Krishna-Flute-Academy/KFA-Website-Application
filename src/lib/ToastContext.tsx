@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Check, AlertCircle, Info, X, Bell } from 'lucide-react';
 import { supabaseAuth } from './supabase-auth';
+import { sanitizeHtml, htmlToPlainText } from './text-utils';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -240,7 +241,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                         {/* Message body */}
                         <div 
                             className="text-sm sm:text-base text-slate-300 leading-relaxed mb-6 font-medium max-h-60 overflow-y-auto pr-2 scrollbar-thin select-text text-left w-full"
-                            dangerouslySetInnerHTML={{ __html: activePopup.message }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(activePopup.message) }}
                         />
 
                         {/* CTA Action button */}
@@ -273,7 +274,7 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
                 ) : (
                     <Info className="w-5 h-5 text-blue-500 shrink-0" />
                 )}
-                <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
+                <p className="text-xs font-bold leading-relaxed">{htmlToPlainText(toast.message)}</p>
             </div>
             <button onClick={onClose} className="text-slate-400 hover:text-white dark:hover:text-slate-900 transition-colors shrink-0">
                 <X size={14} />

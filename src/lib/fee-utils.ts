@@ -76,6 +76,10 @@ export function getStudentFeeStatus(
         return null;
     }
 
+    if (!feesCollectionDay && !joinDate) {
+        return null;
+    }
+
     // Determine collection day: if not explicitly set, derive from joinDate day, default to 1
     let collectionDay = Number(feesCollectionDay);
     if (!collectionDay || isNaN(collectionDay) || collectionDay < 1 || collectionDay > 31) {
@@ -194,7 +198,7 @@ export function getStudentFeeStatus(
     }
 
     const day = activeDueDate.getDate();
-    const monthName = activeDueDate.toLocaleString('en-US', { month: 'short' });
+    const monthName = activeDueDate.toLocaleString('en-US', { month: 'long' });
     const formattedDueDate = `${day} ${monthName}`;
 
     return {
