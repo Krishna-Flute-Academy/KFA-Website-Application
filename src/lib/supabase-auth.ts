@@ -12,7 +12,7 @@ if (typeof window !== 'undefined' && (!supabaseAuthUrl || !supabaseAuthAnonKey))
     console.warn('Missing Auth Supabase URL or Anon Key. Authentication will not work.');
 }
 
-export const supabaseAuth = createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
+const createSupabaseAuthClient = () => createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
     auth: {
         storageKey: 'kfa-auth-token',
         persistSession: true,
@@ -20,6 +20,14 @@ export const supabaseAuth = createClient(supabaseAuthUrl, supabaseAuthAnonKey, {
         detectSessionInUrl: true
     }
 });
+
+const globalForSupabaseAuth = globalThis as unknown as {
+    supabaseAuth: ReturnType<typeof createSupabaseAuthClient> | undefined;
+};
+
+export const supabaseAuth = globalForSupabaseAuth.supabaseAuth ?? createSupabaseAuthClient();
+
+if (process.env.NODE_ENV !== 'production') globalForSupabaseAuth.supabaseAuth = supabaseAuth;
 
 // Robust error handling for invalid/revoked refresh tokens to prevent app loops and console clutter.
 if (typeof window !== 'undefined') {

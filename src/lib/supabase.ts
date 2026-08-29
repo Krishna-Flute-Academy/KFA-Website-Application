@@ -7,13 +7,21 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase: Missing environment variables');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+const createSupabaseClient = () => createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
     detectSessionInUrl: false
   }
 });
+
+const globalForSupabase = globalThis as unknown as {
+    supabaseSecondary: ReturnType<typeof createSupabaseClient> | undefined;
+};
+
+export const supabase = globalForSupabase.supabaseSecondary ?? createSupabaseClient();
+
+if (process.env.NODE_ENV !== 'production') globalForSupabase.supabaseSecondary = supabase;
 
 export interface BlogPost {
   id: string;
