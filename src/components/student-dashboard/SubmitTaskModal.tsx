@@ -199,9 +199,6 @@ export default function SubmitTaskModal({
     };
 
         const handleOpenPicker = () => {
-        console.log("Client ID:", process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
-        console.log("Developer Key:", process.env.NEXT_PUBLIC_GOOGLE_API_KEY);
-        
         openPicker({
             clientId: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "",
             developerKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY || "",
