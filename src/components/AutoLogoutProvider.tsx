@@ -86,7 +86,7 @@ export default function AutoLogoutProvider({ children }: { children: React.React
                         user_agent: userAgent
                     }], { onConflict: 'id' });
 
-                    // Start heartbeat if not running
+                    // Start heartbeat if not running (every 5 minutes to minimize database writes)
                     if (!heartbeatIntervalRef.current) {
                         heartbeatIntervalRef.current = setInterval(async () => {
                             const curSessionId = safeGetSessionId();
@@ -96,7 +96,7 @@ export default function AutoLogoutProvider({ children }: { children: React.React
                                     .update({ last_activity_at: new Date().toISOString() })
                                     .eq('id', curSessionId);
                             }
-                        }, 30000);
+                        }, 5 * 60 * 1000);
                     }
                 } catch (e) {
                     console.error('Error starting tracking session:', e);

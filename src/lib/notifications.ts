@@ -1,4 +1,5 @@
 import { supabaseAuth } from './supabase-auth';
+import { htmlToPlainText } from './text-utils';
 
 interface SendNotificationParams {
     teacherId: string;
@@ -80,11 +81,14 @@ export async function sendClassroomNotification({
 
         console.log(`[notifications] Targeting ${studentIds.length} students:`, studentIds);
 
+        const cleanTitle = htmlToPlainText(title);
+        const cleanMessage = htmlToPlainText(message);
+
         // 1. Insert into notifications table
         const notificationInserts = studentIds.map(sid => ({
             user_id: sid,
-            title,
-            message,
+            title: cleanTitle,
+            message: cleanMessage,
             type: 'reminder',
             is_read: false
         }));
@@ -111,8 +115,8 @@ export async function sendClassroomNotification({
             },
             body: JSON.stringify({
                 studentIds,
-                title,
-                message
+                title: cleanTitle,
+                message: cleanMessage
             })
         });
 

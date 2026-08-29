@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CreditCard, History, Clock, CheckCircle, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import { getStudentFeeStatus, calculateClassesAdded } from '../../lib/fee-utils';
+import { htmlToPlainText } from '../../lib/text-utils';
 
 interface FeesTabProps {
     profile: any;
@@ -253,7 +254,7 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                                             </span>
                                         </div>
                                         <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-relaxed">
-                                            {reminder.message_text || reminder.message || reminder.content}
+                                            {htmlToPlainText(reminder.message_text || reminder.message || reminder.content)}
                                         </p>
                                         {!isReporting && (
                                             <button

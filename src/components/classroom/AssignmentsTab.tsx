@@ -7,6 +7,7 @@ import {
     NotebookPen, Plus, GripVertical, Edit3, Trash2, Download, Filter,
     Calendar, ChevronUp, ChevronDown
 } from 'lucide-react';
+import AutoLinkText from '../common/AutoLinkText';
 
 interface Student {
     id: string;
@@ -180,7 +181,7 @@ export default function AssignmentsTab({
                         <div className="flex-1">
                             <h4 className="font-bold text-rose-800 dark:text-rose-300 text-sm">Database setup required</h4>
                             <p className="text-xs text-rose-700 dark:text-rose-405 mt-1 leading-relaxed">
-                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">classroom_inventory_allocation</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-200 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your <strong>auth Supabase project</strong> (<code className="font-mono">sevtycwrmhzyfxvxkkgc</code>).
+                                The <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">assignments</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">classroom_inventory_allocation</code>, <code className="font-mono bg-rose-100 dark:bg-rose-900/40 px-1 rounded">class_notes</code>, and <code className="font-mono bg-rose-200 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 px-1 rounded font-semibold">student_topic_progress</code> tables don&apos;t exist yet in your Supabase project. Please run the pending database migrations.
                             </p>
                             <p className="text-xs text-rose-700 dark:text-rose-405 mt-2">
                                 Go to <strong>Supabase Dashboard → SQL Editor → New Query</strong> and paste the SQL copy from below, then click Run.
@@ -344,7 +345,9 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                         {/* Note body */}
                                         <div className="px-4 py-3">
                                             {note.content && (
-                                                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap line-clamp-4">{note.content}</p>
+                                                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap line-clamp-4">
+                                                    <AutoLinkText text={note.content} preserveNewlines />
+                                                </p>
                                             )}
                                             {/* File chip */}
                                             {note.file_url && (
@@ -520,7 +523,9 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
                                                     )}
                                                 </div>
                                                 {asg.description && (
-                                                    <p className="text-xs text-slate-550 dark:text-slate-400 leading-relaxed line-clamp-2">{asg.description}</p>
+                                                    <p className="text-xs text-slate-550 dark:text-slate-400 leading-relaxed line-clamp-2">
+                                                        <AutoLinkText text={asg.description} />
+                                                    </p>
                                                 )}
                                                 {asg.inventory_ref_id ? (
                                                     <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-450 select-none">

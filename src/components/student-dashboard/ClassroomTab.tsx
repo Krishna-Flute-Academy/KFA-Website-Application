@@ -7,6 +7,8 @@ import {
     BookOpen, Megaphone
 } from 'lucide-react';
 import ClassroomChatTab from '../classroom/ClassroomChatTab';
+import { sanitizeHtml } from '../../lib/text-utils';
+import AutoLinkText from '../common/AutoLinkText';
 
 interface StudentProfile {
     id: string;
@@ -960,7 +962,7 @@ export default function ClassroomTab({
                                             </div>
                                             <h4 className="font-extrabold text-xs md:text-sm text-slate-800 dark:text-white">{note.title}</h4>
                                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-4 leading-relaxed whitespace-pre-wrap">
-                                                {note.content}
+                                                <AutoLinkText text={note.content} preserveNewlines />
                                             </p>
                                         </div>
 
@@ -1147,7 +1149,7 @@ export default function ClassroomTab({
                                                 </div>
                                                 <div 
                                                     className="text-xs text-slate-650 dark:text-slate-300 leading-relaxed overflow-x-auto"
-                                                    dangerouslySetInnerHTML={{ __html: broadcast.content }}
+                                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(broadcast.content) }}
                                                 />
                                             </article>
                                         );

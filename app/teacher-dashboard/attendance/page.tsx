@@ -531,7 +531,6 @@ export default function AttendancePage() {
                         .eq('override_date', selectedDate);
 
                     const tempRoster = (overrideStudents || [])
-                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile?.id)
                         .map((row: any) => ({
                             id: row.student_id,
                             name: `${row.users?.name || 'Unknown Student'} (Makeup)`,
@@ -547,7 +546,6 @@ export default function AttendancePage() {
                         .eq('override_date', selectedDate);
                     
                     roster = (tempStudents || [])
-                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile?.id)
                         .map((row: any) => ({
                             id: row.student_id,
                             name: row.users?.name || 'Unknown Student',
@@ -942,7 +940,6 @@ export default function AttendancePage() {
                         .eq('override_date', selectedDate);
 
                     (overrideStudents || [])
-                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile.id)
                         .forEach((row: any) => {
                             entries.push({
                                 student: { id: row.student_id, name: row.users?.name || 'Unknown Student', profile_pic_url: row.users?.profile_pic_url },
@@ -960,7 +957,6 @@ export default function AttendancePage() {
                         .eq('override_date', selectedDate);
 
                     (tempStudents || [])
-                        .filter((row: any) => isAdmin || row.users?.teacher_id === teacherProfile.id)
                         .forEach((row: any) => {
                             entries.push({
                                 student: { id: row.student_id, name: row.users?.name || 'Unknown Student', profile_pic_url: row.users?.profile_pic_url },

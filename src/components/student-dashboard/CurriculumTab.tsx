@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { 
     Loader2, BookOpen, Clock, Award, Users, ChevronRight, Check, Music, Video, Info, FileText, Search, ExternalLink
 } from 'lucide-react';
+import AutoLinkText from '../common/AutoLinkText';
 
 interface ClassroomInfo {
     id: string;
@@ -42,20 +43,7 @@ interface CurriculumTabProps {
     onRefreshCurriculum?: () => void;
 }
 
-const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html
-        .replace(/<[^>]*>?/gm, ' ')
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-};
+import { stripHtml, sanitizeHtml } from '../../lib/text-utils';
 
 const cleanModuleDescription = (desc: string) => {
     if (!desc) return '';
@@ -421,7 +409,7 @@ export default function CurriculumTab({
                                         {selectedTopic.description && (
                                             <div 
                                                 className="text-xs text-slate-500 leading-relaxed tutorial-content max-w-none"
-                                                dangerouslySetInnerHTML={{ __html: selectedTopic.description }}
+                                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedTopic.description) }}
                                             />
                                         )}
 
@@ -459,7 +447,7 @@ export default function CurriculumTab({
                                                     {selectedTopic.bullet_points.map((pt: string, idx: number) => (
                                                         <li key={idx} className="text-xs text-slate-600 flex items-start gap-2 leading-relaxed">
                                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                                                            <span>{pt}</span>
+                                                            <span><AutoLinkText text={pt} /></span>
                                                         </li>
                                                     ))}
                                                 </ul>

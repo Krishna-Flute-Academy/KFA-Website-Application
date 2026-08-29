@@ -56,20 +56,7 @@ import {
     INITIAL_LESSONS
 } from './initial-data';
 
-const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html
-        .replace(/<[^>]*>?/gm, ' ')
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-};
+import { stripHtml, sanitizeHtml } from '../../../src/lib/text-utils';
 
 const cleanChapterTitle = (title: string) =>
     (title || '').replace(/^\s*Chapter\s*[-:]?\s*\d+\s*[-:]?\s*/i, '').trim();
@@ -2128,7 +2115,7 @@ export default function InventoryLibrary() {
                                                 </h1>
                                                 <div 
                                                      className="text-xs md:text-sm text-teal-50/90 font-medium leading-relaxed max-w-xl tutorial-content"
-                                                     dangerouslySetInnerHTML={{ __html: activeModuleParsed?.description || '' }}
+                                                     dangerouslySetInnerHTML={{ __html: sanitizeHtml(activeModuleParsed?.description || '') }}
                                                  />
                                             </div>
                                         </div>
@@ -2255,7 +2242,7 @@ export default function InventoryLibrary() {
                                                                         </div>
                                                                         <div 
                                                                             className="tutorial-content text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed text-left max-w-none"
-                                                                            dangerouslySetInnerHTML={{ __html: chap.description }}
+                                                                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(chap.description) }}
                                                                         />
                                                                     </div>
                                                                 )}
@@ -2963,7 +2950,7 @@ export default function InventoryLibrary() {
                                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none font-mono">Overview & Description</h4>
                                 <div 
                                      className="text-xs md:text-sm text-slate-600 dark:text-slate-300 font-medium leading-relaxed tutorial-content max-w-none"
-                                     dangerouslySetInnerHTML={{ __html: selectedLessonPreview.description || '' }}
+                                     dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedLessonPreview.description || '') }}
                                  />
                             </div>
 

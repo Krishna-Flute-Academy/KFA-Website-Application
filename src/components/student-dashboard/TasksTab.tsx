@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ClipboardList, Download, Video, X, Loader2, Search, Calendar, Award, CheckCircle2, AlertCircle, Mic, Square, Trash2, Link as LinkIcon, Radio } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ClipboardList, Download, Video, Search, Calendar, Award, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import AutoLinkText from '../common/AutoLinkText';
 
 interface EnrichedAssignment {
     id: string;
@@ -25,26 +26,16 @@ interface TasksTabProps {
     setSelectedAssignment: (asg: EnrichedAssignment | null) => void;
     submitVideoUrl: string;
     setSubmitVideoUrl: (url: string) => void;
-    submissionType: 'link' | 'upload' | 'audio';
-    setSubmissionType: (type: 'link' | 'upload' | 'audio') => void;
-    submitAudioBlob: Blob | null;
-    setSubmitAudioBlob: (blob: Blob | null) => void;
-    isSubmittingTask: boolean;
-    handleSubmitTask: (e: React.FormEvent) => Promise<void>;
+    submissionType?: 'link' | 'upload';
+    setSubmissionType?: (type: 'link' | 'upload') => void;
+    isSubmittingTask?: boolean;
+    handleSubmitTask?: (e: React.FormEvent) => Promise<void>;
 }
 
 export default function TasksTab({
     assignments,
-    selectedAssignment,
     setSelectedAssignment,
-    submitVideoUrl,
     setSubmitVideoUrl,
-    submissionType,
-    setSubmissionType,
-    submitAudioBlob,
-    setSubmitAudioBlob,
-    isSubmittingTask,
-    handleSubmitTask
 }: TasksTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'submitted' | 'graded'>('all');
@@ -205,7 +196,7 @@ export default function TasksTab({
 
                                     {/* Description */}
                                     <p className="text-xs text-slate-500 dark:text-slate-450 leading-relaxed line-clamp-2">
-                                        {asg.description || 'No detailed instructions provided.'}
+                                        <AutoLinkText text={asg.description || 'No detailed instructions provided.'} />
                                     </p>
 
                                     {/* Instructor Feedback Bubble */}
@@ -213,7 +204,7 @@ export default function TasksTab({
                                         <div className="p-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-100 dark:border-slate-800 rounded-xl">
                                             <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block font-mono">Feedback</p>
                                             <p className="text-xs text-slate-655 dark:text-slate-350 italic mt-0.5 font-medium leading-relaxed">
-                                                "{asg.feedback_text}"
+                                                &quot;<AutoLinkText text={asg.feedback_text} preserveNewlines />&quot;
                                             </p>
                                         </div>
                                     )}

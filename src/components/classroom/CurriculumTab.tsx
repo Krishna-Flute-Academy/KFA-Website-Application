@@ -26,7 +26,7 @@ interface CurriculumTabProps {
     setExpandedModules: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
     expandedChapters: Record<string, boolean>;
     setExpandedChapters: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
-    handleDeallocateItem: (allocationId: string) => Promise<void>;
+    handleDeallocateItem: (type: 'level' | 'chapter' | 'topic', item: any) => Promise<void>;
     deletingAssignmentId: string | null;
     isUpdatingProgress: string | null;
     getLessonPacingStatus: (lessonId: string) => {
@@ -55,20 +55,7 @@ interface CurriculumTabProps {
     openUnlockModal?: (targetType: 'level' | 'chapter' | 'topic', targetItem: any) => void;
 }
 
-const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html
-        .replace(/<[^>]*>?/gm, ' ')
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-};
+import { stripHtml } from '../../lib/text-utils';
 
 export default function CurriculumTab({
     curriculumTab,
@@ -436,14 +423,14 @@ export default function CurriculumTab({
                                                                                 <button 
                                                                                     onClick={(e) => {
                                                                                         e.stopPropagation();
-                                                                                        handleDeallocateItem(mod.allocationId!);
+                                                                                        handleDeallocateItem('level', mod);
                                                                                     }}
-                                                                                    disabled={deletingAssignmentId === mod.allocationId}
+                                                                                    disabled={deletingAssignmentId === mod.id || deletingAssignmentId === mod.allocationId}
                                                                                     className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all duration-200 border border-transparent hover:border-rose-600/10 shadow-xs cursor-pointer text-left"
                                                                                     title="Deallocate level from class"
                                                                                     type="button"
                                                                                 >
-                                                                                    {deletingAssignmentId === mod.allocationId ? (
+                                                                                    {deletingAssignmentId === mod.id || deletingAssignmentId === mod.allocationId ? (
                                                                                         <Loader2 className="size-3.5 animate-spin" />
                                                                                     ) : (
                                                                                         <Trash2 className="size-3.5" />
@@ -715,22 +702,22 @@ export default function CurriculumTab({
                                                                                                 <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                                                                                     {hasChapterAssignment && (
                                                                                                                         <button 
-                                                                                                                            onClick={(e) => {
-                                                                                                                                e.stopPropagation();
-                                                                                                                                handleDeallocateItem(chap.allocationId!);
-                                                                                                                            }}
-                                                                                                                            disabled={deletingAssignmentId === chap.allocationId}
-                                                                                                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all duration-200 border border-transparent shadow-xs cursor-pointer text-left"
-                                                                                                                            title="Deallocate chapter from class"
-                                                                                                                            type="button"
-                                                                                                                        >
-                                                                                                                            {deletingAssignmentId === chap.allocationId ? (
-                                                                                                                                <Loader2 className="size-3 animate-spin" />
-                                                                                                                            ) : (
-                                                                                                                                <Trash2 className="size-3" />
-                                                                                                                            )}
-                                                                                                                            <span>Remove</span>
-                                                                                                                        </button>
+                                                                                                                        onClick={(e) => {
+                                                                                                                            e.stopPropagation();
+                                                                                                                            handleDeallocateItem('chapter', chap);
+                                                                                                                        }}
+                                                                                                                        disabled={deletingAssignmentId === chap.id || deletingAssignmentId === chap.allocationId}
+                                                                                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all duration-200 border border-transparent shadow-xs cursor-pointer text-left"
+                                                                                                                        title="Deallocate chapter from class"
+                                                                                                                        type="button"
+                                                                                                                    >
+                                                                                                                        {deletingAssignmentId === chap.id || deletingAssignmentId === chap.allocationId ? (
+                                                                                                                            <Loader2 className="size-3 animate-spin" />
+                                                                                                                        ) : (
+                                                                                                                            <Trash2 className="size-3" />
+                                                                                                                        )}
+                                                                                                                        <span>Remove</span>
+                                                                                                                    </button>
                                                                                                                     )}
                                                                                                     {isUpdatingProgress === chap.id ? (
                                                                                                         <Loader2 className="size-3.5 animate-spin text-[#ecb613] mx-1" />
@@ -996,21 +983,22 @@ export default function CurriculumTab({
                                                                                                 >
                                                                                                     <Sliders className="size-3.5" />
                                                                                                 </button>
-                                                                                                {lesson.isExplicit && (
                                                                                                     <button
                                                                                                         type="button"
-                                                                                                        onClick={() => handleDeallocateItem(lesson.allocationId)}
-                                                                                                        disabled={deletingAssignmentId === lesson.allocationId}
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            handleDeallocateItem('topic', lesson);
+                                                                                                        }}
+                                                                                                        disabled={deletingAssignmentId === lesson.id || deletingAssignmentId === lesson.allocationId}
                                                                                                         className="w-8 h-8 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white flex items-center justify-center border border-transparent transition-all cursor-pointer"
                                                                                                         title="Deallocate topic from class"
                                                                                                     >
-                                                                                                        {deletingAssignmentId === lesson.allocationId ? (
+                                                                                                        {deletingAssignmentId === lesson.id || deletingAssignmentId === lesson.allocationId ? (
                                                                                                             <Loader2 className="size-3.5 animate-spin" />
                                                                                                         ) : (
                                                                                                             <Trash2 className="size-3.5" />
                                                                                                         )}
                                                                                                     </button>
-                                                                                                )}
                                                                                             </div>
                                                                                         </div>
                                                                                         {curriculumTab === 'classwide' && expandedStudentStatuses[`topic-${lesson.id}`] && (

@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import { Mail, Loader2, Volume2, Search, MessageSquare, Send, Users, ChevronRight, FileAudio, Megaphone, CreditCard, Sparkles, Bell, Inbox, Check, CheckCheck } from 'lucide-react';
+import AutoLinkText from '../common/AutoLinkText';
 
 interface Broadcast {
     id: string;
@@ -24,20 +25,7 @@ interface Classmate {
     profile_pic_url: string | null;
 }
 
-const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html
-        .replace(/<[^>]*>?/gm, ' ')
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
-};
+import { stripHtml, sanitizeHtml } from '../../lib/text-utils';
 
 interface ClassroomInfo {
     id: string;
@@ -944,7 +932,7 @@ export default function MessagesTab({
 
                                         <div 
                                             className="text-xs text-slate-655 dark:text-slate-350 leading-relaxed overflow-x-auto"
-                                            dangerouslySetInnerHTML={{ __html: b.content }}
+                                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(b.content) }}
                                         />
 
                                         {/* Audio Voice Note attachment */}
@@ -1045,7 +1033,9 @@ export default function MessagesTab({
                                                         : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 self-start rounded-bl-none border border-slate-100 dark:border-slate-750'
                                             }`}
                                         >
-                                            <p className="whitespace-pre-wrap text-left select-text">{msg.message_text}</p>
+                                            <p className="whitespace-pre-wrap text-left select-text">
+                                                <AutoLinkText text={msg.message_text} preserveNewlines />
+                                            </p>
                                             <div className="flex justify-end items-center gap-1 mt-1">
                                                 {isUnread && (
                                                     <span className="text-[7.5px] font-black uppercase text-amber-600 dark:text-amber-450 mr-1 animate-pulse">New</span>

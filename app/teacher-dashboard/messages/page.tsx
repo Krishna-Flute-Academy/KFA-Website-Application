@@ -8,6 +8,7 @@ import { supabase } from '../../../src/lib/supabase';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { sendClassroomNotification } from '../../../src/lib/notifications';
+import { htmlToPlainText, sanitizeHtml } from '../../../src/lib/text-utils';
 import { 
     Loader2, Search, Megaphone, Sparkles, CreditCard, Users, 
     Presentation, Bell, HelpCircle, Send, FileText, Clock, 
@@ -16,6 +17,7 @@ import {
     BookOpen, Youtube, RefreshCw, Link2, Image as ImageIcon
 } from 'lucide-react';
 import RichTextEditor from '../../../src/components/common/RichTextEditor';
+import AutoLinkText from '../../../src/components/common/AutoLinkText';
 
 interface Broadcast {
     id: string;
@@ -1537,7 +1539,7 @@ function MessagesDashboardContent() {
                     const notificationRows = targetStudentIds.map(sid => ({
                         user_id: sid,
                         title: `New Message: ${teacherProfile.name}`,
-                        message: content.trim(),
+                        message: htmlToPlainText(content),
                         type: 'messages',
                         is_read: false
                     }));
@@ -2384,7 +2386,9 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                                             : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 self-start rounded-tl-none border border-slate-100 dark:border-slate-750'
                                                                     }`}
                                                                 >
-                                                                    <p className="whitespace-pre-wrap select-text font-medium">{msg.message_text}</p>
+                                                                    <p className="whitespace-pre-wrap select-text font-medium">
+                                                                        <AutoLinkText text={msg.message_text} preserveNewlines />
+                                                                    </p>
                                                                     <div className="flex justify-end items-center gap-1 mt-1">
                                                                         <span className={`text-[8px] ${isMe ? 'text-teal-100/60' : 'text-slate-455'}`}>
                                                                             {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -2825,7 +2829,7 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                     </span>
                                                 </div>
                                                 <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-tight">{bc.subject}</h4>
-                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl overflow-x-auto select-text" dangerouslySetInnerHTML={{ __html: bc.content }} />
+                                                <div className="text-xs font-medium text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl overflow-x-auto select-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(bc.content) }} />
                                                 {(bc as any).audio_attachment && (
                                                     <div className="flex items-center gap-2 mt-3 select-none">
                                                         <button 
