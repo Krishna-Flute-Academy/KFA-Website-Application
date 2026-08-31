@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-    Loader2, BookOpen, Clock, Award, Users, ChevronRight, Check, Music, Video, Info, FileText, Search, ExternalLink
+    Loader2, BookOpen, Clock, Award, Users, ChevronRight, ChevronDown, Check, Music, Video, Info, FileText, Search, ExternalLink, X, Star
 } from 'lucide-react';
 import AutoLinkText from '../common/AutoLinkText';
+import LessonViewer from './LessonViewer';
+import { stripHtml } from '../../lib/text-utils';
 
 interface ClassroomInfo {
     id: string;
@@ -41,9 +43,9 @@ interface CurriculumTabProps {
     setShowMaterialPopup: (show: boolean) => void;
     classmates: Classmate[];
     onRefreshCurriculum?: () => void;
+    studentSpotlights?: { teacherSpotlight: any | null; studentSpotlight: any | null };
+    onToggleStudentSpotlight?: (lessonId: string) => Promise<void> | void;
 }
-
-import { stripHtml, sanitizeHtml } from '../../lib/text-utils';
 
 const cleanModuleDescription = (desc: string) => {
     if (!desc) return '';
@@ -81,16 +83,75 @@ export default function CurriculumTab({
     getTopicBreadcrumbs,
     setShowMaterialPopup,
     classmates,
-    onRefreshCurriculum
+    onRefreshCurriculum,
+    studentSpotlights,
+    onToggleStudentSpotlight
 }: CurriculumTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isMobileViewerOpen, setIsMobileViewerOpen] = useState(false);
+    const [mobileClassmatesOpen, setMobileClassmatesOpen] = useState(false);
+    const desktopViewerRef = useRef<HTMLDivElement>(null);
+    const lastSelectedRowRef = useRef<HTMLDivElement | null>(null);
 
     const isOnline = classroom?.description?.includes('[delivery_format:online]');
     const isOffline = classroom?.description?.includes('[delivery_format:offline]');
     const cleanDescription = classroom?.description
         ? classroom.description.replace(/\[delivery_format:(online|offline)\]/g, '').trim()
         : '';
+
+    // Lock body scroll on mobile when bottom sheet drawer is open
+    useEffect(() => {
+        if (isMobileViewerOpen) {
+            const originalOverflow = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+            return () => {
+                document.body.style.overflow = originalOverflow;
+            };
+        }
+    }, [isMobileViewerOpen]);
+
+    // Handle topic selection
+    const handleSelectTopic = (lesson: any, rowElement?: HTMLDivElement | null) => {
+        setSelectedTopic(lesson);
+        if (rowElement) {
+            lastSelectedRowRef.current = rowElement;
+        }
+
+        // Check viewport width
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+            setIsMobileViewerOpen(true);
+        } else {
+            // On desktop, ensure the sticky viewer is nicely aligned
+            if (desktopViewerRef.current) {
+                const rect = desktopViewerRef.current.getBoundingClientRect();
+                const isPartiallyVisible = rect.top < window.innerHeight && rect.bottom > 100;
+                if (!isPartiallyVisible) {
+                    desktopViewerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+        }
+    };
+
+    // Close mobile viewer and restore focus if applicable
+    const handleCloseMobileViewer = () => {
+        setIsMobileViewerOpen(false);
+        if (lastSelectedRowRef.current) {
+            lastSelectedRowRef.current.focus();
+        }
+    };
+
+    // Auto-scroll to selected topic and open mobile drawer if viewport is mobile
+    useEffect(() => {
+        if (!selectedTopic?.id) return;
+        const timer = setTimeout(() => {
+            const el = document.querySelector(`[data-lesson-id="${selectedTopic.id}"]`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 150);
+        return () => clearTimeout(timer);
+    }, [selectedTopic?.id]);
 
     // Filter out locked lessons (hide locked topics/chapters/modules from student view)
     const unlockedLessons = useMemo(() => {
@@ -150,7 +211,7 @@ export default function CurriculumTab({
                 </div>
             </div>
 
-            {/* Split layout: classmates on right, curriculum tree on left */}
+            {/* Split layout: Curriculum Tree on Left, Sticky Viewer & Classmates on Right */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
                 {/* Left: Curriculum Syllabus Tree */}
                 <div className="lg:col-span-3 bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
@@ -183,8 +244,9 @@ export default function CurriculumTab({
                                         setIsRefreshing(false);
                                     }}
                                     disabled={isRefreshing}
-                                    className="p-1.5 sm:p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-500 transition-colors disabled:opacity-50"
+                                    className="p-1.5 sm:p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-500 transition-colors disabled:opacity-50 cursor-pointer"
                                     title="Refresh Curriculum"
+                                    aria-label="Refresh Curriculum"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={isRefreshing ? 'animate-spin' : ''}>
                                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -194,7 +256,8 @@ export default function CurriculumTab({
                             )}
                         </div>
                     </div>
-                    <div className="p-6">
+                    
+                    <div className="p-4 sm:p-6">
                         {filteredModules.length === 0 ? (
                             <div className="py-12 text-center text-slate-400">
                                 {searchQuery.trim() !== '' ? (
@@ -218,292 +281,286 @@ export default function CurriculumTab({
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {filteredModules
-                                    .map((module) => {
-                                        const isModExpanded = searchQuery.trim() !== '' ? true : !!expandedModules[module.id];
-                                        const chapters = filteredChapters
-                                            .filter(c => c.module_id === module.id);
-                                        
-                                        return (
-                                            <div key={module.id} className="border border-slate-150 rounded-2xl overflow-hidden transition-all shadow-xs">
-                                                {/* Module Row */}
-                                                <button 
-                                                    onClick={() => setExpandedModules(prev => ({ ...prev, [module.id]: !prev[module.id] }))}
-                                                    className="w-full flex items-center justify-between px-5 py-4 bg-slate-50/50 hover:bg-slate-50 text-left border-b border-slate-100"
-                                                >
-                                                    <div className="min-w-0 flex-1 pr-4">
-                                                        <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Module {module.module_number}</span>
-                                                        <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 truncate">{module.title}</h4>
-                                                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{cleanModuleDescription(module.description)}</p>
-                                                    </div>
-                                                    <ChevronRight className={`w-4.5 h-4.5 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
-                                                </button>
- 
-                                                {/* Module Chapters (Collapsed/Expanded) */}
-                                                {isModExpanded && (
-                                                    <div className="p-4 bg-white space-y-3">
-                                                        {chapters.length === 0 ? (
-                                                            <p className="text-[10px] text-slate-400 py-2">No chapters published in this module.</p>
-                                                        ) : (
-                                                            chapters.map((chapter) => {
-                                                                const isChapExpanded = searchQuery.trim() !== '' ? true : !!expandedChapters[chapter.id];
-                                                                const lessons = filteredLessons.filter(l => l.chapter_id === chapter.id);
+                                {filteredModules.map((module) => {
+                                    const isModExpanded = searchQuery.trim() !== '' ? true : !!expandedModules[module.id];
+                                    const chapters = filteredChapters.filter(c => c.module_id === module.id);
+                                    
+                                    return (
+                                        <div key={module.id} className="border border-slate-150 rounded-2xl overflow-hidden transition-all shadow-xs">
+                                            {/* Module Row */}
+                                            <button 
+                                                onClick={() => setExpandedModules(prev => ({ ...prev, [module.id]: !prev[module.id] }))}
+                                                className="w-full flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 bg-slate-50/60 hover:bg-slate-100/70 text-left border-b border-slate-100 transition-colors cursor-pointer"
+                                                aria-expanded={isModExpanded}
+                                            >
+                                                <div className="min-w-0 flex-1 pr-4">
+                                                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Module {module.module_number}</span>
+                                                    <h4 className="font-extrabold text-xs md:text-sm text-slate-800 mt-0.5 truncate">{module.title}</h4>
+                                                    <p className="text-[10px] text-slate-400 mt-0.5 truncate">{cleanModuleDescription(module.description)}</p>
+                                                </div>
+                                                <ChevronRight className={`w-4.5 h-4.5 text-slate-400 transition-transform shrink-0 ${isModExpanded ? 'rotate-90' : ''}`} />
+                                            </button>
 
-                                                                return (
-                                                                    <div key={chapter.id} className="border border-slate-100 rounded-xl overflow-hidden">
-                                                                        {/* Chapter Row */}
-                                                                        <button
-                                                                            onClick={() => setExpandedChapters(prev => ({ ...prev, [chapter.id]: !prev[chapter.id] }))}
-                                                                            className="w-full flex items-center justify-between px-4 py-3 bg-slate-50/20 hover:bg-slate-50/60 text-left border-b border-slate-100"
-                                                                        >
-                                                                            <div className="min-w-0 flex-1 pr-4">
-                                                                                <h5 className="font-bold text-xs text-slate-800 truncate">Chapter {chapter.chapter_number}: {chapter.title}</h5>
-                                                                            </div>
-                                                                            <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isChapExpanded ? 'rotate-90' : ''}`} />
-                                                                        </button>
+                                            {/* Module Chapters (Collapsed/Expanded) */}
+                                            {isModExpanded && (
+                                                <div className="p-3 sm:p-4 bg-white space-y-3">
+                                                    {chapters.length === 0 ? (
+                                                        <p className="text-[10px] text-slate-400 py-2">No chapters published in this module.</p>
+                                                    ) : (
+                                                        chapters.map((chapter) => {
+                                                            const isChapExpanded = searchQuery.trim() !== '' ? true : !!expandedChapters[chapter.id];
+                                                            const lessons = filteredLessons.filter(l => l.chapter_id === chapter.id);
 
-                                                                        {/* Chapter Lessons */}
-                                                                        {isChapExpanded && (
-                                                                            <div className="p-2 bg-white space-y-1">
-                                                                                {lessons.length === 0 ? (
-                                                                                    <p className="text-[10px] text-slate-400 p-2">No lessons published in this chapter.</p>
-                                                                                ) : (
-                                                                                    lessons.map((lesson) => {
-                                                                                        const status = getLessonStatus(lesson.id, chapter.id, module.id);
-                                                                                        const isCompleted = status === 'completed';
-                                                                                        const isLocked = status === 'locked';
-                                                                                        const isSelected = selectedTopic?.id === lesson.id;
+                                                            return (
+                                                                <div key={chapter.id} className="border border-slate-100 rounded-xl overflow-hidden">
+                                                                    {/* Chapter Row */}
+                                                                    <button
+                                                                        onClick={() => setExpandedChapters(prev => ({ ...prev, [chapter.id]: !prev[chapter.id] }))}
+                                                                        className="w-full flex items-center justify-between px-3.5 sm:px-4 py-2.5 sm:py-3 bg-slate-50/30 hover:bg-slate-50/80 text-left border-b border-slate-100 transition-colors cursor-pointer"
+                                                                        aria-expanded={isChapExpanded}
+                                                                    >
+                                                                        <div className="min-w-0 flex-1 pr-4">
+                                                                            <h5 className="font-bold text-xs text-slate-800 truncate">Chapter {chapter.chapter_number}: {chapter.title}</h5>
+                                                                        </div>
+                                                                        <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isChapExpanded ? 'rotate-90' : ''}`} />
+                                                                    </button>
 
-                                                                                        return (
-                                                                                            <div 
-                                                                                                key={lesson.id}
-                                                                                                onClick={() => {
-                                                                                                    if (isLocked) return;
-                                                                                                    setSelectedTopic(lesson);
-                                                                                                }}
-                                                                                                className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
-                                                                                                    isCompleted
-                                                                                                        ? 'bg-emerald-50/40 border-emerald-100/50 hover:border-emerald-250/80'
+                                                                    {/* Chapter Lessons */}
+                                                                    {isChapExpanded && (
+                                                                        <div className="p-2 bg-white space-y-1.5">
+                                                                            {lessons.length === 0 ? (
+                                                                                <p className="text-[10px] text-slate-400 p-2">No lessons published in this chapter.</p>
+                                                                            ) : (
+                                                                                lessons.map((lesson) => {
+                                                                                    const status = getLessonStatus(lesson.id, chapter.id, module.id);
+                                                                                    const isCompleted = status === 'completed';
+                                                                                    const isLocked = status === 'locked';
+                                                                                    const isSelected = selectedTopic?.id === lesson.id;
+
+                                                                                    return (
+                                                                                        <div 
+                                                                                            key={lesson.id}
+                                                                                            role="button"
+                                                                                            tabIndex={isLocked ? -1 : 0}
+                                                                                            aria-selected={isSelected}
+                                                                                            aria-label={`View lesson ${lesson.lesson_number}: ${lesson.title}`}
+                                                                                            onClick={(e) => {
+                                                                                                if (isLocked) return;
+                                                                                                handleSelectTopic(lesson, e.currentTarget);
+                                                                                            }}
+                                                                                            onKeyDown={(e) => {
+                                                                                                if (isLocked) return;
+                                                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                    e.preventDefault();
+                                                                                                    handleSelectTopic(lesson, e.currentTarget);
+                                                                                                }
+                                                                                            }}
+                                                                                            className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border transition-all ${
+                                                                                                isSelected
+                                                                                                    ? 'border-amber-500 bg-amber-500/10 ring-2 ring-amber-500/40 shadow-sm'
+                                                                                                    : isCompleted
+                                                                                                        ? 'bg-emerald-50/35 border-emerald-100 hover:border-emerald-250'
                                                                                                         : isLocked
                                                                                                             ? 'bg-slate-50/30 border-slate-100 opacity-60'
                                                                                                             : 'bg-white border-slate-100 shadow-2xs hover:border-amber-300'
-                                                                                                } ${isSelected ? 'border-amber-500 bg-amber-500/5 ring-1 ring-amber-500' : ''} ${!isLocked ? 'cursor-pointer hover:bg-slate-50/40 active:scale-[0.995]' : ''}`}
-                                                                                            >
-                                                                                                <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
-                                                                                                        isCompleted
-                                                                                                            ? 'bg-emerald-50 border-emerald-150 text-emerald-500'
+                                                                                            } ${!isLocked ? 'cursor-pointer hover:bg-slate-50/70 active:scale-[0.995]' : ''}`}
+                                                                                            data-lesson-id={lesson.id}
+                                                                                        >
+                                                                                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                                                                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                                                                                                    isSelected
+                                                                                                        ? 'bg-amber-500 text-slate-950 border-amber-600 font-bold shadow-xs'
+                                                                                                        : isCompleted
+                                                                                                            ? 'bg-emerald-50 border-emerald-150 text-emerald-600'
                                                                                                             : isLocked
                                                                                                                 ? 'bg-slate-100 border-slate-200 text-slate-400'
                                                                                                                 : 'bg-amber-50 border-amber-100 text-amber-500'
-                                                                                                    }`}>
-                                                                                                        {isCompleted ? <Check className="w-4 h-4" /> : <Music className="w-4 h-4" />}
-                                                                                                    </div>
-                                                                                                    <div className="min-w-0 flex-1">
-                                                                                                        <h6 className="font-extrabold text-[11px] text-slate-800 truncate">
+                                                                                                }`}>
+                                                                                                    {isCompleted ? <Check className="w-4 h-4 stroke-[3]" /> : <Music className="w-4 h-4" />}
+                                                                                                </div>
+                                                                                                <div className="min-w-0 flex-1">
+                                                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                                        <h6 className={`font-extrabold text-[11px] sm:text-xs truncate ${isSelected ? 'text-amber-950 font-black' : 'text-slate-800'}`}>
                                                                                                             {lesson.lesson_number}. {lesson.title}
                                                                                                         </h6>
-                                                                                                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                                                                                            {getCleanDuration(lesson.duration, lesson.file_size) || '5 mins'} · {lesson.difficulty || 'Easy'}{lesson.file_size ? ` · 💾 ${lesson.file_size}` : ''}
-                                                                                                        </p>
-                                                                                                    </div>
-                                                                                                </div>
-
-                                                                                                {/* Mark Completed/Locked state trigger */}
-                                                                                                {isLocked ? (
-                                                                                                    <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">
-                                                                                                        Locked
-                                                                                                    </span>
-                                                                                                ) : (
-                                                                                                    <div className="flex items-center gap-1.5 shrink-0">
-                                                                                                        {(lesson.material_url || lesson.link_url) && (
-                                                                                                            <button
-                                                                                                                onClick={(e) => {
-                                                                                                                    e.stopPropagation();
-                                                                                                                    setSelectedTopic(lesson);
-                                                                                                                    setShowMaterialPopup(true);
-                                                                                                                }}
-                                                                                                                className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 rounded-md text-[10px] font-extrabold transition-all"
-                                                                                                                title="Quick Open Material"
-                                                                                                            >
-                                                                                                                Open
-                                                                                                            </button>
+                                                                                                        {isSelected && (
+                                                                                                            <span className="hidden sm:inline-block text-[8px] font-black uppercase px-1.5 py-0.2 rounded-md bg-amber-500 text-slate-950 shrink-0 font-mono">
+                                                                                                                Viewing
+                                                                                                            </span>
                                                                                                         )}
+                                                                                                        {studentSpotlights?.teacherSpotlight?.lesson_id === lesson.id && (
+                                                                                                            <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1.5 py-0.2 rounded-md bg-amber-100 text-amber-900 border border-amber-300 shrink-0 font-mono">
+                                                                                                                ⭐ Teacher Spotlight
+                                                                                                            </span>
+                                                                                                        )}
+                                                                                                        {studentSpotlights?.studentSpotlight?.lesson_id === lesson.id && (
+                                                                                                            <span className="inline-flex items-center gap-0.5 text-[8px] font-black uppercase px-1.5 py-0.2 rounded-md bg-amber-50 text-amber-800 border border-amber-200 shrink-0 font-mono">
+                                                                                                                ★ My Spotlight
+                                                                                                            </span>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                                                                                                        {getCleanDuration(lesson.duration, lesson.file_size) || '5 mins'} · {lesson.difficulty || 'Easy'}{lesson.file_size ? ` · 💾 ${lesson.file_size}` : ''}
+                                                                                                    </p>
+                                                                                                </div>
+                                                                                            </div>
+
+                                                                                            {/* Actions: Distinct Open vs Done vs Spotlight */}
+                                                                                            {isLocked ? (
+                                                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">
+                                                                                                    Locked
+                                                                                                </span>
+                                                                                            ) : (
+                                                                                                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                                                                                    {onToggleStudentSpotlight && (
                                                                                                         <button
+                                                                                                            type="button"
                                                                                                             onClick={(e) => {
                                                                                                                 e.stopPropagation();
-                                                                                                                handleToggleLessonComplete(lesson.id, status);
+                                                                                                                onToggleStudentSpotlight(lesson.id);
                                                                                                             }}
-                                                                                                            className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${
-                                                                                                                isCompleted
-                                                                                                                    ? 'bg-emerald-100 hover:bg-emerald-250 text-emerald-700'
-                                                                                                                    : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-600 text-slate-600 border border-slate-200/50'
+                                                                                                            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                                                                                                studentSpotlights?.studentSpotlight?.lesson_id === lesson.id
+                                                                                                                    ? 'bg-amber-100 border-amber-300 text-amber-800 shadow-2xs'
+                                                                                                                    : 'bg-white hover:bg-slate-50 text-slate-300 hover:text-amber-500 border-slate-200/80'
                                                                                                             }`}
+                                                                                                            title={studentSpotlights?.studentSpotlight?.lesson_id === lesson.id ? 'My Spotlight (Click to remove)' : 'Set as My Spotlight'}
                                                                                                         >
-                                                                                                            {isCompleted ? '✓' : 'Done'}
+                                                                                                            <Star className={`w-3.5 h-3.5 ${studentSpotlights?.studentSpotlight?.lesson_id === lesson.id ? 'fill-amber-500 text-amber-500' : ''}`} />
                                                                                                         </button>
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
-                                                                                        );
-                                                                                    })
-                                                                                )}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            })
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                                                                                                    )}
+                                                                                                    {(lesson.material_url || lesson.link_url) && (
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                setSelectedTopic(lesson);
+                                                                                                                setShowMaterialPopup(true);
+                                                                                                            }}
+                                                                                                            className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-950 rounded-lg text-[10px] font-black transition-all shadow-xs active:scale-95 flex items-center gap-0.5 cursor-pointer"
+                                                                                                            title="Quick Open Study Material"
+                                                                                                        >
+                                                                                                            <span>Open</span>
+                                                                                                            <ChevronRight className="w-3 h-3 text-slate-900" />
+                                                                                                        </button>
+                                                                                                    )}
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            handleToggleLessonComplete(lesson.id, status);
+                                                                                                        }}
+                                                                                                        className={`px-2.5 sm:px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                                                                                            isCompleted
+                                                                                                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-200'
+                                                                                                                : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-700 text-slate-600 border border-slate-200/60'
+                                                                                                        }`}
+                                                                                                        title={isCompleted ? "Mark Incomplete" : "Mark Complete"}
+                                                                                                    >
+                                                                                                        {isCompleted ? '✓' : 'Done'}
+                                                                                                    </button>
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    );
+                                                                                })
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
+
+                        {/* Mobile Classmates Accordion Section (Below syllabus for mobile users) */}
+                        <div className="lg:hidden mt-6 pt-4 border-t border-slate-150">
+                            <button
+                                type="button"
+                                onClick={() => setMobileClassmatesOpen(!mobileClassmatesOpen)}
+                                className="w-full flex items-center justify-between p-3.5 bg-slate-50/70 rounded-2xl border border-slate-200 hover:bg-slate-100/70 transition-colors text-left"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Users className="w-4 h-4 text-amber-500" />
+                                    <span className="font-bold text-xs text-slate-800">
+                                        Batch Classmates ({classmates.length})
+                                    </span>
+                                </div>
+                                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${mobileClassmatesOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {mobileClassmatesOpen && (
+                                <div className="p-3 bg-white rounded-2xl border border-slate-150 mt-2 space-y-2">
+                                    {classmates.length === 0 ? (
+                                        <p className="text-xs text-slate-400 py-2 text-center">No classmates enrolled yet.</p>
+                                    ) : (
+                                        classmates.map((mate) => (
+                                            <div key={mate.id} className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50/40">
+                                                <div className="w-8 h-8 rounded-xl bg-amber-50 border border-slate-150 flex items-center justify-center overflow-hidden shrink-0">
+                                                    {mate.profile_pic_url ? (
+                                                        <img src={mate.profile_pic_url} alt={mate.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <span className="text-[#d46211] text-xs font-bold">{mate.name.charAt(0)}</span>
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <h5 className="font-bold text-xs text-slate-800 truncate">{mate.name}</h5>
+                                                    <span className="inline-block bg-slate-100 text-slate-500 text-[8px] font-extrabold px-1.5 py-0.2 rounded uppercase">
+                                                        {mate.level}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                {/* Right Space: Selected Topic Details + Classmates */}
-                <div className="space-y-6 lg:col-span-2">
+                {/* Right Column: Desktop Sticky Viewer + Classmates (Hidden on mobile < 1024px) */}
+                <div 
+                    ref={desktopViewerRef}
+                    className="hidden lg:block space-y-6 lg:col-span-2 lg:sticky lg:top-20 lg:max-h-[calc(100vh-100px)] lg:overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 pr-1 text-left"
+                >
                     {/* Selected Topic Details Card */}
-                    <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
-                        <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                    <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
+                        <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between">
                             <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
                                 <BookOpen className="w-4.5 h-4.5 text-amber-500" />
                                 Topic Details
                             </h3>
-                            {selectedTopic && (() => {
-                                const status = getLessonStatus(selectedTopic.id, selectedTopic.chapter_id);
-                                return (
-                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
-                                        status === 'completed'
-                                            ? 'bg-emerald-500/10 text-emerald-700'
-                                            : 'bg-amber-500/10 text-amber-700'
-                                    }`}>
-                                        {status}
-                                    </span>
-                                );
-                            })()}
+                            {selectedTopic && (
+                                <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest font-mono">
+                                    Topic #{selectedTopic.lesson_number}
+                                </span>
+                            )}
                         </div>
                         
-                        <div className="p-6 space-y-5">
-                            {selectedTopic ? (() => {
-                                const breadcrumb = getTopicBreadcrumbs(selectedTopic);
-                                const status = getLessonStatus(selectedTopic.id, selectedTopic.chapter_id);
-                                const isCompleted = status === 'completed';
-
-                                return (
-                                    <div className="space-y-4">
-                                        <div>
-                                            {breadcrumb && (
-                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                                                    {breadcrumb}
-                                                </span>
-                                            )}
-                                            <h4 className="font-black text-slate-800 text-sm md:text-base leading-snug">
-                                                Topic {selectedTopic.lesson_number}: {selectedTopic.title}
-                                            </h4>
-                                        </div>
-
-                                        {selectedTopic.description && (
-                                            <div 
-                                                className="text-xs text-slate-500 leading-relaxed tutorial-content max-w-none"
-                                                dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedTopic.description) }}
-                                            />
-                                        )}
-
-                                        {/* Metadata Badges */}
-                                        <div className="flex flex-wrap gap-2 pt-1">
-                                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full">
-                                                <Clock className="w-3 h-3 text-slate-400" />
-                                                {getCleanDuration(selectedTopic.duration, selectedTopic.file_size) || '5 mins'}
-                                            </span>
-                                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full">
-                                                <Award className="w-3 h-3 text-slate-400" />
-                                                {selectedTopic.difficulty || 'Easy'}
-                                            </span>
-                                            {selectedTopic.file_size && (
-                                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full">
-                                                    💾 {selectedTopic.file_size}
-                                                </span>
-                                            )}
-                                            {selectedTopic.material_type && (
-                                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#7C5E3F] bg-[#FAF5EE] border border-[#7C5E3F]/10 px-2.5 py-1 rounded-full capitalize">
-                                                    {selectedTopic.material_type === 'pdf' ? <FileText className="w-3 h-3" /> : 
-                                                     selectedTopic.material_type === 'audio' ? <Music className="w-3 h-3" /> : 
-                                                     (selectedTopic.material_type === 'video' || selectedTopic.material_type === 'youtube_url') ? <Video className="w-3 h-3" /> : 
-                                                     <Info className="w-3 h-3" />}
-                                                    {selectedTopic.material_type === 'youtube_url' ? 'YouTube' : selectedTopic.material_type}
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        {/* Bullet Points / Study Guide */}
-                                        {selectedTopic.bullet_points && selectedTopic.bullet_points.length > 0 && (
-                                            <div className="pt-2">
-                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2">Key Practice Focus</span>
-                                                <ul className="space-y-1.5 text-left">
-                                                    {selectedTopic.bullet_points.map((pt: string, idx: number) => (
-                                                        <li key={idx} className="text-xs text-slate-600 flex items-start gap-2 leading-relaxed">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                                                            <span><AutoLinkText text={pt} /></span>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                        )}
-
-                                        {/* Actions Panel */}
-                                        <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-slate-100">
-                                            {selectedTopic.material_url || selectedTopic.link_url ? (
-                                                <button
-                                                    onClick={() => setShowMaterialPopup(true)}
-                                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-xl shadow-xs transition-colors"
-                                                >
-                                                    <BookOpen className="w-4 h-4" /> Open Material
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    disabled
-                                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 text-slate-400 text-xs font-bold rounded-xl cursor-not-allowed"
-                                                >
-                                                    <Info className="w-4 h-4" /> No file uploaded
-                                                </button>
-                                            )}
-
-                                            <button
-                                                onClick={() => handleToggleLessonComplete(selectedTopic.id, status)}
-                                                className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all border ${
-                                                    isCompleted
-                                                        ? 'bg-emerald-50 border-emerald-250 text-emerald-700 hover:bg-emerald-100'
-                                                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-                                                }`}
-                                            >
-                                                {isCompleted ? 'Completed ✓' : 'Mark Complete'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })() : (
-                                <div className="py-10 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
-                                    <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center border border-amber-100 shadow-3xs">
-                                        <BookOpen className="w-6 h-6 text-amber-500" />
-                                    </div>
-                                    <div>
-                                        <p className="text-xs font-extrabold text-slate-700">No Topic Selected</p>
-                                        <p className="text-[10px] text-slate-400 max-w-[200px] mx-auto mt-1 leading-relaxed">
-                                            Click on any allocated lesson on the left to view its descriptions, material files, and practice guide.
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
+                        <div className="p-6">
+                            <LessonViewer
+                                topic={selectedTopic}
+                                status={selectedTopic ? getLessonStatus(selectedTopic.id, selectedTopic.chapter_id) : 'unlocked'}
+                                breadcrumb={selectedTopic ? getTopicBreadcrumbs(selectedTopic) : ''}
+                                isStudentSpotlight={selectedTopic ? studentSpotlights?.studentSpotlight?.lesson_id === selectedTopic.id : false}
+                                isTeacherSpotlight={selectedTopic ? studentSpotlights?.teacherSpotlight?.lesson_id === selectedTopic.id : false}
+                                onToggleSpotlight={onToggleStudentSpotlight}
+                                onOpenMaterial={() => setShowMaterialPopup(true)}
+                                onToggleComplete={handleToggleLessonComplete}
+                                isMobile={false}
+                            />
                         </div>
                     </div>
 
                     {/* Batch Classmates List */}
                     <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs text-left">
-                        <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-5 border-b border-slate-100">
+                        <div className="bg-gradient-to-r from-amber-50 to-orange-50/20 px-6 py-4.5 border-b border-slate-100">
                             <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
                                 <Users className="w-4.5 h-4.5 text-amber-500" />
                                 Batch Classmates ({classmates.length})
@@ -515,14 +572,14 @@ export default function CurriculumTab({
                                     <p className="text-xs">No classmates enrolled yet.</p>
                                 </div>
                             ) : (
-                                <div className="space-y-4">
+                                <div className="space-y-3.5 max-h-64 overflow-y-auto pr-1">
                                     {classmates.map((mate) => (
                                         <div key={mate.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors">
-                                            <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                                            <div className="w-9 h-9 rounded-xl bg-amber-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
                                                 {mate.profile_pic_url ? (
                                                     <img src={mate.profile_pic_url} alt={mate.name} className="w-full h-full object-cover" />
                                                 ) : (
-                                                    <span className="text-[#d46211] text-sm font-extrabold">{mate.name.charAt(0)}</span>
+                                                    <span className="text-[#d46211] text-xs font-extrabold">{mate.name.charAt(0)}</span>
                                                 )}
                                             </div>
                                             <div className="min-w-0 flex-1">
@@ -539,6 +596,50 @@ export default function CurriculumTab({
                     </div>
                 </div>
             </div>
+
+            {/* Mobile Bottom Sheet Drawer (< 1024px) */}
+            {isMobileViewerOpen && selectedTopic && (
+                <div 
+                    className="fixed inset-0 z-50 lg:hidden flex flex-col justify-end bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+                    onClick={handleCloseMobileViewer}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={`Lesson details for ${selectedTopic.title}`}
+                >
+                    <div 
+                        className="bg-white dark:bg-slate-900 rounded-t-3xl border-t border-slate-200 dark:border-slate-800 shadow-2xl max-h-[88vh] flex flex-col animate-in slide-in-from-bottom duration-300 text-left overflow-hidden select-none"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Native Mobile Swipe Handle */}
+                        <div 
+                            onClick={handleCloseMobileViewer}
+                            className="w-full pt-3 pb-1 flex justify-center cursor-pointer shrink-0"
+                            title="Close drawer"
+                        >
+                            <div className="w-12 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
+                        </div>
+
+                        {/* Scrollable Content inside Drawer */}
+                        <div className="flex-1 overflow-y-auto px-5 pt-2 pb-8">
+                            <LessonViewer
+                                topic={selectedTopic}
+                                status={getLessonStatus(selectedTopic.id, selectedTopic.chapter_id)}
+                                breadcrumb={getTopicBreadcrumbs(selectedTopic)}
+                                isStudentSpotlight={selectedTopic ? studentSpotlights?.studentSpotlight?.lesson_id === selectedTopic.id : false}
+                                isTeacherSpotlight={selectedTopic ? studentSpotlights?.teacherSpotlight?.lesson_id === selectedTopic.id : false}
+                                onToggleSpotlight={onToggleStudentSpotlight}
+                                onOpenMaterial={() => {
+                                    setIsMobileViewerOpen(false);
+                                    setShowMaterialPopup(true);
+                                }}
+                                onToggleComplete={handleToggleLessonComplete}
+                                onClose={handleCloseMobileViewer}
+                                isMobile={true}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

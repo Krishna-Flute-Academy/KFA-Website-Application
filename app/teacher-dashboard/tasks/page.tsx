@@ -8,7 +8,7 @@ import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sendClassroomNotification } from '../../../src/lib/notifications';
-import { checkAndSendTaskDueReminders } from '../../../src/lib/task-reminders';
+// Note: task reminders are triggered via the API route to avoid client-side Supabase auth issues
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 import AudioRecorderWidget from '../../../src/components/AudioRecorderWidget';
 import AutoLinkText from '../../../src/components/common/AutoLinkText';
@@ -25,6 +25,37 @@ interface Student {
     profile_pic_url?: string;
     selected: boolean;
     classroom_ids: string[];
+    classroom_names?: string[];
+}
+
+export interface AssignmentBatch {
+    assignmentId: string;
+    classroomName: string;
+    classroomId?: string;
+    targetType: string;
+    dueDate?: string | null;
+    createdAt?: string | null;
+    isDraft: boolean;
+    submissions: TaskSubmission[];
+}
+
+export interface TaskTemplateGroup {
+    templateKey: string;
+    taskTitle: string;
+    taskDescription?: string;
+    inventoryRefType?: string | null;
+    inventoryRefId?: string | null;
+    inventoryRefTitle?: string | null;
+    fileUrl?: string;
+    fileName?: string;
+    fileSize?: string | number | null;
+    batches: AssignmentBatch[];
+    totalStudents: number;
+    submittedCount: number;
+    reviewedCount: number;
+    approvedCount: number;
+    pendingCount: number;
+    isDraftOnly: boolean;
 }
 
 interface TaskSubmission {
@@ -34,7 +65,6 @@ interface TaskSubmission {
     student_profile_pic_url?: string;
     task_id: string;
     task_title: string;
-// ... (rest of interface remains same)
     task_description?: string;
     status: 'pending' | 'submitted' | 'reviewed' | 'approved' | 'draft';
     submitted_at: string;
@@ -64,12 +94,12 @@ export default function TaskReviewPage() {
     const [activeTab, setActiveTab] = useState<'all' | 'assigned' | 'submitted' | 'reviewed' | 'approved' | 'draft'>('all');
 
     const tabConfig = [
-        { id: 'all',       label: 'All Tasks',  color: 'text-slate-600' },
-        { id: 'assigned',  label: 'Assigned',   color: 'text-blue-600' },
-        { id: 'submitted', label: 'Submitted',  color: 'text-amber-600' },
-        { id: 'reviewed',  label: 'Reviewed',   color: 'text-purple-600' },
-        { id: 'approved',  label: 'Approved',   color: 'text-emerald-600' },
-        { id: 'draft',     label: 'Drafts',     color: 'text-slate-400' },
+        { id: 'all',       label: 'All Templates',  color: 'text-slate-600' },
+        { id: 'assigned',  label: 'Active Batches', color: 'text-blue-600' },
+        { id: 'submitted', label: 'Submitted',      color: 'text-amber-600' },
+        { id: 'reviewed',  label: 'Reviewed',       color: 'text-purple-600' },
+        { id: 'approved',  label: 'Approved',       color: 'text-emerald-600' },
+        { id: 'draft',     label: 'Drafts',         color: 'text-slate-400' },
     ] as const;
 
     const formatFileSize = (size: number | string | null | undefined): string => {
@@ -89,12 +119,17 @@ export default function TaskReviewPage() {
     const [selectedSubIds, setSelectedSubIds] = useState<string[]>([]);
     const [isDeleting, setIsDeleting] = useState(false);
     const [collapsedTasks, setCollapsedTasks] = useState<Record<string, boolean>>({});
+
+    // Classroom & Target Filter state
+    const [targetFilter, setTargetFilter] = useState<'all' | 'classroom' | 'individual' | 'all_students'>('all');
+    const [selectedFilterClassroomId, setSelectedFilterClassroomId] = useState<string>('all');
     
     // Task Creation Form states
     const isPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('popup') === 'true';
     const isCreate = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('create') === 'true';
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(isPopup || isCreate);
+    const [assignmentTargetMode, setAssignmentTargetMode] = useState<'classroom' | 'individual' | 'all'>('classroom');
     const [createTitle, setCreateTitle] = useState('');
     const [createDescription, setCreateDescription] = useState('');
     const [createDueDate, setCreateDueDate] = useState('');
@@ -179,8 +214,8 @@ export default function TaskReviewPage() {
     const fetchSubmissions = useCallback(async (userId: string, isAdmin: boolean = false) => {
         console.log('Fetching submissions for teacher:', userId, 'isAdmin:', isAdmin);
         
-        // Trigger automated 2-day pre-due-date task reminders in background
-        checkAndSendTaskDueReminders().catch(err => console.error('Error running task reminders:', err));
+        // Trigger automated 2-day pre-due-date task reminders via server API (avoids client-side Supabase auth issues)
+        fetch('/api/notifications/check-task-reminders', { method: 'POST' }).catch(err => console.error('Error running task reminders:', err));
 
         try {
             // Step 1: Get classroom IDs and names (filtered if not admin)
@@ -571,6 +606,20 @@ export default function TaskReviewPage() {
         setCurrentPage(1);
         let result = submissions;
 
+        // 1. Target & Classroom Filter
+        if (targetFilter === 'classroom') {
+            if (selectedFilterClassroomId !== 'all') {
+                result = result.filter(s => s.classroom_id === selectedFilterClassroomId);
+            } else {
+                result = result.filter(s => !!s.classroom_id);
+            }
+        } else if (targetFilter === 'individual') {
+            result = result.filter(s => s.student_id !== 'no-students' && s.student_id !== 'draft');
+        } else if (targetFilter === 'all_students') {
+            result = result.filter(s => !s.classroom_id || (s.classroom_name && s.classroom_name.toLowerCase().includes('all')));
+        }
+
+        // 2. Status Tab Filter
         if (activeTab !== 'all') {
             if (activeTab === 'assigned') {
                 // 'assigned' = active tasks with status pending (awaiting student submission)
@@ -585,6 +634,7 @@ export default function TaskReviewPage() {
             }
         }
 
+        // 3. Search Query Filter
         if (searchQuery.trim() !== '') {
             const lowerQuery = searchQuery.toLowerCase();
             result = result.filter(s =>
@@ -594,7 +644,7 @@ export default function TaskReviewPage() {
             );
         }
         setFilteredSubmissions(result);
-    }, [activeTab, submissions, searchQuery]);
+    }, [activeTab, submissions, searchQuery, targetFilter, selectedFilterClassroomId]);
 
     const handleSelectSubmission = (sub: TaskSubmission) => {
         setSelectedSub(sub);
@@ -841,15 +891,25 @@ export default function TaskReviewPage() {
                     .select('id, name, profile_pic_url, teacher_id')
                     .in('id', studentIds);
 
+                const classroomNameMap: Record<string, string> = {};
+                (classes || []).forEach((c: any) => {
+                    classroomNameMap[c.id] = c.name;
+                });
+
                 if (usersData) {
                     const formatted = usersData
-                        .map((item: any) => ({
-                            id: item.id,
-                            name: item.name || 'Unknown Student',
-                            profile_pic_url: item.profile_pic_url || null,
-                            selected: false,
-                            classroom_ids: studentClassroomMap[item.id] || []
-                        }));
+                        .map((item: any) => {
+                            const cids = studentClassroomMap[item.id] || [];
+                            const cnames = cids.map(cid => classroomNameMap[cid]).filter(Boolean);
+                            return {
+                                id: item.id,
+                                name: item.name || 'Unknown Student',
+                                profile_pic_url: item.profile_pic_url || null,
+                                selected: false,
+                                classroom_ids: cids,
+                                classroom_names: cnames
+                            };
+                        });
                     setCreateStudents(formatted);
                 }
             } else {
@@ -862,23 +922,36 @@ export default function TaskReviewPage() {
 
     const filteredCreateStudents = React.useMemo(() => {
         let result = createStudents;
-        if (createSelectedClassroom && createSelectedClassroom !== 'all') {
-            result = result.filter(s => s.classroom_ids?.includes(createSelectedClassroom));
+        if (assignmentTargetMode === 'classroom') {
+            if (createSelectedClassroom && createSelectedClassroom !== 'all') {
+                result = result.filter(s => s.classroom_ids?.includes(createSelectedClassroom));
+            }
+        } else if (assignmentTargetMode === 'individual') {
+            if (createSelectedClassroom && createSelectedClassroom !== 'all') {
+                result = result.filter(s => s.classroom_ids?.includes(createSelectedClassroom));
+            }
         }
         if (createStudentSearch.trim() !== '') {
-            const lowerQuery = createStudentSearch.toLowerCase();
-            result = result.filter(s => s.name.toLowerCase().includes(lowerQuery));
+            const lowerQuery = createStudentSearch.toLowerCase().trim();
+            result = result.filter(s => 
+                s.name.toLowerCase().includes(lowerQuery) ||
+                (s.classroom_names && s.classroom_names.some(cn => cn.toLowerCase().includes(lowerQuery)))
+            );
         }
         return result;
-    }, [createStudents, createSelectedClassroom, createStudentSearch]);
+    }, [createStudents, assignmentTargetMode, createSelectedClassroom, createStudentSearch]);
 
     useEffect(() => {
         setCreateStudentPage(1);
-    }, [createSelectedClassroom, createStudentSearch]);
+    }, [createSelectedClassroom, createStudentSearch, assignmentTargetMode]);
 
     const selectedInFilteredCount = useMemo(() => {
         return filteredCreateStudents.filter(s => s.selected).length;
     }, [filteredCreateStudents]);
+
+    const totalSelectedCount = useMemo(() => {
+        return createStudents.filter(s => s.selected).length;
+    }, [createStudents]);
 
     const isAllFilteredSelected = useMemo(() => {
         return filteredCreateStudents.length > 0 && filteredCreateStudents.every(s => s.selected);
@@ -1071,7 +1144,37 @@ export default function TaskReviewPage() {
     const handleClassroomChange = (classroomId: string) => {
         setCreateSelectedClassroom(classroomId);
         setCreateStudentPage(1);
-        setCreateStudents(prev => prev.map(s => ({ ...s, selected: false })));
+        if (!editingTaskId) {
+            setCreateStudents(prev => prev.map(s => ({
+                ...s,
+                selected: classroomId === 'all' ? true : (s.classroom_ids?.includes(classroomId) ?? false)
+            })));
+        }
+    };
+
+    const handleTargetModeChange = (mode: 'classroom' | 'individual' | 'all') => {
+        setAssignmentTargetMode(mode);
+        setCreateStudentSearch('');
+        if (mode === 'classroom') {
+            const firstClassId = createClassrooms[0]?.id || 'all';
+            setCreateSelectedClassroom(firstClassId);
+            if (!editingTaskId) {
+                setCreateStudents(prev => prev.map(s => ({
+                    ...s,
+                    selected: s.classroom_ids?.includes(firstClassId) ?? false
+                })));
+            }
+        } else if (mode === 'all') {
+            setCreateSelectedClassroom('all');
+            if (!editingTaskId) {
+                setCreateStudents(prev => prev.map(s => ({ ...s, selected: true })));
+            }
+        } else { // 'individual'
+            setCreateSelectedClassroom('all');
+            if (!editingTaskId) {
+                setCreateStudents(prev => prev.map(s => ({ ...s, selected: false })));
+            }
+        }
     };
 
     const handleToggleStudent = (studentId: string) => {
@@ -1137,7 +1240,6 @@ export default function TaskReviewPage() {
             alert(`File upload failed: ${err.message}`);
         }
     };
-
     const handleCreateFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -1161,18 +1263,30 @@ export default function TaskReviewPage() {
             setEditingTaskId(asg.id);
             setCreateTitle(asg.title || '');
             setCreateDescription(asg.description || '');
-            
             setCreateDueDate(formatDateForInput(asg.due_date));
-
-            setCreateSelectedClassroom(asg.classroom_id || 'all');
-            setCreateSelectAll(asg.target_type === 'all');
             setCreateFileUrl(asg.file_url || '');
             setCreateFileName(asg.file_name || '');
             setCreateFileSize(asg.file_size ? Number(asg.file_size) : null);
             setCreateSelectedLessonId(asg.inventory_ref_id || null);
             setCreateSelectedLessonTitle(asg.inventory_ref_title || null);
+            setCreateStudentSearch('');
 
-            // Fetch current mappings to select students
+            // Target mode and classroom
+            if (asg.target_type === 'individual') {
+                setAssignmentTargetMode('individual');
+                setCreateSelectedClassroom('all');
+            } else if (asg.target_type === 'all' && !asg.classroom_id) {
+                setAssignmentTargetMode('all');
+                setCreateSelectedClassroom('all');
+            } else if (asg.classroom_id) {
+                setAssignmentTargetMode('classroom');
+                setCreateSelectedClassroom(asg.classroom_id);
+            } else {
+                setAssignmentTargetMode('individual');
+                setCreateSelectedClassroom('all');
+            }
+
+            // Fetch current mappings to accurately select students
             const { data: currentMappings } = await supabaseAuth
                 .from('assignment_students')
                 .select('student_id')
@@ -1180,10 +1294,19 @@ export default function TaskReviewPage() {
 
             const assignedIds = new Set((currentMappings || []).map(m => m.student_id));
 
-            setCreateStudents(prev => prev.map(student => ({
-                ...student,
-                selected: asg.target_type === 'all' || assignedIds.has(student.id)
-            })));
+            // Hydrate createStudents safely
+            setCreateStudents(prev => prev.map(student => {
+                let isSelected = false;
+                if (assignedIds.size > 0) {
+                    isSelected = assignedIds.has(student.id);
+                } else if (asg.target_type === 'all') {
+                    isSelected = asg.classroom_id ? (student.classroom_ids?.includes(asg.classroom_id) ?? false) : true;
+                }
+                return {
+                    ...student,
+                    selected: isSelected
+                };
+            }));
 
             setIsCreateModalOpen(true);
         } catch (err) {
@@ -1192,11 +1315,32 @@ export default function TaskReviewPage() {
         }
     };
 
+    const handleAssignAgainFromTemplate = (templateGroup: TaskTemplateGroup) => {
+        setEditingTaskId(null);
+        setCreateTitle(templateGroup.taskTitle || '');
+        setCreateDescription(templateGroup.taskDescription || '');
+        setCreateDueDate('');
+        setCreateFileUrl(templateGroup.fileUrl || '');
+        setCreateFileName(templateGroup.fileName || '');
+        setCreateFileSize(templateGroup.fileSize ? Number(templateGroup.fileSize) : null);
+        setCreateSelectedLessonId(templateGroup.inventoryRefId || null);
+        setCreateSelectedLessonTitle(templateGroup.inventoryRefTitle || null);
+        setSelectedPreviousTaskId(null);
+        setAssignmentTargetMode('individual');
+        setCreateSelectedClassroom('all');
+        setCreateStudentSearch('');
+        setCreateStudents(prev => prev.map(s => ({
+            ...s,
+            selected: false
+        })));
+        setIsCreateModalOpen(true);
+    };
+
     const handleAssignTask = async (isDraft: boolean = false) => {
         const { data: { session } } = await supabaseAuth.auth.getSession();
         if (!session) return;
         
-        if (!createTitle || !createDescription) {
+        if (!createTitle.trim() || !createDescription.trim()) {
             alert('Please fill in task title and instructions.');
             return;
         }
@@ -1213,56 +1357,36 @@ export default function TaskReviewPage() {
 
         let selectedStudents = createStudents.filter(s => s.selected);
 
-        // If active search query exists, strictly filter selection by search term
-        if (createStudentSearch.trim() !== '') {
-            const lowerQuery = createStudentSearch.toLowerCase().trim();
-            selectedStudents = selectedStudents.filter(s => s.name.toLowerCase().includes(lowerQuery));
+        if (assignmentTargetMode === 'all') {
+            selectedStudents = createStudents;
+        } else if (assignmentTargetMode === 'classroom') {
+            if (createSelectedClassroom && createSelectedClassroom !== 'all') {
+                selectedStudents = selectedStudents.filter(s => s.classroom_ids?.includes(createSelectedClassroom));
+            }
         }
 
-        if (createSelectedClassroom && createSelectedClassroom !== 'all') {
-            selectedStudents = selectedStudents.filter(s => s.classroom_ids?.includes(createSelectedClassroom));
-        }
         if (!isDraft && selectedStudents.length === 0) {
             alert('Please select at least one student.');
             return;
         }
 
-        // Group selected students by classroom ID
-        const studentsByClass: Record<string, string[]> = {};
-        
-        if (selectedStudents.length > 0) {
-            selectedStudents.forEach(s => {
-                let studentClassId = createClassrooms[0].id;
-                if (createSelectedClassroom && createSelectedClassroom !== 'all') {
-                    studentClassId = createSelectedClassroom;
-                } else if (s.classroom_ids && s.classroom_ids.length > 0) {
-                    studentClassId = s.classroom_ids[0];
-                }
-                
-                if (!studentsByClass[studentClassId]) {
-                    studentsByClass[studentClassId] = [];
-                }
-                studentsByClass[studentClassId].push(s.id);
-            });
-        } else {
-            const classId = createSelectedClassroom === 'all' ? createClassrooms[0].id : createSelectedClassroom;
-            studentsByClass[classId] = [];
-        }
-
         setIsSaving(true);
         try {
             if (editingTaskId) {
-                const classId = createSelectedClassroom === 'all' ? (createClassrooms[0]?.id || null) : createSelectedClassroom;
-                const classroomObj = createClassrooms.find(c => c.id === classId);
+                // Update specific assignment batch
+                const primaryClassId = (createSelectedClassroom && createSelectedClassroom !== 'all') 
+                    ? createSelectedClassroom 
+                    : (selectedStudents[0]?.classroom_ids[0] || createClassrooms[0]?.id);
+                const classroomObj = createClassrooms.find(c => c.id === primaryClassId);
                 const classTeacherId = classroomObj?.teacher_id || session.user.id;
 
                 const updateData: any = {
-                    title: createTitle,
-                    description: createDescription,
+                    title: createTitle.trim(),
+                    description: createDescription.trim(),
                     due_date: createDueDate || null,
-                    classroom_id: classId,
+                    classroom_id: primaryClassId,
                     teacher_id: classTeacherId,
-                    target_type: createSelectedClassroom === 'all' && isAllFilteredSelected ? 'all' : 'individual',
+                    target_type: assignmentTargetMode === 'all' ? 'all' : (assignmentTargetMode === 'classroom' ? 'classroom' : 'individual'),
                     status: isDraft ? 'draft' : 'active',
                     file_url: createFileUrl || null,
                     file_name: createFileName || null,
@@ -1277,48 +1401,32 @@ export default function TaskReviewPage() {
                     .update(updateData)
                     .eq('id', editingTaskId);
 
-                if (updateError && (updateError.code === '42703' || updateError.message?.includes('status'))) {
-                    delete updateData.status;
-                    let fallbackUpdate = await supabaseAuth
-                        .from('assignments')
-                        .update(updateData)
-                        .eq('id', editingTaskId);
-                    
-                    if (fallbackUpdate.error && fallbackUpdate.error.code === '42703') {
-                        delete updateData.file_url;
-                        delete updateData.file_name;
-                        delete updateData.file_size;
-                        delete updateData.inventory_ref_id;
-                        delete updateData.inventory_ref_title;
-                        delete updateData.inventory_ref_type;
-                        
-                        fallbackUpdate = await supabaseAuth
-                            .from('assignments')
-                            .update(updateData)
-                            .eq('id', editingTaskId);
-                    }
-                    updateError = fallbackUpdate.error;
-                }
-
                 if (updateError) throw updateError;
 
-                // Sync student mappings
-                if (isDraft) {
-                    await supabaseAuth
-                        .from('assignment_students')
-                        .delete()
-                        .eq('assignment_id', editingTaskId);
-                } else {
+                // Sync student mappings safely without losing student submissions
+                if (!isDraft) {
                     const studentIds = selectedStudents.map(s => s.id);
                     const { data: currentMappings } = await supabaseAuth
                         .from('assignment_students')
-                        .select('student_id')
+                        .select('id, student_id, status, video_url, feedback_text')
                         .eq('assignment_id', editingTaskId);
 
-                    const existingStudentIds = new Set((currentMappings || []).map(m => m.student_id));
+                    const existingMap = new Map((currentMappings || []).map(m => [m.student_id, m]));
+                    const existingStudentIds = new Set(existingMap.keys());
                     const targetStudentIds = new Set(studentIds);
 
-                    const toRemove = [...existingStudentIds].filter(id => !targetStudentIds.has(id));
+                    // Students to remove (only delete if NO submitted work or reviewed status to protect student history)
+                    const toRemove: string[] = [];
+                    for (const studentId of existingStudentIds) {
+                        if (!targetStudentIds.has(studentId)) {
+                            const rec = existingMap.get(studentId);
+                            const hasSubmission = rec && (rec.status !== 'pending' || rec.video_url || rec.feedback_text);
+                            if (!hasSubmission) {
+                                toRemove.push(studentId);
+                            }
+                        }
+                    }
+
                     if (toRemove.length > 0) {
                         await supabaseAuth
                             .from('assignment_students')
@@ -1327,6 +1435,7 @@ export default function TaskReviewPage() {
                             .in('student_id', toRemove);
                     }
 
+                    // Students to add (insert pending records for newly selected students)
                     const toAdd = studentIds.filter(id => !existingStudentIds.has(id));
                     if (toAdd.length > 0) {
                         const newMappings = toAdd.map(studentId => ({
@@ -1342,134 +1451,51 @@ export default function TaskReviewPage() {
                         if (mappingError) throw mappingError;
                     }
                 }
-
-                alert(isDraft ? 'Task draft saved successfully!' : 'Task changes saved successfully!');
-
-                if (!isDraft) {
-                    // Notify students whose tasks were updated
-                    const studentIds = selectedStudents.map(s => s.id);
-                    if (studentIds.length > 0) {
-                        await sendClassroomNotification({
-                            teacherId: session.user.id,
-                            recipients: [{ id: 'custom', name: 'Students', type: 'custom' }],
-                            title: `📋 Task Updated: ${createTitle}`,
-                            message: `Your teacher has updated the task "${createTitle}". Check your Tasks tab for details.`,
-                            studentIds
-                        });
-                    }
-                }
             } else {
-                for (const [classId, studentIds] of Object.entries(studentsByClass)) {
-                    let assignmentIdToUse = '';
-                    let assignmentError = null;
+                // CREATE NEW ASSIGNMENT BATCH (Single record containing all target assignees)
+                const primaryClassId = (assignmentTargetMode === 'classroom' && createSelectedClassroom && createSelectedClassroom !== 'all')
+                    ? createSelectedClassroom
+                    : (selectedStudents[0]?.classroom_ids[0] || createClassrooms[0]?.id);
+                const classroomObj = createClassrooms.find(c => c.id === primaryClassId);
+                const classTeacherId = classroomObj?.teacher_id || session.user.id;
 
-                    const classroomObj = createClassrooms.find(c => c.id === classId);
-                    const classTeacherId = classroomObj?.teacher_id || session.user.id;
+                const insertData = {
+                    classroom_id: primaryClassId,
+                    teacher_id: classTeacherId,
+                    title: createTitle.trim(),
+                    description: createDescription.trim(),
+                    due_date: createDueDate || null,
+                    target_type: assignmentTargetMode === 'all' ? 'all' : (assignmentTargetMode === 'classroom' ? 'classroom' : 'individual'),
+                    status: isDraft ? 'draft' : 'active',
+                    file_url: createFileUrl || null,
+                    file_name: createFileName || null,
+                    file_size: createFileSize || null,
+                    inventory_ref_id: createSelectedLessonId || null,
+                    inventory_ref_title: createSelectedLessonTitle || null,
+                    inventory_ref_type: createSelectedLessonId ? 'lesson' : null,
+                    created_at: new Date().toISOString()
+                };
 
-                    const updateData: any = {
-                        title: createTitle,
-                        description: createDescription,
-                        due_date: createDueDate || null,
-                        teacher_id: classTeacherId,
-                        target_type: createSelectedClassroom === 'all' && isAllFilteredSelected ? 'all' : 'individual',
-                        status: isDraft ? 'draft' : 'active',
-                        file_url: createFileUrl || null,
-                        file_name: createFileName || null,
-                        file_size: createFileSize || null,
-                        inventory_ref_id: createSelectedLessonId || null,
-                        inventory_ref_title: createSelectedLessonTitle || null,
-                        inventory_ref_type: createSelectedLessonId ? 'lesson' : null
-                    };
+                const { data: newAsg, error: newAsgError } = await supabaseAuth
+                    .from('assignments')
+                    .insert(insertData)
+                    .select()
+                    .single();
 
-                    const insertData = {
-                        classroom_id: classId,
-                        teacher_id: classTeacherId,
-                        ...updateData,
-                        created_at: new Date().toISOString()
-                    };
+                if (newAsgError) throw newAsgError;
 
-                    let { data: newAsg, error: newAsgError } = await supabaseAuth
-                        .from('assignments')
-                        .insert(insertData)
-                        .select()
-                        .single();
+                if (!isDraft && selectedStudents.length > 0 && newAsg) {
+                    const studentMappings = selectedStudents.map(student => ({
+                        assignment_id: newAsg.id,
+                        student_id: student.id,
+                        status: 'pending'
+                    }));
 
-                    assignmentError = newAsgError;
+                    const { error: mappingError } = await supabaseAuth
+                        .from('assignment_students')
+                        .insert(studentMappings);
 
-                    if (newAsgError && (newAsgError.code === '42703' || newAsgError.message?.includes('status'))) {
-                        delete insertData.status;
-                        let fallback = await supabaseAuth
-                            .from('assignments')
-                            .insert(insertData)
-                            .select()
-                            .single();
-                        
-                        if (fallback.error && fallback.error.code === '42703') {
-                            delete insertData.file_url;
-                            delete insertData.file_name;
-                            delete insertData.file_size;
-                            delete insertData.inventory_ref_id;
-                            delete insertData.inventory_ref_title;
-                            delete insertData.inventory_ref_type;
-                            
-                            fallback = await supabaseAuth
-                                .from('assignments')
-                                .insert(insertData)
-                                .select()
-                                .single();
-                        }
-                        
-                        newAsg = fallback.data;
-                        assignmentError = fallback.error;
-                    }
-
-                    if (newAsg) {
-                        assignmentIdToUse = newAsg.id;
-                    }
-
-                    if (assignmentError) throw assignmentError;
-
-                    // Insert assignment student mappings for new task
-                    if (!isDraft && studentIds.length > 0 && assignmentIdToUse) {
-                        const studentMappings = studentIds.map(studentId => ({
-                            assignment_id: assignmentIdToUse,
-                            student_id: studentId,
-                            status: 'pending'
-                        }));
-
-                        const { error: mappingError } = await supabaseAuth
-                            .from('assignment_students')
-                            .insert(studentMappings);
-
-                        if (mappingError) throw mappingError;
-                    }
-                }
-
-                alert(isDraft ? 'Task draft saved successfully!' : 'Task assigned successfully!');
-
-                if (!isDraft) {
-                    // Fire notifications for all assigned students across all classrooms
-                    const allAssignedStudentIds = selectedStudents.map(s => s.id);
-                    if (allAssignedStudentIds.length > 0) {
-                        await sendClassroomNotification({
-                            teacherId: session.user.id,
-                            recipients: [{ id: 'custom', name: 'Students', type: 'custom' }],
-                            title: `📋 New Task: ${createTitle}`,
-                            message: `Your teacher has assigned you a new task: "${createTitle}".${ createDueDate ? ` Due by ${new Date(createDueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.` : '' } Check your Tasks tab to get started!`,
-                            studentIds: allAssignedStudentIds
-                        });
-                    } else {
-                        // 'all' class assignment — notify entire classroom
-                        const classIds = Object.keys(studentsByClass);
-                        for (const classId of classIds) {
-                            await sendClassroomNotification({
-                                teacherId: session.user.id,
-                                recipients: [{ id: classId, name: 'Class', type: 'class' }],
-                                title: `📋 New Task: ${createTitle}`,
-                                message: `Your teacher has assigned a new task to your class: "${createTitle}".${ createDueDate ? ` Due by ${new Date(createDueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.` : '' } Check your Tasks tab!`
-                            });
-                        }
-                    }
+                    if (mappingError) throw mappingError;
                 }
             }
 
@@ -1500,10 +1526,7 @@ export default function TaskReviewPage() {
         } catch (error: any) {
             console.error('Error assigning/saving task:', error);
             const msg = error?.message || 'Unknown error';
-            const details = error?.details || 'No details';
-            const hint = error?.hint || 'No hint';
-            const code = error?.code || 'No code';
-            alert(`Failed to save task:\nMessage: ${msg}\nDetails: ${details}\nHint: ${hint}\nCode: ${code}\nFull Error: ${JSON.stringify(error)}`);
+            alert(`Failed to save task: ${msg}`);
         } finally {
             setIsSaving(false);
         }
@@ -1612,35 +1635,102 @@ export default function TaskReviewPage() {
         }
     };
 
-    const toggleTaskCollapse = (groupKey: string) => {
-        setCollapsedTasks(prev => {
-            const current = prev[groupKey] ?? true;
+    const [collapsedTemplates, setCollapsedTemplates] = useState<Record<string, boolean>>({});
+    const [collapsedBatches, setCollapsedBatches] = useState<Record<string, boolean>>({});
+
+    const toggleTemplateCollapse = (templateKey: string) => {
+        setCollapsedTemplates(prev => {
+            const current = prev[templateKey] ?? true;
             return {
                 ...prev,
-                [groupKey]: !current
+                [templateKey]: !current
             };
         });
     };
 
-    const groupedSubmissions = useMemo(() => {
-        const groups: Record<string, { groupName: string; submissions: TaskSubmission[] }> = {};
-        
+    const toggleBatchCollapse = (batchId: string) => {
+        setCollapsedBatches(prev => {
+            const current = prev[batchId] ?? true;
+            return {
+                ...prev,
+                [batchId]: !current
+            };
+        });
+    };
+
+    const groupedTaskTemplates = useMemo(() => {
+        const templateMap: Record<string, TaskTemplateGroup> = {};
+
         filteredSubmissions.forEach(sub => {
-            const taskKey = sub.task_title || 'Unassigned Tasks';
-            
-            if (!groups[taskKey]) {
-                groups[taskKey] = {
-                    groupName: taskKey,
-                    submissions: []
+            const titleKey = (sub.task_title || 'Untitled Task').toLowerCase().trim();
+            const refKey = sub.inventory_ref_id ? `_${sub.inventory_ref_id}` : '';
+            const templateKey = `${titleKey}${refKey}`;
+
+            if (!templateMap[templateKey]) {
+                templateMap[templateKey] = {
+                    templateKey,
+                    taskTitle: sub.task_title || 'Untitled Task',
+                    taskDescription: sub.task_description,
+                    inventoryRefType: sub.inventory_ref_type,
+                    inventoryRefId: sub.inventory_ref_id,
+                    inventoryRefTitle: sub.inventory_ref_title,
+                    fileUrl: sub.file_url,
+                    fileName: sub.file_name,
+                    fileSize: sub.file_size,
+                    batches: [],
+                    totalStudents: 0,
+                    submittedCount: 0,
+                    reviewedCount: 0,
+                    approvedCount: 0,
+                    pendingCount: 0,
+                    isDraftOnly: true,
                 };
             }
-            groups[taskKey].submissions.push(sub);
+
+            const template = templateMap[templateKey];
+            if (!template.fileUrl && sub.file_url) {
+                template.fileUrl = sub.file_url;
+                template.fileName = sub.file_name;
+                template.fileSize = sub.file_size;
+            }
+            if (!template.taskDescription && sub.task_description) {
+                template.taskDescription = sub.task_description;
+            }
+            if (!template.inventoryRefTitle && sub.inventory_ref_title) {
+                template.inventoryRefTitle = sub.inventory_ref_title;
+            }
+
+            const assignmentId = sub.task_id || `unassigned-${sub.id}`;
+            let batch = template.batches.find(b => b.assignmentId === assignmentId);
+            if (!batch) {
+                batch = {
+                    assignmentId,
+                    classroomName: sub.classroom_name || 'Individual / Cross-Class',
+                    classroomId: sub.classroom_id,
+                    targetType: sub.classroom_name?.toLowerCase().includes('all') ? 'all' : 'individual',
+                    dueDate: sub.due_date,
+                    createdAt: sub.submitted_at,
+                    isDraft: sub.status === 'draft',
+                    submissions: []
+                };
+                template.batches.push(batch);
+            }
+
+            batch.submissions.push(sub);
+
+            if (sub.status !== 'draft') {
+                template.isDraftOnly = false;
+            }
+            if (sub.student_id !== 'draft' && sub.student_id !== 'no-students') {
+                template.totalStudents++;
+                if (sub.status === 'submitted') template.submittedCount++;
+                else if (sub.status === 'reviewed') template.reviewedCount++;
+                else if (sub.status === 'approved') template.approvedCount++;
+                else if (sub.status === 'pending') template.pendingCount++;
+            }
         });
-        
-        return Object.entries(groups).map(([groupKey, val]) => ({
-            taskTitle: groupKey,
-            submissions: val.submissions
-        }));
+
+        return Object.values(templateMap);
     }, [filteredSubmissions]);
 
     const handleLogout = async () => {
@@ -1673,7 +1763,7 @@ export default function TaskReviewPage() {
 
                 <div className="p-3 sm:p-6 md:p-8 grid grid-cols-12 gap-6 md:gap-8 w-full flex-1">
                     {/* Left Column: Submission List */}
-                    <div className="col-span-12 lg:col-span-7 space-y-6 flex flex-col h-full">
+                    <div className="col-span-12 lg:col-span-7 space-y-4 flex flex-col h-full">
                         <header className="flex items-center justify-between gap-3">
                             <div className="min-w-0 flex-1">
                                 <h1 className="admin-page-title">Task Review</h1>
@@ -1715,17 +1805,85 @@ export default function TaskReviewPage() {
                             </div>
                         </header>
 
-                        {/* Filter Tabs */}
+                        {/* Target & Classroom Filter Bar */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 shadow-xs">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider pl-1">Target:</span>
+                                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setTargetFilter('all'); setSelectedFilterClassroomId('all'); }}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                            targetFilter === 'all'
+                                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+                                        }`}
+                                    >
+                                        All Targets
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTargetFilter('classroom')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                            targetFilter === 'classroom'
+                                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+                                        }`}
+                                    >
+                                        🏫 Classrooms
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setTargetFilter('individual'); setSelectedFilterClassroomId('all'); }}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                            targetFilter === 'individual'
+                                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+                                        }`}
+                                    >
+                                        👤 Individual
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setTargetFilter('all_students'); setSelectedFilterClassroomId('all'); }}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                            targetFilter === 'all_students'
+                                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+                                        }`}
+                                    >
+                                        👥 All Students
+                                    </button>
+                                </div>
+                            </div>
+
+                            {targetFilter === 'classroom' && (
+                                <select
+                                    value={selectedFilterClassroomId}
+                                    onChange={(e) => setSelectedFilterClassroomId(e.target.value)}
+                                    className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-[#ecb613]"
+                                >
+                                    <option value="all">All Classrooms</option>
+                                    {createClassrooms.map(cls => (
+                                        <option key={cls.id} value={cls.id}>{cls.name}</option>
+                                    ))}
+                                </select>
+                            )}
+                        </div>
+
+                        {/* Status Filter Tabs */}
                         <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
                             {tabConfig.map(tab => {
                                 const count = tab.id === 'all'
-                                    ? new Set(submissions.map(s => s.task_id)).size
+                                    ? new Set(submissions.map(s => (s.task_title || 'Untitled').toLowerCase().trim())).size
+                                    : tab.id === 'assigned'
+                                    ? new Set(submissions.filter(s => s.status !== 'draft').map(s => s.task_id)).size
                                     : tab.id === 'draft'
                                     ? new Set(submissions.filter(s => s.status === 'draft').map(s => s.task_id)).size
-                                    : tab.id === 'assigned'
-                                    ? submissions.filter(s => s.status === 'pending' && s.student_id !== 'draft' && s.student_id !== 'no-students').length
                                     : tab.id === 'reviewed'
                                     ? submissions.filter(s => s.status === 'reviewed' && s.student_id !== 'draft' && s.student_id !== 'no-students').length
+                                    : tab.id === 'submitted'
+                                    ? submissions.filter(s => s.status === 'submitted' && s.student_id !== 'draft' && s.student_id !== 'no-students').length
                                     : submissions.filter(s => s.status.toLowerCase() === tab.id && s.student_id !== 'draft' && s.student_id !== 'no-students').length;
 
                                 const isActive = activeTab === tab.id;
@@ -1750,248 +1908,355 @@ export default function TaskReviewPage() {
                             })}
                         </div>
 
-
                         <div className="space-y-4 flex-1 overflow-y-auto pr-1 max-h-[calc(100vh-280px)]">
-                            {groupedSubmissions.map((group) => {
-                                const isCollapsed = collapsedTasks[group.taskTitle] ?? true;
-                                const pendingCount = group.submissions.filter(s => s.status === 'submitted').length;
-                                const isDraft = group.submissions.some(s => s.status === 'draft');
+                            {groupedTaskTemplates.map((templateGroup) => {
+                                const isTemplateCollapsed = collapsedTemplates[templateGroup.templateKey] ?? true;
+                                const allSubIdsInTemplate = templateGroup.batches.flatMap(b => b.submissions.map(s => s.id));
+                                const isAllInTemplateSelected = allSubIdsInTemplate.length > 0 && allSubIdsInTemplate.every(id => selectedSubIds.includes(id));
                                 
                                 return (
                                     <div 
-                                        key={group.taskTitle} 
-                                        className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden transition-all hover:shadow-md"
+                                        key={templateGroup.templateKey} 
+                                        className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200/90 dark:border-slate-800 overflow-hidden transition-all hover:shadow-md"
                                     >
-                                        {/* Task Accordion Header */}
+                                        {/* Task Template Level Header */}
                                         <header 
-                                            onClick={() => {
-                                                toggleTaskCollapse(group.taskTitle);
-                                            }}
-                                            className="p-3.5 sm:px-6 sm:py-4 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100/50 dark:hover:bg-slate-800/60 transition-colors gap-2"
+                                            onClick={() => toggleTemplateCollapse(templateGroup.templateKey)}
+                                            className="p-4 sm:px-6 sm:py-4.5 bg-slate-50/80 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100/60 dark:hover:bg-slate-800/80 transition-colors gap-3"
                                         >
-                                            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
                                                 <input 
                                                     type="checkbox"
                                                     className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer w-4 h-4 shrink-0"
-                                                    checked={
-                                                        group.submissions.length > 0 &&
-                                                        group.submissions.every(sub => selectedSubIds.includes(sub.id))
-                                                    }
+                                                    checked={isAllInTemplateSelected}
                                                     onChange={(e) => {
-                                                        const groupIds = group.submissions.map(s => s.id);
                                                         if (e.target.checked) {
-                                                            setSelectedSubIds(prev => [...new Set([...prev, ...groupIds])]);
+                                                            setSelectedSubIds(prev => [...new Set([...prev, ...allSubIdsInTemplate])]);
                                                         } else {
-                                                            setSelectedSubIds(prev => prev.filter(id => !groupIds.includes(id)));
+                                                            setSelectedSubIds(prev => prev.filter(id => !allSubIdsInTemplate.includes(id)));
                                                         }
                                                     }}
                                                     onClick={(e) => e.stopPropagation()}
                                                 />
-                                                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-[#ecb613]/10 flex items-center justify-center text-[#ecb613] shrink-0">
-                                                    <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5" />
+                                                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 border border-amber-500/20">
+                                                    <ClipboardList className="w-5 h-5" />
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
-                                                        <h3 className="font-bold text-xs sm:text-sm md:text-base text-slate-900 dark:text-white leading-snug truncate max-w-full hover:text-[#ecb613] transition-colors">{group.taskTitle}</h3>
-                                                        {isDraft && (
-                                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-white leading-snug hover:text-[#ecb613] transition-colors truncate max-w-md">
+                                                            {templateGroup.taskTitle}
+                                                        </h3>
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 dark:bg-amber-955/60 dark:text-amber-300 border border-amber-300/40 shrink-0">
+                                                            {templateGroup.batches.length} {templateGroup.batches.length === 1 ? 'Batch' : 'Batches'}
+                                                        </span>
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
+                                                            {templateGroup.totalStudents} {templateGroup.totalStudents === 1 ? 'Student' : 'Students'}
+                                                        </span>
+                                                        {templateGroup.submittedCount > 0 && (
+                                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950 shrink-0 shadow-xs">
+                                                                📥 {templateGroup.submittedCount} Submitted
+                                                            </span>
+                                                        )}
+                                                        {templateGroup.approvedCount > 0 && (
+                                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
+                                                                ✅ {templateGroup.approvedCount} Approved
+                                                            </span>
+                                                        )}
+                                                        {templateGroup.isDraftOnly && (
+                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 shrink-0">
                                                                 Draft
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5 truncate">
-                                                        {isDraft ? 'Saved as Draft' : `${group.submissions.length} Student${group.submissions.length !== 1 ? 's' : ''} assigned`}
-                                                        {pendingCount > 0 && ` • ${pendingCount} Pending`}
-                                                    </p>
+                                                    <div className="flex items-center gap-2 mt-1 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium truncate">
+                                                        {templateGroup.inventoryRefTitle && (
+                                                            <span className="text-amber-700 dark:text-amber-300 font-semibold truncate max-w-xs">
+                                                                📖 {templateGroup.inventoryRefTitle}
+                                                            </span>
+                                                        )}
+                                                        {templateGroup.fileName && (
+                                                            <span className="text-slate-500 truncate max-w-[200px]">
+                                                                📎 {templateGroup.fileName}
+                                                            </span>
+                                                        )}
+                                                        {templateGroup.taskDescription && (
+                                                            <span className="text-slate-400 truncate hidden md:inline">
+                                                                • {templateGroup.taskDescription.slice(0, 60)}...
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-1 shrink-0 ml-2">
-                                                <button 
+                                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                                                <button
                                                     type="button"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleEditTaskClick(group.submissions[0].task_id);
+                                                        handleAssignAgainFromTemplate(templateGroup);
                                                     }}
-                                                    className="p-1.5 text-slate-400 hover:text-[#ecb613] transition-colors rounded-md hover:bg-slate-200 dark:hover:bg-slate-700"
-                                                    title="Edit Task"
+                                                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-900 text-xs font-black rounded-xl transition-all flex items-center gap-1.5 shadow-xs active:scale-[0.98]"
+                                                    title="Assign this task template to more students or classes"
                                                 >
-                                                    <Edit2 className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button 
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDeleteSingle(e, group.submissions[0].id);
-                                                    }}
-                                                    disabled={isDeleting}
-                                                    className="p-1.5 text-slate-400 hover:text-rose-500 transition-colors rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50"
-                                                    title="Delete Task"
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                                    <span className="hidden sm:inline">Assign Again</span>
                                                 </button>
                                                 <div 
-                                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                                                    title={isCollapsed ? "Show students list" : "Hide students list"}
+                                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                                                    title={isTemplateCollapsed ? "Expand template" : "Collapse template"}
                                                 >
-                                                    {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                                                    {isTemplateCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
                                                 </div>
                                             </div>
                                         </header>
 
-                                        {/* Task Table or Draft Empty State (Visible when not collapsed) */}
-                                        {!isCollapsed && (
-                                            isDraft ? (
-                                                <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-800/10 border-t border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center">
-                                                    <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-3">
-                                                        <ClipboardList className="w-6 h-6 text-slate-400" />
-                                                    </div>
-                                                    <h4 className="font-bold text-slate-800 dark:text-white text-sm">This Task is a Draft</h4>
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm leading-relaxed">
-                                                        This task has not been assigned to any students yet. You can keep it as a draft or delete it when you're ready.
-                                                    </p>
-                                                    <div className="mt-4 flex gap-2">
-                                                        <button 
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleEditTaskClick(group.submissions[0].task_id);
-                                                            }}
-                                                            className="px-4 py-2 bg-[#ecb613] text-slate-900 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 active:scale-[0.98]"
-                                                        >
-                                                            <Edit2 className="w-3.5 h-3.5" />
-                                                            Edit Draft
-                                                        </button>
-                                                        <button 
-                                                            type="button"
-                                                            onClick={(e) => handleDeleteSingle(e, group.submissions[0].id)}
-                                                            disabled={isDeleting}
-                                                            className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                            Delete Draft
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="overflow-x-auto transition-all duration-300">
-                                                    <table className="w-full text-left border-collapse">
-                                                        <thead className="bg-slate-50/50 dark:bg-slate-800/20 border-b border-slate-100 dark:border-slate-800">
-                                                            <tr className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                                                <th className="w-12 px-6 py-4 text-center">
-                                                                    <input 
-                                                                        type="checkbox"
-                                                                        className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer"
-                                                                        checked={
-                                                                            group.submissions.length > 0 &&
-                                                                            group.submissions.every(sub => selectedSubIds.includes(sub.id))
-                                                                        }
-                                                                        onChange={(e) => {
-                                                                            const groupIds = group.submissions.map(s => s.id);
-                                                                            if (e.target.checked) {
-                                                                                setSelectedSubIds(prev => [...new Set([...prev, ...groupIds])]);
-                                                                            } else {
-                                                                                setSelectedSubIds(prev => prev.filter(id => !groupIds.includes(id)));
-                                                                            }
-                                                                        }}
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                    />
-                                                                </th>
-                                                                <th className="px-6 py-4">Student Name</th>
-                                                                <th className="px-6 py-4">Classroom</th>
-                                                                <th className="px-6 py-4">Assigned Date</th>
-                                                                <th className="px-6 py-4">Due Date</th>
-                                                                <th className="px-6 py-4">Status</th>
-                                                                <th className="px-6 py-4 text-right">Actions</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                                                            {group.submissions.map((sub) => (
-                                                                <tr 
-                                                                    key={sub.id} 
-                                                                    className={`hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer transition-colors ${selectedSub?.id === sub.id ? 'bg-[#ecb613]/5' : ''}`}
-                                                                    onClick={() => handleSelectSubmission(sub)}
+                                        {/* Template Content & Assignment Batches (Visible when template is expanded) */}
+                                        {!isTemplateCollapsed && (
+                                            <div className="p-3 sm:p-4 bg-slate-50/40 dark:bg-slate-950/20 space-y-4">
+                                                {/* Optional Task Instruction & Attachment Note */}
+                                                {templateGroup.taskDescription && (
+                                                    <div className="p-3 bg-white dark:bg-slate-800/70 rounded-xl border border-slate-200/70 dark:border-slate-700/60 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                                                        <span className="font-bold text-slate-500 uppercase text-[10px] block mb-1 font-mono">Task Instructions:</span>
+                                                        <AutoLinkText text={templateGroup.taskDescription} />
+                                                        {templateGroup.fileUrl && (
+                                                            <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center gap-2">
+                                                                <Paperclip className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                                <a 
+                                                                    href={templateGroup.fileUrl} 
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-xs font-bold text-amber-600 hover:underline truncate"
                                                                 >
-                                                                    <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                                                    {templateGroup.fileName || 'Download Attachment'}
+                                                                </a>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Assignment Batches List */}
+                                                <div className="space-y-3">
+                                                    {templateGroup.batches.map((batch, batchIndex) => {
+                                                        const isBatchCollapsed = collapsedBatches[batch.assignmentId] ?? true;
+                                                        const validBatchSubmissions = batch.submissions.filter(s => s.student_id !== 'draft' && s.student_id !== 'no-students');
+                                                        const batchPendingCount = batch.submissions.filter(s => s.status === 'submitted').length;
+                                                        const batchSubIds = batch.submissions.map(s => s.id);
+                                                        const isBatchAllSelected = batchSubIds.length > 0 && batchSubIds.every(id => selectedSubIds.includes(id));
+                                                        
+                                                        return (
+                                                            <div 
+                                                                key={batch.assignmentId}
+                                                                className="bg-white dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xs"
+                                                            >
+                                                                {/* Batch Header */}
+                                                                <div 
+                                                                    onClick={() => toggleBatchCollapse(batch.assignmentId)}
+                                                                    className="p-3 sm:px-4 sm:py-3 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between cursor-pointer select-none hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors gap-2"
+                                                                >
+                                                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                                                         <input 
                                                                             type="checkbox"
-                                                                            className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer"
-                                                                            checked={selectedSubIds.includes(sub.id)}
+                                                                            className="rounded border-slate-300 dark:border-slate-600 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer w-4 h-4 shrink-0"
+                                                                            checked={isBatchAllSelected}
                                                                             onChange={(e) => {
                                                                                 if (e.target.checked) {
-                                                                                    setSelectedSubIds(prev => [...prev, sub.id]);
+                                                                                    setSelectedSubIds(prev => [...new Set([...prev, ...batchSubIds])]);
                                                                                 } else {
-                                                                                    setSelectedSubIds(prev => prev.filter(id => id !== sub.id));
+                                                                                    setSelectedSubIds(prev => prev.filter(id => !batchSubIds.includes(id)));
                                                                                 }
                                                                             }}
+                                                                            onClick={(e) => e.stopPropagation()}
                                                                         />
-                                                                    </td>
-                                                                    <td className="px-6 py-4 text-label">
-                                                                        <div className="flex items-center gap-3">
-                                                                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20 shadow-sm">
-                                                                                {sub.student_profile_pic_url ? (
-                                                                                    <img 
-                                                                                        src={sub.student_profile_pic_url} 
-                                                                                        alt={sub.student_name} 
-                                                                                        className="w-full h-full object-cover rounded-full"
-                                                                                        loading="lazy"
-                                                                                    />
-                                                                                ) : (
-                                                                                    <div className="text-primary text-[10px] font-black">{sub.student_name.charAt(0)}</div>
-                                                                                )}
-                                                                            </div>
-                                                                            <span className="text-sm font-medium truncate">{sub.student_name}</span>
+                                                                        
+                                                                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                                                            <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100">
+                                                                                Batch {batchIndex + 1}:
+                                                                            </span>
+                                                                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-900 dark:text-amber-300 border border-amber-500/20 shrink-0">
+                                                                                🏫 {batch.classroomName}
+                                                                            </span>
+                                                                            {batch.dueDate && (
+                                                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                                                                                    new Date(batch.dueDate) < new Date() && !batch.isDraft
+                                                                                        ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                                                                                        : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                                                                }`}>
+                                                                                    📅 Due: {new Date(batch.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                                                                </span>
+                                                                            )}
+                                                                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                                                                {validBatchSubmissions.length} Student{validBatchSubmissions.length !== 1 ? 's' : ''}
+                                                                            </span>
+                                                                            {batchPendingCount > 0 && (
+                                                                                <span className="text-amber-600 font-extrabold text-[11px]">
+                                                                                    • {batchPendingCount} Pending Review
+                                                                                </span>
+                                                                            )}
                                                                         </div>
-                                                                    </td>
-                                                                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 truncate max-w-[200px]">{sub.classroom_name || 'Individual'}</td>
-                                                                    <td className="px-6 py-4 text-xs font-semibold text-slate-500 whitespace-nowrap">
-                                                                         {new Date(sub.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                                     </td>
-                                                                    <td className="px-6 py-4 text-xs font-bold whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                                                        <div className="inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-955/30 px-2.5 py-1 rounded-lg border border-amber-200/60 dark:border-amber-900/30">
-                                                                            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                                                            <input 
-                                                                                type="date"
-                                                                                value={formatDateForInput(sub.due_date)}
-                                                                                onChange={(e) => handleQuickUpdateDueDate(sub.task_id, e.target.value)}
-                                                                                className="bg-transparent text-amber-900 dark:text-amber-300 font-mono text-xs font-bold outline-none cursor-pointer"
-                                                                                title="Change Due Date for this student"
-                                                                            />
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="px-6 py-4">
-                                                                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase border ${
-                                                                            sub.status === 'submitted' ? 'bg-amber-100 text-amber-800 border-amber-200' :
-                                                                            sub.status === 'reviewed' ? 'bg-blue-100 text-blue-800 border-blue-200' :
-                                                                            sub.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
-                                                                            sub.status === 'pending' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700' :
-                                                                            'bg-slate-100 text-slate-500 border-slate-200'
-                                                                        }`}>
-                                                                            {sub.status}
-                                                                        </span>
-                                                                    </td>
-                                                                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-1 shrink-0 ml-2">
                                                                         <button 
-                                                                            onClick={(e) => handleDeleteSingle(e, sub.id)}
-                                                                            disabled={isDeleting}
-                                                                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors inline-flex items-center justify-center disabled:opacity-50"
-                                                                            title="Delete Task Assignment"
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleEditTaskClick(batch.assignmentId);
+                                                                            }}
+                                                                            className="px-2.5 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-amber-600 bg-slate-100 dark:bg-slate-700/80 hover:bg-amber-50 dark:hover:bg-amber-955/30 rounded-lg transition-colors flex items-center gap-1 border border-slate-200 dark:border-slate-600"
+                                                                            title="Edit this specific assignment batch"
                                                                         >
-                                                                            <Trash2 className="w-4 h-4" />
+                                                                            <Edit2 className="w-3 h-3" />
+                                                                            <span className="hidden sm:inline">Edit Batch</span>
                                                                         </button>
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
+                                                                        <button 
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleDeleteSingle(e, batch.submissions[0]?.id || `no-students-${batch.assignmentId}`);
+                                                                            }}
+                                                                            disabled={isDeleting}
+                                                                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors disabled:opacity-50"
+                                                                            title="Delete this assignment batch"
+                                                                        >
+                                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                                        </button>
+                                                                        <div 
+                                                                            className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                                                                            title={isBatchCollapsed ? "Show students" : "Hide students"}
+                                                                        >
+                                                                            {isBatchCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Batch Students Table */}
+                                                                {!isBatchCollapsed && (
+                                                                    batch.isDraft ? (
+                                                                        <div className="p-4 text-center bg-slate-50/50 dark:bg-slate-800/30 text-xs text-slate-500 italic">
+                                                                            Draft batch — no students assigned yet.
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="overflow-x-auto">
+                                                                            <table className="w-full text-left border-collapse text-xs">
+                                                                                <thead className="bg-slate-50/80 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-700">
+                                                                                    <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                                                                                        <th className="w-10 px-4 py-2.5 text-center">
+                                                                                            <input 
+                                                                                                type="checkbox"
+                                                                                                className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer"
+                                                                                                checked={isBatchAllSelected}
+                                                                                                onChange={(e) => {
+                                                                                                    if (e.target.checked) {
+                                                                                                        setSelectedSubIds(prev => [...new Set([...prev, ...batchSubIds])]);
+                                                                                                    } else {
+                                                                                                        setSelectedSubIds(prev => prev.filter(id => !batchSubIds.includes(id)));
+                                                                                                    }
+                                                                                                }}
+                                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                            />
+                                                                                        </th>
+                                                                                        <th className="px-4 py-2.5">Student</th>
+                                                                                        <th className="px-4 py-2.5">Classroom</th>
+                                                                                        <th className="px-4 py-2.5">Assigned</th>
+                                                                                        <th className="px-4 py-2.5">Due Date</th>
+                                                                                        <th className="px-4 py-2.5">Status</th>
+                                                                                        <th className="px-4 py-2.5 text-right">Review</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                                                                    {batch.submissions.map((sub) => (
+                                                                                        <tr 
+                                                                                            key={sub.id}
+                                                                                            className={`hover:bg-amber-500/5 dark:hover:bg-slate-750 cursor-pointer transition-colors ${selectedSub?.id === sub.id ? 'bg-[#ecb613]/10 font-bold' : ''}`}
+                                                                                            onClick={() => handleSelectSubmission(sub)}
+                                                                                        >
+                                                                                            <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                                                                                <input 
+                                                                                                    type="checkbox"
+                                                                                                    className="rounded border-slate-300 dark:border-slate-700 text-[#ecb613] focus:ring-[#ecb613] cursor-pointer"
+                                                                                                    checked={selectedSubIds.includes(sub.id)}
+                                                                                                    onChange={(e) => {
+                                                                                                        if (e.target.checked) {
+                                                                                                            setSelectedSubIds(prev => [...prev, sub.id]);
+                                                                                                        } else {
+                                                                                                            setSelectedSubIds(prev => prev.filter(id => id !== sub.id));
+                                                                                                        }
+                                                                                                    }}
+                                                                                                />
+                                                                                            </td>
+                                                                                            <td className="px-4 py-2.5">
+                                                                                                <div className="flex items-center gap-2.5">
+                                                                                                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20 shadow-xs shrink-0">
+                                                                                                        {sub.student_profile_pic_url ? (
+                                                                                                            <img 
+                                                                                                                src={sub.student_profile_pic_url} 
+                                                                                                                alt={sub.student_name} 
+                                                                                                                className="w-full h-full object-cover rounded-full"
+                                                                                                                loading="lazy"
+                                                                                                            />
+                                                                                                        ) : (
+                                                                                                            <div className="text-primary text-[9px] font-black">{sub.student_name.charAt(0)}</div>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                    <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{sub.student_name}</span>
+                                                                                                </div>
+                                                                                            </td>
+                                                                                            <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 font-medium truncate max-w-[150px]">
+                                                                                                {sub.classroom_name || 'Individual'}
+                                                                                            </td>
+                                                                                            <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap text-[11px]">
+                                                                                                {new Date(sub.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                                                                            </td>
+                                                                                            <td className="px-4 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                                                                <div className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-955/30 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-900/30">
+                                                                                                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                                                                                    <input 
+                                                                                                        type="date"
+                                                                                                        value={formatDateForInput(sub.due_date)}
+                                                                                                        onChange={(e) => handleQuickUpdateDueDate(sub.task_id, e.target.value)}
+                                                                                                        className="bg-transparent text-amber-900 dark:text-amber-300 font-mono text-[11px] font-bold outline-none cursor-pointer"
+                                                                                                        title="Quick change due date"
+                                                                                                    />
+                                                                                                </div>
+                                                                                            </td>
+                                                                                            <td className="px-4 py-2.5">
+                                                                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
+                                                                                                    sub.status === 'submitted' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                                                                                                    sub.status === 'reviewed' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                                                                                    sub.status === 'approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                                                                                    sub.status === 'pending' ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700' :
+                                                                                                    'bg-slate-100 text-slate-500 border-slate-200'
+                                                                                                }`}>
+                                                                                                    {sub.status}
+                                                                                                </span>
+                                                                                            </td>
+                                                                                            <td className="px-4 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                                                                                                <button 
+                                                                                                    onClick={() => handleSelectSubmission(sub)}
+                                                                                                    className="px-2.5 py-1 text-[11px] font-bold text-[#ecb613] hover:text-slate-900 hover:bg-[#ecb613] rounded-lg transition-colors border border-[#ecb613]/40"
+                                                                                                    title="Review student submission"
+                                                                                                >
+                                                                                                    Review
+                                                                                                </button>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    ))}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    )
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
-                                            )
+                                            </div>
                                         )}
                                     </div>
                                 );
                             })}
                             
-                            {groupedSubmissions.length === 0 && (
+                            {groupedTaskTemplates.length === 0 && (
                                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-12 text-center text-slate-500 italic">
                                     No tasks found for this filter.
                                 </div>
@@ -2527,144 +2792,236 @@ export default function TaskReviewPage() {
                             {/* Right Column: Assignees & Target Config */}
                             <div className="lg:col-span-1 space-y-6 bg-slate-50/50 dark:bg-slate-800/10 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-col justify-between">
                                 <div className="space-y-6">
-                                    {/* Class Selector */}
+                                    {/* Target Mode Selector */}
                                     <div>
-                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 font-mono">Select Class</label>
-                                        <select 
-                                            className="w-full px-3 py-2.5 bg-white dark:bg-slate-805 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-none font-bold"
-                                            value={createSelectedClassroom}
-                                            onChange={(e) => handleClassroomChange(e.target.value)}
-                                        >
-                                            <option value="all">All Students (Student Directory)</option>
-                                            {sortClassroomsByDayAndTime(createClassrooms).map(cls => (
-                                                <option key={cls.id} value={cls.id}>{cls.name}</option>
-                                            ))}
-                                        </select>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 font-mono">Assign Target</label>
+                                        <div className="grid grid-cols-3 gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleTargetModeChange('classroom')}
+                                                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
+                                                    assignmentTargetMode === 'classroom'
+                                                        ? 'bg-amber-500 text-slate-900 shadow-xs'
+                                                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                                }`}
+                                            >
+                                                🏫 Class
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleTargetModeChange('individual')}
+                                                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
+                                                    assignmentTargetMode === 'individual'
+                                                        ? 'bg-amber-500 text-slate-900 shadow-xs'
+                                                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                                }`}
+                                            >
+                                                👤 Individual
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleTargetModeChange('all')}
+                                                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
+                                                    assignmentTargetMode === 'all'
+                                                        ? 'bg-amber-500 text-slate-900 shadow-xs'
+                                                        : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                                }`}
+                                            >
+                                                👥 All
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    {/* Student Search & List */}
-                                    <div>
-                                        <div className="flex justify-between items-center mb-2">
-                                            <div className="flex items-center gap-1.5 min-w-0">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono shrink-0">Students</label>
-                                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-955/40 text-amber-700 dark:text-amber-300 font-mono truncate">
-                                                    {selectedInFilteredCount}/{filteredCreateStudents.length} selected
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleToggleAll(!isAllFilteredSelected)}
-                                                    className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer select-none"
-                                                >
-                                                    {isAllFilteredSelected ? 'Deselect All' : 'Select All'}
-                                                </button>
-                                                <input 
-                                                    type="checkbox" 
-                                                    checked={isAllFilteredSelected}
-                                                    onChange={(e) => handleToggleAll(e.target.checked)}
-                                                    className="rounded border-slate-300 dark:border-slate-700 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
-                                                />
-                                            </div>
+                                    {/* Class Selector for Classroom Mode */}
+                                    {assignmentTargetMode === 'classroom' && (
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 font-mono">Select Classroom</label>
+                                            <select 
+                                                className="w-full px-3 py-2.5 bg-white dark:bg-slate-805 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-none font-bold"
+                                                value={createSelectedClassroom}
+                                                onChange={(e) => handleClassroomChange(e.target.value)}
+                                            >
+                                                {sortClassroomsByDayAndTime(createClassrooms).map(cls => (
+                                                    <option key={cls.id} value={cls.id}>{cls.name}</option>
+                                                ))}
+                                            </select>
                                         </div>
-                                        
-                                        <div className="relative mb-2">
-                                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                                            <input
-                                                type="text"
-                                                placeholder="Search student list..."
-                                                value={createStudentSearch}
-                                                onChange={(e) => {
-                                                    setCreateStudentSearch(e.target.value);
-                                                    setCreateStudentPage(1);
-                                                }}
-                                                className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-805 text-xs focus:ring-2 focus:ring-amber-500 outline-none transition-all placeholder:text-slate-400"
-                                            />
-                                            {createStudentSearch && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setCreateStudentSearch('');
-                                                        setCreateStudentPage(1);
-                                                    }}
-                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-full"
-                                                    title="Clear search"
-                                                >
-                                                    <X className="w-3.5 h-3.5" />
-                                                </button>
-                                            )}
-                                        </div>
+                                    )}
 
-                                        <div className="p-3 bg-white dark:bg-slate-805 rounded-xl border border-slate-200 dark:border-slate-700 max-h-48 overflow-y-auto space-y-1">
-                                            {filteredCreateStudents.slice((createStudentPage - 1) * ITEMS_PER_PAGE, createStudentPage * ITEMS_PER_PAGE).map(student => (
-                                                <div 
-                                                    key={student.id} 
-                                                    className={`flex items-center justify-between p-1.5 rounded-lg transition-all border ${
-                                                        student.selected 
-                                                            ? 'bg-amber-50/60 dark:bg-amber-955/20 border-amber-200/70 dark:border-amber-900/30' 
-                                                            : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 border-transparent hover:border-slate-100 dark:hover:border-slate-600'
-                                                    }`}
-                                                >
-                                                    <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer select-none">
-                                                        <input 
-                                                            className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 border-slate-300 dark:border-slate-600 cursor-pointer" 
-                                                            type="checkbox" 
-                                                            checked={student.selected}
-                                                            onChange={() => handleToggleStudent(student.id)}
-                                                        />
-                                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20 shadow-sm shrink-0">
-                                                            {student.profile_pic_url ? (
-                                                                <img 
-                                                                    src={student.profile_pic_url} 
-                                                                    alt={student.name} 
-                                                                    className="w-full h-full object-cover rounded-full"
-                                                                    loading="lazy"
-                                                                />
-                                                            ) : (
-                                                                <div className="text-primary text-[8px] font-black">{student.name.charAt(0)}</div>
-                                                            )}
-                                                        </div>
-                                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">{student.name}</span>
-                                                    </label>
-                                                    
+                                    {/* All Students Notice */}
+                                    {assignmentTargetMode === 'all' && (
+                                        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-700 dark:text-amber-300 shrink-0">
+                                                <ClipboardList className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">All Active Students</h4>
+                                                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                                                    This task will be assigned to all <strong className="text-amber-600 dark:text-amber-400 font-black">{createStudents.length} active students</strong> across all academy classrooms.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Student Search & List (for Individual & Classroom modes) */}
+                                    {assignmentTargetMode !== 'all' && (
+                                        <div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono shrink-0">Students</label>
+                                                    <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-955/40 text-amber-700 dark:text-amber-300 font-mono truncate">
+                                                        {selectedInFilteredCount}/{filteredCreateStudents.length} selected
+                                                        {totalSelectedCount > selectedInFilteredCount && ` (${totalSelectedCount} total)`}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {totalSelectedCount > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setCreateStudents(prev => prev.map(s => ({ ...s, selected: false })))}
+                                                            className="text-[10px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer select-none"
+                                                            title="Clear all selections across all classrooms"
+                                                        >
+                                                            Clear All
+                                                        </button>
+                                                    )}
                                                     <button
                                                         type="button"
-                                                        onClick={(e) => handleSelectSingleStudentOnly(student.id, e)}
-                                                        className="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 px-1.5 py-0.5 rounded transition-all shrink-0 ml-1 border border-slate-200 dark:border-slate-700 hover:border-amber-300 font-mono"
-                                                        title={`Select only ${student.name} and uncheck others`}
+                                                        onClick={() => handleToggleAll(!isAllFilteredSelected)}
+                                                        className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer select-none"
                                                     >
-                                                        Only
+                                                        {isAllFilteredSelected ? 'Deselect' : 'Select All'}
+                                                    </button>
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isAllFilteredSelected}
+                                                        onChange={(e) => handleToggleAll(e.target.checked)}
+                                                        className="rounded border-slate-300 dark:border-slate-700 text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {assignmentTargetMode === 'individual' && (
+                                                <div className="mb-2">
+                                                    <select
+                                                        value={createSelectedClassroom}
+                                                        onChange={(e) => {
+                                                            setCreateSelectedClassroom(e.target.value);
+                                                            setCreateStudentPage(1);
+                                                        }}
+                                                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-805 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] font-semibold text-slate-700 dark:text-slate-300 outline-none"
+                                                    >
+                                                        <option value="all">Filter by Classroom: All Classrooms</option>
+                                                        {sortClassroomsByDayAndTime(createClassrooms).map(cls => (
+                                                            <option key={cls.id} value={cls.id}>{cls.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+                                            
+                                            <div className="relative mb-2">
+                                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Search student or classroom..."
+                                                    value={createStudentSearch}
+                                                    onChange={(e) => {
+                                                        setCreateStudentSearch(e.target.value);
+                                                        setCreateStudentPage(1);
+                                                    }}
+                                                    className="w-full pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-805 text-xs focus:ring-2 focus:ring-amber-500 outline-none transition-all placeholder:text-slate-400"
+                                                />
+                                                {createStudentSearch && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setCreateStudentSearch('');
+                                                            setCreateStudentPage(1);
+                                                        }}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-full"
+                                                        title="Clear search"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="p-3 bg-white dark:bg-slate-805 rounded-xl border border-slate-200 dark:border-slate-700 max-h-48 overflow-y-auto space-y-1">
+                                                {filteredCreateStudents.slice((createStudentPage - 1) * ITEMS_PER_PAGE, createStudentPage * ITEMS_PER_PAGE).map(student => (
+                                                    <div 
+                                                        key={student.id} 
+                                                        className={`flex items-center justify-between p-1.5 rounded-lg transition-all border ${
+                                                            student.selected 
+                                                                ? 'bg-amber-50/60 dark:bg-amber-955/20 border-amber-200/70 dark:border-amber-900/30' 
+                                                                : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 border-transparent hover:border-slate-100 dark:hover:border-slate-600'
+                                                        }`}
+                                                    >
+                                                        <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer select-none">
+                                                            <input 
+                                                                className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 border-slate-300 dark:border-slate-600 cursor-pointer" 
+                                                                type="checkbox" 
+                                                                checked={student.selected}
+                                                                onChange={() => handleToggleStudent(student.id)}
+                                                            />
+                                                            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20 shadow-sm shrink-0">
+                                                                {student.profile_pic_url ? (
+                                                                    <img 
+                                                                        src={student.profile_pic_url} 
+                                                                        alt={student.name} 
+                                                                        className="w-full h-full object-cover rounded-full"
+                                                                        loading="lazy"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="text-primary text-[8px] font-black">{student.name.charAt(0)}</div>
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate block">{student.name}</span>
+                                                                <span className="text-[9px] text-slate-400 font-medium truncate block">
+                                                                    {student.classroom_names && student.classroom_names.length > 0 ? student.classroom_names.join(', ') : 'Direct Student'}
+                                                                </span>
+                                                            </div>
+                                                        </label>
+                                                        
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleSelectSingleStudentOnly(student.id, e)}
+                                                            className="text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 px-1.5 py-0.5 rounded transition-all shrink-0 ml-1 border border-slate-200 dark:border-slate-700 hover:border-amber-300 font-mono"
+                                                            title={`Select only ${student.name} and uncheck others`}
+                                                        >
+                                                            Only
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                {filteredCreateStudents.length === 0 && (
+                                                    <p className="text-[10px] text-slate-500 text-center py-4 italic font-medium">No students match the current filter.</p>
+                                                )}
+                                            </div>
+
+                                            {/* Pagination */}
+                                            {filteredCreateStudents.length > ITEMS_PER_PAGE && (
+                                                <div className="flex items-center justify-between mt-2 px-1">
+                                                    <button 
+                                                        onClick={() => setCreateStudentPage(p => Math.max(1, p - 1))}
+                                                        disabled={createStudentPage === 1}
+                                                        className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30"
+                                                    >
+                                                        <ChevronLeft className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-mono">
+                                                        {createStudentPage} / {Math.ceil(filteredCreateStudents.length / ITEMS_PER_PAGE)}
+                                                    </span>
+                                                    <button 
+                                                        onClick={() => setCreateStudentPage(p => Math.min(Math.ceil(filteredCreateStudents.length / ITEMS_PER_PAGE), p + 1))}
+                                                        disabled={createStudentPage === Math.ceil(filteredCreateStudents.length / ITEMS_PER_PAGE)}
+                                                        className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30"
+                                                    >
+                                                        <ChevronRight className="w-3.5 h-3.5" />
                                                     </button>
                                                 </div>
-                                            ))}
-                                            {filteredCreateStudents.length === 0 && (
-                                                <p className="text-[10px] text-slate-500 text-center py-4 italic font-medium">No students in this class.</p>
                                             )}
                                         </div>
-
-                                        {/* Pagination */}
-                                        {filteredCreateStudents.length > ITEMS_PER_PAGE && (
-                                            <div className="flex items-center justify-between mt-2 px-1">
-                                                <button 
-                                                    onClick={() => setCreateStudentPage(p => Math.max(1, p - 1))}
-                                                    disabled={createStudentPage === 1}
-                                                    className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30"
-                                                >
-                                                    <ChevronLeft className="w-3.5 h-3.5" />
-                                                </button>
-                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-mono">
-                                                    {createStudentPage} / {Math.ceil(filteredCreateStudents.length / ITEMS_PER_PAGE)}
-                                                </span>
-                                                <button 
-                                                    onClick={() => setCreateStudentPage(p => Math.min(Math.ceil(filteredCreateStudents.length / ITEMS_PER_PAGE), p + 1))}
-                                                    disabled={createStudentPage === Math.ceil(filteredCreateStudents.length / ITEMS_PER_PAGE)}
-                                                    className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30"
-                                                >
-                                                    <ChevronRight className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
+                                    )}
 
                                     {/* Due Date */}
                                     <div>
@@ -2693,7 +3050,7 @@ export default function TaskReviewPage() {
                                         ) : (
                                             <Send className="w-4 h-4" />
                                         )}
-                                        {editingTaskId ? 'Save Changes' : (selectedPreviousTaskId ? 'Save & Assign Task' : 'Assign Task')}
+                                        {editingTaskId ? 'Save Batch Changes' : (selectedPreviousTaskId ? 'Save & Assign Task' : 'Assign Task')}
                                     </button>
                                     <button 
                                         type="button"
