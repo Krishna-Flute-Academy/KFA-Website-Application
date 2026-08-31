@@ -1,12 +1,27 @@
-import { supabaseAuth } from './supabase-auth';
+import { createClient } from '@supabase/supabase-js';
 import { sendClassroomNotification } from './notifications';
+
+// Create a server-side Supabase client for task-reminders.
+// Uses service role key if available (bypasses RLS), otherwise falls back to anon key.
+// This avoids the "No API key found" error that occurs when the shared supabaseAuth
+// singleton (designed for browser sessions) is used in a server/API route context.
+function createServerClient() {
+    const url = process.env.NEXT_PUBLIC_AUTH_SUPABASE_URL || '';
+    const serviceRoleKey = process.env.SUPABASE_AUTH_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const anonKey = process.env.NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY || '';
+    const key = serviceRoleKey || anonKey;
+    return createClient(url, key, {
+        auth: { persistSession: false, autoRefreshToken: false }
+    });
+}
 
 export async function checkAndSendTaskDueReminders() {
     try {
         console.log('[task-reminders] Running 2-day pre-due-date task reminder check...');
 
         // 1. Fetch all active/published assignments that have a due date
-        const { data: assignments, error: asgError } = await supabaseAuth
+        const db = createServerClient();
+        const { data: assignments, error: asgError } = await db
             .from('assignments')
             .select('id, title, due_date, teacher_id, classroom_id, target_type, status')
             .not('due_date', 'is', null);
@@ -41,7 +56,7 @@ export async function checkAndSendTaskDueReminders() {
 
         for (const task of dueSoonTasks) {
             // 3. Find pending student submissions for this task
-            const { data: pendingStudents, error: subError } = await supabaseAuth
+            const { data: pendingStudents, error: subError } = await db
                 .from('assignment_students')
                 .select('student_id, status')
                 .eq('assignment_id', task.id)
@@ -55,7 +70,7 @@ export async function checkAndSendTaskDueReminders() {
 
             // 4. Fetch notifications sent today to avoid duplicate reminders
             const reminderTitle = `⏰ Task Due Reminder: ${task.title}`;
-            const { data: existingNotifs } = await supabaseAuth
+            const { data: existingNotifs } = await db
                 .from('notifications')
                 .select('user_id, created_at')
                 .eq('type', 'reminder')

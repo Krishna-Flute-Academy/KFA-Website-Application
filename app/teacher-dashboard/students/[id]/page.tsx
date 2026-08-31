@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle, Send, Lock, Unlock, Search } from 'lucide-react';
+import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle, Send, Lock, Unlock, Search, Star } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -165,6 +165,7 @@ export default function StudentProfilePage() {
     const [isUpdatingProgress, setIsUpdatingProgress] = useState<string | null>(null);
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+    const [teacherSpotlight, setTeacherSpotlight] = useState<any | null>(null);
 
 
 
@@ -340,6 +341,19 @@ export default function StudentProfilePage() {
                     .select('*')
                     .eq('student_id', studentId);
                 setStudentProgress(progressData || []);
+
+                // Fetch active Teacher Spotlight for this student
+                try {
+                    const { data: spotData } = await supabaseAuth
+                        .from('student_curriculum_spotlights')
+                        .select('*')
+                        .eq('student_id', studentId)
+                        .eq('spotlight_type', 'teacher')
+                        .maybeSingle();
+                    setTeacherSpotlight(spotData || null);
+                } catch (e) {
+                    console.warn('Could not fetch student spotlight:', e);
+                }
 
                 // Fetch inventory allocations for this student or classroom
                 const fetchStudentAllocsData = async () => {
@@ -991,6 +1005,58 @@ export default function StudentProfilePage() {
         }
     };
 
+    const handleToggleTeacherSpotlight = async (lessonId: string) => {
+        if (!studentId || !teacherProfile) return;
+        const isCurrent = teacherSpotlight?.lesson_id === lessonId;
+
+        if (isCurrent) {
+            setTeacherSpotlight(null);
+            try {
+                const { error } = await supabaseAuth
+                    .from('student_curriculum_spotlights')
+                    .delete()
+                    .eq('student_id', studentId)
+                    .eq('spotlight_type', 'teacher');
+                if (error) throw error;
+            } catch (err: any) {
+                console.error('Error removing teacher spotlight:', err);
+                alert(`Failed to remove spotlight: ${err.message}`);
+            }
+        } else {
+            const newRecord = {
+                student_id: studentId,
+                lesson_id: lessonId,
+                spotlight_type: 'teacher',
+                recommended_by: teacherProfile.id,
+                recommended_by_name: teacherProfile.name,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            setTeacherSpotlight(newRecord);
+
+            try {
+                const { data, error } = await supabaseAuth
+                    .from('student_curriculum_spotlights')
+                    .upsert({
+                        student_id: studentId,
+                        lesson_id: lessonId,
+                        spotlight_type: 'teacher',
+                        recommended_by: teacherProfile.id,
+                        recommended_by_name: teacherProfile.name,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'student_id, spotlight_type' })
+                    .select('*')
+                    .maybeSingle();
+
+                if (error) throw error;
+                if (data) setTeacherSpotlight(data);
+            } catch (err: any) {
+                console.error('Error setting teacher spotlight:', err);
+                alert(`Failed to set Teacher Spotlight: ${err.message}`);
+            }
+        }
+    };
+
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!teacherProfile || isSendingMessage || !studentInfo) return;
@@ -1273,6 +1339,34 @@ export default function StudentProfilePage() {
                                     </div>
                                 </div>
 
+                                {teacherSpotlight && (() => {
+                                    const spotLesson = courseLessons.find(l => l.id === teacherSpotlight.lesson_id);
+                                    return (
+                                        <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-3xl flex items-center justify-between gap-4 mb-6 shadow-xs text-left">
+                                            <div className="flex items-center gap-3.5 min-w-0">
+                                                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-lg shrink-0 shadow-xs">
+                                                    ⭐
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <span className="text-[9px] font-black uppercase tracking-wider text-amber-900 font-mono">
+                                                        Active Teacher Spotlight for {studentInfo.name}
+                                                    </span>
+                                                    <h4 className="font-black text-sm text-slate-900 truncate">
+                                                        {spotLesson ? (spotLesson.lesson_number ? `Topic ${spotLesson.lesson_number}: ` : '') + spotLesson.title : 'Curriculum Lesson Spotlight'}
+                                                    </h4>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleTeacherSpotlight(teacherSpotlight.lesson_id)}
+                                                className="px-3.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-extrabold transition-all shadow-2xs cursor-pointer shrink-0"
+                                            >
+                                                ✕ Remove Spotlight
+                                            </button>
+                                        </div>
+                                    );
+                                })()}
+
                                 {courseModules.length === 0 ? (
                                     <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
                                         <Loader2 className="w-8 h-8 animate-spin text-[#ecb613] mx-auto mb-4" />
@@ -1465,7 +1559,22 @@ export default function StudentProfilePage() {
                                                                                                                     }`}>
                                                                                                                         Topic {lesson.lesson_number} • {statusLabel}
                                                                                                                     </span>
-                                                                                                                    {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                                                    <div className="flex items-center gap-1.5">
+                                                                                                                        <button
+                                                                                                                            type="button"
+                                                                                                                            onClick={() => handleToggleTeacherSpotlight(lesson.id)}
+                                                                                                                            className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 ${
+                                                                                                                                teacherSpotlight?.lesson_id === lesson.id
+                                                                                                                                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                                                                                                                                    : 'bg-white hover:bg-amber-50 text-amber-800 border border-amber-200'
+                                                                                                                            }`}
+                                                                                                                            title={teacherSpotlight?.lesson_id === lesson.id ? 'Teacher Spotlight active (Click to remove)' : 'Recommend as Teacher Spotlight for this student'}
+                                                                                                                        >
+                                                                                                                            <Star className={`w-2.5 h-2.5 ${teacherSpotlight?.lesson_id === lesson.id ? 'fill-slate-950' : ''}`} />
+                                                                                                                            <span>{teacherSpotlight?.lesson_id === lesson.id ? 'Spotlighted' : 'Spotlight'}</span>
+                                                                                                                        </button>
+                                                                                                                        {isUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />}
+                                                                                                                    </div>
                                                                                                                 </div>
                                                                                                                 <h5 className="font-extrabold text-sm text-slate-800 leading-tight truncate">{lesson.title}</h5>
                                                                                                                 {lesson.description && (

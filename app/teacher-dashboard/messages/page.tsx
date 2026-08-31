@@ -450,6 +450,83 @@ function MessagesDashboardContent() {
     const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
     const [activeChannel, setActiveChannel] = useState<string>('announcements'); // announcements, classroom, custom_groups, new_joiners, fee_management
     
+    // System Notification Settings (Blog & YouTube automatic notifications pause/enable)
+    const [systemNotifSettings, setSystemNotifSettings] = useState<{ blog_enabled: boolean; video_enabled: boolean }>({
+        blog_enabled: true,
+        video_enabled: true
+    });
+    const [isUpdatingNotifSettings, setIsUpdatingNotifSettings] = useState(false);
+
+    useEffect(() => {
+        const loadNotifSettings = async () => {
+            try {
+                const { data } = await supabaseAuth
+                    .from('message_templates')
+                    .select('id, content')
+                    .eq('name', 'system_notification_settings')
+                    .maybeSingle();
+                if (data?.content) {
+                    const parsed = JSON.parse(data.content);
+                    setSystemNotifSettings({
+                        blog_enabled: parsed.blog_enabled !== false,
+                        video_enabled: parsed.video_enabled !== false
+                    });
+                }
+            } catch (e) {
+                console.warn('Could not load system notification settings:', e);
+            }
+        };
+        loadNotifSettings();
+    }, []);
+
+    const handleToggleSystemNotification = async (channelType: 'blog' | 'video') => {
+        if (!teacherProfile?.id) return;
+        setIsUpdatingNotifSettings(true);
+        try {
+            const nextSettings = {
+                ...systemNotifSettings,
+                [channelType === 'blog' ? 'blog_enabled' : 'video_enabled']: !systemNotifSettings[channelType === 'blog' ? 'blog_enabled' : 'video_enabled']
+            };
+
+            setSystemNotifSettings(nextSettings);
+
+            const { data: existing } = await supabaseAuth
+                .from('message_templates')
+                .select('id')
+                .eq('name', 'system_notification_settings')
+                .maybeSingle();
+
+            const payload = {
+                teacher_id: teacherProfile.id,
+                name: 'system_notification_settings',
+                subject: 'System Automated Notification Settings',
+                content: JSON.stringify(nextSettings)
+            };
+
+            if (existing?.id) {
+                await supabaseAuth
+                    .from('message_templates')
+                    .update({
+                        content: payload.content,
+                        subject: payload.subject
+                    })
+                    .eq('id', existing.id);
+            } else {
+                await supabaseAuth
+                    .from('message_templates')
+                    .insert(payload);
+            }
+
+            const stateText = nextSettings[channelType === 'blog' ? 'blog_enabled' : 'video_enabled'] ? 'Enabled' : 'Paused';
+            showToast(`${channelType === 'blog' ? 'Blog' : 'YouTube Video'} automatic notifications are now ${stateText}.`, 'success');
+        } catch (e: any) {
+            console.error('Failed to update system notification settings:', e);
+            showToast('Failed to update notification settings.', 'error');
+        } finally {
+            setIsUpdatingNotifSettings(false);
+        }
+    };
+    
     // Compose Form
     const [selectedRecipients, setSelectedRecipients] = useState<Array<{ id: string; name: string; type: 'class' | 'student' | 'global' | 'custom' }>>([]);
 
@@ -2091,9 +2168,29 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                     )}
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <h5 className={`text-sm ${hasUnread ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-800 dark:text-slate-250'}`}>
-                                                        {channel.label}
-                                                    </h5>
+                                                    <div className="flex items-center gap-2">
+                                                        <h5 className={`text-sm ${hasUnread ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-800 dark:text-slate-250'}`}>
+                                                            {channel.label}
+                                                        </h5>
+                                                        {channel.id === 'blog' && (
+                                                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                                                                !systemNotifSettings.blog_enabled
+                                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                            }`}>
+                                                                {!systemNotifSettings.blog_enabled ? 'Paused' : 'Active'}
+                                                            </span>
+                                                        )}
+                                                        {channel.id === 'video' && (
+                                                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                                                                !systemNotifSettings.video_enabled
+                                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                            }`}>
+                                                                {!systemNotifSettings.video_enabled ? 'Paused' : 'Active'}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5">{channel.desc}</p>
                                                 </div>
                                                 {hasUnread && (
@@ -2684,6 +2781,41 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                         <X className="w-3.5 h-3.5" />
                                                     </button>
                                                 </div>
+                                            </div>
+                                        )}
+                                        {(activeChannel === 'blog' || activeChannel === 'video') && (
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                                        <span>Automatic {activeChannel === 'blog' ? 'Blog Post' : 'YouTube Video'} Notifications:</span>
+                                                        <span className={systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled'] ? 'text-emerald-600 dark:text-emerald-400 font-black' : 'text-amber-600 dark:text-amber-400 font-black'}>
+                                                            {systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled'] ? '● Active' : '⏸ Paused'}
+                                                        </span>
+                                                    </p>
+                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                        {systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled']
+                                                            ? 'Enabled. Automatically highlights new releases on the Student Dashboard.'
+                                                            : 'Paused. No new automatic notifications will be displayed to students.'}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    disabled={isUpdatingNotifSettings}
+                                                    onClick={() => handleToggleSystemNotification(activeChannel as 'blog' | 'video')}
+                                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50 ${
+                                                        systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled']
+                                                            ? 'bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-800'
+                                                            : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                                                    }`}
+                                                >
+                                                    {isUpdatingNotifSettings ? (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                    ) : systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled'] ? (
+                                                        '⏸ Pause Feature'
+                                                    ) : (
+                                                        '▶ Resume Feature'
+                                                    )}
+                                                </button>
                                             </div>
                                         )}
                                         {(activeChannel === 'blog' || activeChannel === 'video') && (
