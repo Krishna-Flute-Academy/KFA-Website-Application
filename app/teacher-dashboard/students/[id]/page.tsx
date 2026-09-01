@@ -311,7 +311,7 @@ export default function StudentProfilePage() {
                     .order('chapter_number', { ascending: true });
                 const { data: dbLessonsData } = await supabaseAuth
                     .from('course_lessons')
-                    .select('*')
+                    .select('id, chapter_id, lesson_number, title, description, material_type, material_url, bullet_points')
                     .order('lesson_number', { ascending: true });
 
                 const normalizedChapters = (dbChaptersData || []).map((chap: any) => {
@@ -338,7 +338,7 @@ export default function StudentProfilePage() {
                 // Fetch student progress overrides
                 const { data: progressData } = await supabaseAuth
                     .from('student_topic_progress')
-                    .select('*')
+                    .select('id, student_id, classroom_id, lesson_id, status, unlocked_by, unlocked_at, completed_at')
                     .eq('student_id', studentId);
                 setStudentProgress(progressData || []);
 
@@ -994,7 +994,7 @@ export default function StudentProfilePage() {
 
             const { data: progressData } = await supabaseAuth
                 .from('student_topic_progress')
-                .select('*')
+                .select('id, student_id, classroom_id, lesson_id, status, unlocked_by, unlocked_at, completed_at')
                 .eq('student_id', studentId);
             setStudentProgress(progressData || []);
         } catch (err) {

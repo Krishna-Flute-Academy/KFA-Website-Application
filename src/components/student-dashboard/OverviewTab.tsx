@@ -328,6 +328,31 @@ export default function OverviewTab({
         return pendingTasks.filter(a => a.due_date && new Date(a.due_date) < now);
     }, [pendingTasks]);
 
+    // Tasks Due Soon (due today, tomorrow, or in 2 days)
+    const dueSoonTasks = useMemo(() => {
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        return pendingTasks.filter(a => {
+            if (!a.due_date) return false;
+            const dueDateObj = new Date(a.due_date);
+            const dueStart = new Date(dueDateObj.getFullYear(), dueDateObj.getMonth(), dueDateObj.getDate()).getTime();
+            const diffDays = Math.round((dueStart - todayStart) / (1000 * 60 * 60 * 24));
+            return diffDays >= 0 && diffDays <= 2;
+        });
+    }, [pendingTasks]);
+
+    const getDueSoonText = (dueDateStr?: string) => {
+        if (!dueDateStr) return '';
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const dueDateObj = new Date(dueDateStr);
+        const dueStart = new Date(dueDateObj.getFullYear(), dueDateObj.getMonth(), dueDateObj.getDate()).getTime();
+        const diffDays = Math.round((dueStart - todayStart) / (1000 * 60 * 60 * 24));
+        const formattedDate = dueDateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        const dayLabel = diffDays === 0 ? 'Due Today' : diffDays === 1 ? 'Due Tomorrow' : `Due in ${diffDays} Days`;
+        return `${dayLabel} — ${formattedDate}`;
+    };
+
     const latestAnnouncement = dashboardBroadcasts[0] || null;
 
     return (
@@ -432,6 +457,50 @@ export default function OverviewTab({
                         </div>
                     )}
                 </div>
+
+                {/* Task Due Soon Highlight Card (Mobile) */}
+                {dueSoonTasks.length > 0 && (
+                    <div className="bg-gradient-to-r from-amber-500/15 to-orange-500/10 border border-amber-500/30 rounded-2xl p-3.5 shadow-xs text-left animate-in fade-in duration-200">
+                        <div className="flex items-center justify-between border-b border-amber-500/20 pb-2 mb-2">
+                            <div className="flex items-center gap-1.5">
+                                <span className="flex h-2 w-2 relative">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                </span>
+                                <span className="text-[9px] font-black text-amber-900 uppercase tracking-widest font-mono">
+                                    Task Due Soon ({dueSoonTasks.length})
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('tasks')}
+                                className="text-[10px] font-bold text-amber-800 hover:underline flex items-center gap-0.5 cursor-pointer"
+                            >
+                                <span>View All</span>
+                                <ChevronRight className="w-3 h-3" />
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {dueSoonTasks.slice(0, 2).map((task) => (
+                                <div key={task.id} className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <h4 className="font-extrabold text-xs text-slate-900 truncate">"{task.title}"</h4>
+                                        <p className="text-[10px] font-bold text-amber-700 mt-0.5">
+                                            {getDueSoonText(task.due_date)}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveTab('tasks')}
+                                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black rounded-lg shadow-xs shrink-0 cursor-pointer"
+                                    >
+                                        Submit
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* 3. Quick Actions 2×2 Grid */}
                 <div className="grid grid-cols-2 gap-2.5">
@@ -839,6 +908,15 @@ export default function OverviewTab({
                                     <AlertTriangle className="w-3.5 h-3.5 text-rose-700" />
                                     <span>{overdueTasks.length} Overdue Task{overdueTasks.length > 1 ? 's' : ''}</span>
                                 </div>
+                            ) : dueSoonTasks.length > 0 ? (
+                                <div 
+                                    onClick={() => setActiveTab('tasks')}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-900 border border-amber-500/40 text-xs font-black cursor-pointer transition-colors shrink-0"
+                                    title="Click to view tasks due soon"
+                                >
+                                    <Clock className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>{dueSoonTasks.length} Task{dueSoonTasks.length > 1 ? 's' : ''} Due Soon</span>
+                                </div>
                             ) : pendingTasks.length > 0 ? (
                                 <div 
                                     onClick={() => setActiveTab('tasks')}
@@ -885,6 +963,38 @@ export default function OverviewTab({
                         >
                             <span>View All</span>
                             <ChevronRight className="w-3 h-3" />
+                        </button>
+                    </div>
+                )}
+
+                {/* Task Due Soon Dedicated Desktop Banner */}
+                {dueSoonTasks.length > 0 && (
+                    <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 rounded-3xl p-4 sm:p-5 text-left shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-3.5">
+                            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0">
+                                <Clock className="w-5 h-5 text-amber-700" />
+                            </div>
+                            <div className="space-y-0.5 min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-black uppercase tracking-wider bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-mono">
+                                        Task Due Soon
+                                    </span>
+                                    <span className="text-xs font-bold text-amber-800">
+                                        {getDueSoonText(dueSoonTasks[0].due_date)}
+                                    </span>
+                                </div>
+                                <h4 className="font-black text-sm sm:text-base text-slate-900 truncate">
+                                    "{dueSoonTasks[0].title}"
+                                </h4>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('tasks')}
+                            className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all shrink-0 cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                        >
+                            <span>Complete / Submit Task</span>
+                            <ChevronRight className="w-4 h-4" />
                         </button>
                     </div>
                 )}

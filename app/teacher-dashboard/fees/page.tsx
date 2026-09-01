@@ -912,6 +912,41 @@ export default function FeesManagementDashboard() {
     // Send Reminder Notification & Direct Message to Student
     const handleSendReminder = async (student: StudentFeesData, type: 'due_date' | 'classes_completed') => {
         try {
+            // 0. Verify that a duplicate fee reminder has not already been sent recently (enforce 1 on due date, follow-up only after 3 days)
+            const { data: recentFeeNotifs } = await supabaseAuth
+                .from('fees_notifications')
+                .select('sent_at, notification_type')
+                .eq('student_id', student.id)
+                .order('sent_at', { ascending: false })
+                .limit(5);
+
+            if (recentFeeNotifs && recentFeeNotifs.length > 0) {
+                const now = new Date();
+                const todayStr = now.toISOString().split('T')[0];
+                const lastSentDate = new Date(recentFeeNotifs[0].sent_at);
+                const lastSentDateStr = lastSentDate.toISOString().split('T')[0];
+
+                // Check 1: Same day deduplication
+                if (lastSentDateStr === todayStr) {
+                    setAlertMessage({
+                        type: 'error',
+                        text: `A fee reminder has already been sent to ${student.name} today. Repeated daily reminders are not permitted.`
+                    });
+                    return;
+                }
+
+                // Check 2: 3-day cadence for follow-up reminders
+                const diffMs = now.getTime() - lastSentDate.getTime();
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                if (diffDays < 3) {
+                    setAlertMessage({
+                        type: 'error',
+                        text: `A fee reminder was already sent to ${student.name} ${diffDays === 1 ? 'yesterday' : `${diffDays} days ago`}. Follow-up reminders are allowed only after 3 days.`
+                    });
+                    return;
+                }
+            }
+
             const currentUser = (await supabaseAuth.auth.getUser()).data.user;
             const senderId = teacherProfile?.id || currentUser?.id;
             const reminderMessage = type === 'classes_completed' 

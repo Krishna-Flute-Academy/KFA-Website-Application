@@ -13,48 +13,84 @@ async function resolveRecipientsToStudentIds(
     recipients: Array<{ id: string; name: string; type: 'global' | 'class' | 'student' | 'custom' }>
 ): Promise<string[]> {
     const studentIdsSet = new Set<string>();
+    const classIds: string[] = [];
+    const customIds: string[] = [];
+    let hasGlobal = false;
 
     for (const recipient of recipients) {
         if (recipient.type === 'global') {
-            // Fetch all student users
-            const { data: students } = await supabaseAuth
-                .from('users')
-                .select('id')
-                .eq('role', 'student');
-            (students || []).forEach(s => studentIdsSet.add(s.id));
+            hasGlobal = true;
         } else if (recipient.type === 'class') {
-            // 1. Fetch permanent students in classroom
-            const { data: permStudents } = await supabaseAuth
-                .from('classroom_students')
-                .select('student_id')
-                .eq('classroom_id', recipient.id);
-            (permStudents || []).forEach(s => studentIdsSet.add(s.student_id));
-
-            // 2. Fetch makeup/override students in classroom for today
-            const today = new Date().toISOString().split('T')[0];
-            const { data: overrideStudents } = await supabaseAuth
-                .from('session_student_overrides')
-                .select('student_id')
-                .eq('target_classroom_id', recipient.id)
-                .eq('override_date', today);
-            (overrideStudents || []).forEach(s => studentIdsSet.add(s.student_id));
+            classIds.push(recipient.id);
         } else if (recipient.type === 'student') {
             studentIdsSet.add(recipient.id);
         } else if (recipient.type === 'custom') {
-            // Fetch the custom group's sub-recipients
-            const { data: groupData } = await supabaseAuth
-                .from('custom_recipient_groups')
-                .select('recipients')
-                .eq('id', recipient.id)
-                .maybeSingle();
-
-            if (groupData?.recipients && Array.isArray(groupData.recipients)) {
-                const subIds = await resolveRecipientsToStudentIds(groupData.recipients as any);
-                subIds.forEach(id => studentIdsSet.add(id));
-            }
+            customIds.push(recipient.id);
         }
     }
 
+    const promises: Promise<any>[] = [];
+
+    // 1. Global recipients
+    if (hasGlobal) {
+        promises.push(
+            (async () => {
+                const { data: students } = await supabaseAuth
+                    .from('users')
+                    .select('id')
+                    .eq('role', 'student');
+                (students || []).forEach(s => studentIdsSet.add(s.id));
+            })()
+        );
+    }
+
+    // 2. Class recipients (batched in single queries for permanent + today's makeup students)
+    if (classIds.length > 0) {
+        const today = new Date().toISOString().split('T')[0];
+        promises.push(
+            (async () => {
+                const { data: permStudents } = await supabaseAuth
+                    .from('classroom_students')
+                    .select('student_id')
+                    .in('classroom_id', classIds);
+                (permStudents || []).forEach(s => studentIdsSet.add(s.student_id));
+            })()
+        );
+        promises.push(
+            (async () => {
+                const { data: overrideStudents } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .select('student_id')
+                    .in('target_classroom_id', classIds)
+                    .eq('override_date', today);
+                (overrideStudents || []).forEach(s => studentIdsSet.add(s.student_id));
+            })()
+        );
+    }
+
+    // 3. Custom recipient groups (batched)
+    if (customIds.length > 0) {
+        promises.push(
+            (async () => {
+                const { data: groupsData } = await supabaseAuth
+                    .from('custom_recipient_groups')
+                    .select('recipients')
+                    .in('id', customIds);
+                const nestedRecipients: Array<{ id: string; name: string; type: 'global' | 'class' | 'student' | 'custom' }> = [];
+                (groupsData || []).forEach(g => {
+                    if (g.recipients && Array.isArray(g.recipients)) {
+                        nestedRecipients.push(...(g.recipients as any));
+                    }
+                });
+                if (nestedRecipients.length > 0) {
+                    const subIds = await resolveRecipientsToStudentIds(nestedRecipients);
+                    subIds.forEach(id => studentIdsSet.add(id));
+                }
+            })()
+        );
+    }
+
+    await Promise.all(promises);
     return Array.from(studentIdsSet);
 }
 

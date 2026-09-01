@@ -1701,13 +1701,6 @@ function MessagesDashboardContent() {
                 } else {
                     setBroadcasts(prev => [data[0], ...prev]);
                     showToast('Notification sent & saved successfully!', 'success');
-                    
-                    sendClassroomNotification({
-                        teacherId: teacherProfile.id,
-                        recipients: selectedRecipients,
-                        title: subject.trim(),
-                        message: content.trim()
-                    }).catch(err => console.error('Failed to send notifications for message broadcast:', err));
                 }
 
                 // Clear Composer Form

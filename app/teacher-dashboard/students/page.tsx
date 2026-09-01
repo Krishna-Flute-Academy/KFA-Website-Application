@@ -213,7 +213,7 @@ export default function StudentDirectory() {
                 setTeacherProfile({ id: userId, name: profile.name, email: profile.email, phone: profile.phone, role: profile.role, profile_pic_url: profile.profile_pic_url });
                 const isAdminUser = profile.role === 'admin';
 
-                // Parallelize all secondary fetches (rooms, teachers, lessons, sessions, attendance, progress, assignments, students)
+                // 1. Initial parallel fetches (rooms, teachers, lessons count, active sessions, students)
                 const fiveMinutesAgoForQuery = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
                 const roomsReq = isAdminUser
@@ -221,11 +221,8 @@ export default function StudentDirectory() {
                     : supabaseAuth.from('classrooms').select('id, name, teacher_id').eq('teacher_id', userId);
 
                 const teachersReq = supabaseAuth.from('users').select('id, name').in('role', ['teacher', 'admin']);
-                const lessonsReq = supabaseAuth.from('course_lessons').select('id');
+                const lessonsReq = supabaseAuth.from('course_lessons').select('*', { count: 'exact', head: true });
                 const sessionsReq = supabaseAuth.from('user_sessions').select('user_id').is('logout_at', null).gt('last_activity_at', fiveMinutesAgoForQuery);
-                const attendanceReq = supabaseAuth.from('attendance').select('student_id, status');
-                const progressReq = supabaseAuth.from('student_topic_progress').select('student_id').eq('status', 'completed');
-                const assignmentsReq = supabaseAuth.from('assignment_students').select('student_id, status, score');
 
                 const studentsBaseReq = supabaseAuth
                     .from('users')
@@ -259,21 +256,46 @@ export default function StudentDirectory() {
                 const [
                     { data: rooms },
                     { data: teachersData },
-                    { data: lessons },
+                    { count: totalLessonsCountVal },
                     { data: activeSessions },
-                    { data: allAttendance },
-                    { data: allProgress },
-                    { data: allAssignments },
                     { data: studentsData, error: studentsError }
                 ] = await Promise.all([
                     roomsReq,
                     teachersReq,
                     lessonsReq,
                     sessionsReq,
-                    attendanceReq,
-                    progressReq,
-                    assignmentsReq,
                     studentsReq
+                ]);
+
+                // 2. Fetch scoped secondary student data (attendance, progress, assignments)
+                const studentIds = (studentsData || []).map(s => s.id);
+
+                const attendancePromise = isAdminUser
+                    ? supabaseAuth.from('attendance').select('student_id, status')
+                    : studentIds.length > 0
+                        ? supabaseAuth.from('attendance').select('student_id, status').in('student_id', studentIds)
+                        : Promise.resolve({ data: [] as any });
+
+                const progressPromise = isAdminUser
+                    ? supabaseAuth.from('student_topic_progress').select('student_id').eq('status', 'completed')
+                    : studentIds.length > 0
+                        ? supabaseAuth.from('student_topic_progress').select('student_id').eq('status', 'completed').in('student_id', studentIds)
+                        : Promise.resolve({ data: [] as any });
+
+                const assignmentsPromise = isAdminUser
+                    ? supabaseAuth.from('assignment_students').select('student_id, status, score')
+                    : studentIds.length > 0
+                        ? supabaseAuth.from('assignment_students').select('student_id, status, score').in('student_id', studentIds)
+                        : Promise.resolve({ data: [] as any });
+
+                const [
+                    { data: allAttendance },
+                    { data: allProgress },
+                    { data: allAssignments }
+                ] = await Promise.all([
+                    attendancePromise,
+                    progressPromise,
+                    assignmentsPromise
                 ]);
 
                 if (rooms) setClassrooms(rooms);
@@ -284,7 +306,7 @@ export default function StudentDirectory() {
                     teachersData.forEach(t => teacherMap.set(t.id, t.name));
                 }
 
-                const totalLessonsCount = lessons?.length || 0;
+                const totalLessonsCount = totalLessonsCountVal || 0;
                 const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
 
                 const attendanceMap = new Map<string, string[]>();

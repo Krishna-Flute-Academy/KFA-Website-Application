@@ -194,9 +194,9 @@ export default function InventoryLibrary() {
             const categoriesReq = supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true });
             const modulesReq = supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
             const chaptersReq = supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-            const lessonsReq = supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+            const lessonsReq = supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, file_name, bullet_points, link_url, duration, file_size').order('lesson_number', { ascending: true });
             const studentCountReq = supabaseAuth.from('users').select('*', { count: 'exact', head: true }).or('role.eq.student,role.eq.pending,role.eq.mentor');
-            const progressReq = supabaseAuth.from('student_topic_progress').select('lesson_id, status');
+            const progressReq = supabaseAuth.from('student_topic_progress').select('lesson_id, status').eq('status', 'completed');
 
             const [
                 { data: dbCategories },
@@ -269,7 +269,7 @@ export default function InventoryLibrary() {
             // Reload seedings
             const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
             const { data: dbChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-            const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+            const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, file_name, bullet_points, link_url, duration, file_size').order('lesson_number', { ascending: true });
             
             if (dbModules) setModules(dbModules);
             if (dbChapters) setChapters(dbChapters || []);

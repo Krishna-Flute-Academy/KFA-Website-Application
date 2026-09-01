@@ -822,7 +822,7 @@ export default function TaskReviewPage() {
             // Fetch curriculum lessons for Inventory Library
             const { data: lessonsData } = await supabaseAuth
                 .from('course_lessons')
-                .select('*')
+                .select('id, chapter_id, lesson_number, title, description, material_type, material_url, file_name, bullet_points')
                 .order('lesson_number', { ascending: true });
             if (lessonsData) {
                 setInventoryLessons(lessonsData);

@@ -7,6 +7,10 @@ import { sanitizeHtml } from '../../lib/text-utils';
 
 interface LessonViewerProps {
     topic: any;
+    description?: string;
+    isLoadingDescription?: boolean;
+    descriptionError?: boolean;
+    onRetryDescription?: () => void;
     status: 'completed' | 'unlocked' | 'locked';
     breadcrumb?: string;
     isStudentSpotlight?: boolean;
@@ -29,6 +33,10 @@ const getCleanDuration = (duration: string, fileSize: string) => {
 
 export default function LessonViewer({
     topic,
+    description,
+    isLoadingDescription = false,
+    descriptionError = false,
+    onRetryDescription,
     status,
     breadcrumb,
     isStudentSpotlight = false,
@@ -57,6 +65,7 @@ export default function LessonViewer({
 
     const isCompleted = status === 'completed';
     const hasResource = !!(topic.material_url || topic.link_url);
+    const activeDescription = description !== undefined ? description : topic?.description;
 
     return (
         <div className="space-y-4 text-left">
@@ -127,13 +136,36 @@ export default function LessonViewer({
                 </div>
             </div>
 
-            {/* Description HTML */}
-            {topic.description && (
+            {/* Description HTML / Loading Skeleton / Error State */}
+            {isLoadingDescription ? (
+                <div className="space-y-2.5 py-4 px-3.5 bg-slate-50/60 rounded-2xl border border-slate-100 animate-pulse">
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping" />
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Loading lesson guide...</span>
+                    </div>
+                    <div className="h-2.5 bg-slate-200/80 rounded w-5/6" />
+                    <div className="h-2.5 bg-slate-200/80 rounded w-full" />
+                    <div className="h-2.5 bg-slate-200/80 rounded w-4/6" />
+                </div>
+            ) : descriptionError ? (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 text-left">
+                    <p className="text-xs font-semibold text-rose-700">Unable to load lesson instructions.</p>
+                    {onRetryDescription && (
+                        <button
+                            type="button"
+                            onClick={onRetryDescription}
+                            className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0"
+                        >
+                            Retry
+                        </button>
+                    )}
+                </div>
+            ) : activeDescription ? (
                 <div 
                     className="text-xs text-slate-600 leading-relaxed tutorial-content max-w-none bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100"
-                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(topic.description) }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(activeDescription) }}
                 />
-            )}
+            ) : null}
 
             {/* Metadata Badges */}
             <div className="flex flex-wrap gap-2 pt-0.5">

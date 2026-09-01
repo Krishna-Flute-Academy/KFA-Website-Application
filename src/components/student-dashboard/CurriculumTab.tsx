@@ -45,6 +45,10 @@ interface CurriculumTabProps {
     onRefreshCurriculum?: () => void;
     studentSpotlights?: { teacherSpotlight: any | null; studentSpotlight: any | null };
     onToggleStudentSpotlight?: (lessonId: string) => Promise<void> | void;
+    lessonDescriptions?: Record<string, string>;
+    loadingDescriptionLessonId?: string | null;
+    descriptionErrorLessonId?: string | null;
+    onRetryLessonDescription?: (lessonId: string) => void;
 }
 
 const cleanModuleDescription = (desc: string) => {
@@ -85,7 +89,11 @@ export default function CurriculumTab({
     classmates,
     onRefreshCurriculum,
     studentSpotlights,
-    onToggleStudentSpotlight
+    onToggleStudentSpotlight,
+    lessonDescriptions = {},
+    loadingDescriptionLessonId = null,
+    descriptionErrorLessonId = null,
+    onRetryLessonDescription
 }: CurriculumTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -546,6 +554,10 @@ export default function CurriculumTab({
                         <div className="p-6">
                             <LessonViewer
                                 topic={selectedTopic}
+                                description={selectedTopic ? lessonDescriptions[selectedTopic.id] : undefined}
+                                isLoadingDescription={selectedTopic ? (loadingDescriptionLessonId === selectedTopic.id && lessonDescriptions[selectedTopic.id] === undefined) : false}
+                                descriptionError={selectedTopic ? descriptionErrorLessonId === selectedTopic.id : false}
+                                onRetryDescription={selectedTopic && onRetryLessonDescription ? () => onRetryLessonDescription(selectedTopic.id) : undefined}
                                 status={selectedTopic ? getLessonStatus(selectedTopic.id, selectedTopic.chapter_id) : 'unlocked'}
                                 breadcrumb={selectedTopic ? getTopicBreadcrumbs(selectedTopic) : ''}
                                 isStudentSpotlight={selectedTopic ? studentSpotlights?.studentSpotlight?.lesson_id === selectedTopic.id : false}
@@ -623,6 +635,10 @@ export default function CurriculumTab({
                         <div className="flex-1 overflow-y-auto px-5 pt-2 pb-8">
                             <LessonViewer
                                 topic={selectedTopic}
+                                description={selectedTopic ? lessonDescriptions[selectedTopic.id] : undefined}
+                                isLoadingDescription={selectedTopic ? (loadingDescriptionLessonId === selectedTopic.id && lessonDescriptions[selectedTopic.id] === undefined) : false}
+                                descriptionError={selectedTopic ? descriptionErrorLessonId === selectedTopic.id : false}
+                                onRetryDescription={selectedTopic && onRetryLessonDescription ? () => onRetryLessonDescription(selectedTopic.id) : undefined}
                                 status={getLessonStatus(selectedTopic.id, selectedTopic.chapter_id)}
                                 breadcrumb={getTopicBreadcrumbs(selectedTopic)}
                                 isStudentSpotlight={selectedTopic ? studentSpotlights?.studentSpotlight?.lesson_id === selectedTopic.id : false}

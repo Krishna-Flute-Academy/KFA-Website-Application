@@ -201,6 +201,42 @@ export default function StudentDashboardContainer() {
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
     const [studentSpotlights, setStudentSpotlights] = useState<{ teacherSpotlight: any | null; studentSpotlight: any | null }>({ teacherSpotlight: null, studentSpotlight: null });
+    const [lessonDescriptions, setLessonDescriptions] = useState<Record<string, string>>({});
+    const [loadingDescriptionLessonId, setLoadingDescriptionLessonId] = useState<string | null>(null);
+    const [descriptionErrorLessonId, setDescriptionErrorLessonId] = useState<string | null>(null);
+
+    // Lazy load lesson description on-demand with in-memory session caching
+    const fetchLessonDescription = useCallback(async (lessonId: string) => {
+        if (!lessonId) return;
+        if (lessonDescriptions[lessonId] !== undefined) return;
+
+        setLoadingDescriptionLessonId(lessonId);
+        setDescriptionErrorLessonId(null);
+        try {
+            const { data, error } = await supabaseAuth
+                .from('course_lessons')
+                .select('description')
+                .eq('id', lessonId)
+                .maybeSingle();
+
+            if (error) throw error;
+            setLessonDescriptions(prev => ({
+                ...prev,
+                [lessonId]: data?.description || ''
+            }));
+        } catch (err: any) {
+            console.error(`[course_lessons] Error lazy-fetching description for lesson ${lessonId}:`, err);
+            setDescriptionErrorLessonId(lessonId);
+        } finally {
+            setLoadingDescriptionLessonId(null);
+        }
+    }, [lessonDescriptions]);
+
+    useEffect(() => {
+        if (selectedTopic?.id) {
+            fetchLessonDescription(selectedTopic.id);
+        }
+    }, [selectedTopic?.id, fetchLessonDescription]);
 
     const allocatedModuleIds = useMemo(() => {
         const direct = studentAllocations.map(a => a.module_id).filter(Boolean);
@@ -607,9 +643,6 @@ export default function StudentDashboardContainer() {
 
             const userId = session.user.id;
 
-            // Trigger automated 2-day pre-due-date task reminders via server API (avoids client-side Supabase auth issues)
-            fetch('/api/notifications/check-task-reminders', { method: 'POST' }).catch(err => console.error('Error running task reminders:', err));
-
             // CRITICAL PHASE 1 (Identity & Classroom Routing): Only what is strictly necessary to render the shell
             const [
                 userRes,
@@ -761,7 +794,7 @@ export default function StudentDashboardContainer() {
                 supabaseAuth.from('broadcasts').select('*, sender:users!teacher_id(name, role)').order('created_at', { ascending: false }),
 
                 // 4. Notifications
-                supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+                supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(30),
 
                 // 5. Modules
                 supabaseAuth.from('course_modules').select('id, title, description, module_number').order('module_number', { ascending: true }),
@@ -770,7 +803,7 @@ export default function StudentDashboardContainer() {
                 supabaseAuth.from('course_chapters').select('id, module_id, title, description, chapter_number').order('chapter_number', { ascending: true }),
 
                 // 7. Lessons
-                supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, link_url, file_size, duration, bullet_points').order('lesson_number', { ascending: true }),
+                supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, material_type, material_url, link_url, file_size, duration, bullet_points').order('lesson_number', { ascending: true }),
 
                 // 8. Curriculum Progress
                 supabaseAuth.from('student_topic_progress').select('*').eq('student_id', userId),
@@ -1405,46 +1438,6 @@ export default function StudentDashboardContainer() {
             channels.forEach(ch => supabaseAuth.removeChannel(ch));
         };
     }, [profile?.id, classroom?.id, classroom?.teacher_id, classroom?.teacher_name, profile?.name, profile?.role, profile?.profile_pic_url, classmates]);
-
-    // Realtime subscription for student curriculum spotlights (Teacher & Student Spotlights)
-    useEffect(() => {
-        if (!profile?.id) return;
-        const channel = supabaseAuth
-            .channel(`student-spotlights-${profile.id}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'student_curriculum_spotlights',
-                    filter: `student_id=eq.${profile.id}`
-                },
-                (payload) => {
-                    if (payload.eventType === 'DELETE') {
-                        const deleted = payload.old as any;
-                        if (deleted?.spotlight_type === 'teacher') {
-                            setStudentSpotlights(prev => ({ ...prev, teacherSpotlight: null }));
-                        } else if (deleted?.spotlight_type === 'student') {
-                            setStudentSpotlights(prev => ({ ...prev, studentSpotlight: null }));
-                        }
-                        return;
-                    }
-                    if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-                        const rec = payload.new as any;
-                        if (rec?.spotlight_type === 'teacher') {
-                            setStudentSpotlights(prev => ({ ...prev, teacherSpotlight: rec }));
-                        } else if (rec?.spotlight_type === 'student') {
-                            setStudentSpotlights(prev => ({ ...prev, studentSpotlight: rec }));
-                        }
-                    }
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabaseAuth.removeChannel(channel);
-        };
-    }, [profile?.id]);
 
 
 
@@ -3286,6 +3279,10 @@ export default function StudentDashboardContainer() {
                                     onRefreshCurriculum={refreshData}
                                     studentSpotlights={studentSpotlights}
                                     onToggleStudentSpotlight={handleToggleStudentSpotlight}
+                                    lessonDescriptions={lessonDescriptions}
+                                    loadingDescriptionLessonId={loadingDescriptionLessonId}
+                                    descriptionErrorLessonId={descriptionErrorLessonId}
+                                    onRetryLessonDescription={fetchLessonDescription}
                                 />
                             </div>
                         )}

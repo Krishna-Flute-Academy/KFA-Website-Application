@@ -726,12 +726,6 @@ export default function ClassroomDashboardPage({
                     const updated = [insertedBroadcast, ...prev];
                     return updated.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
                 });
-                sendClassroomNotification({
-                    teacherId: teacherProfile.id,
-                    recipients: [{ id: classroomId, name: classroom.name, type: 'class' }],
-                    title: messageSubject.trim() || `New Broadcast - ${classroom.name}`,
-                    message: messageContent.trim()
-                }).catch(err => console.error('Failed to send classroom notifications for broadcast:', err));
             }
             setMessageContent('');
             setMessageSubject('');
