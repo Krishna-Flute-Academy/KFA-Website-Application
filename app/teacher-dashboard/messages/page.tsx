@@ -529,6 +529,14 @@ function MessagesDashboardContent() {
     
     // Compose Form
     const [selectedRecipients, setSelectedRecipients] = useState<Array<{ id: string; name: string; type: 'class' | 'student' | 'global' | 'custom' }>>([]);
+    const [kfaUpdateSubTab, setKfaUpdateSubTab] = useState<'blog' | 'video'>('blog');
+    const [recipientCustomUrls, setRecipientCustomUrls] = useState<Record<string, string>>({});
+
+    // Auto-fetched reference records
+    const [autoFetchedBlogUrl, setAutoFetchedBlogUrl] = useState('');
+    const [autoFetchedBlogImage, setAutoFetchedBlogImage] = useState('');
+    const [autoFetchedVideoUrl, setAutoFetchedVideoUrl] = useState('');
+    const [autoFetchedVideoImage, setAutoFetchedVideoImage] = useState('');
 
     useEffect(() => {
         if (paramStudentId && lastProcessedStudentIdRef.current !== paramStudentId) {
@@ -584,24 +592,33 @@ function MessagesDashboardContent() {
                     const match = post.content.match(/<img[^>]+src=["']([^"']+)["']/i);
                     if (match && match[1]) img = match[1];
                 }
+                const bUrl = post.slug ? `/blog/${post.slug}` : `/blog`;
+                setAutoFetchedBlogUrl(bUrl);
+                setAutoFetchedBlogImage(img);
                 setSubject(`New Blog: ${post.title}`);
                 setContent(post.excerpt || `Check out our latest blog post: ${post.title}`);
-                setTargetUrl(post.slug ? `/blog/${post.slug}` : `/blog`);
+                setTargetUrl(bUrl);
                 setTargetImage(img);
                 showToast('Auto-populated latest Blog Post cover image & data!', 'info');
                 return;
             }
 
+            const defaultBlogUrl = '/blog';
+            setAutoFetchedBlogUrl(defaultBlogUrl);
+            setAutoFetchedBlogImage('');
             setSubject('New Academy Blog Article 📰');
             setContent('Check out our latest blog article on flute techniques and academy news!');
-            setTargetUrl('/blog');
+            setTargetUrl(defaultBlogUrl);
             setTargetImage('');
             showToast('No published blog post found. Pre-filled template values.', 'info');
         } catch (err) {
             console.warn('Failed to fetch latest blog post:', err);
+            const defaultBlogUrl = '/blog';
+            setAutoFetchedBlogUrl(defaultBlogUrl);
+            setAutoFetchedBlogImage('');
             setSubject('New Academy Blog Article 📰');
             setContent('Check out our latest blog article on flute techniques and academy news!');
-            setTargetUrl('/blog');
+            setTargetUrl(defaultBlogUrl);
             setTargetImage('');
             showToast('Could not fetch blog posts. Set default template values.', 'info');
         } finally {
@@ -622,26 +639,37 @@ function MessagesDashboardContent() {
                 const video = await res.json().catch(() => null);
                 if (video?.videoId) {
                     const thumb = video.thumbnail || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`;
+                    const vUrl = video.url || `https://www.youtube.com/watch?v=${video.videoId}`;
+                    setAutoFetchedVideoUrl(vUrl);
+                    setAutoFetchedVideoImage(thumb);
                     setSubject(`New Video: ${video.title}`);
                     setContent(video.description || `Watch our latest YouTube release: ${video.title}`);
-                    setTargetUrl(video.url || `https://www.youtube.com/watch?v=${video.videoId}`);
+                    setTargetUrl(vUrl);
                     setTargetImage(thumb);
                     showToast('Auto-populated latest YouTube Video thumbnail & data!', 'info');
                     return;
                 }
             }
 
+            const defaultVidUrl = 'https://www.youtube.com';
+            const defaultVidThumb = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80';
+            setAutoFetchedVideoUrl(defaultVidUrl);
+            setAutoFetchedVideoImage(defaultVidThumb);
             setSubject('New Flute Video Release 🎥');
             setContent('Check out our latest flute lesson and performance video on YouTube!');
-            setTargetUrl('https://www.youtube.com');
-            setTargetImage('https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80');
+            setTargetUrl(defaultVidUrl);
+            setTargetImage(defaultVidThumb);
             showToast('YouTube feed unavailable. Pre-filled template values.', 'info');
         } catch (err) {
             console.warn('Failed to fetch latest video:', err);
+            const defaultVidUrl = 'https://www.youtube.com';
+            const defaultVidThumb = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80';
+            setAutoFetchedVideoUrl(defaultVidUrl);
+            setAutoFetchedVideoImage(defaultVidThumb);
             setSubject('New Flute Video Release 🎥');
             setContent('Check out our latest flute lesson and performance video on YouTube!');
-            setTargetUrl('https://www.youtube.com');
-            setTargetImage('https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80');
+            setTargetUrl(defaultVidUrl);
+            setTargetImage(defaultVidThumb);
             showToast('Could not fetch YouTube feed. Set default values.', 'info');
         } finally {
             setFetchingAutoData(false);
@@ -725,10 +753,18 @@ function MessagesDashboardContent() {
 
     // Auto-populate inputs based on selected channel and template
     useEffect(() => {
-        if (activeChannel === 'blog') {
-            fetchLatestBlogData();
-        } else if (activeChannel === 'video') {
-            fetchLatestVideoData();
+        if (activeChannel === 'kfa_updates' || activeChannel === 'blog' || activeChannel === 'video') {
+            if (activeChannel === 'kfa_updates') {
+                if (kfaUpdateSubTab === 'blog') {
+                    fetchLatestBlogData();
+                } else {
+                    fetchLatestVideoData();
+                }
+            } else if (activeChannel === 'blog') {
+                fetchLatestBlogData();
+            } else if (activeChannel === 'video') {
+                fetchLatestVideoData();
+            }
         } else if (activeChannel && activeChannel !== 'chatbox') {
             const template = defaultTemplates[activeChannel];
             if (template) {
@@ -741,7 +777,7 @@ function MessagesDashboardContent() {
             setTargetUrl('');
             setTargetImage('');
         }
-    }, [activeChannel, defaultTemplates, fetchLatestBlogData, fetchLatestVideoData]);
+    }, [activeChannel, kfaUpdateSubTab, defaultTemplates, fetchLatestBlogData, fetchLatestVideoData]);
 
     const handleSaveDefaultTemplate = async () => {
         if (!teacherProfile?.id || !activeChannel || activeChannel === 'chatbox') return;
@@ -1642,14 +1678,31 @@ function MessagesDashboardContent() {
         const hasGlobal = selectedRecipients.some(r => r.type === 'global');
         const classRecipients = selectedRecipients.filter(r => r.type === 'class');
         const hasMultipleClasses = classRecipients.length > 1;
-        const resolvedChannel = (activeChannel === 'blog' || activeChannel === 'video')
-            ? activeChannel
+        const isKfaUpdate = activeChannel === 'kfa_updates' || activeChannel === 'blog' || activeChannel === 'video';
+        const effectiveUpdateType = activeChannel === 'kfa_updates' ? kfaUpdateSubTab : (activeChannel === 'video' ? 'video' : 'blog');
+        const resolvedChannel = isKfaUpdate
+            ? (effectiveUpdateType === 'video' ? 'video' : 'blog')
             : (hasGlobal || hasMultipleClasses) ? 'announcements' : activeChannel;
 
+        const defaultTargetUrl = isKfaUpdate 
+            ? (targetUrl.trim() || (effectiveUpdateType === 'blog' ? autoFetchedBlogUrl : autoFetchedVideoUrl))
+            : targetUrl.trim();
+        const defaultImageUrl = isKfaUpdate
+            ? (targetImage.trim() || (effectiveUpdateType === 'blog' ? autoFetchedBlogImage : autoFetchedVideoImage))
+            : targetImage.trim();
+
         const payloadRecipients = [
-            ...selectedRecipients,
-            ...(targetUrl || targetImage || activeChannel === 'blog' || activeChannel === 'video'
-                ? [{ _meta: true, type: activeChannel, target_url: targetUrl.trim(), image_url: targetImage.trim() }]
+            ...selectedRecipients.map(r => ({
+                ...r,
+                ...(recipientCustomUrls[r.id]?.trim() ? { custom_url: recipientCustomUrls[r.id].trim() } : {})
+            })),
+            ...(defaultTargetUrl || defaultImageUrl || isKfaUpdate
+                ? [{ 
+                    _meta: true, 
+                    type: isKfaUpdate ? effectiveUpdateType : activeChannel, 
+                    target_url: defaultTargetUrl, 
+                    image_url: defaultImageUrl 
+                }]
                 : [])
         ];
 
@@ -1681,6 +1734,7 @@ function MessagesDashboardContent() {
                 setSubject('');
                 setContent('');
                 setSelectedRecipients([]);
+                setRecipientCustomUrls({});
                 setAttachedAudioNote(null);
             } else {
                 // Supabase insert
@@ -1707,6 +1761,7 @@ function MessagesDashboardContent() {
                 setSubject('');
                 setContent('');
                 setSelectedRecipients([]);
+                setRecipientCustomUrls({});
                 setAttachedAudioNote(null);
             }
         } catch (err: any) {
@@ -1945,7 +2000,12 @@ CREATE POLICY "Allow all custom_recipient_groups" ON public.custom_recipient_gro
 
     // ── Search & Filter Broadcast Logs ─────────────────────────────────────────
     const filteredBroadcasts = useMemo(() => {
-        let list = broadcasts.filter(b => b.channel === activeChannel);
+        let list = broadcasts.filter(b => {
+            if (activeChannel === 'kfa_updates') {
+                return b.channel === 'kfa_updates' || b.channel === 'blog' || b.channel === 'video';
+            }
+            return b.channel === activeChannel;
+        });
 
         const query = searchQuery.toLowerCase().trim();
         if (!query) return list;
@@ -2129,8 +2189,7 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                 <div className="space-y-2 mt-4">
                                     {[
                                         { id: 'announcements', label: 'Announcements', desc: 'Global Broadcast', icon: Megaphone, color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/20' },
-                                        { id: 'blog', label: 'New Blog Post', desc: 'Auto-populated & Custom Blog', icon: BookOpen, color: 'text-amber-600 bg-amber-50 dark:bg-amber-950/20' },
-                                        { id: 'video', label: 'New Video Release', desc: 'Auto-populated & YouTube Video', icon: Youtube, color: 'text-red-600 bg-red-50 dark:bg-red-950/20' },
+                                        { id: 'kfa_updates', label: 'KFA Updates', desc: 'Blog & YouTube Updates', icon: Globe, color: 'text-amber-600 bg-amber-50 dark:bg-amber-950/20' },
                                         { id: 'classroom', label: 'Classroom Broadcast', desc: 'Section-wise targets', icon: Presentation, color: 'text-blue-500 bg-blue-50' },
                                         { id: 'custom_groups', label: 'Custom Groups', desc: 'Performers, Beginners...', icon: Users, color: 'text-indigo-500 bg-indigo-50' },
                                         { id: 'new_joiners', label: 'New Joiners', desc: 'Automated workflows', icon: Sparkles, color: 'text-emerald-500 bg-emerald-50' },
@@ -2165,22 +2224,21 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                         <h5 className={`text-sm ${hasUnread ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-800 dark:text-slate-250'}`}>
                                                             {channel.label}
                                                         </h5>
-                                                        {channel.id === 'blog' && (
+                                                        {channel.id === 'kfa_updates' && (
                                                             <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
-                                                                !systemNotifSettings.blog_enabled
-                                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                                !systemNotifSettings.blog_enabled || !systemNotifSettings.video_enabled
+                                                                    ? (!systemNotifSettings.blog_enabled && !systemNotifSettings.video_enabled)
+                                                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                                        : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'
                                                                     : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                                                             }`}>
-                                                                {!systemNotifSettings.blog_enabled ? 'Paused' : 'Active'}
-                                                            </span>
-                                                        )}
-                                                        {channel.id === 'video' && (
-                                                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
-                                                                !systemNotifSettings.video_enabled
-                                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                                            }`}>
-                                                                {!systemNotifSettings.video_enabled ? 'Paused' : 'Active'}
+                                                                {!systemNotifSettings.blog_enabled && !systemNotifSettings.video_enabled
+                                                                    ? 'Paused'
+                                                                    : !systemNotifSettings.blog_enabled
+                                                                        ? 'Blog Paused'
+                                                                        : !systemNotifSettings.video_enabled
+                                                                            ? 'Video Paused'
+                                                                            : 'Active'}
                                                             </span>
                                                         )}
                                                     </div>
@@ -2776,113 +2834,236 @@ CREATE POLICY "Allow authenticated users to insert their own broadcast_reads" ON
                                                 </div>
                                             </div>
                                         )}
-                                        {(activeChannel === 'blog' || activeChannel === 'video') && (
-                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-                                                <div>
-                                                    <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                                                        <span>Automatic {activeChannel === 'blog' ? 'Blog Post' : 'YouTube Video'} Notifications:</span>
-                                                        <span className={systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled'] ? 'text-emerald-600 dark:text-emerald-400 font-black' : 'text-amber-600 dark:text-amber-400 font-black'}>
-                                                            {systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled'] ? '● Active' : '⏸ Paused'}
-                                                        </span>
-                                                    </p>
-                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                                        {systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled']
-                                                            ? 'Enabled. Automatically highlights new releases on the Student Dashboard.'
-                                                            : 'Paused. No new automatic notifications will be displayed to students.'}
-                                                    </p>
-                                                </div>
+                                        {(activeChannel === 'kfa_updates' || activeChannel === 'blog' || activeChannel === 'video') && (
+                                            <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/80">
                                                 <button
                                                     type="button"
-                                                    disabled={isUpdatingNotifSettings}
-                                                    onClick={() => handleToggleSystemNotification(activeChannel as 'blog' | 'video')}
-                                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50 ${
-                                                        systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled']
-                                                            ? 'bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-800'
-                                                            : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                                                    onClick={() => {
+                                                        setKfaUpdateSubTab('blog');
+                                                        fetchLatestBlogData();
+                                                    }}
+                                                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                                                        (activeChannel === 'kfa_updates' ? kfaUpdateSubTab === 'blog' : activeChannel === 'blog')
+                                                            ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                                                     }`}
                                                 >
-                                                    {isUpdatingNotifSettings ? (
-                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                    ) : systemNotifSettings[activeChannel === 'blog' ? 'blog_enabled' : 'video_enabled'] ? (
-                                                        '⏸ Pause Feature'
-                                                    ) : (
-                                                        '▶ Resume Feature'
-                                                    )}
+                                                    <BookOpen className="w-4 h-4 text-amber-500" />
+                                                    <span>Blog Update</span>
+                                                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase ${
+                                                        systemNotifSettings.blog_enabled
+                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                    }`}>
+                                                        {systemNotifSettings.blog_enabled ? 'Active' : 'Paused'}
+                                                    </span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setKfaUpdateSubTab('video');
+                                                        fetchLatestVideoData();
+                                                    }}
+                                                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                                                        (activeChannel === 'kfa_updates' ? kfaUpdateSubTab === 'video' : activeChannel === 'video')
+                                                            ? 'bg-white dark:bg-slate-900 text-red-600 dark:text-red-400 shadow-xs border border-slate-200 dark:border-slate-700'
+                                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                                    }`}
+                                                >
+                                                    <Youtube className="w-4 h-4 text-red-500" />
+                                                    <span>YouTube Update</span>
+                                                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase ${
+                                                        systemNotifSettings.video_enabled
+                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                    }`}>
+                                                        {systemNotifSettings.video_enabled ? 'Active' : 'Paused'}
+                                                    </span>
                                                 </button>
                                             </div>
                                         )}
-                                        {(activeChannel === 'blog' || activeChannel === 'video') && (
-                                            <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 p-4 rounded-2xl flex flex-col gap-3">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                        {activeChannel === 'blog' ? (
-                                                            <BookOpen className="w-4 h-4 text-amber-500" />
-                                                        ) : (
-                                                            <Youtube className="w-4 h-4 text-red-500" />
-                                                        )}
-                                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                                                            {activeChannel === 'blog' ? 'Blog Announcement Settings' : 'Video Announcement Settings'}
-                                                        </span>
+
+                                        {(activeChannel === 'kfa_updates' || activeChannel === 'blog' || activeChannel === 'video') && (() => {
+                                            const isBlog = activeChannel === 'kfa_updates' ? kfaUpdateSubTab === 'blog' : activeChannel === 'blog';
+                                            const isEnabled = systemNotifSettings[isBlog ? 'blog_enabled' : 'video_enabled'];
+                                            return (
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                                            <span>Automatic {isBlog ? 'Blog Post' : 'YouTube Video'} Notifications:</span>
+                                                            <span className={isEnabled ? 'text-emerald-600 dark:text-emerald-400 font-black' : 'text-amber-600 dark:text-amber-400 font-black'}>
+                                                                {isEnabled ? '● Active' : '⏸ Paused'}
+                                                            </span>
+                                                        </p>
+                                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                            {isEnabled
+                                                                ? `Enabled. Automatically highlights new ${isBlog ? 'blog articles' : 'YouTube releases'} on the Student Dashboard.`
+                                                                : `Paused. Automatic ${isBlog ? 'blog' : 'YouTube'} notifications are stopped for students.`}
+                                                        </p>
                                                     </div>
                                                     <button
                                                         type="button"
-                                                        onClick={activeChannel === 'blog' ? fetchLatestBlogData : fetchLatestVideoData}
-                                                        disabled={fetchingAutoData}
-                                                        className="px-3 py-1.5 bg-white dark:bg-slate-700 hover:bg-slate-100 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                                                        disabled={isUpdatingNotifSettings}
+                                                        onClick={() => handleToggleSystemNotification(isBlog ? 'blog' : 'video')}
+                                                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50 ${
+                                                            isEnabled
+                                                                ? 'bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-800'
+                                                                : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                                                        }`}
                                                     >
-                                                        <RefreshCw className={`w-3.5 h-3.5 ${fetchingAutoData ? 'animate-spin' : ''}`} />
-                                                        Auto-Fetch Latest {activeChannel === 'blog' ? 'Blog' : 'Video'}
+                                                        {isUpdatingNotifSettings ? (
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        ) : isEnabled ? (
+                                                            '⏸ Pause Feature'
+                                                        ) : (
+                                                            '▶ Resume Feature'
+                                                        )}
                                                     </button>
                                                 </div>
+                                            );
+                                        })()}
 
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                    <div className="flex flex-col gap-1">
-                                                        <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                                            <Link2 className="w-3 h-3 text-slate-400" />
-                                                            Target Link / URL (Auto-filled, editable)
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={targetUrl}
-                                                            onChange={(e) => handleTargetUrlChange(e.target.value)}
-                                                            placeholder={activeChannel === 'blog' ? "e.g. /blog/post-slug" : "e.g. https://www.youtube.com/watch?v=..."}
-                                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
-                                                        />
-                                                    </div>
-                                                    <div className="flex flex-col gap-1">
-                                                        <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                                            <ImageIcon className="w-3 h-3 text-slate-400" />
-                                                            Cover Image / Thumbnail URL
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={targetImage}
-                                                            onChange={(e) => setTargetImage(e.target.value)}
-                                                            placeholder="e.g. https://.../image.jpg"
-                                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
-                                                        />
-                                                    </div>
-                                                </div>
-
-                                                {targetImage && (
-                                                    <div className="flex items-center gap-3 p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
-                                                        <img src={targetImage} alt="Thumbnail preview" className="w-16 h-12 rounded-lg object-cover shrink-0" />
-                                                        <div className="min-w-0 flex-1">
-                                                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
-                                                                ✓ Auto-Populated Media Thumbnail Preview
-                                                            </span>
-                                                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate block mt-0.5">
-                                                                {targetUrl || 'Link attached'}
+                                        {(activeChannel === 'kfa_updates' || activeChannel === 'blog' || activeChannel === 'video') && (() => {
+                                            const isBlog = activeChannel === 'kfa_updates' ? kfaUpdateSubTab === 'blog' : activeChannel === 'blog';
+                                            const currentAutoUrl = isBlog ? autoFetchedBlogUrl : autoFetchedVideoUrl;
+                                            const currentAutoImg = isBlog ? autoFetchedBlogImage : autoFetchedVideoImage;
+                                            return (
+                                                <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 p-4 rounded-2xl flex flex-col gap-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            {isBlog ? (
+                                                                <BookOpen className="w-4 h-4 text-amber-500" />
+                                                            ) : (
+                                                                <Youtube className="w-4 h-4 text-red-500" />
+                                                            )}
+                                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                                                                {isBlog ? 'Blog Announcement Settings' : 'YouTube Video Settings'}
                                                             </span>
                                                         </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={isBlog ? fetchLatestBlogData : fetchLatestVideoData}
+                                                            disabled={fetchingAutoData}
+                                                            className="px-3 py-1.5 bg-white dark:bg-slate-700 hover:bg-slate-100 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                                                        >
+                                                            <RefreshCw className={`w-3.5 h-3.5 ${fetchingAutoData ? 'animate-spin' : ''}`} />
+                                                            Auto-Fetch Latest {isBlog ? 'Blog' : 'YouTube Video'}
+                                                        </button>
                                                     </div>
-                                                )}
 
-                                                <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
-                                                    💡 Students matching the selected recipients will see a "New {activeChannel === 'blog' ? 'Blog Post' : 'Video'}" dialog box & corner banner in their portal pointing to this URL.
-                                                </p>
-                                            </div>
-                                        )}
+                                                    {/* Auto-Fetched URL Reference Badge */}
+                                                    <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between gap-3">
+                                                        <div className="min-w-0 flex-1">
+                                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                                                                Auto-Fetched Default URL (Global Default)
+                                                            </span>
+                                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block mt-0.5 font-mono">
+                                                                {currentAutoUrl || (isBlog ? '/blog' : 'https://www.youtube.com')}
+                                                            </span>
+                                                        </div>
+                                                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-extrabold rounded-md shrink-0">
+                                                            Default
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Custom URL Override Field */}
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        <div className="flex flex-col gap-1">
+                                                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                                                                <Link2 className="w-3.5 h-3.5 text-amber-500" />
+                                                                <span>Optional Custom URL Override</span>
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={targetUrl}
+                                                                onChange={(e) => handleTargetUrlChange(e.target.value)}
+                                                                placeholder={isBlog ? "e.g. /blog/post-slug (leave blank for auto-fetched)" : "e.g. https://www.youtube.com/watch?v=... (leave blank for auto-fetched)"}
+                                                                className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
+                                                            />
+                                                            <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                                                                {targetUrl.trim() && targetUrl.trim() !== currentAutoUrl 
+                                                                    ? '✓ Custom URL active for recipients.' 
+                                                                    : 'Using auto-fetched default URL.'}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex flex-col gap-1">
+                                                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                                                                <ImageIcon className="w-3.5 h-3.5 text-slate-400" />
+                                                                Cover Image / Thumbnail URL
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={targetImage}
+                                                                onChange={(e) => setTargetImage(e.target.value)}
+                                                                placeholder="e.g. https://.../image.jpg"
+                                                                className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#0e5f59] font-medium text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Recipient-Specific Custom URLs list */}
+                                                    {selectedRecipients.length > 0 && (
+                                                        <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl space-y-2">
+                                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                                                                Recipient-Specific Custom URLs (Optional)
+                                                            </span>
+                                                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                                                {selectedRecipients.map(rec => (
+                                                                    <div key={rec.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
+                                                                        <div className="min-w-0">
+                                                                            <span className="font-bold text-slate-800 dark:text-slate-200">{rec.name}</span>
+                                                                            <span className="text-[10px] text-slate-400 ml-1.5 uppercase font-mono">({rec.type})</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <input
+                                                                                type="text"
+                                                                                value={recipientCustomUrls[rec.id] || ''}
+                                                                                onChange={(e) => setRecipientCustomUrls(prev => ({ ...prev, [rec.id]: e.target.value }))}
+                                                                                placeholder="Recipient custom URL (optional)"
+                                                                                className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 w-56 md:w-64 text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-[#0e5f59]"
+                                                                            />
+                                                                            {recipientCustomUrls[rec.id] && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setRecipientCustomUrls(prev => {
+                                                                                        const copy = { ...prev };
+                                                                                        delete copy[rec.id];
+                                                                                        return copy;
+                                                                                    })}
+                                                                                    className="p-1 text-slate-400 hover:text-rose-500"
+                                                                                    title="Reset to default"
+                                                                                >
+                                                                                    <X className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Live Media Thumbnail & Target Preview */}
+                                                    {(targetImage || currentAutoImg) && (
+                                                        <div className="flex items-center gap-3 p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
+                                                            <img src={targetImage || currentAutoImg} alt="Thumbnail preview" className="w-16 h-12 rounded-lg object-cover shrink-0" />
+                                                            <div className="min-w-0 flex-1">
+                                                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
+                                                                    ✓ Effective {isBlog ? 'Blog' : 'Video'} Preview
+                                                                </span>
+                                                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate block mt-0.5 font-mono">
+                                                                    Target: {targetUrl || currentAutoUrl || 'Default Link'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                                                        💡 Students matching the selected recipients will see a "New {isBlog ? 'Blog Post' : 'Video'}" dialog box & corner banner in their portal pointing to their effective URL.
+                                                    </p>
+                                                </div>
+                                            );
+                                        })()}
 
                                         {messageType === 'broadcast' && (
                                             <div className="flex flex-col gap-1.5">

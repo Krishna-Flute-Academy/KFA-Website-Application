@@ -231,23 +231,29 @@ export default function OverviewTab({
 
         if (blogBc) {
             const meta = blogBc.recipients?.find((r: any) => r._meta && r.type === 'blog') || {};
+            const studentRec = blogBc.recipients?.find((r: any) => r.type === 'student' && r.id === profile?.id);
+            const classRec = blogBc.recipients?.find((r: any) => r.type === 'class');
+            const resolvedTargetUrl = studentRec?.custom_url || classRec?.custom_url || meta.target_url || '/blog';
             setLatestPost({
                 id: blogBc.id,
                 title: blogBc.subject,
-                slug: meta.target_url || '/blog',
+                slug: resolvedTargetUrl,
                 excerpt: stripHtml(blogBc.content || ''),
                 featured_image: meta.image_url || undefined,
-                target_url: meta.target_url || '/blog'
+                target_url: resolvedTargetUrl
             });
         }
 
         if (videoBc) {
             const meta = videoBc.recipients?.find((r: any) => r._meta && r.type === 'video') || {};
+            const studentRec = videoBc.recipients?.find((r: any) => r.type === 'student' && r.id === profile?.id);
+            const classRec = videoBc.recipients?.find((r: any) => r.type === 'class');
+            const resolvedTargetUrl = studentRec?.custom_url || classRec?.custom_url || meta.target_url || 'https://www.youtube.com/@krishnafluteacademy';
             setLatestVideo({
                 videoId: videoBc.id,
                 title: videoBc.subject,
                 thumbnail: meta.image_url,
-                url: meta.target_url || 'https://www.youtube.com/@krishnafluteacademy'
+                url: resolvedTargetUrl
             });
         }
 
@@ -856,15 +862,6 @@ export default function OverviewTab({
                             </div>
                             <h3 className="font-bold text-[#3E3A35] text-xs sm:text-sm">News & Updates</h3>
                         </div>
-                        <a
-                            href="/blog"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[11px] font-bold text-[#7C5E3F] hover:underline flex items-center gap-0.5"
-                        >
-                            <span>More</span>
-                            <ChevronRight className="w-3 h-3" />
-                        </a>
                     </div>
 
                     <div className="divide-y divide-slate-100">
@@ -1958,15 +1955,6 @@ export default function OverviewTab({
                                     </div>
                                     <h3 className="font-bold text-[#3E3A35] text-xs sm:text-sm">News & Updates</h3>
                                 </div>
-                                <a
-                                    href="/blog"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[11px] font-bold text-[#7C5E3F] hover:underline flex items-center gap-0.5"
-                                >
-                                    <span>More</span>
-                                    <ChevronRight className="w-3 h-3" />
-                                </a>
                             </div>
 
                             <div className="divide-y divide-slate-100">

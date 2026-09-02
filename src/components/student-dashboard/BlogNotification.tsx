@@ -122,13 +122,16 @@ export default function BlogNotification({ studentId, broadcasts }: BlogNotifica
                 // Process Blog
                 if (blogBc) {
                     const meta = blogBc.recipients?.find((r: any) => r._meta && r.type === 'blog') || {};
+                    const studentRec = blogBc.recipients?.find((r: any) => r.type === 'student' && r.id === studentId);
+                    const classRec = blogBc.recipients?.find((r: any) => r.type === 'class');
+                    const resolvedTargetUrl = studentRec?.custom_url || classRec?.custom_url || meta.target_url || '/blog';
                     const post: BlogPost = {
                         id: blogBc.id,
                         title: blogBc.subject,
-                        slug: meta.target_url || '/blog',
+                        slug: resolvedTargetUrl,
                         excerpt: stripHtml(blogBc.content || ''),
                         featured_image: meta.image_url || undefined,
-                        target_url: meta.target_url || '/blog'
+                        target_url: resolvedTargetUrl
                     };
                     const seen = getSeen(BLOG_KEY, studentId);
                     if (seen.bannerDismissed !== post.id) {
@@ -145,12 +148,15 @@ export default function BlogNotification({ studentId, broadcasts }: BlogNotifica
                 // Process YouTube
                 if (videoBc) {
                     const meta = videoBc.recipients?.find((r: any) => r._meta && r.type === 'video') || {};
+                    const studentRec = videoBc.recipients?.find((r: any) => r.type === 'student' && r.id === studentId);
+                    const classRec = videoBc.recipients?.find((r: any) => r.type === 'class');
+                    const resolvedTargetUrl = studentRec?.custom_url || classRec?.custom_url || meta.target_url || 'https://www.youtube.com';
                     const video: YouTubeVideo = {
                         videoId: videoBc.id,
                         title: videoBc.subject,
                         description: stripHtml(videoBc.content || ''),
                         thumbnail: meta.image_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80',
-                        url: meta.target_url || 'https://www.youtube.com'
+                        url: resolvedTargetUrl
                     };
                     const seen = getSeen(VIDEO_KEY, studentId);
                     if (seen.bannerDismissed !== video.videoId) {
