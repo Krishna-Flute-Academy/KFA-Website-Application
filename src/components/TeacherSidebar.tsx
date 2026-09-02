@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
@@ -305,160 +305,26 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
 
     const storagePercentage = storageUsed !== null ? Math.min((storageUsed / storageLimit) * 100, 100) : 0;
 
-    useEffect(() => {
-        if (userRole !== 'admin') return;
-
-        const fetchUnassignedCount = async () => {
-            try {
-                const { count, error } = await supabaseAuth
-                    .from('users')
-                    .select('id', { count: 'exact', head: true })
-                    .in('role', ['student', 'pending', 'mentor'])
-                    .is('teacher_id', null);
-                
-                if (error) throw error;
-                if (count !== null) setUnassignedCount(count);
-            } catch (error: any) {
-                console.warn('Notice fetching unassigned count:', error?.message || error);
-            }
-        };
-
-        fetchUnassignedCount();
-
-        // Polling: refresh count every 30 seconds instead of using heavy realtime subscriptions
-        const intervalId = setInterval(fetchUnassignedCount, 30000);
-
-        return () => { clearInterval(intervalId); };
-    }, [userRole]);
-
-    useEffect(() => {
-        if (userRole !== 'admin') return;
-
-        const fetchPendingPaymentsCount = async () => {
-            try {
-                const { count, error } = await supabaseAuth
-                    .from('fees_payments')
-                    .select('id', { count: 'exact', head: true })
-                    .eq('status', 'pending_approval');
-                
-                if (error) throw error;
-                if (count !== null) setPendingPaymentsCount(count);
-            } catch (error: any) {
-                console.warn('Notice fetching pending payments count:', error?.message || error);
-            }
-        };
-
-        fetchPendingPaymentsCount();
-
-        // Polling: refresh count every 30 seconds instead of using heavy realtime subscriptions
-        const intervalId = setInterval(fetchPendingPaymentsCount, 30000);
-
-        return () => { clearInterval(intervalId); };
-    }, [userRole]);
-
-    useEffect(() => {
-        if (!teacherProfile || !teacherProfile.id) return;
-
-        const fetchPendingLeavesCount = async () => {
-            try {
-                if (userRole === 'admin') {
-                    const { count, error } = await supabaseAuth
-                        .from('leave_requests')
-                        .select('id', { count: 'exact', head: true })
-                        .eq('status', 'pending');
-                    
-                    if (error) throw error;
-                    if (count !== null) {
-                        setPendingLeavesCount(count);
-                    }
-                } else {
-                    const { data: classrooms, error: roomsErr } = await supabaseAuth
-                        .from('classrooms')
-                        .select('id')
-                        .eq('teacher_id', teacherProfile.id);
-                    
-                    if (roomsErr) throw roomsErr;
-                    
-                    const roomIds = classrooms?.map(c => c.id) || [];
-                    if (roomIds.length > 0) {
-                        const { count, error: countErr } = await supabaseAuth
-                            .from('leave_requests')
-                            .select('id', { count: 'exact', head: true })
-                            .eq('status', 'pending')
-                            .in('classroom_id', roomIds);
-                        
-                        if (countErr) throw countErr;
-                        if (count !== null) {
-                            setPendingLeavesCount(count);
-                        }
-                    } else {
-                        setPendingLeavesCount(0);
-                    }
-                }
-            } catch (error: any) {
-                console.warn('Notice fetching pending leave requests count:', error?.message || error);
-            }
-        };
-
-        fetchPendingLeavesCount();
-
-        const pollingInterval = setInterval(fetchPendingLeavesCount, 30000);
-        return () => clearInterval(pollingInterval);
-    }, [teacherProfile, userRole]);
+    const isLiveCheckingRef = useRef(false);
+    const isAdminCheckingRef = useRef(false);
 
     useEffect(() => {
         if (!teacherProfile?.id) return;
 
-        const fetchNotificationCounts = async () => {
-            try {
-                const { data, error } = await supabaseAuth
-                    .from('notifications')
-                    .select('type')
-                    .eq('user_id', teacherProfile.id)
-                    .eq('is_read', false);
-
-                if (error) throw error;
-
-                let fees = 0;
-                let tasks = 0;
-                let messages = 0;
-
-                (data || []).forEach(n => {
-                    if (n.type === 'fees') fees++;
-                    else if (n.type === 'tasks') tasks++;
-                    else if (n.type === 'messages') messages++;
-                });
-
-                setUnreadFeesCount(fees);
-                setUnreadTasksCount(tasks);
-                setUnreadMessagesCount(messages);
-            } catch (err: any) {
-                console.warn('Notice fetching notification counts in sidebar:', err?.message || err);
-            }
-        };
-
-        fetchNotificationCounts();
-
-        // Polling: refresh notifications every 30 seconds instead of heavy realtime subscriptions
-        const intervalId = setInterval(fetchNotificationCounts, 30000);
-
-        return () => {
-            clearInterval(intervalId);
-        };
-    }, [teacherProfile?.id]);
-
-    // Fetch active session from classrooms table and use polling
-    useEffect(() => {
-        if (!teacherProfile?.id) return;
-
+        // 1. Live classroom polling routine (60s cadence)
         const checkActiveSessionInDB = async () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            if (isLiveCheckingRef.current || !teacherProfile?.id) return;
+            isLiveCheckingRef.current = true;
+
             try {
+                const isUserAdmin = userRole === 'admin';
                 let query = supabaseAuth
                     .from('classrooms')
                     .select('id, name, is_live, live_meeting_link, live_session_started_at')
                     .eq('is_live', true);
 
-                if (userRole !== 'admin') {
+                if (!isUserAdmin) {
                     query = query.eq('teacher_id', teacherProfile.id);
                 }
 
@@ -466,34 +332,174 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                     .order('live_session_started_at', { ascending: false })
                     .limit(1);
 
-                if (error) throw error;
+                if (!error) {
+                    if (liveRooms && liveRooms.length > 0) {
+                        const room = liveRooms[0];
+                        const startedTime = room.live_session_started_at ? new Date(room.live_session_started_at).getTime() : Date.now();
+                        const sessionDateStr = room.live_session_started_at
+                            ? new Date(room.live_session_started_at).toISOString().split('T')[0]
+                            : new Date().toISOString().split('T')[0];
 
-                if (liveRooms && liveRooms.length > 0) {
-                    const room = liveRooms[0];
-                    const startedTime = room.live_session_started_at ? new Date(room.live_session_started_at).getTime() : Date.now();
-                    const sessionDateStr = room.live_session_started_at 
-                        ? new Date(room.live_session_started_at).toISOString().split('T')[0]
-                        : new Date().toISOString().split('T')[0];
-
-                    setActiveSession({
-                        classroomId: room.id,
-                        classroomName: room.name,
-                        sessionType: room.live_meeting_link ? 'online' : 'offline',
-                        sessionDate: sessionDateStr,
-                        startedAt: startedTime
-                    });
-                } else {
-                    setActiveSession(null);
+                        setActiveSession({
+                            classroomId: room.id,
+                            classroomName: room.name,
+                            sessionType: room.live_meeting_link ? 'online' : 'offline',
+                            sessionDate: sessionDateStr,
+                            startedAt: startedTime
+                        });
+                    } else {
+                        setActiveSession(null);
+                    }
                 }
             } catch (err: any) {
                 console.warn('Notice fetching active session from DB:', err?.message || err);
+            } finally {
+                isLiveCheckingRef.current = false;
             }
         };
 
-        checkActiveSessionInDB();
+        // 2. Administrative counters polling routine (180s cadence)
+        const fetchAdminCounters = async () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            if (isAdminCheckingRef.current || !teacherProfile?.id) return;
+            isAdminCheckingRef.current = true;
 
-        const pollingInterval = setInterval(checkActiveSessionInDB, 30000);
-        return () => clearInterval(pollingInterval);
+            try {
+                const isUserAdmin = userRole === 'admin';
+                const teacherId = teacherProfile.id;
+                const promises: Promise<any>[] = [];
+
+                // A. Unassigned count (admin only)
+                if (isUserAdmin) {
+                    promises.push(
+                        (async () => {
+                            try {
+                                const { count, error } = await supabaseAuth
+                                    .from('users')
+                                    .select('id', { count: 'exact', head: true })
+                                    .in('role', ['student', 'pending', 'mentor'])
+                                    .is('teacher_id', null);
+                                if (!error && count !== null) setUnassignedCount(count);
+                            } catch (err: any) {
+                                console.warn('Notice fetching unassigned count:', err?.message || err);
+                            }
+                        })()
+                    );
+                }
+
+                // B. Pending payments count (admin only)
+                if (isUserAdmin) {
+                    promises.push(
+                        (async () => {
+                            try {
+                                const { count, error } = await supabaseAuth
+                                    .from('fees_payments')
+                                    .select('id', { count: 'exact', head: true })
+                                    .eq('status', 'pending_approval');
+                                if (!error && count !== null) setPendingPaymentsCount(count);
+                            } catch (err: any) {
+                                console.warn('Notice fetching pending payments count:', err?.message || err);
+                            }
+                        })()
+                    );
+                }
+
+                // C. Pending leaves count
+                promises.push(
+                    (async () => {
+                        try {
+                            if (isUserAdmin) {
+                                const { count, error } = await supabaseAuth
+                                    .from('leave_requests')
+                                    .select('id', { count: 'exact', head: true })
+                                    .eq('status', 'pending');
+                                if (!error && count !== null) setPendingLeavesCount(count);
+                            } else {
+                                const { data: classrooms, error: roomsErr } = await supabaseAuth
+                                    .from('classrooms')
+                                    .select('id')
+                                    .eq('teacher_id', teacherId);
+                                if (!roomsErr) {
+                                    const roomIds = classrooms?.map(c => c.id) || [];
+                                    if (roomIds.length > 0) {
+                                        const { count, error: countErr } = await supabaseAuth
+                                            .from('leave_requests')
+                                            .select('id', { count: 'exact', head: true })
+                                            .eq('status', 'pending')
+                                            .in('classroom_id', roomIds);
+                                        if (!countErr && count !== null) setPendingLeavesCount(count);
+                                    } else {
+                                        setPendingLeavesCount(0);
+                                    }
+                                }
+                            }
+                        } catch (err: any) {
+                            console.warn('Notice fetching pending leave requests count:', err?.message || err);
+                        }
+                    })()
+                );
+
+                // D. Notifications unread category count
+                promises.push(
+                    (async () => {
+                        try {
+                            const { data, error } = await supabaseAuth
+                                .from('notifications')
+                                .select('type')
+                                .eq('user_id', teacherId)
+                                .eq('is_read', false);
+
+                            if (!error && data) {
+                                let fees = 0;
+                                let tasks = 0;
+                                let messages = 0;
+                                data.forEach(n => {
+                                    if (n.type === 'fees') fees++;
+                                    else if (n.type === 'tasks') tasks++;
+                                    else if (n.type === 'messages') messages++;
+                                });
+                                setUnreadFeesCount(fees);
+                                setUnreadTasksCount(tasks);
+                                setUnreadMessagesCount(messages);
+                            }
+                        } catch (err: any) {
+                            console.warn('Notice fetching notification counts in sidebar:', err?.message || err);
+                        }
+                    })()
+                );
+
+                await Promise.allSettled(promises);
+            } catch (error: any) {
+                console.warn('Notice in sidebar counts polling:', error?.message || error);
+            } finally {
+                isAdminCheckingRef.current = false;
+            }
+        };
+
+        // Run immediately on mount
+        checkActiveSessionInDB();
+        fetchAdminCounters();
+
+        // 1. Live classroom polling: every 60 seconds (time-sensitive)
+        const liveIntervalId = setInterval(checkActiveSessionInDB, 60000);
+
+        // 2. Administrative counters polling: every 180 seconds (3 minutes)
+        const adminIntervalId = setInterval(fetchAdminCounters, 180000);
+
+        // Visibility restore: zero polling when hidden; immediate refresh on visible
+        const handleVisibility = () => {
+            if (!document.hidden) {
+                checkActiveSessionInDB();
+                fetchAdminCounters();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+
+        return () => {
+            clearInterval(liveIntervalId);
+            clearInterval(adminIntervalId);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
     }, [teacherProfile?.id, userRole]);
 
     // Timer effect for the active session widget
