@@ -3,11 +3,74 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Lightbulb, Sparkles, X, Check, Target } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
+
+const GUIDANCE_TEMPLATES = [
+    {
+        name: 'Breath Control',
+        type: 'focus',
+        title: 'Breath Control & Airflow',
+        text: 'Maintain consistent diaphragm support and smooth airflow. Keep blowing pressure even across swaras.'
+    },
+    {
+        name: 'Tone',
+        type: 'improvement',
+        title: 'Tone Clarity & Sweet Sound',
+        text: 'Adjust your lip embouchure slightly upward to reduce airy hiss. Aim for a warm, centered flute tone.'
+    },
+    {
+        name: 'Rhythm',
+        type: 'practice',
+        title: 'Taal & Metronome Practice',
+        text: 'Practice the composition strictly with a metronome or tanpura. Focus on landing cleanly on the Sam (Beat 1).'
+    },
+    {
+        name: 'Finger Movement',
+        type: 'practice',
+        title: 'Finger Placement & Clean Holes',
+        text: 'Ensure finger pads completely seal the tone holes with minimal tension. Relax your hands and wrists.'
+    },
+    {
+        name: 'Long Notes',
+        type: 'practice',
+        title: 'Long Sustained Notes (Riyaz)',
+        text: 'Spend 10 minutes daily holding each note from Mandra Saptak to Madhya Saptak with steady breath and zero pitch wobble.'
+    },
+    {
+        name: 'Slow Practice',
+        type: 'focus',
+        title: 'Slow Riyaz for Muscle Memory',
+        text: 'Practice at half speed with pure clarity. Precision at slow tempo builds effortless speed later.'
+    },
+    {
+        name: 'Tempo',
+        type: 'practice',
+        title: 'Gradual Speed Progression',
+        text: 'Do not rush the tempo. Master the phrase accurately at 60 BPM before gradually increasing tempo by 5 BPM intervals.'
+    },
+    {
+        name: 'Revision',
+        type: 'improvement',
+        title: 'Review Previous Lesson Feedback',
+        text: 'Revisit the previous assignment submission and pay special attention to finger release timing and komal swara tuning.'
+    },
+    {
+        name: 'Good Improvement',
+        type: 'strength',
+        title: 'Outstanding Progress & Tone',
+        text: 'Great progress on tone projection and tempo stability! Keep up this consistent riyaz for the upcoming ragas.'
+    },
+    {
+        name: 'Clean Notes',
+        type: 'focus',
+        title: 'Clean Note Articulation',
+        text: 'Avoid sliding accidentally between notes unless specifically playing meend. Focus on crisp, clean note separations.'
+    }
+];
 
 interface StudentData {
     id: string;
@@ -93,8 +156,99 @@ export default function StudentDirectory() {
     const [bulkEnrollResult, setBulkEnrollResult] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Pending signup requests (users who signed up but not yet assigned a role)
     const [pendingUsers, setPendingUsers] = useState<{ id: string; name: string; email: string; phone?: string; created_at: string }[]>([]);
+
+    // Guidance / Mentor Note Modal State
+    const [showGuidanceModal, setShowGuidanceModal] = useState(false);
+    const [guidanceTargetStudents, setGuidanceTargetStudents] = useState<StudentData[]>([]);
+    const [guidanceType, setGuidanceType] = useState<'focus' | 'practice' | 'improvement' | 'strength' | 'general'>('focus');
+    const [guidanceTitle, setGuidanceTitle] = useState('Focus this week');
+    const [guidanceText, setGuidanceText] = useState('');
+    const [guidanceIsActive, setGuidanceIsActive] = useState(true);
+    const [isSavingGuidance, setIsSavingGuidance] = useState(false);
+    const [guidanceSuccessMsg, setGuidanceSuccessMsg] = useState('');
+    const [guidanceErrorMsg, setGuidanceErrorMsg] = useState('');
+
+    const openBulkGuidanceModal = () => {
+        const targets = students.filter(s => selectedIds.has(s.id));
+        if (targets.length === 0) return;
+        setGuidanceTargetStudents(targets);
+        setGuidanceType('focus');
+        setGuidanceTitle('Focus this week');
+        setGuidanceText('');
+        setGuidanceIsActive(true);
+        setGuidanceSuccessMsg('');
+        setGuidanceErrorMsg('');
+        setShowGuidanceModal(true);
+    };
+
+    const openSingleGuidanceModal = (student: StudentData) => {
+        setGuidanceTargetStudents([student]);
+        setGuidanceType('focus');
+        setGuidanceTitle('Focus this week');
+        setGuidanceText('');
+        setGuidanceIsActive(true);
+        setGuidanceSuccessMsg('');
+        setGuidanceErrorMsg('');
+        setShowGuidanceModal(true);
+    };
+
+    const handleSaveGuidance = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!guidanceText.trim()) {
+            setGuidanceErrorMsg('Please enter guidance text.');
+            return;
+        }
+
+        setIsSavingGuidance(true);
+        setGuidanceErrorMsg('');
+        setGuidanceSuccessMsg('');
+
+        try {
+            const { data: { user } } = await supabaseAuth.auth.getUser();
+            if (!user) throw new Error('You must be logged in.');
+
+            const targetIds = guidanceTargetStudents.map(s => s.id);
+
+            // 1. If marked as active, deactivate previous active notes
+            if (guidanceIsActive && targetIds.length > 0) {
+                await supabaseAuth
+                    .from('mentor_notes')
+                    .update({ is_active: false })
+                    .in('student_id', targetIds)
+                    .eq('is_active', true);
+            }
+
+            // 2. Batch insert one row per student
+            const rows = targetIds.map(sId => ({
+                student_id: sId,
+                mentor_id: user.id,
+                title: guidanceTitle.trim() || 'Teacher Guidance',
+                note: guidanceText.trim(),
+                note_type: guidanceType,
+                is_active: guidanceIsActive,
+                created_at: new Date().toISOString()
+            }));
+
+            const { error: insertError } = await supabaseAuth
+                .from('mentor_notes')
+                .insert(rows);
+
+            if (insertError) throw insertError;
+
+            setGuidanceSuccessMsg(`Guidance saved successfully for ${targetIds.length} student${targetIds.length > 1 ? 's' : ''}!`);
+            setSelectedIds(new Set());
+
+            setTimeout(() => {
+                setShowGuidanceModal(false);
+                setGuidanceSuccessMsg('');
+            }, 1200);
+        } catch (err: any) {
+            setGuidanceErrorMsg(err.message || 'Failed to save guidance.');
+        } finally {
+            setIsSavingGuidance(false);
+        }
+    };
 
     interface DeletedStudentItem {
         id: string;
@@ -247,7 +401,7 @@ export default function StudentDirectory() {
                             classrooms(name)
                         )
                     `)
-                    .in('role', ['student', 'mentor']);
+                    .eq('role', 'student');
 
                 const studentsReq = isAdminUser
                     ? studentsBaseReq
@@ -1422,6 +1576,173 @@ export default function StudentDirectory() {
                 </div>
             )}
 
+            {/* ─── Add Guidance / Mentor Note Modal ─────────────────────────────────────── */}
+            {showGuidanceModal && (
+                <div 
+                    className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => setShowGuidanceModal(false)}
+                >
+                    <div 
+                        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 text-left max-h-[90vh] flex flex-col"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Modal Header */}
+                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                                    <Lightbulb className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                                        {guidanceTargetStudents.length > 1
+                                            ? `Add Guidance (${guidanceTargetStudents.length} Students)`
+                                            : `Add Guidance: ${guidanceTargetStudents[0]?.name || 'Student'}`
+                                        }
+                                    </h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Personalized tip or practice focus that displays on the student dashboard.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowGuidanceModal(false)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <form onSubmit={handleSaveGuidance} className="p-5 space-y-4 overflow-y-auto flex-1 text-left">
+                            {guidanceErrorMsg && (
+                                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-600 text-xs font-semibold">
+                                    {guidanceErrorMsg}
+                                </div>
+                            )}
+
+                            {guidanceSuccessMsg && (
+                                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/40 text-emerald-600 text-xs font-semibold flex items-center gap-2">
+                                    <Check className="w-4 h-4" />
+                                    <span>{guidanceSuccessMsg}</span>
+                                </div>
+                            )}
+
+                            {/* Quick Shortcut Templates */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                    Quick Tip Templates
+                                </label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {GUIDANCE_TEMPLATES.map((tpl) => (
+                                        <button
+                                            key={tpl.name}
+                                            type="button"
+                                            onClick={() => {
+                                                setGuidanceType(tpl.type as any);
+                                                setGuidanceTitle(tpl.title);
+                                                setGuidanceText(tpl.text);
+                                            }}
+                                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 hover:text-amber-900 dark:hover:bg-amber-950/50 dark:hover:text-amber-300 text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
+                                        >
+                                            {tpl.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                        Note Type *
+                                    </label>
+                                    <select
+                                        value={guidanceType}
+                                        onChange={(e) => setGuidanceType(e.target.value as any)}
+                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-white"
+                                    >
+                                        <option value="focus">Focus Point</option>
+                                        <option value="practice">Practice Riyaz</option>
+                                        <option value="improvement">Area of Improvement</option>
+                                        <option value="strength">Strength & Appreciation</option>
+                                        <option value="general">General Guidance</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                        Title
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Focus this week"
+                                        value={guidanceTitle}
+                                        onChange={(e) => setGuidanceTitle(e.target.value)}
+                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-white"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                        Guidance / Tip *
+                                    </label>
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                        {guidanceText.length}/500
+                                    </span>
+                                </div>
+                                <textarea
+                                    rows={4}
+                                    required
+                                    maxLength={500}
+                                    placeholder="Write practice instructions, posture tips, or breath control advice..."
+                                    value={guidanceText}
+                                    onChange={(e) => setGuidanceText(e.target.value)}
+                                    className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-white leading-relaxed"
+                                />
+                            </div>
+
+                            <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={guidanceIsActive}
+                                    onChange={(e) => setGuidanceIsActive(e.target.checked)}
+                                    className="rounded text-[#ecb613] focus:ring-[#ecb613] w-4 h-4 cursor-pointer"
+                                />
+                                <span>Set as Current Active Guidance (Featured on student dashboard)</span>
+                            </label>
+
+                            <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowGuidanceModal(false)}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSavingGuidance}
+                                    className="px-5 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95"
+                                >
+                                    {isSavingGuidance ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Saving Note...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check className="w-4 h-4" />
+                                            <span>Apply Guidance</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* ─── Recycle Bin Modal ──────────────────────────────────────────────── */}
             {showRecycleBin && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -2007,19 +2328,26 @@ export default function StudentDirectory() {
                                                 {selectedIds.size} student{selectedIds.size !== 1 ? 's' : ''} selected
                                             </span>
                                         </div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <button
+                                                onClick={openBulkGuidanceModal}
+                                                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-slate-950 bg-[#ecb613] hover:bg-[#d49f0e] rounded-lg transition-all shadow-xs cursor-pointer active:scale-95"
+                                            >
+                                                <Lightbulb className="w-3.5 h-3.5 text-slate-950" />
+                                                <span>+ Add Guidance ({selectedIds.size})</span>
+                                            </button>
                                             <button
                                                 onClick={() => setSelectedIds(new Set())}
-                                                className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                                className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                                             >
-                                                Clear selection
+                                                Clear
                                             </button>
                                             <button
                                                 onClick={() => setShowBulkDeleteModal(true)}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-sm"
+                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-sm cursor-pointer"
                                             >
                                                 <span className="material-symbols-outlined text-base">delete_sweep</span>
-                                                Delete {selectedIds.size} Selected
+                                                Delete ({selectedIds.size})
                                             </button>
                                         </div>
                                     </div>
@@ -2266,6 +2594,13 @@ export default function StudentDirectory() {
                                                                         </div>
                                                                     ) : (
                                                                         <div className="flex items-center justify-end gap-1">
+                                                                            <button
+                                                                                onClick={() => openSingleGuidanceModal(student)}
+                                                                                className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg transition-all cursor-pointer"
+                                                                                title="Give Mentor Guidance / Tip"
+                                                                            >
+                                                                                <Lightbulb className="w-4 h-4 text-amber-600" />
+                                                                            </button>
                                                                             <Link href={`/teacher-dashboard/students/${student.id}/edit`} className="p-1.5 text-slate-400 hover:text-[#ecb613] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Edit profile">
                                                                                 <span className="material-symbols-outlined text-base">edit</span>
                                                                             </Link>

@@ -1,17 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { Loader2 } from 'lucide-react';
-import TeacherSidebar from '../../../src/components/TeacherSidebar';
-import TeacherHeader from '../../../src/components/TeacherHeader';
-import TeacherMentorManagement from '../../../src/components/teacher-dashboard/TeacherMentorManagement';
 
 export default function TeacherMentorsPage() {
     const router = useRouter();
-    const [loading, setLoading] = useState(true);
-    const [user, setUser] = useState<any>(null);
 
     useEffect(() => {
         const checkUser = async () => {
@@ -23,51 +18,26 @@ export default function TeacherMentorsPage() {
 
             const { data: profile } = await supabaseAuth
                 .from('users')
-                .select('*')
+                .select('role')
                 .eq('id', session.user.id)
                 .single();
 
-            if (!profile || (profile.role !== 'teacher' && profile.role !== 'admin')) {
+            if (profile?.role === 'admin') {
+                router.replace('/teacher-dashboard/students');
+            } else if (profile?.role === 'teacher') {
+                router.replace('/teacher-dashboard/classrooms');
+            } else {
                 router.replace('/student-dashboard');
-                return;
             }
-
-            setUser(profile);
-            setLoading(false);
         };
 
         checkUser();
     }, [router]);
 
-    const handleLogout = async () => {
-        await supabaseAuth.auth.signOut();
-        router.replace('/login');
-    };
-
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
-            </div>
-        );
-    }
-
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
-            <TeacherSidebar teacherProfile={user} handleLogout={handleLogout} />
-            
-            <div className="flex-1 flex flex-col min-w-0">
-                <TeacherHeader 
-                    title="Mentor Allocation"
-                    userName={user?.name}
-                    avatarUrl={user?.profile_pic_url}
-                    backLink={user?.role === 'admin' ? '/admin-dashboard' : '/teacher-dashboard'} 
-                />
-                
-                <main className="flex-1 overflow-y-auto">
-                    <TeacherMentorManagement />
-                </main>
-            </div>
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center gap-3">
+            <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+            <p className="text-xs font-semibold text-slate-500">Redirecting to Student Guidance...</p>
         </div>
     );
 }

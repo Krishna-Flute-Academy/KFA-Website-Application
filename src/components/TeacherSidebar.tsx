@@ -377,7 +377,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                 const { count, error } = await supabaseAuth
                                     .from('users')
                                     .select('id', { count: 'exact', head: true })
-                                    .in('role', ['student', 'pending', 'mentor'])
+                                    .in('role', ['student', 'pending'])
                                     .is('teacher_id', null);
                                 if (!error && count !== null) setUnassignedCount(count);
                             } catch (err: any) {

@@ -25,6 +25,7 @@ interface AttendanceTabProps {
         total: number;
     };
     mergedLogs: any[];
+    attendanceRecords?: any[];
     myLeaveRequests?: any[];
     showExcuseModal: boolean;
     setShowExcuseModal: (show: boolean) => void;
@@ -38,12 +39,31 @@ interface AttendanceTabProps {
     handleSubmitExcuse: (e: React.FormEvent) => Promise<void>;
 }
 
+function normalizeDateStr(d: any): string | null {
+    if (!d) return null;
+    if (typeof d === 'string') {
+        const clean = d.split('T')[0].split(' ')[0].trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+        try {
+            const dt = new Date(d);
+            if (!isNaN(dt.getTime())) {
+                const y = dt.getFullYear();
+                const m = String(dt.getMonth() + 1).padStart(2, '0');
+                const day = String(dt.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            }
+        } catch {}
+    }
+    return null;
+}
+
 /**
  * AttendanceTab displays logs of student attendance records and provides absence excuse forms.
  */
 export default function AttendanceTab({
     attendanceStats,
     mergedLogs,
+    attendanceRecords = [],
     myLeaveRequests = [],
     showExcuseModal,
     setShowExcuseModal,
@@ -87,7 +107,47 @@ export default function AttendanceTab({
         return stats;
     }, [filteredLogs]);
 
-    // 5. Calendar Helper Logic
+    // 5. Calendar Attendance Lookup Map (Merging raw attendance records, merged logs, and approved leaves)
+    const calendarAttendanceMap = useMemo(() => {
+        const map = new Map<string, { status: 'present' | 'late' | 'absent' | 'excused' | 'unmarked'; info?: string }>();
+        
+        // 1. Process mergedLogs
+        (mergedLogs || []).forEach(l => {
+            const norm = normalizeDateStr(l.date);
+            if (norm) {
+                map.set(norm, { status: l.status || 'unmarked', info: l.classroom_name });
+            }
+        });
+
+        // 2. Process raw attendance records (Supabase attendance table)
+        (attendanceRecords || []).forEach(a => {
+            const norm = normalizeDateStr(a.date);
+            if (norm) {
+                const existing = map.get(norm);
+                const status = a.status;
+                if (!existing || existing.status === 'unmarked' || status === 'present') {
+                    map.set(norm, { status: status || 'unmarked', info: existing?.info });
+                }
+            }
+        });
+
+        // 3. Process approved leave requests
+        (myLeaveRequests || []).forEach(r => {
+            if (r.status === 'approved') {
+                const norm = normalizeDateStr(r.class_date);
+                if (norm) {
+                    const existing = map.get(norm);
+                    if (!existing || existing.status === 'unmarked' || existing.status === 'absent') {
+                        map.set(norm, { status: 'excused', info: r.classrooms?.name || 'Leave Excused' });
+                    }
+                }
+            }
+        });
+
+        return map;
+    }, [mergedLogs, attendanceRecords, myLeaveRequests]);
+
+    // 6. Calendar Helper Logic
     const calendarDays = useMemo(() => {
         const year = calendarDate.getFullYear();
         const month = calendarDate.getMonth();
@@ -178,21 +238,20 @@ export default function AttendanceTab({
                 </div>
             </div>
 
-            {/* Core Body Section - Left Panel (Stats & Filters), Right Panel (Visual Calendar) */}
+            {/* Attendance Analytics Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Left Columns - Stats cards and Date Inputs */}
+                {/* Left Column (Span 2) - Stats and Leave Requests */}
                 <div className="lg:col-span-2 space-y-6">
-                    
-                    {/* Stats cards */}
+                    {/* Visual Stats Cards */}
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left">
-                        <div className="flex items-center justify-between mb-4">
-                            <h4 className="font-extrabold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider">
-                                {isFilterActive ? 'Filtered Stats' : 'Overall Stats'}
+                        <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-2">
+                            <h4 className="font-extrabold text-slate-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-1.5">
+                                <RotateCcw className="w-3.5 h-3.5 text-[#7C5E3F]" />
+                                Attendance Summary
                             </h4>
                             {isFilterActive && (
-                                <span className="px-2 py-0.5 bg-[#7C5E3F]/10 text-[#7C5E3F] font-bold text-[10px] rounded-full">
-                                    Filter Active
+                                <span className="text-[10px] font-bold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 px-2.5 py-0.5 rounded-full">
+                                    Filtered by Date
                                 </span>
                             )}
                         </div>
@@ -422,25 +481,29 @@ export default function AttendanceTab({
                         {/* Calendar Grid Cells */}
                         <div className="grid grid-cols-7 gap-1">
                             {calendarDays.map((cell, idx) => {
-                                // Find if there's any log matching this specific cell's date
-                                const logForDay = mergedLogs.find(l => l.date === cell.dateStr);
-                                const status = logForDay?.status;
+                                const dayEntry = calendarAttendanceMap.get(cell.dateStr);
+                                const status = dayEntry?.status;
 
                                 let cellClass = "text-slate-700 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-800";
                                 let isMarked = false;
+                                let dotColor = '';
 
                                 if (!cell.isCurrentMonth) {
                                     cellClass = "text-slate-300 dark:text-slate-700 pointer-events-none opacity-40";
                                 } else if (status && status !== 'unmarked') {
                                     isMarked = true;
                                     if (status === 'present') {
-                                        cellClass = "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-450 font-extrabold border border-emerald-200 dark:border-emerald-900/50";
+                                        cellClass = "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-extrabold border border-emerald-300 dark:border-emerald-800 shadow-2xs";
+                                        dotColor = "bg-emerald-500";
                                     } else if (status === 'late') {
-                                        cellClass = "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-450 font-extrabold border border-amber-200 dark:border-amber-900/50";
+                                        cellClass = "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 font-extrabold border border-amber-300 dark:border-amber-800 shadow-2xs";
+                                        dotColor = "bg-amber-500";
                                     } else if (status === 'absent') {
-                                        cellClass = "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-450 font-extrabold border border-rose-200 dark:border-rose-900/50";
+                                        cellClass = "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-extrabold border border-rose-300 dark:border-rose-800 shadow-2xs";
+                                        dotColor = "bg-rose-500";
                                     } else if (status === 'excused') {
-                                        cellClass = "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-450 font-extrabold border border-blue-200 dark:border-blue-900/50";
+                                        cellClass = "bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-extrabold border border-blue-300 dark:border-blue-800 shadow-2xs";
+                                        dotColor = "bg-blue-500";
                                     }
                                 }
 
@@ -455,13 +518,15 @@ export default function AttendanceTab({
                                         type="button"
                                         disabled={!cell.isCurrentMonth}
                                         onClick={() => handleDayClick(cell.dateStr)}
-                                        title={logForDay ? `${new Date(cell.dateStr).toLocaleDateString()}: ${status.toUpperCase()} (${logForDay.classroom_name})` : undefined}
+                                        title={dayEntry ? `${new Date(cell.dateStr + 'T00:00:00').toLocaleDateString()}: ${status?.toUpperCase()} ${dayEntry.info ? `(${dayEntry.info})` : ''}` : undefined}
                                         className={`aspect-square flex flex-col items-center justify-center text-[11px] font-bold rounded-xl transition-all cursor-pointer relative ${cellClass}`}
                                     >
-                                        {cell.day}
-                                        {/* Underline or dot indicator for classes */}
-                                        {cell.isCurrentMonth && logForDay && !isMarked && (
-                                            <span className="absolute bottom-1 w-1 h-1 rounded-full bg-slate-350 dark:bg-slate-600"></span>
+                                        <span>{cell.day}</span>
+                                        {cell.isCurrentMonth && isMarked && (
+                                            <span className={`w-1.5 h-1.5 rounded-full ${dotColor} mt-0.5`}></span>
+                                        )}
+                                        {cell.isCurrentMonth && dayEntry && !isMarked && (
+                                            <span className="w-1 h-1 rounded-full bg-slate-350 dark:bg-slate-600 mt-0.5"></span>
                                         )}
                                     </button>
                                 );
@@ -471,20 +536,20 @@ export default function AttendanceTab({
 
                     {/* Calendar Legend */}
                     <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-250 dark:border-emerald-900/50 block"></span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 block shadow-2xs"></span>
                             <span>Present</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-250 dark:border-amber-900/50 block"></span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 block shadow-2xs"></span>
                             <span>Late</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-250 dark:border-rose-900/50 block"></span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-rose-500 block shadow-2xs"></span>
                             <span>Absent</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded bg-blue-50 dark:bg-blue-950/40 border border-blue-250 dark:border-blue-900/50 block"></span>
+                        <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-blue-500 block shadow-2xs"></span>
                             <span>Excused</span>
                         </div>
                     </div>

@@ -310,101 +310,7 @@ export default function StudentDashboardContainer() {
         }
     }, []);
 
-    // Mentorship states
-    const [mentorInfo, setMentorInfo] = useState<any | null>(null);
-    const [menteesList, setMenteesList] = useState<any[]>([]);
-    const [menteeSubmissions, setMenteeSubmissions] = useState<any[]>([]);
 
-    const fetchMentorshipData = async (userId: string) => {
-        try {
-            const { data: mentorPair } = await supabaseAuth
-                .from('student_mentors')
-                .select('mentor:users!student_mentors_mentor_id_fkey(id, name, email, level, profile_pic_url)')
-                .eq('student_id', userId)
-                .maybeSingle();
-
-            if (mentorPair?.mentor) {
-                const m = Array.isArray(mentorPair.mentor) ? mentorPair.mentor[0] : mentorPair.mentor;
-                setMentorInfo(m);
-            } else {
-                setMentorInfo(null);
-            }
-
-            const { data: menteesPairs } = await supabaseAuth
-                .from('student_mentors')
-                .select('student_id, student:users!student_mentors_student_id_fkey(id, name, email, level, profile_pic_url)')
-                .eq('mentor_id', userId);
-
-            if (menteesPairs && menteesPairs.length > 0) {
-                const mList = menteesPairs.map((p: any) => {
-                    const s = Array.isArray(p.student) ? p.student[0] : p.student;
-                    return {
-                        id: p.student_id,
-                        student_id: p.student_id,
-                        name: s?.name || 'Student',
-                        email: s?.email || '',
-                        level: s?.level || 'Beginner',
-                        profile_pic_url: s?.profile_pic_url || null
-                    };
-                });
-                setMenteesList(mList);
-
-                const menteeIds = mList.map(m => m.student_id);
-                const { data: subData } = await supabaseAuth
-                    .from('assignment_students')
-                    .select(`
-                        id,
-                        assignment_id,
-                        student_id,
-                        status,
-                        score,
-                        proficiency_level,
-                        feedback_text,
-                        video_url,
-                        submitted_at,
-                        reviewed_at,
-                        reviewed_by,
-                        assignments:assignment_id(title, description, due_date),
-                        student:users!assignment_students_student_id_fkey(name, email, level, profile_pic_url)
-                    `)
-                    .in('student_id', menteeIds)
-                    .order('submitted_at', { ascending: false });
-
-                if (subData) {
-                    const formattedSubs = subData.map((row: any) => {
-                        const assign = Array.isArray(row.assignments) ? row.assignments[0] : row.assignments;
-                        const st = Array.isArray(row.student) ? row.student[0] : row.student;
-                        return {
-                            id: row.id,
-                            assignment_id: row.assignment_id,
-                            student_id: row.student_id,
-                            student_name: st?.name || 'Student',
-                            student_email: st?.email || '',
-                            student_level: st?.level || '',
-                            student_pic: st?.profile_pic_url || null,
-                            assignment_title: assign?.title || 'Assignment',
-                            assignment_description: assign?.description || '',
-                            due_date: assign?.due_date || null,
-                            status: row.status || 'pending',
-                            score: row.score,
-                            proficiency_level: row.proficiency_level,
-                            feedback_text: row.feedback_text,
-                            video_url: row.video_url,
-                            submitted_at: row.submitted_at,
-                            reviewed_at: row.reviewed_at,
-                            reviewed_by: row.reviewed_by
-                        };
-                    });
-                    setMenteeSubmissions(formattedSubs);
-                }
-            } else {
-                setMenteesList([]);
-                setMenteeSubmissions([]);
-            }
-        } catch (e) {
-            console.error('Error fetching mentorship details:', e);
-        }
-    };
 
     // Defer rendering of non-active tabs to prevent main-thread blocking on initial load
     const [renderBackgroundTabs, setRenderBackgroundTabs] = useState(false);
@@ -1151,8 +1057,7 @@ export default function StudentDashboardContainer() {
             // Classroom messages (Reversed for chronological order)
             setClassroomMessages([...(cmRes.data || [])].reverse());
 
-            // Fetch mentorship pairs and mentee task submissions
-            await fetchMentorshipData(userId);
+
 
         } catch (err) {
             console.error('Error fetching secondary dashboard data:', err);
@@ -2853,7 +2758,7 @@ export default function StudentDashboardContainer() {
                             { id: 'attendance', label: 'Attendance logs', icon: Calendar },
                             { id: 'library', label: 'Tools', icon: FileText },
                             { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
-                            ...(profile?.role === 'mentor' || menteesList.length > 0 ? [{ id: 'mentor_hub', label: 'Mentor Hub', icon: Sparkles }] : []),
+                            { id: 'mentor_hub', label: 'Mentor Hub', icon: Sparkles },
                             { id: 'policies', label: 'Academy Policies', icon: Scroll },
                             { id: 'settings', label: 'Profile Settings', icon: User },
                         ].filter(item => {
@@ -3319,8 +3224,6 @@ export default function StudentDashboardContainer() {
                                     setNotifications={setNotifications}
                                     onMarkMessagesAsRead={handleMarkMessagesAsRead}
                                     selectedFeedProp={selectedMessagesFeed}
-                                    mentorInfo={mentorInfo}
-                                    mentees={menteesList}
                                 />
                             </div>
                         )}
@@ -3330,6 +3233,7 @@ export default function StudentDashboardContainer() {
                                 <AttendanceTab
                                     attendanceStats={attendanceStats}
                                     mergedLogs={mergedLogs}
+                                    attendanceRecords={attendance}
                                     myLeaveRequests={myLeaveRequests}
                                     showExcuseModal={showExcuseModal}
                                     setShowExcuseModal={setShowExcuseModal}
@@ -3380,18 +3284,7 @@ export default function StudentDashboardContainer() {
 
                         {(renderBackgroundTabs || activeTab === 'mentor_hub') && (
                             <div style={{ display: activeTab === 'mentor_hub' ? 'block' : 'none' }}>
-                                <MentorHubTab
-                                    profile={profile}
-                                    mentees={menteesList}
-                                    submissions={menteeSubmissions}
-                                    onRefreshSubmissions={async () => {
-                                        if (profile?.id) await fetchMentorshipData(profile.id);
-                                    }}
-                                    onNavigateToChat={(studentId, studentName) => {
-                                        setSelectedMessagesFeed({ type: 'chat', id: studentId, name: studentName });
-                                        setActiveTab('messages');
-                                    }}
-                                />
+                                <MentorHubTab profile={profile} />
                             </div>
                         )}
                     </main>

@@ -1,11 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { 
     Calendar, UserPlus, Trash2, Loader2, Plus, 
-    AlertTriangle, Sparkles, BarChart2, BookOpen
+    AlertTriangle, Sparkles, BarChart2, BookOpen,
+    Lightbulb, Check, X, Send, CheckSquare, Square
 } from 'lucide-react';
+import { supabaseAuth } from '../../lib/supabase-auth';
 
 interface Student {
     id: string;
@@ -55,17 +57,73 @@ interface StudentsTabProps {
     studentProgress: any[];
 }
 
+const MENTOR_NOTE_TEMPLATES = [
+    {
+        name: 'Breath Control',
+        type: 'practice',
+        title: 'Breath Control & Airflow',
+        text: 'Practice long steady breaths into the blowhole with relaxed diaphragm support. Maintain stable pitch on lower notes for 5 minutes daily.'
+    },
+    {
+        name: 'Finger Coordination',
+        type: 'focus',
+        title: 'Finger Placement & Clean Holes',
+        text: 'Ensure finger pads fully seal tone holes without excessive tension. Practice slow transition between Sa, Re, and Ga.'
+    },
+    {
+        name: 'Rhythm Practice',
+        type: 'practice',
+        title: 'Taal & Metronome Practice',
+        text: 'Practice with the academy metronome at 60 BPM. Focus on landing exactly on the Sam (beat 1) with clean attacks.'
+    },
+    {
+        name: 'Tone Improvement',
+        type: 'improvement',
+        title: 'Tone Clarity & Sweet Sound',
+        text: 'Adjust your lip embouchure slightly upward to reduce airy hiss. Aim for a warm, resonant, centered flute tone.'
+    },
+    {
+        name: 'Long Note Practice',
+        type: 'practice',
+        title: 'Long Sustained Notes (Riyaz)',
+        text: 'Spend 10 minutes daily holding each note from Mandra Saptak to Madhya Saptak with steady breath and zero pitch wobble.'
+    },
+    {
+        name: 'Tempo Control',
+        type: 'practice',
+        title: 'Gradual Speed Progression',
+        text: 'Do not rush the tempo. Master the phrase accurately at 60 BPM before gradually increasing tempo by 5 BPM intervals.'
+    },
+    {
+        name: 'Revision Required',
+        type: 'improvement',
+        title: 'Review Previous Lesson Feedback',
+        text: 'Revisit the previous assignment submission and pay special attention to finger release timing and komal swara tuning.'
+    },
+    {
+        name: 'Excellent Improvement',
+        type: 'strength',
+        title: 'Outstanding Progress & Tone',
+        text: 'Great progress on tone projection and tempo stability! Keep up this consistent riyaz for the upcoming ragas.'
+    },
+    {
+        name: 'Practice More Slowly',
+        type: 'focus',
+        title: 'Slow Riyaz for Muscle Memory',
+        text: 'Practice at half speed with pure clarity. Precision at slow tempo builds effortless speed later.'
+    },
+    {
+        name: 'Focus on Clean Notes',
+        type: 'focus',
+        title: 'Clean Note Articulation',
+        text: 'Avoid sliding accidentally between notes unless specifically playing meend. Focus on crisp, clean note separations.'
+    }
+];
+
 function getStatusColor(status: string) {
     if (status === 'Consistent') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
     if (status === 'Improving') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400';
     return 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400';
-}
-
-function getGrade(score: number) {
-    if (score >= 9) return 'A';
-    if (score >= 8) return 'B';
-    if (score >= 7) return 'C';
-    return 'D';
 }
 
 export default function StudentsTab({
@@ -98,6 +156,128 @@ export default function StudentsTab({
     assignments,
     studentProgress
 }: StudentsTabProps) {
+    // Multi-select state
+    const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+
+    // Mentor Note Modal state
+    const [isMentorModalOpen, setIsMentorModalOpen] = useState(false);
+    const [modalTargetStudents, setModalTargetStudents] = useState<Student[]>([]);
+    const [noteType, setNoteType] = useState<'focus' | 'practice' | 'strength' | 'improvement' | 'general'>('focus');
+    const [noteTitle, setNoteTitle] = useState('Focus this week');
+    const [noteText, setNoteText] = useState('');
+    const [isActiveGuidance, setIsActiveGuidance] = useState(true);
+    const [isSavingNote, setIsSavingNote] = useState(false);
+    const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+    const [saveErrorMsg, setSaveErrorMsg] = useState('');
+
+    const toggleSelectStudent = (studentId: string) => {
+        setSelectedStudentIds(prev => {
+            const next = new Set(prev);
+            if (next.has(studentId)) {
+                next.delete(studentId);
+            } else {
+                next.add(studentId);
+            }
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedStudentIds.size === paginatedStudents.length && paginatedStudents.length > 0) {
+            setSelectedStudentIds(new Set());
+        } else {
+            setSelectedStudentIds(new Set(paginatedStudents.map(s => s.student_id)));
+        }
+    };
+
+    const openBulkMentorModal = () => {
+        const targets = students.filter(s => selectedStudentIds.has(s.student_id));
+        if (targets.length === 0) return;
+        setModalTargetStudents(targets);
+        setNoteType('focus');
+        setNoteTitle('Focus this week');
+        setNoteText('');
+        setIsActiveGuidance(true);
+        setSaveSuccessMsg('');
+        setSaveErrorMsg('');
+        setIsMentorModalOpen(true);
+    };
+
+    const openSingleMentorModal = (student: Student) => {
+        setModalTargetStudents([student]);
+        setNoteType('focus');
+        setNoteTitle('Focus this week');
+        setNoteText('');
+        setIsActiveGuidance(true);
+        setSaveSuccessMsg('');
+        setSaveErrorMsg('');
+        setIsMentorModalOpen(true);
+    };
+
+    const applyTemplate = (tpl: typeof MENTOR_NOTE_TEMPLATES[0]) => {
+        setNoteType(tpl.type as any);
+        setNoteTitle(tpl.title);
+        setNoteText(tpl.text);
+    };
+
+    const handleSaveMentorNotes = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!noteText.trim()) {
+            setSaveErrorMsg('Please enter guidance text.');
+            return;
+        }
+
+        setIsSavingNote(true);
+        setSaveErrorMsg('');
+        setSaveSuccessMsg('');
+
+        try {
+            const { data: { user } } = await supabaseAuth.auth.getUser();
+            if (!user) throw new Error('You must be logged in to create mentor notes.');
+
+            const targetIds = modalTargetStudents.map(s => s.student_id);
+
+            // 1. If marked as current active guidance, deactivate older active notes for these students
+            if (isActiveGuidance && targetIds.length > 0) {
+                await supabaseAuth
+                    .from('mentor_notes')
+                    .update({ is_active: false })
+                    .in('student_id', targetIds)
+                    .eq('is_active', true);
+            }
+
+            // 2. Batch insert one row per selected student
+            const rows = targetIds.map(sId => ({
+                student_id: sId,
+                classroom_id: classroom?.id || null,
+                mentor_id: user.id,
+                title: noteTitle.trim() || 'Teacher Guidance',
+                note: noteText.trim(),
+                note_type: noteType,
+                is_active: isActiveGuidance,
+                created_at: new Date().toISOString()
+            }));
+
+            const { error: insertError } = await supabaseAuth
+                .from('mentor_notes')
+                .insert(rows);
+
+            if (insertError) throw insertError;
+
+            setSaveSuccessMsg(`Mentor note saved successfully for ${targetIds.length} student${targetIds.length > 1 ? 's' : ''}!`);
+            setSelectedStudentIds(new Set());
+
+            setTimeout(() => {
+                setIsMentorModalOpen(false);
+                setSaveSuccessMsg('');
+            }, 1200);
+        } catch (err: any) {
+            setSaveErrorMsg(err.message || 'Failed to save mentor note. Please try again.');
+        } finally {
+            setIsSavingNote(false);
+        }
+    };
+
     const getAssignmentLevel = (assignment: any) => {
         if (!assignment.inventory_ref_type || !assignment.inventory_ref_id) return null;
         
@@ -120,7 +300,6 @@ export default function StudentsTab({
         
         return null;
     };
-
 
     const getStudentSubmissionRate = (studentId: string, studentLevel: string, defaultMockVal: number) => {
         const classAssignments = assignments.filter(asg => asg.classroom_id === classroom.id);
@@ -239,50 +418,107 @@ export default function StudentsTab({
         return { totalTasks, rate };
     }, [assignments, classroom, students, classroomAssignmentsStudents]);
 
+    const isAllSelected = paginatedStudents.length > 0 && selectedStudentIds.size === paginatedStudents.length;
+
     return (
-        <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
+        <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
             {/* Actions Header */}
             <div className="flex justify-between items-end flex-wrap gap-4">
                 <div>
                     <h3 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Student Roster</h3>
-                    <p className="text-slate-505 dark:text-slate-400 mt-1">Managing {students.length} students in {classroom.name}</p>
+                    <p className="text-slate-500 dark:text-slate-400 mt-1">Managing {students.length} students in {classroom.name}</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-wrap items-center">
+                    {/* Bulk Action Button */}
+                    {selectedStudentIds.size > 0 && (
+                        <button
+                            onClick={openBulkMentorModal}
+                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl font-bold text-xs shadow-md transition-all animate-in zoom-in-95 cursor-pointer active:scale-95"
+                        >
+                            <Lightbulb className="w-4 h-4 text-amber-200" />
+                            <span>Add Mentor Note ({selectedStudentIds.size})</span>
+                        </button>
+                    )}
+
                     <button
                         onClick={openMakeupModal}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition-all shadow-md shadow-emerald-600/20"
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
                     >
-                        <Calendar className="w-5 h-5" />
-                        Schedule Makeup
+                        <Calendar className="w-4 h-4" />
+                        <span>Schedule Makeup</span>
                     </button>
 
                     <button
                         onClick={openDirectoryModal}
-                        className="flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-lg font-semibold hover:bg-[#ecb613]/90 transition-all shadow-md shadow-[#ecb613]/20"
+                        className="flex items-center gap-2 px-4 py-2 bg-[#ecb613] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#ecb613]/90 transition-all shadow-md shadow-[#ecb613]/20 cursor-pointer"
                     >
-                        <UserPlus className="w-5 h-5" />
-                        Add from Directory
+                        <UserPlus className="w-4 h-4" />
+                        <span>Add from Directory</span>
                     </button>
                 </div>
             </div>
 
+            {/* Bulk Selection Notification Bar */}
+            {selectedStudentIds.size > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-2xl p-3.5 flex items-center justify-between gap-4 shadow-xs animate-in slide-in-from-top-2">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-black text-xs">
+                            {selectedStudentIds.size}
+                        </div>
+                        <p className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                            {selectedStudentIds.size} student{selectedStudentIds.size > 1 ? 's' : ''} selected. You can apply the same guidance note to all of them in one click.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={openBulkMentorModal}
+                            className="px-3.5 py-1.5 bg-[#7C5E3F] hover:bg-amber-900 text-white text-xs font-extrabold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                            <Lightbulb className="w-3.5 h-3.5 text-amber-300" />
+                            <span>Compose Note →</span>
+                        </button>
+                        <button
+                            onClick={() => setSelectedStudentIds(new Set())}
+                            className="px-2.5 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-bold cursor-pointer"
+                        >
+                            Clear
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Student Table / Roster */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-2">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-2">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                                <th className="px-6 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Student</th>
-                                <th className="px-6 py-4 text-xs font-black text-slate-505 dark:text-slate-400 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-4 text-xs font-black text-slate-505 dark:text-slate-400 uppercase tracking-wider">Proficiency Progress</th>
-                                <th className="px-6 py-4 text-xs font-black text-slate-505 dark:text-slate-400 uppercase tracking-wider">Task Submission</th>
-                                <th className="px-6 py-4 text-xs font-black text-slate-505 dark:text-slate-400 uppercase tracking-wider">Attendance</th>
-                                <th className="px-6 py-4 text-xs font-black text-slate-550 dark:text-slate-400 uppercase tracking-wider">Avg. Score</th>
-                                <th className="px-6 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider"></th>
+                                <th className="px-4 py-4 w-10 text-center">
+                                    <button
+                                        type="button"
+                                        onClick={toggleSelectAll}
+                                        className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                                        title={isAllSelected ? 'Deselect all' : 'Select all'}
+                                    >
+                                        {isAllSelected ? (
+                                            <CheckSquare className="w-4 h-4 text-amber-600" />
+                                        ) : (
+                                            <Square className="w-4 h-4" />
+                                        )}
+                                    </button>
+                                </th>
+                                <th className="px-5 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Student</th>
+                                <th className="px-5 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                                <th className="px-5 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Proficiency Progress</th>
+                                <th className="px-5 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Task Submission</th>
+                                <th className="px-5 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Attendance</th>
+                                <th className="px-5 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Avg. Score</th>
+                                <th className="px-5 py-4 text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                             {paginatedStudents.map(student => {
+                                const isSelected = selectedStudentIds.has(student.student_id);
                                 const realProgress = getRealStudentProgress(student.student_id, 0);
                                 const submission = getStudentSubmissionRate(student.student_id, student.level || 'Level 1', student.mock_submission);
                                 const attendance = getStudentAttendanceRate(student.student_id, student.mock_attendance);
@@ -304,8 +540,26 @@ export default function StudentsTab({
                                 }
 
                                 return (
-                                    <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-850 transition-colors group">
-                                        <td className="px-6 py-4">
+                                    <tr 
+                                        key={student.id} 
+                                        className={`transition-colors group ${
+                                            isSelected ? 'bg-amber-50/50 dark:bg-amber-950/20' : 'hover:bg-slate-50/50 dark:hover:bg-slate-850'
+                                        }`}
+                                    >
+                                        <td className="px-4 py-4 text-center">
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleSelectStudent(student.student_id)}
+                                                className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                                            >
+                                                {isSelected ? (
+                                                    <CheckSquare className="w-4 h-4 text-amber-600" />
+                                                ) : (
+                                                    <Square className="w-4 h-4" />
+                                                )}
+                                            </button>
+                                        </td>
+                                        <td className="px-5 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="relative shrink-0 select-none">
                                                     <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden border border-slate-200 dark:border-slate-600 flex items-center justify-center">
@@ -325,43 +579,55 @@ export default function StudentsTab({
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-5 py-4">
                                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${getStatusColor(calculatedStatus)}`}>
                                                 {calculatedStatus}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-5 py-4">
                                             <div className="w-32">
                                                 <div className="flex justify-between mb-1">
-                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-550">{realProgress}% Complete</span>
+                                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">{realProgress}% Complete</span>
                                                 </div>
                                                 <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 flex overflow-hidden">
                                                     <div className="h-1.5 rounded-full bg-[#ecb613]" style={{ width: `${realProgress}%` }}></div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-sm font-medium text-slate-700 dark:text-slate-300">{submission ?? 0}%</td>
-                                        <td className="px-6 py-4 text-sm font-medium text-slate-700 dark:text-slate-300">{attendance ?? 0}%</td>
-                                        <td className="px-6 py-4 text-sm font-bold text-slate-900 dark:text-white">{(score ?? 0).toFixed(1)} ★</td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => handleRemoveStudent(student)}
-                                                disabled={removingStudentId === student.id}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50 text-left"
-                                                title="Remove from this classroom"
-                                            >
-                                                {removingStudentId === student.id
-                                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                    : <Trash2 className="w-3.5 h-3.5" />}
-                                                Remove
-                                            </button>
+                                        <td className="px-5 py-4 text-sm font-medium text-slate-700 dark:text-slate-300">{submission ?? 0}%</td>
+                                        <td className="px-5 py-4 text-sm font-medium text-slate-700 dark:text-slate-300">{attendance ?? 0}%</td>
+                                        <td className="px-5 py-4 text-sm font-bold text-slate-900 dark:text-white">{(score ?? 0).toFixed(1)} ★</td>
+                                        <td className="px-5 py-4 text-right">
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                {/* Single Mentor Note Button */}
+                                                <button
+                                                    onClick={() => openSingleMentorModal(student)}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60 rounded-lg transition-all cursor-pointer shadow-2xs"
+                                                    title="Give mentor note/tip"
+                                                >
+                                                    <Lightbulb className="w-3.5 h-3.5 text-amber-600" />
+                                                    <span>+ Guidance</span>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handleRemoveStudent(student)}
+                                                    disabled={removingStudentId === student.id}
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50 text-left cursor-pointer"
+                                                    title="Remove from this classroom"
+                                                >
+                                                    {removingStudentId === student.id
+                                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        : <Trash2 className="w-3.5 h-3.5" />}
+                                                    Remove
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
                             })}
                             {paginatedStudents.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
+                                    <td colSpan={8} className="px-6 py-12 text-center bg-slate-50 dark:bg-slate-800/30">
                                         <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-3">No students enrolled yet.</p>
                                         <button
                                             onClick={openDirectoryModal}
@@ -376,21 +642,21 @@ export default function StudentsTab({
                     </table>
                 </div>
                 <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center rounded-b-xl">
-                    <p className="text-xs font-bold text-slate-550 dark:text-slate-400">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
                         Showing {paginatedStudents.length > 0 ? (currentPage - 1) * PAGE_SIZE + 1 : 0} - {Math.min(currentPage * PAGE_SIZE, students.length)} of {students.length} students
                     </p>
                     <div className="flex gap-2">
                         <button 
                             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                             disabled={currentPage === 1}
-                            className="px-3 py-1 bg-white dark:bg-slate-80 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-655 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 shadow-sm"
+                            className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
                         >
                             Previous
                         </button>
                         <button 
                             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                             disabled={currentPage === totalPages || totalPages === 0}
-                            className="px-3 py-1 bg-white dark:bg-slate-80 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-655 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 shadow-sm"
+                            className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
                         >
                             Next
                         </button>
@@ -399,7 +665,7 @@ export default function StudentsTab({
             </div>
 
             {/* Temporary Session overrides (Makeup Classes) Section */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-6">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden mt-6">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center flex-wrap gap-4">
                     <div>
                         <h4 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -410,7 +676,7 @@ export default function StudentsTab({
                     </div>
                     <button
                         onClick={openMakeupModal}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-955/20 dark:text-emerald-400 dark:hover:bg-emerald-955/40 font-bold text-xs transition-colors"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:hover:bg-emerald-950/40 font-bold text-xs transition-colors cursor-pointer"
                     >
                         <Plus className="w-3.5 h-3.5" />
                         Add Makeup
@@ -456,7 +722,7 @@ export default function StudentsTab({
                                         <div className="flex justify-end items-center gap-2">
                                             <button
                                                 onClick={() => openRescheduleModal(override)}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-emerald-605 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-955/40 rounded-lg transition-all"
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 rounded-lg transition-all cursor-pointer"
                                                 title="Reschedule makeup allocation"
                                             >
                                                 <Calendar className="w-3.5 h-3.5" />
@@ -465,7 +731,7 @@ export default function StudentsTab({
                                             <button
                                                 onClick={() => handleDeleteOverride(override.id)}
                                                 disabled={isDeletingOverrideId === override.id}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50 text-left"
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg transition-all disabled:opacity-50 text-left cursor-pointer"
                                                 title="Cancel temporary allocation"
                                             >
                                                 {isDeletingOverrideId === override.id
@@ -491,7 +757,7 @@ export default function StudentsTab({
 
             {/* Dynamic Classroom Insights */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:grid-cols-3">
-                <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/50 p-6 rounded-xl shadow-xs flex flex-col justify-between">
+                <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/50 p-6 rounded-2xl shadow-xs flex flex-col justify-between">
                     <div>
                         <div className="flex items-center gap-3 mb-3 text-amber-800 dark:text-amber-400">
                             <AlertTriangle className="w-5 h-5 shrink-0" />
@@ -514,7 +780,7 @@ export default function StudentsTab({
                     </button>
                 </div>
 
-                <div className="bg-indigo-50/70 dark:bg-indigo-950/20 border border-[#c7d2fe] dark:border-indigo-900/50 p-6 rounded-xl shadow-xs flex flex-col justify-between">
+                <div className="bg-indigo-50/70 dark:bg-indigo-950/20 border border-[#c7d2fe] dark:border-indigo-900/50 p-6 rounded-2xl shadow-xs flex flex-col justify-between">
                     <div>
                         <div className="flex items-center gap-3 mb-3 text-indigo-800 dark:text-indigo-400">
                             <Sparkles className="w-5 h-5 shrink-0" />
@@ -537,7 +803,7 @@ export default function StudentsTab({
                     </Link>
                 </div>
 
-                <div className="p-6 rounded-xl shadow-lg relative overflow-hidden text-slate-900 flex flex-col justify-between" style={{ backgroundColor: '#ecb613' }}>
+                <div className="p-6 rounded-2xl shadow-lg relative overflow-hidden text-slate-900 flex flex-col justify-between" style={{ backgroundColor: '#ecb613' }}>
                     <div>
                         <BarChart2 className="w-8 h-8 mb-4 opacity-80" />
                         <h4 className="text-sm font-bold opacity-80 uppercase tracking-wider text-slate-900/80">Avg. Attendance</h4>
@@ -548,6 +814,173 @@ export default function StudentsTab({
                     </div>
                 </div>
             </div>
+
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {/* MENTOR NOTE MODAL (SINGLE / BULK)                                   */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {isMentorModalOpen && (
+                <div 
+                    className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+                    onClick={() => setIsMentorModalOpen(false)}
+                >
+                    <div 
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl relative text-left"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setIsMentorModalOpen(false)}
+                            className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+                                <Lightbulb className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                                    {modalTargetStudents.length === 1 ? 'Mentor Guidance' : `Bulk Mentor Note (${modalTargetStudents.length} Students)`}
+                                </h3>
+                                <p className="text-xs text-slate-400">
+                                    {modalTargetStudents.length === 1 
+                                        ? `Student: ${modalTargetStudents[0].name}`
+                                        : `Applying to ${modalTargetStudents.map(s => s.name.split(' ')[0]).join(', ')}`
+                                    }
+                                </p>
+                            </div>
+                        </div>
+
+                        {saveErrorMsg && (
+                            <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-600 text-xs font-semibold flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0" />
+                                <span>{saveErrorMsg}</span>
+                            </div>
+                        )}
+
+                        {saveSuccessMsg && (
+                            <div className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/40 text-emerald-600 text-xs font-semibold flex items-center gap-2">
+                                <Check className="w-4 h-4 shrink-0" />
+                                <span>{saveSuccessMsg}</span>
+                            </div>
+                        )}
+
+                        {/* Quick-Select Shortcuts */}
+                        <div className="mb-4">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
+                                Quick Tips / Templates
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                                {MENTOR_NOTE_TEMPLATES.map(tpl => (
+                                    <button
+                                        key={tpl.name}
+                                        type="button"
+                                        onClick={() => applyTemplate(tpl)}
+                                        className="text-[10.5px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 hover:text-amber-900 dark:bg-slate-800 dark:hover:bg-amber-950/40 dark:hover:text-amber-300 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                                    >
+                                        + {tpl.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <form onSubmit={handleSaveMentorNotes} className="space-y-3.5">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                        Type
+                                    </label>
+                                    <select
+                                        value={noteType}
+                                        onChange={(e) => setNoteType(e.target.value as any)}
+                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white"
+                                    >
+                                        <option value="focus">Focus</option>
+                                        <option value="practice">Practice</option>
+                                        <option value="improvement">Improvement</option>
+                                        <option value="strength">Strength</option>
+                                        <option value="general">General</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                        Title
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Focus this week"
+                                        value={noteTitle}
+                                        onChange={(e) => setNoteTitle(e.target.value)}
+                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                                        Guidance / Practice Suggestion *
+                                    </label>
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                        {noteText.length}/500
+                                    </span>
+                                </div>
+                                <textarea
+                                    rows={4}
+                                    maxLength={500}
+                                    required
+                                    placeholder="Write guidance, flute posture feedback, breath control tips, or practice suggestions..."
+                                    value={noteText}
+                                    onChange={(e) => setNoteText(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white leading-relaxed"
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-1">
+                                <input
+                                    type="checkbox"
+                                    id="activeGuidanceCheckbox"
+                                    checked={isActiveGuidance}
+                                    onChange={(e) => setIsActiveGuidance(e.target.checked)}
+                                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                                />
+                                <label htmlFor="activeGuidanceCheckbox" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                                    Keep as current active guidance for student dashboard
+                                </label>
+                            </div>
+
+                            <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsMentorModalOpen(false)}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    type="submit"
+                                    disabled={isSavingNote}
+                                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-black text-xs transition-all shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer active:scale-95"
+                                >
+                                    {isSavingNote ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Saving Note...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Send className="w-3.5 h-3.5" />
+                                            <span>{modalTargetStudents.length === 1 ? 'Save Mentor Note' : `Apply to ${modalTargetStudents.length} Students`}</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

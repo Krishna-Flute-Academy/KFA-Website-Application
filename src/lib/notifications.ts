@@ -2,11 +2,12 @@ import { supabaseAuth } from './supabase-auth';
 import { htmlToPlainText } from './text-utils';
 
 interface SendNotificationParams {
-    teacherId: string;
-    recipients: Array<{ id: string; name: string; type: 'global' | 'class' | 'student' | 'custom' }>;
+    teacherId?: string;
+    recipients?: Array<{ id: string; name: string; type: 'global' | 'class' | 'student' | 'custom' }>;
     title: string;
     message: string;
     studentIds?: string[];
+    type?: 'reminder' | 'live_class' | 'messages' | 'tasks' | 'task' | 'classroom' | 'curriculum' | 'attendance' | 'fees';
 }
 
 async function resolveRecipientsToStudentIds(
@@ -95,18 +96,19 @@ async function resolveRecipientsToStudentIds(
 }
 
 export async function sendClassroomNotification({
-    teacherId,
     recipients,
     title,
     message,
-    studentIds: providedStudentIds
+    studentIds: providedStudentIds,
+    type
 }: SendNotificationParams) {
     try {
         let studentIds: string[] = [];
 
         if (providedStudentIds && providedStudentIds.length > 0) {
-            studentIds = providedStudentIds;
-        } else {
+            // Deduplicate recipient IDs
+            studentIds = Array.from(new Set(providedStudentIds.filter(Boolean)));
+        } else if (recipients && recipients.length > 0) {
             studentIds = await resolveRecipientsToStudentIds(recipients);
         }
 
@@ -115,17 +117,18 @@ export async function sendClassroomNotification({
             return { success: true, count: 0 };
         }
 
-        console.log(`[notifications] Targeting ${studentIds.length} students:`, studentIds);
-
         const cleanTitle = htmlToPlainText(title);
         const cleanMessage = htmlToPlainText(message);
 
-        // 1. Insert into notifications table
+        // Determine notification type
+        const notifType = type || (cleanTitle.toLowerCase().includes('class started') ? 'live_class' : 'reminder');
+
+        // 1. Batch insert into notifications table
         const notificationInserts = studentIds.map(sid => ({
             user_id: sid,
             title: cleanTitle,
             message: cleanMessage,
-            type: 'reminder',
+            type: notifType,
             is_read: false
         }));
 

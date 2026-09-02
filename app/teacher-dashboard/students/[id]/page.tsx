@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabaseAuth } from '../../../../src/lib/supabase-auth';
-import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle, Send, Lock, Unlock, Search, Star } from 'lucide-react';
+import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calendar, Mic, Plus, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ClipboardList, X, FileText, Download, ExternalLink, BookOpen, CheckCircle, Send, Lock, Unlock, Search, Star, Lightbulb, Trash2, Check, AlertTriangle } from 'lucide-react';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
@@ -70,6 +70,17 @@ export default function StudentProfilePage() {
     const [messageSubject, setMessageSubject] = useState('');
     const [messageContent, setMessageContent] = useState('');
     const [isSendingMessage, setIsSendingMessage] = useState(false);
+
+    // Mentor Notes States
+    const [mentorNotes, setMentorNotes] = useState<any[]>([]);
+    const [isMentorModalOpen, setIsMentorModalOpen] = useState(false);
+    const [noteType, setNoteType] = useState<'focus' | 'practice' | 'strength' | 'improvement' | 'general'>('focus');
+    const [noteTitle, setNoteTitle] = useState('Focus this week');
+    const [noteText, setNoteText] = useState('');
+    const [isActiveGuidance, setIsActiveGuidance] = useState(true);
+    const [isSavingNote, setIsSavingNote] = useState(false);
+    const [noteSuccessMsg, setNoteSuccessMsg] = useState('');
+    const [noteErrorMsg, setNoteErrorMsg] = useState('');
 
     const [reloadTrigger, setReloadTrigger] = useState(0);
     const [isOnline, setIsOnline] = useState(false);
@@ -355,6 +366,39 @@ export default function StudentProfilePage() {
                     console.warn('Could not fetch student spotlight:', e);
                 }
 
+                // Fetch mentor notes for this student
+                try {
+                    const { data: mNotes, error: mErr } = await supabaseAuth
+                        .from('mentor_notes')
+                        .select(`
+                            id,
+                            student_id,
+                            classroom_id,
+                            mentor_id,
+                            title,
+                            note,
+                            note_type,
+                            is_active,
+                            created_at,
+                            users:mentor_id (name, role)
+                        `)
+                        .eq('student_id', studentId)
+                        .order('created_at', { ascending: false });
+                    
+                    if (mErr) {
+                        const { data: rawNotes } = await supabaseAuth
+                            .from('mentor_notes')
+                            .select('*')
+                            .eq('student_id', studentId)
+                            .order('created_at', { ascending: false });
+                        setMentorNotes(rawNotes || []);
+                    } else {
+                        setMentorNotes(mNotes || []);
+                    }
+                } catch (e) {
+                    console.warn('Could not fetch mentor notes:', e);
+                }
+
                 // Fetch inventory allocations for this student or classroom
                 const fetchStudentAllocsData = async () => {
                     const directAllocReq = supabaseAuth
@@ -510,6 +554,100 @@ export default function StudentProfilePage() {
 
         fetchData();
     }, [studentId, router, reloadTrigger]);
+
+    const handleSaveMentorNote = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!noteText.trim()) {
+            setNoteErrorMsg('Please enter guidance text.');
+            return;
+        }
+
+        setIsSavingNote(true);
+        setNoteErrorMsg('');
+        setNoteSuccessMsg('');
+
+        try {
+            const { data: { user } } = await supabaseAuth.auth.getUser();
+            if (!user) throw new Error('You must be logged in.');
+
+            // If active, deactivate older active notes for this student
+            if (isActiveGuidance) {
+                await supabaseAuth
+                    .from('mentor_notes')
+                    .update({ is_active: false })
+                    .eq('student_id', studentId)
+                    .eq('is_active', true);
+            }
+
+            const { data: inserted, error: insertError } = await supabaseAuth
+                .from('mentor_notes')
+                .insert({
+                    student_id: studentId,
+                    classroom_id: classroomId || null,
+                    mentor_id: user.id,
+                    title: noteTitle.trim() || 'Teacher Guidance',
+                    note: noteText.trim(),
+                    note_type: noteType,
+                    is_active: isActiveGuidance,
+                    created_at: new Date().toISOString()
+                })
+                .select('id, student_id, classroom_id, mentor_id, title, note, note_type, is_active, created_at, users:mentor_id (name, role)')
+                .single();
+
+            if (insertError) throw insertError;
+
+            setMentorNotes(prev => [
+                inserted,
+                ...prev.map(n => isActiveGuidance ? { ...n, is_active: false } : n)
+            ]);
+
+            setNoteSuccessMsg('Mentor note saved successfully!');
+            setTimeout(() => {
+                setIsMentorModalOpen(false);
+                setNoteSuccessMsg('');
+            }, 1000);
+        } catch (err: any) {
+            setNoteErrorMsg(err.message || 'Failed to save mentor note.');
+        } finally {
+            setIsSavingNote(false);
+        }
+    };
+
+    const handleToggleNoteActive = async (noteId: string, currentActive: boolean) => {
+        try {
+            const nextActive = !currentActive;
+            if (nextActive) {
+                // Deactivate all others first
+                await supabaseAuth
+                    .from('mentor_notes')
+                    .update({ is_active: false })
+                    .eq('student_id', studentId);
+            }
+
+            await supabaseAuth
+                .from('mentor_notes')
+                .update({ is_active: nextActive })
+                .eq('id', noteId);
+
+            setMentorNotes(prev => prev.map(n => {
+                if (n.id === noteId) return { ...n, is_active: nextActive };
+                if (nextActive) return { ...n, is_active: false };
+                return n;
+            }));
+        } catch (err) {
+            console.error('Error toggling mentor note status:', err);
+        }
+    };
+
+    const handleDeleteNote = async (noteId: string) => {
+        if (!confirm('Are you sure you want to delete this mentor note?')) return;
+        try {
+            await supabaseAuth.from('mentor_notes').delete().eq('id', noteId);
+            setMentorNotes(prev => prev.filter(n => n.id !== noteId));
+        } catch (err) {
+            console.error('Error deleting mentor note:', err);
+        }
+    };
 
     const handleLogout = async () => {
         await supabaseAuth.auth.signOut();
@@ -1195,6 +1333,20 @@ export default function StudentProfilePage() {
                             {teacherProfile?.role !== 'student' && (
                                 <>
                                     <button 
+                                        onClick={() => {
+                                            setNoteType('focus');
+                                            setNoteTitle('Focus this week');
+                                            setNoteText('');
+                                            setIsActiveGuidance(true);
+                                            setIsMentorModalOpen(true);
+                                        }}
+                                        className="admin-btn-sm admin-btn-outline text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 cursor-pointer"
+                                        title="Add Mentor Note"
+                                    >
+                                        <Lightbulb className="size-3.5 shrink-0 text-amber-500" />
+                                        <span className="hidden sm:inline">Mentor Note</span>
+                                    </button>
+                                    <button 
                                         onClick={() => setIsMessageModalOpen(true)}
                                         className="admin-btn-sm admin-btn-outline"
                                         title="Message Student"
@@ -1236,6 +1388,7 @@ export default function StudentProfilePage() {
                         {[
                             { id: 'profile', label: 'Profile Info' },
                             { id: 'tasks', label: 'Assignments & Tasks' },
+                            { id: 'notes', label: `Mentor Notes (${mentorNotes.length})` },
                             { id: 'history', label: 'Submission History' },
                             { id: 'attendance', label: 'Attendance Log' },
                             { id: 'curriculum', label: 'Curriculum Progress' }
@@ -1315,6 +1468,165 @@ export default function StudentProfilePage() {
                                 )}
                             </section>
                         )}
+
+                        {/* Mentor Notes Section */}
+                        {activeTab === 'notes' && (
+                            <section className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
+                                <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-1.5 h-6 bg-[#ecb613] rounded-full"></span>
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">Mentor Notes & Guidance History</h3>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setNoteType('focus');
+                                            setNoteTitle('Focus this week');
+                                            setNoteText('');
+                                            setIsActiveGuidance(true);
+                                            setIsMentorModalOpen(true);
+                                        }}
+                                        className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-950 rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
+                                    >
+                                        <Lightbulb className="w-4 h-4 text-slate-950" />
+                                        <span>+ Add Mentor Note</span>
+                                    </button>
+                                </div>
+
+                                {mentorNotes.length === 0 ? (
+                                    <div className="bg-white dark:bg-slate-900 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center shadow-sm">
+                                        <div className="size-16 bg-amber-50 dark:bg-amber-950/30 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200 dark:border-amber-900/50 text-amber-600">
+                                            <Lightbulb className="size-8" />
+                                        </div>
+                                        <h4 className="font-extrabold text-slate-900 dark:text-white text-base">No mentor guidance notes yet</h4>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto font-medium">
+                                            Provide quick practice focus points, posture tips, or breath control suggestions that will appear directly on the student dashboard.
+                                        </p>
+                                        <button
+                                            onClick={() => {
+                                                setNoteType('focus');
+                                                setNoteTitle('Focus this week');
+                                                setNoteText('');
+                                                setIsActiveGuidance(true);
+                                                setIsMentorModalOpen(true);
+                                            }}
+                                            className="mt-4 px-4 py-2 bg-[#7C5E3F] hover:bg-amber-900 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            <span>Create First Note</span>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {/* Current Active Guidance */}
+                                        {mentorNotes.find(n => n.is_active) && (() => {
+                                            const activeNote = mentorNotes.find(n => n.is_active)!;
+                                            return (
+                                                <div className="bg-gradient-to-br from-amber-500/10 via-[#FAF5EE] to-orange-500/10 dark:from-amber-950/30 dark:via-slate-900 dark:to-orange-950/20 border-2 border-amber-400/80 dark:border-amber-600/60 rounded-3xl p-6 shadow-md relative text-left">
+                                                    <div className="flex items-center justify-between gap-2 mb-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-mono shadow-2xs">
+                                                                ● CURRENT ACTIVE GUIDANCE
+                                                            </span>
+                                                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                                                {activeNote.note_type}
+                                                            </span>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleToggleNoteActive(activeNote.id, true)}
+                                                            className="text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline cursor-pointer"
+                                                        >
+                                                            Deactivate
+                                                        </button>
+                                                    </div>
+
+                                                    <h4 className="text-base font-black text-slate-900 dark:text-white leading-snug">
+                                                        {activeNote.title || 'Focus Guidance'}
+                                                    </h4>
+                                                    <p className="text-xs text-slate-700 dark:text-slate-200 mt-2 leading-relaxed whitespace-pre-wrap font-medium">
+                                                        {activeNote.note}
+                                                    </p>
+
+                                                    <div className="mt-4 pt-3 border-t border-amber-300/40 dark:border-amber-900/40 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                                                        <span>
+                                                            Added by <strong className="text-slate-800 dark:text-slate-200">{activeNote.users?.name || 'Teacher'}</strong> on {new Date(activeNote.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                        </span>
+                                                        <span className="text-amber-700 dark:text-amber-400 font-bold">
+                                                            Visible on Student Dashboard
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+
+                                        {/* Previous Notes History */}
+                                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs text-left">
+                                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">
+                                                All Notes History ({mentorNotes.length})
+                                            </h4>
+                                            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                {mentorNotes.map(note => (
+                                                    <div key={note.id} className="py-3.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+                                                        <div className="min-w-0 flex-1 space-y-1">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+                                                                    note.note_type === 'focus' ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-300' :
+                                                                    note.note_type === 'practice' ? 'bg-blue-100 text-blue-900 dark:bg-blue-950/40 dark:text-blue-300' :
+                                                                    note.note_type === 'strength' ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                                                                    note.note_type === 'improvement' ? 'bg-rose-100 text-rose-900 dark:bg-rose-950/40 dark:text-rose-300' :
+                                                                    'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300'
+                                                                }`}>
+                                                                    {note.note_type}
+                                                                </span>
+                                                                {note.is_active && (
+                                                                    <span className="text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white font-mono">
+                                                                        Active
+                                                                    </span>
+                                                                )}
+                                                                <h5 className="font-extrabold text-xs text-slate-900 dark:text-white truncate">
+                                                                    {note.title || 'Mentor Guidance'}
+                                                                </h5>
+                                                                <span className="text-[10.5px] text-slate-400">
+                                                                    • {new Date(note.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2">
+                                                                {note.note}
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                                            {!note.is_active ? (
+                                                                <button
+                                                                    onClick={() => handleToggleNoteActive(note.id, false)}
+                                                                    className="px-2.5 py-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 rounded-lg border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer"
+                                                                >
+                                                                    Set Active
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleToggleNoteActive(note.id, true)}
+                                                                    className="px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                                                                >
+                                                                    Deactivate
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                onClick={() => handleDeleteNote(note.id)}
+                                                                className="p-1 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                                                title="Delete note"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </section>
+                        )}
+
 
                         {/* Curriculum Progress Section */}
                         {activeTab === 'curriculum' && (
@@ -2456,6 +2768,180 @@ export default function StudentProfilePage() {
                 </div>
             )}
 
+
+            {/* ─── Mentor Note Compose Modal ────────────────────────────────────── */}
+            {isMentorModalOpen && studentInfo && (
+                <div 
+                    className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+                    onClick={() => setIsMentorModalOpen(false)}
+                >
+                    <div 
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl relative text-left"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setIsMentorModalOpen(false)}
+                            className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+                                <Lightbulb className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                                    Mentor Guidance
+                                </h3>
+                                <p className="text-xs text-slate-400">
+                                    Student: <span className="font-bold text-slate-700 dark:text-slate-300">{studentInfo.name}</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        {noteErrorMsg && (
+                            <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 text-rose-600 text-xs font-semibold flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 shrink-0" />
+                                <span>{noteErrorMsg}</span>
+                            </div>
+                        )}
+
+                        {noteSuccessMsg && (
+                            <div className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/40 text-emerald-600 text-xs font-semibold flex items-center gap-2">
+                                <Check className="w-4 h-4 shrink-0" />
+                                <span>{noteSuccessMsg}</span>
+                            </div>
+                        )}
+
+                        {/* Quick Templates */}
+                        <div className="mb-4">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5">
+                                Quick Tips / Templates
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                                {[
+                                    { name: 'Breath Control', type: 'practice', title: 'Breath Control & Airflow', text: 'Practice long steady breaths into the blowhole with relaxed diaphragm support. Maintain stable pitch on lower notes for 5 minutes daily.' },
+                                    { name: 'Finger Coordination', type: 'focus', title: 'Finger Placement & Clean Holes', text: 'Ensure finger pads fully seal tone holes without excessive tension. Practice slow transition between Sa, Re, and Ga.' },
+                                    { name: 'Rhythm Practice', type: 'practice', title: 'Taal & Metronome Practice', text: 'Practice with the academy metronome at 60 BPM. Focus on landing exactly on the Sam (beat 1) with clean attacks.' },
+                                    { name: 'Tone Improvement', type: 'improvement', title: 'Tone Clarity & Sweet Sound', text: 'Adjust your lip embouchure slightly upward to reduce airy hiss. Aim for a warm, resonant, centered flute tone.' },
+                                    { name: 'Long Note Practice', type: 'practice', title: 'Long Sustained Notes (Riyaz)', text: 'Spend 10 minutes daily holding each note from Mandra Saptak to Madhya Saptak with steady breath and zero pitch wobble.' },
+                                    { name: 'Revision Required', type: 'improvement', title: 'Review Previous Lesson Feedback', text: 'Revisit the previous assignment submission and pay special attention to finger release timing and komal swara tuning.' },
+                                    { name: 'Practice More Slowly', type: 'focus', title: 'Slow Riyaz for Muscle Memory', text: 'Practice at half speed with pure clarity. Precision at slow tempo builds effortless speed later.' }
+                                ].map(tpl => (
+                                    <button
+                                        key={tpl.name}
+                                        type="button"
+                                        onClick={() => {
+                                            setNoteType(tpl.type as any);
+                                            setNoteTitle(tpl.title);
+                                            setNoteText(tpl.text);
+                                        }}
+                                        className="text-[10.5px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 hover:text-amber-900 dark:bg-slate-800 dark:hover:bg-amber-950/40 dark:hover:text-amber-300 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                                    >
+                                        + {tpl.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <form onSubmit={handleSaveMentorNote} className="space-y-3.5">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                        Type
+                                    </label>
+                                    <select
+                                        value={noteType}
+                                        onChange={(e) => setNoteType(e.target.value as any)}
+                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white"
+                                    >
+                                        <option value="focus">Focus</option>
+                                        <option value="practice">Practice</option>
+                                        <option value="improvement">Improvement</option>
+                                        <option value="strength">Strength</option>
+                                        <option value="general">General</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                                        Title
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Focus this week"
+                                        value={noteTitle}
+                                        onChange={(e) => setNoteTitle(e.target.value)}
+                                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                                        Guidance / Practice Suggestion *
+                                    </label>
+                                    <span className="text-[10px] text-slate-400 font-mono">
+                                        {noteText.length}/500
+                                    </span>
+                                </div>
+                                <textarea
+                                    rows={4}
+                                    maxLength={500}
+                                    required
+                                    placeholder="Write guidance, flute posture feedback, breath control tips, or practice suggestions..."
+                                    value={noteText}
+                                    onChange={(e) => setNoteText(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none text-slate-800 dark:text-white leading-relaxed"
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-1">
+                                <input
+                                    type="checkbox"
+                                    id="activeStudentGuidanceCheckbox"
+                                    checked={isActiveGuidance}
+                                    onChange={(e) => setIsActiveGuidance(e.target.checked)}
+                                    className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                                />
+                                <label htmlFor="activeStudentGuidanceCheckbox" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                                    Keep as current active guidance for student dashboard
+                                </label>
+                            </div>
+
+                            <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsMentorModalOpen(false)}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+
+                                <button
+                                    type="submit"
+                                    disabled={isSavingNote}
+                                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-black text-xs transition-all shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer active:scale-95"
+                                >
+                                    {isSavingNote ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span>Saving Note...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Send className="w-3.5 h-3.5" />
+                                            <span>Save Mentor Note</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

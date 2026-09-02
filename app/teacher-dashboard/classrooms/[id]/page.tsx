@@ -2870,14 +2870,15 @@ export default function ClassroomDashboardPage({
 
         return classroomInventoryAllocations
             .filter(item => {
-                if (item.classroom_id !== classroomId) return false;
                 if (curriculumTab === 'classwide') {
+                    if (item.classroom_id !== classroomId) return false;
                     if (!item.allocated_to_student_id) return true;
                     return activeStudentIds.has(item.allocated_to_student_id);
                 } else {
                     if (!selectedStudentForCurriculum) return false;
-                    if (!item.allocated_to_student_id) return true;
-                    return item.allocated_to_student_id === selectedStudentForCurriculum.student_id;
+                    if (item.allocated_to_student_id === selectedStudentForCurriculum.student_id) return true;
+                    if (!item.allocated_to_student_id && item.classroom_id === classroomId) return true;
+                    return false;
                 }
             })
             .map(item => {
@@ -3230,7 +3231,11 @@ export default function ClassroomDashboardPage({
                 chapLessons.forEach(lesson => {
                     const lessonAlloc = allocatedInventoryItems.find(a => a.inventory_ref_type === 'lesson' && a.inventory_ref_id === lesson.id);
 
-                    const isLessonAllocated = !!lessonAlloc || !!chapAlloc || !!modAlloc;
+                    const hasStudentProgress = curriculumTab === 'individual' && selectedStudentForCurriculum && studentProgress.some(
+                        p => p.student_id === selectedStudentForCurriculum.student_id && p.lesson_id === lesson.id && (p.status === 'completed' || p.status === 'unlocked')
+                    );
+
+                    const isLessonAllocated = !!lessonAlloc || !!chapAlloc || !!modAlloc || hasStudentProgress;
 
                     if (isLessonAllocated) {
                         const isLessonMatch = query ? (
@@ -3289,7 +3294,7 @@ export default function ClassroomDashboardPage({
                 ...cat,
                 modules: cat.modules.sort((a, b) => a.module_number - b.module_number)
             }));
-    }, [allocatedInventoryItems, courseModules, courseChapters, courseLessons, categories, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, curriculumSearchQuery]);
+    }, [allocatedInventoryItems, courseModules, courseChapters, courseLessons, categories, curriculumTab, selectedStudentForCurriculum, selectedStudentPermissions, studentProgress, curriculumSearchQuery]);
 
     const syllabusLessons = useMemo(() => {
         const lessonsSet = new Set<string>();

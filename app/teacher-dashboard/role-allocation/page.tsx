@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
-import TeacherMentorManagement from '../../../src/components/teacher-dashboard/TeacherMentorManagement';
 import { useToast } from '../../../src/lib/ToastContext';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 import { exportRoleAllocationCSV } from '../../../src/lib/csv-export';
@@ -56,7 +55,7 @@ export default function RoleAllocationDashboard() {
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     
     // Tabs & Filters
-    const [activeTab, setActiveTab] = useState<'pending' | 'teachers' | 'students' | 'admins' | 'mentors'>('pending');
+    const [activeTab, setActiveTab] = useState<'pending' | 'teachers' | 'students' | 'admins'>('pending');
     const [searchQuery, setSearchQuery] = useState('');
 
     // Column Sorting State
@@ -578,7 +577,6 @@ export default function RoleAllocationDashboard() {
                                     <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 w-full md:w-auto overflow-x-auto scrollbar-none whitespace-nowrap snap-x">
                                         {[
                                             { id: 'pending', label: 'Pending approval', count: usersList.filter(u => u.role === 'pending' || u.status === 'pending').length },
-                                            { id: 'mentors', label: 'Mentors & Pairing', count: usersList.filter(u => u.role === 'mentor').length },
                                             { id: 'teachers', label: 'Teachers', count: usersList.filter(u => u.role === 'teacher' && u.status !== 'pending').length },
                                             { id: 'students', label: 'Students', count: usersList.filter(u => u.role === 'student' && u.status !== 'pending').length },
                                             { id: 'admins', label: 'Admins', count: usersList.filter(u => u.role === 'admin' && u.status !== 'pending').length }
@@ -630,14 +628,8 @@ export default function RoleAllocationDashboard() {
                                     </div>
                                 </div>
 
-                                {activeTab === 'mentors' ? (
-                                    <div className="p-2">
-                                        <TeacherMentorManagement />
-                                    </div>
-                                ) : (
-                                    <>
-                                        {/* Mobile Cards View */}
-                                        <div className="block lg:hidden divide-y divide-slate-100 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
+                                {/* Mobile Cards View */}
+                                <div className="block lg:hidden divide-y divide-slate-100 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
                                             {filteredUsers.length > 0 ? (
                                                 filteredUsers.map(user => {
                                                     const classroomData = user.classroom_students?.[0]?.classrooms;
@@ -1052,8 +1044,6 @@ export default function RoleAllocationDashboard() {
                                                 </tbody>
                                             </table>
                                         </div>
-                                    </>
-                                )}
                             </div>
                         </div>
                     </div>
