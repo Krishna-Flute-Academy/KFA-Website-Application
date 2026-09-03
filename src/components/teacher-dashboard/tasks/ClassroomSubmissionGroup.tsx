@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, Users, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { TaskSubmission } from './types';
-import StudentSubmissionRow from './StudentSubmissionRow';
+import StudentSubmissionRow, { StudentSubmissionCard } from './StudentSubmissionRow';
 
 interface ClassroomSubmissionGroupProps {
     classroomName: string;
@@ -108,7 +108,7 @@ export default function ClassroomSubmissionGroup({
                     {/* Mobile Card View */}
                     <div className="md:hidden p-3 space-y-3">
                         {submissions.map(sub => (
-                            <StudentSubmissionRow 
+                            <StudentSubmissionCard 
                                 key={sub.id} 
                                 submission={sub} 
                                 onReview={onReview}

@@ -215,52 +215,61 @@ export default function OverviewTab({
         fetchMentorNote();
     }, [profile?.id]);
 
-    // Fetch Explore & Learn items reusing existing broadcasts, blog_posts, and youtube API
+    // Fetch Explore & Learn items automatically (Blog + YouTube) respecting system_notification_settings
     useEffect(() => {
-        let blogBc: any = null;
-        let videoBc: any = null;
-
-        if (broadcasts && broadcasts.length > 0) {
-            blogBc = broadcasts.find((b: any) =>
-                b.channel === 'blog' || b.recipients?.some((r: any) => r._meta && r.type === 'blog')
-            );
-            videoBc = broadcasts.find((b: any) =>
-                b.channel === 'video' || b.recipients?.some((r: any) => r._meta && r.type === 'video')
-            );
-        }
-
-        if (blogBc) {
-            const meta = blogBc.recipients?.find((r: any) => r._meta && r.type === 'blog') || {};
-            const studentRec = blogBc.recipients?.find((r: any) => r.type === 'student' && r.id === profile?.id);
-            const classRec = blogBc.recipients?.find((r: any) => r.type === 'class');
-            const resolvedTargetUrl = studentRec?.custom_url || classRec?.custom_url || meta.target_url || '/blog';
-            setLatestPost({
-                id: blogBc.id,
-                title: blogBc.subject,
-                slug: resolvedTargetUrl,
-                excerpt: stripHtml(blogBc.content || ''),
-                featured_image: meta.image_url || undefined,
-                target_url: resolvedTargetUrl
-            });
-        }
-
-        if (videoBc) {
-            const meta = videoBc.recipients?.find((r: any) => r._meta && r.type === 'video') || {};
-            const studentRec = videoBc.recipients?.find((r: any) => r.type === 'student' && r.id === profile?.id);
-            const classRec = videoBc.recipients?.find((r: any) => r.type === 'class');
-            const resolvedTargetUrl = studentRec?.custom_url || classRec?.custom_url || meta.target_url || 'https://www.youtube.com/@krishnafluteacademy';
-            setLatestVideo({
-                videoId: videoBc.id,
-                title: videoBc.subject,
-                thumbnail: meta.image_url,
-                url: resolvedTargetUrl
-            });
-        }
-
         const fetchLatest = async () => {
             try {
+                // 1. Check system notification settings (admin blog/video pause toggles) via controlled API / RPC
+                let blogEnabled = true;
+                let videoEnabled = true;
+
+                const sessionRes = await supabaseAuth.auth.getSession();
+                const token = sessionRes.data?.session?.access_token;
+                const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+                try {
+                    const settingsRes = await fetch('/api/system-notification-settings', {
+                        cache: 'no-store',
+                        headers: authHeaders
+                    });
+                    if (settingsRes.ok) {
+                        const parsed = await settingsRes.json();
+                        blogEnabled = parsed.blog_enabled !== false;
+                        videoEnabled = parsed.video_enabled !== false;
+                    } else {
+                        // Controlled RPC fallback only (bypasses table RLS via SECURITY DEFINER, no table access)
+                        const { data: rpcData } = await supabaseAuth.rpc('get_system_notification_settings');
+                        if (rpcData) {
+                            blogEnabled = rpcData.blog_enabled !== false;
+                            videoEnabled = rpcData.video_enabled !== false;
+                        }
+                    }
+                } catch {
+                    try {
+                        const { data: rpcData } = await supabaseAuth.rpc('get_system_notification_settings');
+                        if (rpcData) {
+                            blogEnabled = rpcData.blog_enabled !== false;
+                            videoEnabled = rpcData.video_enabled !== false;
+                        }
+                    } catch {
+                        // Keep current defaults
+                    }
+                }
+
+                // If both are paused, clear state immediately and avoid unnecessary network requests
+                if (!blogEnabled) {
+                    setLatestPost(null);
+                }
+                if (!videoEnabled) {
+                    setLatestVideo(null);
+                }
+                if (!blogEnabled && !videoEnabled) {
+                    return;
+                }
+
+                // 2. Fetch Blog & YouTube in parallel only if their respective feeds are enabled
                 const [blogRes, videoRes] = await Promise.allSettled([
-                    !blogBc
+                    blogEnabled
                         ? supabase
                             .from('blog_posts')
                             .select('id, title, slug, excerpt, featured_image, published_at')
@@ -269,12 +278,12 @@ export default function OverviewTab({
                             .limit(1)
                             .maybeSingle()
                         : Promise.resolve({ data: null }),
-                    !videoBc
-                        ? fetch('/api/latest-youtube-video').then(r => r.ok ? r.json() : null)
+                    videoEnabled
+                        ? fetch('/api/latest-youtube-video', { cache: 'no-store', headers: authHeaders }).then(r => r.ok ? r.json() : null)
                         : Promise.resolve(null)
                 ]);
 
-                if (!blogBc && blogRes.status === 'fulfilled' && blogRes.value?.data) {
+                if (blogEnabled && blogRes.status === 'fulfilled' && blogRes.value?.data) {
                     const b = blogRes.value.data as any;
                     setLatestPost({
                         id: b.id,
@@ -284,9 +293,11 @@ export default function OverviewTab({
                         featured_image: b.featured_image,
                         target_url: b.slug ? (b.slug.startsWith('/') || b.slug.startsWith('http') ? b.slug : `/blog/${b.slug}`) : '/blog'
                     });
+                } else {
+                    setLatestPost(null);
                 }
 
-                if (!videoBc && videoRes.status === 'fulfilled' && videoRes.value?.videoId) {
+                if (videoEnabled && videoRes.status === 'fulfilled' && videoRes.value?.videoId && !videoRes.value?.disabled) {
                     const v = videoRes.value;
                     setLatestVideo({
                         videoId: v.videoId,
@@ -294,6 +305,8 @@ export default function OverviewTab({
                         thumbnail: v.thumbnail,
                         url: v.url || `https://www.youtube.com/watch?v=${v.videoId}`
                     });
+                } else {
+                    setLatestVideo(null);
                 }
             } catch (e) {
                 console.warn('Error fetching Explore & Learn items:', e);
@@ -301,7 +314,8 @@ export default function OverviewTab({
         };
 
         fetchLatest();
-    }, [broadcasts]);
+    }, []);
+
 
     const dashboardBroadcasts = useMemo(() => {
         return broadcasts.filter(b =>
@@ -854,79 +868,85 @@ export default function OverviewTab({
                 </div>
 
                 {/* 9. Mobile News & Updates (Compact Card) */}
-                <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-3xs text-left">
-                    <div className="bg-gradient-to-r from-amber-50/60 to-orange-50/20 px-4 py-2.5 border-b border-[#E6E1DA] flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-lg bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center shrink-0">
-                                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                            </div>
-                            <h3 className="font-bold text-[#3E3A35] text-xs sm:text-sm">News & Updates</h3>
-                        </div>
-                    </div>
-
-                    <div className="divide-y divide-slate-100">
-                        {/* Latest Video */}
-                        <div 
-                            onClick={() => {
-                                const videoUrl = latestVideo?.url || 'https://www.youtube.com/@krishnafluteacademy';
-                                window.open(videoUrl, '_blank');
-                            }}
-                            className="p-3 flex items-center gap-2.5 active:bg-[#FAF5EE]/60 transition-colors cursor-pointer"
-                        >
-                            <div className="relative w-12 h-9 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
-                                {latestVideo?.thumbnail ? (
-                                    <img 
-                                        src={latestVideo.thumbnail} 
-                                        alt={latestVideo.title} 
-                                        className="w-full h-full object-cover" 
-                                    />
-                                ) : (
-                                    <div className="w-full h-full bg-rose-50 flex items-center justify-center text-rose-600">
-                                        <Youtube className="w-4 h-4" />
-                                    </div>
-                                )}
-                                <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                                    <Play className="w-3 h-3 text-white fill-white" />
+                {(latestVideo || latestPost) && (
+                    <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-3xs text-left">
+                        <div className="bg-gradient-to-r from-amber-50/60 to-orange-50/20 px-4 py-2.5 border-b border-[#E6E1DA] flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-lg bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center shrink-0">
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                                 </div>
+                                <h3 className="font-bold text-[#3E3A35] text-xs sm:text-sm">News & Updates</h3>
                             </div>
-                            <div className="min-w-0 flex-1">
-                                <span className="text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-200/60 px-1.5 py-0.2 rounded font-mono">
-                                    Tutorial
-                                </span>
-                                <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5">
-                                    {latestVideo?.title || 'Bansuri Fingering & Tone Masterclass'}
-                                </h4>
-                            </div>
-                            <span className="text-[11px] font-bold text-[#7C5E3F] shrink-0">
-                                Watch →
-                            </span>
                         </div>
 
-                        {/* Latest Article */}
-                        <div 
-                            onClick={() => {
-                                const blogUrl = latestPost?.target_url || (latestPost?.slug ? (latestPost.slug.startsWith('http') || latestPost.slug.startsWith('/') ? latestPost.slug : `/blog/${latestPost.slug}`) : '/blog');
-                                window.open(blogUrl, '_blank');
-                            }}
-                            className="p-3 flex items-center gap-2.5 active:bg-[#FAF5EE]/60 transition-colors cursor-pointer"
-                        >
-                            <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200/70 text-amber-800 flex items-center justify-center shrink-0">
-                                <BookOpen className="w-4 h-4 text-[#7C5E3F]" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <span className="text-[8px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100/70 border border-amber-200 px-1.5 py-0.2 rounded font-mono">
-                                    Article
-                                </span>
-                                <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5">
-                                    {latestPost?.title || 'Daily Flute Riyaz: 5 Essential Tips'}
-                                </h4>
-                            </div>
-                            <span className="text-[11px] font-bold text-[#7C5E3F] shrink-0">
-                                Read →
-                            </span>
+                        <div className="divide-y divide-slate-100">
+                            {/* Latest Video */}
+                            {latestVideo && (
+                                <div 
+                                    onClick={() => {
+                                        const videoUrl = latestVideo?.url || 'https://www.youtube.com/@krishnafluteacademy';
+                                        window.open(videoUrl, '_blank');
+                                    }}
+                                    className="p-3 flex items-center gap-2.5 active:bg-[#FAF5EE]/60 transition-colors cursor-pointer"
+                                >
+                                    <div className="relative w-12 h-9 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
+                                        {latestVideo?.thumbnail ? (
+                                            <img 
+                                                src={latestVideo.thumbnail} 
+                                                alt={latestVideo.title} 
+                                                className="w-full h-full object-cover" 
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full bg-rose-50 flex items-center justify-center text-rose-600">
+                                                <Youtube className="w-4 h-4" />
+                                            </div>
+                                        )}
+                                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                                            <Play className="w-3 h-3 text-white fill-white" />
+                                        </div>
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <span className="text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-200/60 px-1.5 py-0.2 rounded font-mono">
+                                            Tutorial
+                                        </span>
+                                        <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5">
+                                            {latestVideo?.title || 'Bansuri Fingering & Tone Masterclass'}
+                                        </h4>
+                                    </div>
+                                    <span className="text-[11px] font-bold text-[#7C5E3F] shrink-0">
+                                        Watch →
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Latest Article */}
+                            {latestPost && (
+                                <div 
+                                    onClick={() => {
+                                        const blogUrl = latestPost?.target_url || (latestPost?.slug ? (latestPost.slug.startsWith('http') || latestPost.slug.startsWith('/') ? latestPost.slug : `/blog/${latestPost.slug}`) : '/blog');
+                                        window.open(blogUrl, '_blank');
+                                    }}
+                                    className="p-3 flex items-center gap-2.5 active:bg-[#FAF5EE]/60 transition-colors cursor-pointer"
+                                >
+                                    <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200/70 text-amber-800 flex items-center justify-center shrink-0">
+                                        <BookOpen className="w-4 h-4 text-[#7C5E3F]" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <span className="text-[8px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100/70 border border-amber-200 px-1.5 py-0.2 rounded font-mono">
+                                            Article
+                                        </span>
+                                        <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5">
+                                            {latestPost?.title || 'Daily Flute Riyaz: 5 Essential Tips'}
+                                        </h4>
+                                    </div>
+                                    <span className="text-[11px] font-bold text-[#7C5E3F] shrink-0">
+                                        Read →
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* 10. Notice Board */}
                 <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-3xs text-left">
@@ -1947,85 +1967,91 @@ export default function OverviewTab({
                         </div>
 
                         {/* 3. News & Updates Card (Tutorial & Articles) */}
-                        <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-xs text-left">
-                            <div className="bg-gradient-to-r from-amber-50/60 to-orange-50/20 px-4 py-2.5 border-b border-[#E6E1DA] flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-6 h-6 rounded-lg bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center shrink-0">
-                                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                        {(latestVideo || latestPost) && (
+                            <div className="bg-white border border-[#E6E1DA] rounded-3xl overflow-hidden shadow-xs text-left">
+                                <div className="bg-gradient-to-r from-amber-50/60 to-orange-50/20 px-4 py-2.5 border-b border-[#E6E1DA] flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-lg bg-[#FAF5EE] text-[#7C5E3F] flex items-center justify-center shrink-0">
+                                            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                                        </div>
+                                        <h3 className="font-bold text-[#3E3A35] text-xs sm:text-sm">News & Updates</h3>
                                     </div>
-                                    <h3 className="font-bold text-[#3E3A35] text-xs sm:text-sm">News & Updates</h3>
                                 </div>
-                            </div>
 
-                            <div className="divide-y divide-slate-100">
-                                {/* Latest Tutorial / Video */}
-                                <div 
-                                    onClick={() => {
-                                        const videoUrl = latestVideo?.url || 'https://www.youtube.com/@krishnafluteacademy';
-                                        window.open(videoUrl, '_blank');
-                                    }}
-                                    className="p-3 hover:bg-[#FAF5EE]/50 transition-colors cursor-pointer flex items-center gap-3 group"
-                                >
-                                    <div className="relative w-14 h-10 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
-                                        {latestVideo?.thumbnail ? (
-                                            <img 
-                                                src={latestVideo.thumbnail} 
-                                                alt={latestVideo.title} 
-                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full bg-rose-50 flex items-center justify-center text-rose-600">
-                                                <Youtube className="w-5 h-5" />
+                                <div className="divide-y divide-slate-100">
+                                    {/* Latest Tutorial / Video */}
+                                    {latestVideo && (
+                                        <div 
+                                            onClick={() => {
+                                                const videoUrl = latestVideo?.url || 'https://www.youtube.com/@krishnafluteacademy';
+                                                window.open(videoUrl, '_blank');
+                                            }}
+                                            className="p-3 hover:bg-[#FAF5EE]/50 transition-colors cursor-pointer flex items-center gap-3 group"
+                                        >
+                                            <div className="relative w-14 h-10 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
+                                                {latestVideo?.thumbnail ? (
+                                                    <img 
+                                                        src={latestVideo.thumbnail} 
+                                                        alt={latestVideo.title} 
+                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-full bg-rose-50 flex items-center justify-center text-rose-600">
+                                                        <Youtube className="w-5 h-5" />
+                                                    </div>
+                                                )}
+                                                <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                                                    <Play className="w-3.5 h-3.5 text-white fill-white" />
+                                                </div>
                                             </div>
-                                        )}
-                                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                                            <Play className="w-3.5 h-3.5 text-white fill-white" />
-                                        </div>
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-200/60 px-1.5 py-0.2 rounded font-mono">
-                                                Tutorial
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[8px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-200/60 px-1.5 py-0.2 rounded font-mono">
+                                                        Tutorial
+                                                    </span>
+                                                    <span className="text-[9.5px] text-slate-400 font-medium">Video</span>
+                                                </div>
+                                                <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5 group-hover:text-amber-800 transition-colors">
+                                                    {latestVideo?.title || 'Bansuri Fingering & Tone Masterclass'}
+                                                </h4>
+                                            </div>
+                                            <span className="text-[11px] font-bold text-[#7C5E3F] group-hover:translate-x-0.5 transition-transform shrink-0">
+                                                Watch →
                                             </span>
-                                            <span className="text-[9.5px] text-slate-400 font-medium">Video</span>
                                         </div>
-                                        <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5 group-hover:text-amber-800 transition-colors">
-                                            {latestVideo?.title || 'Bansuri Fingering & Tone Masterclass'}
-                                        </h4>
-                                    </div>
-                                    <span className="text-[11px] font-bold text-[#7C5E3F] group-hover:translate-x-0.5 transition-transform shrink-0">
-                                        Watch →
-                                    </span>
-                                </div>
+                                    )}
 
-                                {/* Latest Blog / Article */}
-                                <div 
-                                    onClick={() => {
-                                        const blogUrl = latestPost?.target_url || (latestPost?.slug ? (latestPost.slug.startsWith('http') || latestPost.slug.startsWith('/') ? latestPost.slug : `/blog/${latestPost.slug}`) : '/blog');
-                                        window.open(blogUrl, '_blank');
-                                    }}
-                                    className="p-3 hover:bg-[#FAF5EE]/50 transition-colors cursor-pointer flex items-center gap-3 group"
-                                >
-                                    <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-200/70 text-amber-800 flex items-center justify-center shrink-0">
-                                        <BookOpen className="w-4.5 h-4.5 text-[#7C5E3F]" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-[8px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100/70 border border-amber-200 px-1.5 py-0.2 rounded font-mono">
-                                                Article
+                                    {/* Latest Blog / Article */}
+                                    {latestPost && (
+                                        <div 
+                                            onClick={() => {
+                                                const blogUrl = latestPost?.target_url || (latestPost?.slug ? (latestPost.slug.startsWith('http') || latestPost.slug.startsWith('/') ? latestPost.slug : `/blog/${latestPost.slug}`) : '/blog');
+                                                window.open(blogUrl, '_blank');
+                                            }}
+                                            className="p-3 hover:bg-[#FAF5EE]/50 transition-colors cursor-pointer flex items-center gap-3 group"
+                                        >
+                                            <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-200/70 text-amber-800 flex items-center justify-center shrink-0">
+                                                <BookOpen className="w-4.5 h-4.5 text-[#7C5E3F]" />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[8px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100/70 border border-amber-200 px-1.5 py-0.2 rounded font-mono">
+                                                        Article
+                                                    </span>
+                                                    <span className="text-[9.5px] text-slate-400 font-medium">3 min read</span>
+                                                </div>
+                                                <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5 group-hover:text-amber-800 transition-colors">
+                                                    {latestPost?.title || 'Daily Flute Riyaz: 5 Essential Tips'}
+                                                </h4>
+                                            </div>
+                                            <span className="text-[11px] font-bold text-[#7C5E3F] group-hover:translate-x-0.5 transition-transform shrink-0">
+                                                Read →
                                             </span>
-                                            <span className="text-[9.5px] text-slate-400 font-medium">3 min read</span>
                                         </div>
-                                        <h4 className="font-bold text-xs text-slate-900 truncate mt-0.5 group-hover:text-amber-800 transition-colors">
-                                            {latestPost?.title || 'Daily Flute Riyaz: 5 Essential Tips'}
-                                        </h4>
-                                    </div>
-                                    <span className="text-[11px] font-bold text-[#7C5E3F] group-hover:translate-x-0.5 transition-transform shrink-0">
-                                        Read →
-                                    </span>
+                                    )}
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             </div>

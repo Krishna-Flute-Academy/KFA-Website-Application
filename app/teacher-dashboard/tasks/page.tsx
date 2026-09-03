@@ -769,11 +769,35 @@ export default function TaskReviewPage() {
     };
 
     // Edit Assignment Trigger
-    const handleEditAssignment = (assignmentId: string) => {
+    const handleEditAssignment = async (assignmentId: string) => {
         const batch = assignmentBatches.find(b => b.assignmentId === assignmentId);
         if (!batch) return;
 
         setEditingTaskId(assignmentId);
+
+        // Fetch attachments from assignment_attachments if present
+        let loadedAttachments: any[] = [];
+        try {
+            const { data: atts } = await supabaseAuth
+                .from('assignment_attachments')
+                .select('*')
+                .eq('assignment_id', assignmentId)
+                .order('created_at', { ascending: true });
+            if (atts && atts.length > 0) {
+                loadedAttachments = atts;
+            }
+        } catch (e) {
+            console.warn('[handleEditAssignment] assignment_attachments fetch:', e);
+        }
+
+        const validStudentIds = batch.submissions
+            .filter(s => s.student_id !== 'draft' && s.student_id !== 'no-students')
+            .map(s => s.student_id);
+
+        const mappedTargetMode = batch.targetType === 'all' 
+            ? 'all_students' 
+            : (batch.targetType === 'classroom' ? 'classes' : 'selected_students');
+
         setInitialCreateData({
             title: batch.taskTitle,
             description: batch.taskDescription,
@@ -784,8 +808,11 @@ export default function TaskReviewPage() {
             inventoryRefId: batch.inventoryRefId,
             inventoryRefTitle: batch.inventoryRefTitle,
             classroomId: batch.classroomId,
-            targetMode: batch.classroomId ? 'classroom' : 'individual',
-            selectedStudentIds: batch.submissions.filter(s => s.student_id !== 'draft' && s.student_id !== 'no-students').map(s => s.student_id)
+            targetMode: mappedTargetMode,
+            selectedClassroomIds: batch.classroomId ? [batch.classroomId] : [],
+            classRecipientMode: 'all_in_classes',
+            selectedStudentIds: validStudentIds,
+            attachments: loadedAttachments
         });
         setIsCreateModalOpen(true);
     };
@@ -802,9 +829,11 @@ export default function TaskReviewPage() {
             fileSize: template.fileSize,
             inventoryRefId: template.inventoryRefId,
             inventoryRefTitle: template.inventoryRefTitle,
-            targetMode: 'classroom',
-            classroomId: classrooms[0]?.id || 'all',
-            selectedStudentIds: []
+            targetMode: 'classes',
+            selectedClassroomIds: classrooms.length > 0 ? [classrooms[0].id] : [],
+            classRecipientMode: 'all_in_classes',
+            selectedStudentIds: [],
+            attachments: []
         });
         setIsCreateModalOpen(true);
     };
@@ -814,14 +843,17 @@ export default function TaskReviewPage() {
         title: string;
         description: string;
         dueDate: string;
-        targetMode: 'classroom' | 'individual' | 'all';
-        selectedClassroomId: string;
+        targetMode: 'all_students' | 'classes' | 'selected_students';
+        selectedClassroomIds: string[];
+        classRecipientMode: 'all_in_classes' | 'selective_in_classes';
         selectedStudentIds: string[];
+        attachments: any[];
         fileUrl: string;
         fileName: string;
         fileSize: number | null;
         inventoryRefId: string | null;
         inventoryRefTitle: string | null;
+        selectedClassroomId: string;
         isDraft: boolean;
     }) => {
         const { data: { session } } = await supabaseAuth.auth.getSession();
@@ -829,11 +861,15 @@ export default function TaskReviewPage() {
 
         setIsSaving(true);
         try {
-            const primaryClassId = (data.targetMode === 'classroom' && data.selectedClassroomId && data.selectedClassroomId !== 'all')
-                ? data.selectedClassroomId
-                : (classrooms[0]?.id);
+            const primaryClassId = (data.selectedClassroomIds && data.selectedClassroomIds.length > 0)
+                ? data.selectedClassroomIds[0]
+                : (data.selectedClassroomId || classrooms[0]?.id);
             const classObj = classrooms.find(c => c.id === primaryClassId);
             const teacherId = classObj?.teacher_id || session.user.id;
+
+            const targetType = data.targetMode === 'all_students'
+                ? 'all'
+                : (data.targetMode === 'classes' && data.classRecipientMode === 'all_in_classes' ? 'classroom' : 'individual');
 
             if (editingTaskId) {
                 // Update existing assignment
@@ -843,7 +879,7 @@ export default function TaskReviewPage() {
                     due_date: data.dueDate || null,
                     classroom_id: primaryClassId,
                     teacher_id: teacherId,
-                    target_type: data.targetMode === 'all' ? 'all' : (data.targetMode === 'classroom' ? 'classroom' : 'individual'),
+                    target_type: targetType,
                     status: data.isDraft ? 'draft' : 'active',
                     file_url: data.fileUrl || null,
                     file_name: data.fileName || null,
@@ -855,6 +891,26 @@ export default function TaskReviewPage() {
 
                 const { error: updateError } = await supabaseAuth.from('assignments').update(updateData).eq('id', editingTaskId);
                 if (updateError) throw updateError;
+
+                // Sync assignment_attachments
+                if (data.attachments) {
+                    await supabaseAuth.from('assignment_attachments').delete().eq('assignment_id', editingTaskId);
+                    if (data.attachments.length > 0) {
+                        const rows = data.attachments.map(att => ({
+                            assignment_id: editingTaskId,
+                            attachment_type: att.attachment_type,
+                            title: att.title,
+                            file_url: att.file_url || null,
+                            file_name: att.file_name || null,
+                            file_size: typeof att.file_size === 'number' ? att.file_size : null,
+                            duration_seconds: att.duration_seconds || null,
+                            inventory_ref_type: att.inventory_ref_type || null,
+                            inventory_ref_id: att.inventory_ref_id || null
+                        }));
+                        const { error: attErr } = await supabaseAuth.from('assignment_attachments').insert(rows);
+                        if (attErr) console.warn('[assignment_attachments] insert warning:', attErr.message);
+                    }
+                }
 
                 // Sync student mappings safely
                 if (!data.isDraft) {
@@ -897,7 +953,7 @@ export default function TaskReviewPage() {
                     title: data.title,
                     description: data.description,
                     due_date: data.dueDate || null,
-                    target_type: data.targetMode === 'all' ? 'all' : (data.targetMode === 'classroom' ? 'classroom' : 'individual'),
+                    target_type: targetType,
                     status: data.isDraft ? 'draft' : 'active',
                     file_url: data.fileUrl || null,
                     file_name: data.fileName || null,
@@ -910,6 +966,23 @@ export default function TaskReviewPage() {
 
                 const { data: newAsg, error: newAsgError } = await supabaseAuth.from('assignments').insert(insertData).select().single();
                 if (newAsgError) throw newAsgError;
+
+                // Insert assignment_attachments
+                if (newAsg && data.attachments && data.attachments.length > 0) {
+                    const rows = data.attachments.map(att => ({
+                        assignment_id: newAsg.id,
+                        attachment_type: att.attachment_type,
+                        title: att.title,
+                        file_url: att.file_url || null,
+                        file_name: att.file_name || null,
+                        file_size: typeof att.file_size === 'number' ? att.file_size : null,
+                        duration_seconds: att.duration_seconds || null,
+                        inventory_ref_type: att.inventory_ref_type || null,
+                        inventory_ref_id: att.inventory_ref_id || null
+                    }));
+                    const { error: attErr } = await supabaseAuth.from('assignment_attachments').insert(rows);
+                    if (attErr) console.warn('[assignment_attachments] insert warning:', attErr.message);
+                }
 
                 if (!data.isDraft && data.selectedStudentIds.length > 0 && newAsg) {
                     await supabaseAuth.from('assignment_students').insert(

@@ -39,6 +39,21 @@ export interface TaskSubmission {
     inventory_ref_id?: string | null;
     inventory_ref_title?: string | null;
     inventory_ref_type?: string | null;
+    attachments?: AttachedMaterial[];
+}
+
+export interface AttachedMaterial {
+    id: string;
+    assignment_id?: string;
+    attachment_type: 'inventory' | 'document' | 'audio' | 'video' | 'link';
+    title: string;
+    file_url?: string | null;
+    file_name?: string | null;
+    file_size?: number | null;
+    duration_seconds?: number | null;
+    inventory_ref_type?: string | null;
+    inventory_ref_id?: string | null;
+    created_at?: string;
 }
 
 export interface AssignmentBatch {

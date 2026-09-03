@@ -988,6 +988,26 @@ export default function StudentDashboardContainer() {
             classroomAssignments.forEach(a => assignmentMap.set(a.id, a));
             individualAssignments.forEach(a => assignmentMap.set(a.id, a));
 
+            const allAssignmentIds = Array.from(assignmentMap.keys());
+            let attachmentsByAssignmentId = new Map<string, any[]>();
+            if (allAssignmentIds.length > 0) {
+                try {
+                    const { data: studentAtts } = await supabaseAuth
+                        .from('assignment_attachments')
+                        .select('*')
+                        .in('assignment_id', allAssignmentIds);
+                    if (studentAtts) {
+                        studentAtts.forEach((att: any) => {
+                            const list = attachmentsByAssignmentId.get(att.assignment_id) || [];
+                            list.push(att);
+                            attachmentsByAssignmentId.set(att.assignment_id, list);
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[StudentDashboard] assignment_attachments fetch warning:', e);
+                }
+            }
+
             const enriched = Array.from(assignmentMap.values())
                 .filter((asg: any) => {
                     if (asg.target_type === 'individual') {
@@ -1006,6 +1026,10 @@ export default function StudentDashboardContainer() {
                         file_url: asg.file_url,
                         file_name: asg.file_name,
                         file_size: asg.file_size,
+                        inventory_ref_id: asg.inventory_ref_id || null,
+                        inventory_ref_title: asg.inventory_ref_title || null,
+                        inventory_ref_type: asg.inventory_ref_type || null,
+                        attachments: attachmentsByAssignmentId.get(asg.id) || [],
                         status: studentAsg?.status || 'pending',
                         score: studentAsg?.score ?? null,
                         feedback_text: studentAsg?.feedback_text ?? null,

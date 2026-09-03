@@ -6,7 +6,7 @@ import {
     Inbox, Users, ArrowUpDown, ChevronRight 
 } from 'lucide-react';
 import { TaskSubmission, Classroom } from './types';
-import StudentSubmissionRow from './StudentSubmissionRow';
+import StudentSubmissionRow, { StudentSubmissionCard } from './StudentSubmissionRow';
 import ClassroomSubmissionGroup from './ClassroomSubmissionGroup';
 
 interface TaskReviewQueueProps {
@@ -169,7 +169,7 @@ export default function TaskReviewQueue({
                         {/* Mobile Cards View */}
                         <div className="md:hidden p-3 space-y-3">
                             {filteredSubmissions.map(sub => (
-                                <StudentSubmissionRow 
+                                <StudentSubmissionCard 
                                     key={sub.id} 
                                     submission={sub} 
                                     onReview={onReview}

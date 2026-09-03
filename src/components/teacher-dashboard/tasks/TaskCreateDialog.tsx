@@ -3,15 +3,19 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
     X, Library, Upload, Mic, Paperclip, BookOpen, Search, 
-    ChevronLeft, ChevronRight, ChevronDown, Save, Send, FileText, 
-    Loader2, Users, ClipboardList 
+    ChevronLeft, ChevronRight, Save, Send, FileText, 
+    Loader2, Users, Volume2, Trash2, CheckSquare, Square,
+    Check, Sparkles, Filter, ChevronDown, Calendar, Layers
 } from 'lucide-react';
-import { Classroom, Student, formatFileSize, formatDateForInput } from './types';
+import { Classroom, Student, formatFileSize, formatDateForInput, AttachedMaterial } from './types';
 import { supabaseAuth } from '../../../lib/supabase-auth';
 import AudioRecorderWidget from '../../AudioRecorderWidget';
 import InventoryPickerModal from './InventoryPickerModal';
 import { sortClassroomsByDayAndTime } from '../../../lib/classroomSort';
 import AutoLinkText from '../../common/AutoLinkText';
+
+export type AssignTargetMode = 'all_students' | 'classes' | 'selected_students';
+export type ClassRecipientMode = 'all_in_classes' | 'selective_in_classes';
 
 interface TaskCreateDialogProps {
     isOpen: boolean;
@@ -27,8 +31,11 @@ interface TaskCreateDialogProps {
         inventoryRefId?: string | null;
         inventoryRefTitle?: string | null;
         classroomId?: string;
-        targetMode?: 'classroom' | 'individual' | 'all';
+        targetMode?: 'all_students' | 'classes' | 'selected_students' | 'classroom' | 'individual' | 'all';
+        selectedClassroomIds?: string[];
+        classRecipientMode?: ClassRecipientMode;
         selectedStudentIds?: string[];
+        attachments?: AttachedMaterial[];
     };
     classrooms: Classroom[];
     students: Student[];
@@ -41,14 +48,17 @@ interface TaskCreateDialogProps {
         title: string;
         description: string;
         dueDate: string;
-        targetMode: 'classroom' | 'individual' | 'all';
-        selectedClassroomId: string;
+        targetMode: AssignTargetMode;
+        selectedClassroomIds: string[];
+        classRecipientMode: ClassRecipientMode;
         selectedStudentIds: string[];
+        attachments: AttachedMaterial[];
         fileUrl: string;
         fileName: string;
         fileSize: number | null;
         inventoryRefId: string | null;
         inventoryRefTitle: string | null;
+        selectedClassroomId: string;
         isDraft: boolean;
     }) => Promise<void>;
     isSaving: boolean;
@@ -61,7 +71,7 @@ export default function TaskCreateDialog({
     editingTaskId,
     initialData,
     classrooms,
-    students: initialStudents,
+    students: allStudents,
     previousTasks,
     inventoryCategories,
     inventoryModules,
@@ -71,44 +81,100 @@ export default function TaskCreateDialog({
     isSaving,
     isPopup = false
 }: TaskCreateDialogProps) {
+    // ── Task Basic Details ───────────────────────────────────────────────────
     const [title, setTitle] = useState(initialData?.title || '');
     const [description, setDescription] = useState(initialData?.description || '');
     const [dueDate, setDueDate] = useState(initialData?.dueDate || '');
-    const [targetMode, setTargetMode] = useState<'classroom' | 'individual' | 'all'>(initialData?.targetMode || 'classroom');
-    const [selectedClassroomId, setSelectedClassroomId] = useState(initialData?.classroomId || classrooms[0]?.id || 'all');
-    
-    // Attachments & Curriculum
-    const [fileUrl, setFileUrl] = useState(initialData?.fileUrl || '');
-    const [fileName, setFileName] = useState(initialData?.fileName || '');
-    const [fileSize, setFileSize] = useState<number | null>(initialData?.fileSize || null);
-    const [inventoryRefId, setInventoryRefId] = useState<string | null>(initialData?.inventoryRefId || null);
-    const [inventoryRefTitle, setInventoryRefTitle] = useState<string | null>(initialData?.inventoryRefTitle || null);
-    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+    // ── Target Mode State ────────────────────────────────────────────────────
+    const initialTargetMode: AssignTargetMode = useMemo(() => {
+        if (!initialData?.targetMode) return 'classes';
+        if (initialData.targetMode === 'all' || initialData.targetMode === 'all_students') return 'all_students';
+        if (initialData.targetMode === 'individual' || initialData.targetMode === 'selected_students') return 'selected_students';
+        return 'classes';
+    }, [initialData?.targetMode]);
+
+    const [targetMode, setTargetMode] = useState<AssignTargetMode>(initialTargetMode);
+
+    // ── Mode 2: Classrooms State ─────────────────────────────────────────────
+    const [selectedClassroomIds, setSelectedClassroomIds] = useState<Set<string>>(() => {
+        if (initialData?.selectedClassroomIds && initialData.selectedClassroomIds.length > 0) {
+            return new Set(initialData.selectedClassroomIds);
+        }
+        if (initialData?.classroomId && initialData.classroomId !== 'all') {
+            return new Set([initialData.classroomId]);
+        }
+        return new Set(classrooms.length > 0 ? [classrooms[0].id] : []);
+    });
+
+    const [classRecipientMode, setClassRecipientMode] = useState<ClassRecipientMode>(
+        initialData?.classRecipientMode || 'all_in_classes'
+    );
+
+    // ── Mode 3 / Canonical Student Selection State ───────────────────────────
+    // Persistent Set of selected student IDs — NEVER modified by search/class filters!
+    const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(() => {
+        return new Set(initialData?.selectedStudentIds || []);
+    });
+
+    // ── Transient Filter States for Pickers (Filtering ONLY) ────────────────
+    const [classroomSearch, setClassroomSearch] = useState('');
+    const [studentSearch, setStudentSearch] = useState('');
+    const [classroomFilter, setClassroomFilter] = useState('all');
+    const [studentPage, setStudentPage] = useState(1);
+    const STUDENTS_PER_PAGE = 10;
+
+    // Filtered Classrooms for Mode 2
+    const filteredClassrooms = useMemo(() => {
+        const sorted = sortClassroomsByDayAndTime(classrooms);
+        if (!classroomSearch.trim()) return sorted;
+        const q = classroomSearch.toLowerCase().trim();
+        return sorted.filter(c => c.name.toLowerCase().includes(q));
+    }, [classrooms, classroomSearch]);
+
+    // ── Multi-Material Attachments State ──────────────────────────────────────
+    const [attachments, setAttachments] = useState<AttachedMaterial[]>(() => {
+        if (initialData?.attachments && initialData.attachments.length > 0) {
+            return initialData.attachments;
+        }
+        const initialList: AttachedMaterial[] = [];
+        if (initialData?.inventoryRefId) {
+            initialList.push({
+                id: `inv-${initialData.inventoryRefId}`,
+                attachment_type: 'inventory',
+                title: initialData.inventoryRefTitle || 'Curriculum Lesson',
+                inventory_ref_id: initialData.inventoryRefId,
+                inventory_ref_type: 'lesson'
+            });
+        }
+        if (initialData?.fileUrl) {
+            const isAudio = initialData.fileUrl.includes('.webm') || initialData.fileUrl.includes('.mp3') || initialData.fileUrl.includes('.wav') || initialData.fileUrl.includes('.m4a');
+            initialList.push({
+                id: `file-${Date.now()}`,
+                attachment_type: isAudio ? 'audio' : 'document',
+                title: initialData.fileName || 'Attached File',
+                file_url: initialData.fileUrl,
+                file_name: initialData.fileName || 'attachment',
+                file_size: initialData.fileSize || null
+            });
+        }
+        return initialList;
+    });
 
     // Sub-modals & widgets
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
     const [showAudioRecorder, setShowAudioRecorder] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [selectedPreviousTaskId, setSelectedPreviousTaskId] = useState<string | null>(null);
-
-    // Students selection
-    const [studentsList, setStudentsList] = useState<Student[]>([]);
-    const [studentSearch, setStudentSearch] = useState('');
-    const [studentPage, setStudentPage] = useState(1);
-    const STUDENTS_PER_PAGE = 12;
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Hydrate students list with initialData
-    useEffect(() => {
-        const initialSelectedSet = new Set(initialData?.selectedStudentIds || []);
-        const formatted = initialStudents.map(s => ({
-            ...s,
-            selected: initialSelectedSet.size > 0 
-                ? initialSelectedSet.has(s.id) 
-                : (targetMode === 'all' ? true : (targetMode === 'classroom' && selectedClassroomId !== 'all' ? (s.classroom_ids?.includes(selectedClassroomId) ?? false) : false))
-        }));
-        setStudentsList(formatted);
-    }, [initialStudents, initialData?.selectedStudentIds, targetMode, selectedClassroomId]);
+    // Student Lookup Map for fast rendering
+    const studentMap = useMemo(() => {
+        const map = new Map<string, Student>();
+        allStudents.forEach(s => map.set(s.id, s));
+        return map;
+    }, [allStudents]);
 
     // Handle previous task suggestions
     const filteredPreviousTasks = useMemo(() => {
@@ -125,108 +191,65 @@ export default function TaskCreateDialog({
         return unique.filter(t => t.title?.toLowerCase().includes(title.toLowerCase()));
     }, [previousTasks, title]);
 
-    // Handle student filtering
-    const filteredStudents = useMemo(() => {
-        let result = studentsList;
-        if (targetMode === 'classroom') {
-            if (selectedClassroomId && selectedClassroomId !== 'all') {
-                result = result.filter(s => s.classroom_ids?.includes(selectedClassroomId));
-            }
-        } else if (targetMode === 'individual') {
-            if (selectedClassroomId && selectedClassroomId !== 'all') {
-                result = result.filter(s => s.classroom_ids?.includes(selectedClassroomId));
-            }
-        }
-        if (studentSearch.trim() !== '') {
-            const q = studentSearch.toLowerCase().trim();
-            result = result.filter(s => 
-                s.name.toLowerCase().includes(q) ||
-                (s.classroom_names && s.classroom_names.some(cn => cn.toLowerCase().includes(q)))
-            );
-        }
-        return result;
-    }, [studentsList, targetMode, selectedClassroomId, studentSearch]);
-
-    const paginatedStudents = useMemo(() => {
-        const start = (studentPage - 1) * STUDENTS_PER_PAGE;
-        return filteredStudents.slice(start, start + STUDENTS_PER_PAGE);
-    }, [filteredStudents, studentPage]);
-
-    const selectedInFilteredCount = useMemo(() => {
-        return filteredStudents.filter(s => s.selected).length;
-    }, [filteredStudents]);
-
-    const totalSelectedCount = useMemo(() => {
-        return studentsList.filter(s => s.selected).length;
-    }, [studentsList]);
-
-    const isAllFilteredSelected = useMemo(() => {
-        return filteredStudents.length > 0 && filteredStudents.every(s => s.selected);
-    }, [filteredStudents]);
-
     const handleSelectPreviousTask = (task: any) => {
         setTitle(task.title || '');
         setDescription(task.description || '');
         setDueDate('');
         setSelectedPreviousTaskId(task.id);
         setShowSuggestions(false);
-        setFileUrl(task.file_url || '');
-        setFileName(task.file_name || '');
-        setFileSize(task.file_size || null);
-        setInventoryRefId(task.inventory_ref_id || null);
-        setInventoryRefTitle(task.inventory_ref_title || null);
-    };
 
-    const handleTargetModeChange = (mode: 'classroom' | 'individual' | 'all') => {
-        setTargetMode(mode);
-        setStudentSearch('');
-        if (mode === 'classroom') {
-            const firstClassId = classrooms[0]?.id || 'all';
-            setSelectedClassroomId(firstClassId);
-            setStudentsList(prev => prev.map(s => ({
-                ...s,
-                selected: s.classroom_ids?.includes(firstClassId) ?? false
-            })));
-        } else if (mode === 'all') {
-            setSelectedClassroomId('all');
-            setStudentsList(prev => prev.map(s => ({ ...s, selected: true })));
-        } else {
-            setSelectedClassroomId('all');
-            setStudentsList(prev => prev.map(s => ({ ...s, selected: false })));
+        // Load legacy attachments if any
+        const newAtts: AttachedMaterial[] = [];
+        if (task.inventory_ref_id) {
+            newAtts.push({
+                id: `inv-${task.inventory_ref_id}`,
+                attachment_type: 'inventory',
+                title: task.inventory_ref_title || 'Curriculum Lesson',
+                inventory_ref_id: task.inventory_ref_id,
+                inventory_ref_type: task.inventory_ref_type || 'lesson'
+            });
+        }
+        if (task.file_url) {
+            const isAudio = task.file_url.includes('.webm') || task.file_url.includes('.mp3') || task.file_url.includes('.wav');
+            newAtts.push({
+                id: `file-${Date.now()}`,
+                attachment_type: isAudio ? 'audio' : 'document',
+                title: task.file_name || 'Attached File',
+                file_url: task.file_url,
+                file_name: task.file_name || 'attachment',
+                file_size: task.file_size || null
+            });
+        }
+        if (newAtts.length > 0) {
+            setAttachments(newAtts);
         }
     };
 
-    const handleClassroomChange = (classroomId: string) => {
-        setSelectedClassroomId(classroomId);
-        setStudentPage(1);
-        if (!editingTaskId) {
-            setStudentsList(prev => prev.map(s => ({
-                ...s,
-                selected: classroomId === 'all' ? true : (s.classroom_ids?.includes(classroomId) ?? false)
-            })));
-        }
-    };
-
-    const handleToggleStudent = (studentId: string) => {
-        setStudentsList(prev => prev.map(s => 
-            s.id === studentId ? { ...s, selected: !s.selected } : s
-        ));
-    };
-
-    const handleToggleAllFiltered = (checked: boolean) => {
-        const filteredIds = new Set(filteredStudents.map(s => s.id));
-        setStudentsList(prev => prev.map(s => {
-            if (filteredIds.has(s.id)) {
-                return { ...s, selected: checked };
+    // ── Attachment Handlers (Independent, Non-destructive) ───────────────────
+    const handleSelectInventoryLesson = (lesson: any) => {
+        setAttachments(prev => {
+            // Avoid duplicate identical lesson
+            if (prev.some(a => a.attachment_type === 'inventory' && a.inventory_ref_id === lesson.id)) {
+                return prev;
             }
-            return s;
-        }));
+            return [
+                ...prev,
+                {
+                    id: `inv-${Date.now()}-${lesson.id}`,
+                    attachment_type: 'inventory',
+                    title: lesson.title,
+                    inventory_ref_id: lesson.id,
+                    inventory_ref_type: 'lesson'
+                }
+            ];
+        });
+        setIsInventoryOpen(false);
     };
 
-    const uploadFile = async (file: File) => {
+    const uploadFile = async (file: File, isAudioNote: boolean = false) => {
         setUploadProgress(20);
         try {
-            const fileExt = file.name.split('.').pop();
+            const fileExt = file.name.split('.').pop() || 'bin';
             const randomName = `${Math.random().toString(36).substring(2, 12)}_${Date.now()}.${fileExt}`;
             const filePath = `materials/${randomName}`;
 
@@ -245,12 +268,19 @@ export default function TaskCreateDialog({
             setUploadProgress(100);
             setTimeout(() => {
                 setUploadProgress(null);
-                setFileUrl(publicUrl);
-                setFileName(file.name);
-                setFileSize(file.size);
-                setInventoryRefId(null);
-                setInventoryRefTitle(null);
-            }, 400);
+                const isAudio = isAudioNote || file.type.startsWith('audio/') || file.name.endsWith('.webm') || file.name.endsWith('.mp3') || file.name.endsWith('.wav');
+                setAttachments(prev => [
+                    ...prev,
+                    {
+                        id: `${isAudio ? 'aud' : 'doc'}-${Date.now()}`,
+                        attachment_type: isAudio ? 'audio' : 'document',
+                        title: isAudio ? (file.name.includes('voice_instruction') ? 'Teacher Voice Instruction' : file.name) : file.name,
+                        file_url: publicUrl,
+                        file_name: file.name,
+                        file_size: file.size
+                    }
+                ]);
+            }, 300);
         } catch (err: any) {
             console.error('File upload failed:', err);
             setUploadProgress(null);
@@ -258,9 +288,117 @@ export default function TaskCreateDialog({
         }
     };
 
+    const handleRemoveAttachment = (attachmentId: string) => {
+        setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+    };
+
+    // ── Student Selection Logic (Persistent Set) ─────────────────────────────
+    const handleToggleClassroom = (classroomId: string) => {
+        setSelectedClassroomIds(prev => {
+            const next = new Set(prev);
+            if (next.has(classroomId)) {
+                next.delete(classroomId);
+            } else {
+                next.add(classroomId);
+            }
+            return next;
+        });
+    };
+
+    const handleToggleStudent = (studentId: string) => {
+        setSelectedStudentIds(prev => {
+            const next = new Set(prev);
+            if (next.has(studentId)) {
+                next.delete(studentId);
+            } else {
+                next.add(studentId);
+            }
+            return next;
+        });
+    };
+
+    const handleRemoveSelectedStudent = (studentId: string) => {
+        setSelectedStudentIds(prev => {
+            const next = new Set(prev);
+            next.delete(studentId);
+            return next;
+        });
+    };
+
+    const handleClearAllSelectedStudents = () => {
+        setSelectedStudentIds(new Set());
+    };
+
+    // ── Filtered Students computation (Scoped to targetMode & filters) ───────
+    const visibleStudents = useMemo(() => {
+        let pool = allStudents;
+
+        if (targetMode === 'classes') {
+            // Only students enrolled in any of the selected classrooms
+            pool = pool.filter(s => s.classroom_ids?.some(cid => selectedClassroomIds.has(cid)));
+        } else if (targetMode === 'selected_students') {
+            // Filter by classroomFilter dropdown if set
+            if (classroomFilter !== 'all') {
+                pool = pool.filter(s => s.classroom_ids?.includes(classroomFilter));
+            }
+        }
+
+        // Apply text search
+        if (studentSearch.trim()) {
+            const q = studentSearch.toLowerCase().trim();
+            pool = pool.filter(s => 
+                s.name.toLowerCase().includes(q) ||
+                (s.classroom_names && s.classroom_names.some(cn => cn.toLowerCase().includes(q)))
+            );
+        }
+
+        return pool;
+    }, [allStudents, targetMode, selectedClassroomIds, classroomFilter, studentSearch]);
+
+    const paginatedStudents = useMemo(() => {
+        const start = (studentPage - 1) * STUDENTS_PER_PAGE;
+        return visibleStudents.slice(start, start + STUDENTS_PER_PAGE);
+    }, [visibleStudents, studentPage]);
+
+    const handleSelectAllVisible = () => {
+        setSelectedStudentIds(prev => {
+            const next = new Set(prev);
+            visibleStudents.forEach(s => next.add(s.id));
+            return next;
+        });
+    };
+
+    const handleDeselectVisible = () => {
+        setSelectedStudentIds(prev => {
+            const next = new Set(prev);
+            visibleStudents.forEach(s => next.delete(s.id));
+            return next;
+        });
+    };
+
+    // ── Resolved Recipient Calculation on Submit ─────────────────────────────
+    const resolvedRecipients = useMemo(() => {
+        if (targetMode === 'all_students') {
+            return allStudents.map(s => s.id);
+        }
+        if (targetMode === 'classes') {
+            if (classRecipientMode === 'all_in_classes') {
+                return allStudents
+                    .filter(s => s.classroom_ids?.some(cid => selectedClassroomIds.has(cid)))
+                    .map(s => s.id);
+            }
+            // Selective within selected classes
+            return Array.from(selectedStudentIds).filter(id => {
+                const s = studentMap.get(id);
+                return s?.classroom_ids?.some(cid => selectedClassroomIds.has(cid));
+            });
+        }
+        return Array.from(selectedStudentIds);
+    }, [targetMode, classRecipientMode, allStudents, selectedClassroomIds, selectedStudentIds, studentMap]);
+
     const handleSubmit = async (isDraft: boolean) => {
         if (!title.trim() || !description.trim()) {
-            alert('Please provide a task title and instructions.');
+            alert('Please provide a task title and detailed instructions.');
             return;
         }
 
@@ -269,25 +407,37 @@ export default function TaskCreateDialog({
             return;
         }
 
-        const selectedIds = studentsList.filter(s => s.selected).map(s => s.id);
-
-        if (!isDraft && targetMode !== 'all' && selectedIds.length === 0) {
-            alert('Please select at least one student or target classroom.');
+        if (!isDraft && targetMode === 'classes' && selectedClassroomIds.size === 0) {
+            alert('Please select at least one classroom.');
             return;
         }
+
+        if (!isDraft && resolvedRecipients.length === 0) {
+            alert('Please select at least one recipient student for this assignment.');
+            return;
+        }
+
+        // Dual-write legacy fields for backward compatibility
+        const primaryDoc = attachments.find(a => a.attachment_type === 'document' || a.attachment_type === 'audio');
+        const primaryInv = attachments.find(a => a.attachment_type === 'inventory');
+        const primaryClassId = Array.from(selectedClassroomIds)[0] || classrooms[0]?.id || '';
 
         await onSaveTask({
             title: title.trim(),
             description: description.trim(),
             dueDate,
             targetMode,
-            selectedClassroomId,
-            selectedStudentIds: targetMode === 'all' ? studentsList.map(s => s.id) : selectedIds,
-            fileUrl,
-            fileName,
-            fileSize,
-            inventoryRefId,
-            inventoryRefTitle,
+            selectedClassroomIds: Array.from(selectedClassroomIds),
+            classRecipientMode,
+            selectedStudentIds: resolvedRecipients,
+            attachments,
+            // Legacy mirror fields
+            fileUrl: primaryDoc?.file_url || '',
+            fileName: primaryDoc?.file_name || '',
+            fileSize: primaryDoc?.file_size || null,
+            inventoryRefId: primaryInv?.inventory_ref_id || null,
+            inventoryRefTitle: primaryInv?.title || null,
+            selectedClassroomId: primaryClassId,
             isDraft
         });
     };
@@ -295,88 +445,83 @@ export default function TaskCreateDialog({
     if (!isOpen) return null;
 
     return (
-        <div className={`fixed inset-0 z-50 flex animate-in fade-in duration-200 ${isPopup ? 'bg-transparent' : 'bg-black/60 backdrop-blur-sm items-center justify-center p-4'}`}>
-            <div className={`bg-white dark:bg-slate-900 flex flex-col text-left ${isPopup ? 'w-full h-full overflow-y-auto' : 'rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200'}`}>
-                {/* Header */}
-                <div className="p-5 sm:px-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 rounded-t-3xl shrink-0">
+        <div className={`fixed inset-0 z-50 flex animate-in fade-in duration-200 ${isPopup ? 'bg-transparent' : 'bg-black/60 backdrop-blur-sm items-center justify-center p-2 sm:p-4'}`}>
+            <div className={`bg-white dark:bg-slate-900 flex flex-col text-left ${isPopup ? 'w-full h-full overflow-y-auto' : 'rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-4xl w-full max-h-[94vh] overflow-hidden animate-in zoom-in-95 duration-200'}`}>
+                {/* ═══════════════════════════════════════════════════════════════ */}
+                {/* Header                                                          */}
+                {/* ═══════════════════════════════════════════════════════════════ */}
+                <div className="p-4 sm:px-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40 rounded-t-3xl shrink-0">
                     <div>
-                        <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white leading-tight">
-                            {editingTaskId ? 'Edit Task Assignment' : 'Create & Assign Task'}
+                        <h2 className="text-base sm:text-xl font-black text-slate-900 dark:text-white leading-tight flex items-center gap-2">
+                            <span>{editingTaskId ? 'Edit Task Assignment' : 'Create & Assign Task'}</span>
+                            {resolvedRecipients.length > 0 && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                                    {resolvedRecipients.length} {resolvedRecipients.length === 1 ? 'recipient' : 'recipients'}
+                                </span>
+                            )}
                         </h2>
-                        <p className="text-xs text-slate-500 mt-0.5 font-semibold">
-                            Distribute exercises, lesson materials, and practice checksheets to classrooms or individual students
+                        <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 font-medium">
+                            Set up instructions, multiple learning materials, and distribute to classrooms or selected students
                         </p>
                     </div>
                     <button 
                         onClick={onClose}
-                        className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors"
+                        className="p-2 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors cursor-pointer"
                         type="button"
                     >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                {/* Content */}
-                <div className="p-5 sm:p-6 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 font-sans">
-                    {/* Left 2 Cols: Title, Description, Materials */}
-                    <div className="lg:col-span-2 space-y-5">
-                        {/* Title with Suggestions */}
+                {/* ═══════════════════════════════════════════════════════════════ */}
+                {/* Body Content (Desktop 2-Col Grid / Mobile Stacked)             */}
+                {/* ═══════════════════════════════════════════════════════════════ */}
+                <div className="p-4 sm:p-6 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 font-sans">
+                    {/* ── Left Column (Lg: col-span-7): Details & Materials ──────── */}
+                    <div className="lg:col-span-7 space-y-5">
+                        {/* Task Title with Suggestions */}
                         <div className="relative">
                             <div className="flex justify-between items-center mb-1.5">
                                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
-                                    Task Title
+                                    Task Title <span className="text-rose-500">*</span>
                                 </label>
                                 {selectedPreviousTaskId && (
                                     <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                        Reusing Previous Task
+                                        Template Loaded
                                     </span>
                                 )}
                             </div>
-                            <div className="relative flex items-center">
-                                <input 
-                                    className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 font-bold text-sm" 
-                                    placeholder="e.g. Master the Mohanam Raga Scale" 
-                                    type="text"
-                                    value={title}
-                                    onChange={(e) => {
-                                        setTitle(e.target.value);
-                                        setShowSuggestions(true);
-                                    }}
-                                    onFocus={() => setShowSuggestions(true)}
-                                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                />
-                                <button
-                                    type="button"
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={() => setShowSuggestions(prev => !prev)}
-                                    className="absolute right-3 p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-400 transition-colors"
-                                    title="Show previous tasks suggestions"
-                                >
-                                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showSuggestions ? 'rotate-180' : ''}`} />
-                                </button>
-                            </div>
+                            <input 
+                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] outline-none transition-all text-sm font-semibold placeholder:text-slate-400" 
+                                placeholder="e.g., Raag Bhoopali – Aaroh & Avaroh Drill" 
+                                type="text"
+                                value={title}
+                                onChange={(e) => {
+                                    setTitle(e.target.value);
+                                    setShowSuggestions(true);
+                                }}
+                                onFocus={() => setShowSuggestions(true)}
+                            />
 
-                            {/* Dropdown suggestions */}
-                            {showSuggestions && filteredPreviousTasks.length > 0 && (
-                                <div 
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60"
-                                >
-                                    <div className="px-4 py-2 text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-800/40">
-                                        Reusable Task Library (Click to Reuse)
+                            {/* Suggestions dropdown */}
+                            {showSuggestions && filteredPreviousTasks.length > 0 && !selectedPreviousTaskId && (
+                                <div className="absolute z-30 left-0 right-0 mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl max-h-52 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/50 animate-in fade-in-50">
+                                    <div className="p-2 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 dark:bg-slate-850 px-3">
+                                        Suggested Previous Task Templates
                                     </div>
-                                    {filteredPreviousTasks.map(task => (
+                                    {filteredPreviousTasks.slice(0, 5).map(task => (
                                         <button
                                             key={task.id}
                                             type="button"
                                             onClick={() => handleSelectPreviousTask(task)}
-                                            className="w-full text-left px-4 py-3 hover:bg-[#ecb613]/10 dark:hover:bg-slate-800 flex items-center justify-between transition-colors group"
+                                            className="w-full text-left p-2.5 hover:bg-amber-500/10 transition-colors flex items-start gap-2 cursor-pointer"
                                         >
-                                            <div className="flex-1 min-w-0 pr-4">
-                                                <div className="font-bold text-sm text-slate-800 dark:text-slate-200 group-hover:text-amber-600 transition-colors truncate">
+                                            <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
                                                     {task.title}
                                                 </div>
-                                                <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                <div className="text-[10px] text-slate-400 truncate mt-0.5">
                                                     {task.description}
                                                 </div>
                                             </div>
@@ -386,73 +531,76 @@ export default function TaskCreateDialog({
                             )}
                         </div>
 
-                        {/* Instructions */}
+                        {/* Detailed Instructions */}
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wide">
-                                Detailed Instructions
+                                Detailed Instructions <span className="text-rose-500">*</span>
                             </label>
                             <textarea 
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 text-sm" 
-                                placeholder="Provide specific guidance on breath control, finger placement, or scale drills..." 
-                                rows={5}
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613] outline-none transition-all placeholder:text-slate-400 text-sm leading-relaxed" 
+                                placeholder="Provide specific guidance on breath control, finger placement, metronome tempo, or scale drills..." 
+                                rows={4}
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
                             />
                         </div>
 
-                        {/* Attachments & Learning Materials */}
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2.5 uppercase tracking-wide">
+                        {/* ── Learning Materials & Attachments ───────────────────────── */}
+                        <div className="space-y-3">
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">
                                 Learning Materials & Attachments
                             </label>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                {/* Button 1: Curriculum Inventory */}
                                 <button 
                                     onClick={() => setIsInventoryOpen(true)}
-                                    className="group flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-[#ecb613] hover:bg-[#ecb613]/10 transition-all text-center cursor-pointer min-h-[44px]" 
+                                    className="group flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-[#ecb613] hover:bg-[#ecb613]/10 transition-all text-center cursor-pointer min-h-[58px]" 
                                     type="button"
                                 >
-                                    <Library className="w-5 h-5 text-[#ecb613] mb-1 group-hover:scale-110 transition-transform" />
+                                    <Library className="w-4 h-4 text-[#ecb613] mb-1 group-hover:scale-110 transition-transform" />
                                     <span className="text-xs font-bold text-slate-900 dark:text-white">Curriculum Inventory</span>
-                                    <span className="text-[10px] text-slate-500 dark:text-slate-400">Sheet music & topics</span>
+                                    <span className="text-[10px] text-slate-400">Attach lesson / notes</span>
                                 </button>
 
+                                {/* Button 2: Upload File */}
                                 <button 
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="group flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-[#ecb613] hover:bg-[#ecb613]/10 transition-all text-center cursor-pointer min-h-[44px]" 
+                                    className="group flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-[#ecb613] hover:bg-[#ecb613]/10 transition-all text-center cursor-pointer min-h-[58px]" 
                                     type="button"
                                 >
                                     {uploadProgress !== null ? (
-                                        <Loader2 className="w-5 h-5 animate-spin text-[#ecb613] mb-1" />
+                                        <Loader2 className="w-4 h-4 animate-spin text-[#ecb613] mb-1" />
                                     ) : (
-                                        <Upload className="w-5 h-5 text-[#ecb613] mb-1 group-hover:scale-110 transition-transform" />
+                                        <Upload className="w-4 h-4 text-[#ecb613] mb-1 group-hover:scale-110 transition-transform" />
                                     )}
                                     <span className="text-xs font-bold text-slate-900 dark:text-white">
-                                        {uploadProgress !== null ? `(${uploadProgress}%)` : 'Upload File'}
+                                        {uploadProgress !== null ? `(${uploadProgress}%)` : 'Upload Document'}
                                     </span>
-                                    <span className="text-[10px] text-slate-500 dark:text-slate-400">PDF, Audio, Video</span>
+                                    <span className="text-[10px] text-slate-400">PDF, image, audio</span>
                                 </button>
 
+                                {/* Button 3: Record Voice */}
                                 <button 
                                     onClick={() => setShowAudioRecorder(prev => !prev)}
-                                    className={`group flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-2xl transition-all text-center cursor-pointer min-h-[44px] ${
+                                    className={`group flex flex-col items-center justify-center p-3 border-2 border-dashed rounded-2xl transition-all text-center cursor-pointer min-h-[58px] ${
                                         showAudioRecorder 
                                             ? 'border-[#ecb613] bg-[#ecb613]/10' 
                                             : 'border-slate-200 dark:border-slate-800 hover:border-[#ecb613] hover:bg-[#ecb613]/10'
                                     }`} 
                                     type="button"
                                 >
-                                    <Mic className="w-5 h-5 text-[#ecb613] mb-1 group-hover:scale-110 transition-transform" />
+                                    <Mic className="w-4 h-4 text-[#ecb613] mb-1 group-hover:scale-110 transition-transform" />
                                     <span className="text-xs font-bold text-slate-900 dark:text-white">Record Voice</span>
-                                    <span className="text-[10px] text-slate-500 dark:text-slate-400">Live teacher audio note</span>
+                                    <span className="text-[10px] text-slate-400">Live teacher note</span>
                                 </button>
                             </div>
 
-                            {/* Voice Recorder */}
+                            {/* Voice Recorder Dropdown */}
                             {showAudioRecorder && (
-                                <div className="mt-3">
+                                <div className="p-3 bg-amber-50/60 dark:bg-slate-800/80 rounded-2xl border border-amber-300/60 dark:border-amber-500/30">
                                     <AudioRecorderWidget
                                         onAudioRecorded={(file) => {
-                                            uploadFile(file);
+                                            uploadFile(file, true);
                                             setShowAudioRecorder(false);
                                         }}
                                         onCancel={() => setShowAudioRecorder(false)}
@@ -461,233 +609,449 @@ export default function TaskCreateDialog({
                                 </div>
                             )}
 
-                            {/* Selected File Badge */}
-                            {fileUrl && (
-                                <div className="mt-3 p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 space-y-2">
+                            {/* ── ATTACHED MATERIALS TRAY (Coexistence) ──────────────── */}
+                            {attachments.length > 0 && (
+                                <div className="space-y-2 pt-2">
                                     <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <Paperclip className="w-4 h-4 text-amber-600 shrink-0" />
-                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate" title={fileName}>
-                                                {fileName}
-                                            </span>
-                                            {fileSize && (
-                                                <span className="text-[10px] text-slate-400 font-mono">({formatFileSize(fileSize)})</span>
-                                            )}
-                                        </div>
-                                        <button 
-                                            onClick={() => {
-                                                setFileUrl('');
-                                                setFileName('');
-                                                setFileSize(null);
-                                            }}
-                                            className="p-1 text-slate-400 hover:text-rose-600 rounded-full"
-                                            type="button"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                    {(fileUrl.includes('.webm') || fileUrl.includes('.mp3') || fileUrl.includes('.wav') || fileUrl.includes('.m4a') || fileName.toLowerCase().includes('voice')) && (
-                                        <audio src={fileUrl} controls className="w-full h-8 rounded-lg" />
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Topic Reference Badge */}
-                            {inventoryRefId && (
-                                <div className="mt-3 p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 flex items-center justify-between">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <BookOpen className="w-4 h-4 text-amber-600 shrink-0" />
-                                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
-                                            Curriculum Topic: {inventoryRefTitle}
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 font-mono flex items-center gap-1.5">
+                                            <Paperclip className="w-3 h-3 text-amber-500" />
+                                            Attached Materials ({attachments.length})
                                         </span>
                                     </div>
-                                    <button 
-                                        onClick={() => {
-                                            setInventoryRefId(null);
-                                            setInventoryRefTitle(null);
-                                        }}
-                                        className="p-1 text-slate-400 hover:text-rose-600 rounded-full"
-                                        type="button"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
+
+                                    <div className="space-y-2">
+                                        {attachments.map((item) => (
+                                            <div 
+                                                key={item.id}
+                                                className="p-3 bg-slate-50 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700/80 flex items-center justify-between gap-3 shadow-2xs"
+                                            >
+                                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                                    {item.attachment_type === 'inventory' ? (
+                                                        <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                                            <BookOpen className="w-4 h-4" />
+                                                        </div>
+                                                    ) : item.attachment_type === 'audio' ? (
+                                                        <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0">
+                                                            <Volume2 className="w-4 h-4" />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                                            <FileText className="w-4 h-4" />
+                                                        </div>
+                                                    )}
+
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                                                                {item.title}
+                                                            </span>
+                                                            <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md bg-white dark:bg-slate-700 text-slate-500 border border-slate-200 dark:border-slate-600 shrink-0">
+                                                                {item.attachment_type}
+                                                            </span>
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                                            {item.file_size ? formatFileSize(item.file_size) : null}
+                                                            {item.file_url && (
+                                                                <a 
+                                                                    href={item.file_url} 
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer" 
+                                                                    className="text-amber-600 hover:underline"
+                                                                >
+                                                                    Preview Link ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Audio Player preview for recorded notes */}
+                                                {item.attachment_type === 'audio' && item.file_url && (
+                                                    <div className="hidden sm:block">
+                                                        <audio src={item.file_url} controls className="h-7 w-40" />
+                                                    </div>
+                                                )}
+
+                                                {/* Remove attachment button */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveAttachment(item.id)}
+                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
+                                                    title="Remove this attachment"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Right 1 Col: Assignees, Classroom, Due Date */}
-                    <div className="lg:col-span-1 space-y-5 bg-slate-50/70 dark:bg-slate-800/20 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
+                    {/* ── Right Column (Lg: col-span-5): Assign To & Due Date ────── */}
+                    <div className="lg:col-span-5 space-y-5 bg-slate-50/50 dark:bg-slate-850/50 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
                         <div className="space-y-4">
-                            {/* Target Mode */}
+                            {/* ── ASSIGN TO SELECTOR ─────────────────────────────────── */}
                             <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 font-mono">
-                                    Assign Target
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide mb-2">
+                                    Assign To
                                 </label>
-                                <div className="grid grid-cols-3 gap-1 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                                <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-2xl">
                                     <button
                                         type="button"
-                                        onClick={() => handleTargetModeChange('classroom')}
-                                        className={`min-h-[36px] py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
-                                            targetMode === 'classroom'
-                                                ? 'bg-[#ecb613] text-slate-900 shadow-xs'
-                                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                        onClick={() => setTargetMode('all_students')}
+                                        className={`py-2 px-1 text-xs font-bold rounded-xl transition-all text-center cursor-pointer ${
+                                            targetMode === 'all_students'
+                                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black'
+                                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                                         }`}
                                     >
-                                        🏫 Class
+                                        All Students
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => handleTargetModeChange('individual')}
-                                        className={`min-h-[36px] py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
-                                            targetMode === 'individual'
-                                                ? 'bg-[#ecb613] text-slate-900 shadow-xs'
-                                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                        onClick={() => setTargetMode('classes')}
+                                        className={`py-2 px-1 text-xs font-bold rounded-xl transition-all text-center cursor-pointer ${
+                                            targetMode === 'classes'
+                                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black'
+                                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                                         }`}
                                     >
-                                        👤 Individual
+                                        Class / Classes
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => handleTargetModeChange('all')}
-                                        className={`min-h-[36px] py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
-                                            targetMode === 'all'
-                                                ? 'bg-[#ecb613] text-slate-900 shadow-xs'
-                                                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                        onClick={() => setTargetMode('selected_students')}
+                                        className={`py-2 px-1 text-xs font-bold rounded-xl transition-all text-center cursor-pointer ${
+                                            targetMode === 'selected_students'
+                                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black'
+                                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                                         }`}
                                     >
-                                        👥 All
+                                        Selected Students
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Class Selector for Classroom Mode */}
-                            {targetMode === 'classroom' && (
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 font-mono">
-                                        Select Classroom
-                                    </label>
-                                    <select 
-                                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#ecb613]"
-                                        value={selectedClassroomId}
-                                        onChange={(e) => handleClassroomChange(e.target.value)}
-                                    >
-                                        {sortClassroomsByDayAndTime(classrooms).map(cls => (
-                                            <option key={cls.id} value={cls.id}>{cls.name}</option>
-                                        ))}
-                                    </select>
+                            {/* ── MODE 1: ALL STUDENTS ──────────────────────────────── */}
+                            {targetMode === 'all_students' && (
+                                <div className="p-4 bg-amber-500/10 dark:bg-amber-950/30 rounded-2xl border border-amber-500/20 space-y-2">
+                                    <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-black text-xs">
+                                        <Users className="w-4 h-4" />
+                                        <span>Assigning to All Students</span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                        This task will be assigned to all <strong>{allStudents.length} eligible students</strong> across the academy.
+                                    </p>
                                 </div>
                             )}
 
-                            {/* Student Multi-Select List (for Individual & Classroom modes) */}
-                            {targetMode !== 'all' && (
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-1.5">
-                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">Students</label>
-                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300">
-                                                {selectedInFilteredCount}/{filteredStudents.length}
-                                            </span>
+                            {/* ── MODE 2: CLASS / CLASSES ───────────────────────────── */}
+                            {targetMode === 'classes' && (
+                                <div className="space-y-3">
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">
+                                                Select Classrooms ({selectedClassroomIds.size} selected)
+                                            </label>
+                                            {selectedClassroomIds.size > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedClassroomIds(new Set())}
+                                                    className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                                                >
+                                                    Clear All
+                                                </button>
+                                            )}
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleToggleAllFiltered(!isAllFilteredSelected)}
-                                            className="text-[10px] font-bold text-amber-600 hover:underline"
-                                        >
-                                            {isAllFilteredSelected ? 'Deselect All' : 'Select All'}
-                                        </button>
+
+                                        {/* Classroom Search Bar */}
+                                        <div className="relative mb-2">
+                                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search classes by name, day, or time..."
+                                                value={classroomSearch}
+                                                onChange={(e) => setClassroomSearch(e.target.value)}
+                                                className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#ecb613]"
+                                            />
+                                            {classroomSearch && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setClassroomSearch('')}
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Quick Select/Deselect visible classes */}
+                                        {filteredClassrooms.length > 0 && (
+                                            <div className="flex items-center justify-between text-[10px] px-1 mb-1 text-slate-500">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedClassroomIds(prev => {
+                                                            const next = new Set(prev);
+                                                            filteredClassrooms.forEach(c => next.add(c.id));
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    className="hover:text-amber-600 font-bold transition-colors cursor-pointer"
+                                                >
+                                                    Select All Visible ({filteredClassrooms.length})
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedClassroomIds(prev => {
+                                                            const next = new Set(prev);
+                                                            filteredClassrooms.forEach(c => next.delete(c.id));
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    className="hover:text-rose-500 font-bold transition-colors cursor-pointer"
+                                                >
+                                                    Deselect Visible
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 p-1">
+                                            {filteredClassrooms.length > 0 ? (
+                                                filteredClassrooms.map(cls => {
+                                                    const isChecked = selectedClassroomIds.has(cls.id);
+                                                    return (
+                                                        <div
+                                                            key={cls.id}
+                                                            onClick={() => handleToggleClassroom(cls.id)}
+                                                            className="flex items-center gap-2.5 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer transition-colors"
+                                                        >
+                                                            <input 
+                                                                type="checkbox"
+                                                                checked={isChecked}
+                                                                onChange={() => handleToggleClassroom(cls.id)}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613] w-4 h-4 cursor-pointer"
+                                                            />
+                                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                                                                {cls.name}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div className="p-3 text-center text-xs text-slate-400 italic">
+                                                    No classes found matching &quot;{classroomSearch}&quot;.
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
-                                    {targetMode === 'individual' && (
-                                        <select
-                                            value={selectedClassroomId}
-                                            onChange={(e) => handleClassroomChange(e.target.value)}
-                                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] font-semibold text-slate-700 dark:text-slate-300 outline-none"
-                                        >
-                                            <option value="all">Filter: All Classrooms</option>
-                                            {sortClassroomsByDayAndTime(classrooms).map(cls => (
-                                                <option key={cls.id} value={cls.id}>{cls.name}</option>
-                                            ))}
-                                        </select>
+                                    {/* Class Recipient Sub-Mode (All vs Selective) */}
+                                    {selectedClassroomIds.size > 0 && (
+                                        <div className="space-y-2 pt-1 border-t border-slate-200/80 dark:border-slate-700/80">
+                                            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">
+                                                Recipients in Selected Classes
+                                            </label>
+                                            <div className="space-y-1.5">
+                                                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-700 dark:text-slate-300">
+                                                    <input 
+                                                        type="radio"
+                                                        name="classRecipientMode"
+                                                        value="all_in_classes"
+                                                        checked={classRecipientMode === 'all_in_classes'}
+                                                        onChange={() => setClassRecipientMode('all_in_classes')}
+                                                        className="text-[#ecb613] focus:ring-[#ecb613]"
+                                                    />
+                                                    <span>All students in selected classes</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-700 dark:text-slate-300">
+                                                    <input 
+                                                        type="radio"
+                                                        name="classRecipientMode"
+                                                        value="selective_in_classes"
+                                                        checked={classRecipientMode === 'selective_in_classes'}
+                                                        onChange={() => setClassRecipientMode('selective_in_classes')}
+                                                        className="text-[#ecb613] focus:ring-[#ecb613]"
+                                                    />
+                                                    <span>Select students from selected classes</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ── MODE 3: SELECTED STUDENTS & SELECTIVE CLASS STUDENTS ─ */}
+                            {((targetMode === 'classes' && classRecipientMode === 'selective_in_classes') || targetMode === 'selected_students') && (
+                                <div className="space-y-2.5">
+                                    {/* Classroom Filter Dropdown (Selected Students Mode) */}
+                                    {targetMode === 'selected_students' && (
+                                        <div>
+                                            <select
+                                                value={classroomFilter}
+                                                onChange={(e) => {
+                                                    setClassroomFilter(e.target.value);
+                                                    setStudentPage(1);
+                                                }}
+                                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none"
+                                            >
+                                                <option value="all">Filter: All Classrooms</option>
+                                                {sortClassroomsByDayAndTime(classrooms).map(cls => (
+                                                    <option key={cls.id} value={cls.id}>{cls.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     )}
 
+                                    {/* Search Input */}
                                     <div className="relative">
                                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                                         <input
                                             type="text"
                                             placeholder="Search students..."
                                             value={studentSearch}
-                                            onChange={(e) => setStudentSearch(e.target.value)}
+                                            onChange={(e) => {
+                                                setStudentSearch(e.target.value);
+                                                setStudentPage(1);
+                                            }}
                                             className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#ecb613]"
                                         />
                                     </div>
 
-                                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 p-1">
+                                    {/* Quick Selection Helpers */}
+                                    <div className="flex items-center justify-between text-[11px] px-1 text-slate-500">
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                type="button" 
+                                                onClick={handleSelectAllVisible}
+                                                className="hover:text-amber-600 font-bold transition-colors"
+                                            >
+                                                Select All Visible
+                                            </button>
+                                            <span>·</span>
+                                            <button 
+                                                type="button" 
+                                                onClick={handleDeselectVisible}
+                                                className="hover:text-rose-500 font-bold transition-colors"
+                                            >
+                                                Deselect Visible
+                                            </button>
+                                        </div>
+                                        {selectedStudentIds.size > 0 && (
+                                            <button 
+                                                type="button" 
+                                                onClick={handleClearAllSelectedStudents}
+                                                className="text-rose-600 font-bold hover:underline"
+                                            >
+                                                Clear All
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Scrollable Student List */}
+                                    <div className="max-h-44 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 p-1">
                                         {paginatedStudents.length > 0 ? (
-                                            paginatedStudents.map(student => (
-                                                <div 
-                                                    key={student.id}
-                                                    onClick={() => handleToggleStudent(student.id)}
-                                                    className="flex items-center gap-2.5 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer transition-colors"
-                                                >
-                                                    <input 
-                                                        type="checkbox"
-                                                        checked={student.selected}
-                                                        onChange={() => handleToggleStudent(student.id)}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613] w-4 h-4 cursor-pointer"
-                                                    />
-                                                    <div className="min-w-0 flex-1">
-                                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">
-                                                            {student.name}
-                                                        </span>
-                                                        {student.classroom_names && student.classroom_names.length > 0 && (
-                                                            <span className="text-[10px] text-slate-400 truncate block">
-                                                                {student.classroom_names.join(', ')}
+                                            paginatedStudents.map(student => {
+                                                const isSelected = selectedStudentIds.has(student.id);
+                                                return (
+                                                    <div 
+                                                        key={student.id}
+                                                        onClick={() => handleToggleStudent(student.id)}
+                                                        className="flex items-center gap-2.5 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer transition-colors"
+                                                    >
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => handleToggleStudent(student.id)}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613] w-4 h-4 cursor-pointer"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">
+                                                                {student.name}
                                                             </span>
-                                                        )}
+                                                            {student.classroom_names && student.classroom_names.length > 0 && (
+                                                                <span className="text-[10px] text-slate-400 truncate block">
+                                                                    {student.classroom_names.join(', ')}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))
+                                                );
+                                            })
                                         ) : (
-                                            <div className="p-4 text-center text-xs text-slate-400 italic">No students found.</div>
+                                            <div className="p-4 text-center text-xs text-slate-400 italic">No students match filter.</div>
                                         )}
                                     </div>
 
                                     {/* Pagination */}
-                                    {filteredStudents.length > STUDENTS_PER_PAGE && (
+                                    {visibleStudents.length > STUDENTS_PER_PAGE && (
                                         <div className="flex items-center justify-between px-1">
                                             <button 
                                                 type="button"
                                                 onClick={() => setStudentPage(p => Math.max(1, p - 1))}
                                                 disabled={studentPage === 1}
-                                                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30"
+                                                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
                                             >
                                                 <ChevronLeft className="w-3.5 h-3.5" />
                                             </button>
                                             <span className="text-[9px] font-black text-slate-400 font-mono">
-                                                {studentPage} / {Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE)}
+                                                {studentPage} / {Math.ceil(visibleStudents.length / STUDENTS_PER_PAGE)}
                                             </span>
                                             <button 
                                                 type="button"
-                                                onClick={() => setStudentPage(p => Math.min(Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE), p + 1))}
-                                                disabled={studentPage === Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE)}
-                                                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30"
+                                                onClick={() => setStudentPage(p => Math.min(Math.ceil(visibleStudents.length / STUDENTS_PER_PAGE), p + 1))}
+                                                disabled={studentPage === Math.ceil(visibleStudents.length / STUDENTS_PER_PAGE)}
+                                                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 cursor-pointer"
                                             >
                                                 <ChevronRight className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
                                     )}
+
+                                    {/* ── PERSISTENT SELECTED STUDENTS SUMMARY ───────────── */}
+                                    {selectedStudentIds.size > 0 && (
+                                        <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1.5">
+                                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                                <span>Selected Students ({selectedStudentIds.size})</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                                {Array.from(selectedStudentIds).map(sid => {
+                                                    const s = studentMap.get(sid);
+                                                    if (!s) return null;
+                                                    return (
+                                                        <span 
+                                                            key={sid}
+                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-900 dark:text-amber-200 border border-amber-500/30"
+                                                        >
+                                                            <span className="truncate max-w-[120px]">{s.name}</span>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => handleRemoveSelectedStudent(sid)}
+                                                                className="hover:text-rose-500 transition-colors"
+                                                            >
+                                                                <X className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
-                            {/* Due Date */}
+                            {/* ── Due Date Field ─────────────────────────────────────── */}
                             <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 font-mono">
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 font-mono">
                                     Due Date <span className="text-rose-500">*</span>
                                 </label>
                                 <input 
-                                    className="w-full px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#ecb613]" 
+                                    className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#ecb613]" 
                                     type="date"
                                     value={dueDate}
                                     onChange={(e) => setDueDate(e.target.value)}
@@ -695,23 +1059,23 @@ export default function TaskCreateDialog({
                             </div>
                         </div>
 
-                        {/* Submit Actions */}
+                        {/* ── Action Buttons ─────────────────────────────────────────── */}
                         <div className="space-y-2 pt-4 border-t border-slate-200 dark:border-slate-800">
                             <button 
                                 type="button"
                                 onClick={() => handleSubmit(false)}
                                 disabled={isSaving}
-                                className="w-full min-h-[44px] py-2.5 px-4 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                                className="w-full min-h-[44px] py-2.5 px-4 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 cursor-pointer"
                             >
                                 {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : editingTaskId ? <Save className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-                                <span>{editingTaskId ? 'Save Batch Changes' : 'Assign Task'}</span>
+                                <span>{editingTaskId ? 'Save Task Changes' : `Assign Task (${resolvedRecipients.length})`}</span>
                             </button>
 
                             <button 
                                 type="button"
                                 onClick={() => handleSubmit(true)}
                                 disabled={isSaving}
-                                className="w-full min-h-[40px] py-2 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                className="w-full min-h-[40px] py-2 px-4 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl border border-slate-200 dark:border-slate-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                             >
                                 <FileText className="w-4 h-4" />
                                 <span>Save as Draft</span>
@@ -721,7 +1085,9 @@ export default function TaskCreateDialog({
                 </div>
             </div>
 
-            {/* Inventory Picker Sub-Modal */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {/* Inventory Picker Sub-Modal                                          */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
             <InventoryPickerModal 
                 isOpen={isInventoryOpen}
                 onClose={() => setIsInventoryOpen(false)}
@@ -729,16 +1095,10 @@ export default function TaskCreateDialog({
                 modules={inventoryModules}
                 chapters={inventoryChapters}
                 lessons={inventoryLessons}
-                onSelectLesson={(lesson) => {
-                    setInventoryRefId(lesson.id);
-                    setInventoryRefTitle(lesson.title);
-                    setFileUrl('');
-                    setFileName('');
-                    setFileSize(null);
-                }}
+                onSelectLesson={handleSelectInventoryLesson}
             />
 
-            {/* Hidden file input */}
+            {/* Hidden file input for uploading docs/media */}
             <input 
                 type="file"
                 ref={fileInputRef}
@@ -747,7 +1107,7 @@ export default function TaskCreateDialog({
                     if (f) uploadFile(f);
                 }}
                 className="hidden"
-                accept=".pdf,.mp3,.wav,.mp4,.png,.jpg,.jpeg"
+                accept=".pdf,.mp3,.wav,.mp4,.png,.jpg,.jpeg,.doc,.docx"
             />
         </div>
     );

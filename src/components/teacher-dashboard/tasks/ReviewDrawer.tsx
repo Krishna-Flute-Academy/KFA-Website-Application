@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { 
     X, CheckCircle, RotateCcw, Loader2, PlayCircle, ExternalLink, 
     Folder, Paperclip, ChevronRight, UserCircle, Clock, BookOpen, 
-    AlertCircle, Sparkles, MessageSquare, Award
+    AlertCircle, Sparkles, MessageSquare, Award, Volume2
 } from 'lucide-react';
 import { TaskSubmission, formatFileSize } from './types';
 import AutoLinkText from '../../../components/common/AutoLinkText';
@@ -263,24 +263,55 @@ export default function ReviewDrawer({
                                 <AutoLinkText text={submission.task_description} />
                             </div>
                         )}
-                        {(submission.inventory_ref_title || submission.file_url) && (
+                        {((submission.attachments && submission.attachments.length > 0) || submission.inventory_ref_title || submission.file_url) && (
                             <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center gap-2 text-xs">
-                                {submission.inventory_ref_title && (
-                                    <span className="px-2 py-0.5 rounded-lg bg-[#ecb613]/10 text-amber-800 dark:text-amber-300 font-bold flex items-center gap-1">
-                                        <BookOpen className="w-3.5 h-3.5" />
-                                        {submission.inventory_ref_title}
-                                    </span>
-                                )}
-                                {submission.file_url && (
-                                    <a 
-                                        href={submission.file_url} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="px-2 py-0.5 rounded-lg bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold hover:underline flex items-center gap-1"
-                                    >
-                                        <Paperclip className="w-3.5 h-3.5 text-amber-600" />
-                                        {submission.file_name || 'Attached Material'}
-                                    </a>
+                                {submission.attachments && submission.attachments.length > 0 ? (
+                                    submission.attachments.map((att: any) => (
+                                        <div key={att.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold">
+                                            {att.attachment_type === 'inventory' ? (
+                                                <span className="flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                                                    <BookOpen className="w-3.5 h-3.5" />
+                                                    {att.title}
+                                                </span>
+                                            ) : att.attachment_type === 'audio' ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <Volume2 className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                                    <span className="text-slate-700 dark:text-slate-200">{att.title}</span>
+                                                    {att.file_url && <audio src={att.file_url} controls className="h-6 w-36" />}
+                                                </div>
+                                            ) : (
+                                                <a 
+                                                    href={att.file_url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
+                                                >
+                                                    <Paperclip className="w-3.5 h-3.5" />
+                                                    {att.title || att.file_name || 'Material'}
+                                                </a>
+                                            )}
+                                        </div>
+                                    ))
+                                ) : (
+                                    <>
+                                        {submission.inventory_ref_title && (
+                                            <span className="px-2 py-0.5 rounded-lg bg-[#ecb613]/10 text-amber-800 dark:text-amber-300 font-bold flex items-center gap-1">
+                                                <BookOpen className="w-3.5 h-3.5" />
+                                                {submission.inventory_ref_title}
+                                            </span>
+                                        )}
+                                        {submission.file_url && (
+                                            <a 
+                                                href={submission.file_url} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="px-2 py-0.5 rounded-lg bg-slate-200/70 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold hover:underline flex items-center gap-1"
+                                            >
+                                                <Paperclip className="w-3.5 h-3.5 text-amber-600" />
+                                                {submission.file_name || 'Attached Material'}
+                                            </a>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )}

@@ -21,9 +21,10 @@ export default function TeacherSettingsPage() {
     } | null>(null);
 
     // System Notification Settings (Blog & YouTube automatic notifications pause/enable)
-    const [systemNotifSettings, setSystemNotifSettings] = useState<{ blog_enabled: boolean; video_enabled: boolean }>({
+    const [systemNotifSettings, setSystemNotifSettings] = useState<{ blog_enabled: boolean; video_enabled: boolean; featured_updates_enabled?: boolean }>({
         blog_enabled: true,
-        video_enabled: true
+        video_enabled: true,
+        featured_updates_enabled: false
     });
     const [isUpdatingNotifSettings, setIsUpdatingNotifSettings] = useState(false);
     const [settingsFeedback, setSettingsFeedback] = useState<string | null>(null);
@@ -39,7 +40,8 @@ export default function TeacherSettingsPage() {
                 const parsed = JSON.parse(data.content);
                 setSystemNotifSettings({
                     blog_enabled: parsed.blog_enabled !== false,
-                    video_enabled: parsed.video_enabled !== false
+                    video_enabled: parsed.video_enabled !== false,
+                    featured_updates_enabled: parsed.featured_updates_enabled === true
                 });
             }
         } catch (e) {
