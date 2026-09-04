@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
-import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, ShieldCheck, Mail, History, Send, Check, Trash2, Download, FileSpreadsheet, TrendingUp, BarChart3 } from 'lucide-react';
+import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, AlertCircle, ShieldCheck, Mail, History, Send, Check, Trash2, Download, FileSpreadsheet, TrendingUp, BarChart3 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { getStudentFeeStatus, calculateClassesAdded } from '../../../src/lib/fee-utils';
@@ -238,6 +238,7 @@ export default function FeesManagementDashboard() {
     // Modals
     const [selectedStudent, setSelectedStudent] = useState<StudentFeesData | null>(null);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [pendingPaymentToReconcile, setPendingPaymentToReconcile] = useState<PaymentRecord | null>(null);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [studentPayments, setStudentPayments] = useState<PaymentRecord[]>([]);
@@ -804,16 +805,28 @@ export default function FeesManagementDashboard() {
     // Open Payment Modal
     const openPaymentModal = (student: StudentFeesData) => {
         setSelectedStudent(student);
-        setPaymentAmount(String(student.fees_amount));
-        setPaymentMethod('UPI');
-        setClassesAdded(student.fees_basis === 'class' ? '1' : '4');
-        setPaymentDate(new Date().toISOString().split('T')[0]);
+        const pendingP = payments.find(p => p.student_id === student.id && p.status === 'pending_approval');
+        setPendingPaymentToReconcile(pendingP || null);
+
+        if (pendingP) {
+            setPaymentAmount(String(pendingP.amount));
+            setPaymentMethod(pendingP.payment_method || 'UPI');
+            const defaultCls = student.fees_basis === 'class' ? '1' : '4';
+            setClassesAdded(String(pendingP.classes_added || defaultCls));
+            setPaymentDate(pendingP.payment_date ? pendingP.payment_date.split('T')[0] : new Date().toISOString().split('T')[0]);
+            setPaymentNotes(pendingP.notes || '');
+        } else {
+            setPaymentAmount(String(student.fees_amount));
+            setPaymentMethod('UPI');
+            setClassesAdded(student.fees_basis === 'class' ? '1' : '4');
+            setPaymentDate(new Date().toISOString().split('T')[0]);
+            setPaymentNotes('');
+        }
         
         // Calculate default next due date (+30 days)
         const d = new Date();
         d.setDate(d.getDate() + 30);
         setNextDueDate(d.toISOString().split('T')[0]);
-        setPaymentNotes('');
         setShowPaymentModal(true);
     };
 
@@ -837,21 +850,39 @@ export default function FeesManagementDashboard() {
             const amt = Number(paymentAmount) || 0;
             const cls = Number(classesAdded) || 0;
 
-            // 1. Insert Payment Record
-            const { error: paymentError } = await supabaseAuth
-                .from('fees_payments')
-                .insert([{
-                    student_id: selectedStudent.id,
-                    amount: amt,
-                    payment_date: paymentDate,
-                    payment_method: paymentMethod,
-                    classes_added: cls,
-                    notes: paymentNotes || null
-                }]);
+            // 1. If this student has a pending payment awaiting review, approve and reconcile that exact record.
+            //    Otherwise, insert a new confirmed payment with explicit status 'approved'.
+            if (pendingPaymentToReconcile) {
+                const { error: paymentError } = await supabaseAuth
+                    .from('fees_payments')
+                    .update({
+                        amount: amt,
+                        payment_date: paymentDate,
+                        payment_method: paymentMethod,
+                        classes_added: cls,
+                        notes: paymentNotes || null,
+                        status: 'approved'
+                    })
+                    .eq('id', pendingPaymentToReconcile.id);
 
-            if (paymentError) throw paymentError;
+                if (paymentError) throw paymentError;
+            } else {
+                const { error: paymentError } = await supabaseAuth
+                    .from('fees_payments')
+                    .insert([{
+                        student_id: selectedStudent.id,
+                        amount: amt,
+                        payment_date: paymentDate,
+                        payment_method: paymentMethod,
+                        classes_added: cls,
+                        notes: paymentNotes || null,
+                        status: 'approved'
+                    }]);
 
-            // 2. Update Student User values
+                if (paymentError) throw paymentError;
+            }
+
+            // 2. Update Student User classes balance (PRESERVE fees_amount standard fee)
             // For class-basis: payment books/covers 1 class in advance (does not endlessly accumulate to 2, 3...)
             const newClassesPaid = selectedStudent.fees_basis === 'class'
                 ? Math.min(cls, Math.max(0, selectedStudent.fees_classes_paid) + cls)
@@ -859,15 +890,27 @@ export default function FeesManagementDashboard() {
             const { error: studentUpdateError } = await supabaseAuth
                 .from('users')
                 .update({
-                    fees_amount: amt,
                     fees_classes_paid: newClassesPaid
                 })
                 .eq('id', selectedStudent.id);
 
             if (studentUpdateError) throw studentUpdateError;
 
-            setAlertMessage({ type: 'success', text: `Successfully recorded payment of ₹${amt} for ${selectedStudent.name}.` });
+            // 3. Auto-mark previous fee due reminders as read for this student upon payment recording
+            await supabaseAuth
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', selectedStudent.id)
+                .or('type.eq.fee_reminder,type.eq.fees');
+
+            setAlertMessage({ 
+                type: 'success', 
+                text: pendingPaymentToReconcile 
+                    ? `Successfully approved and recorded payment of ₹${amt} for ${selectedStudent.name}.`
+                    : `Successfully recorded payment of ₹${amt} for ${selectedStudent.name}.` 
+            });
             setShowPaymentModal(false);
+            setPendingPaymentToReconcile(null);
             
             // Refresh data
             fetchData();
@@ -1010,6 +1053,13 @@ export default function FeesManagementDashboard() {
 
     const handleApprovePayment = async (paymentId: string, studentId: string, amount: number, basis: string) => {
         try {
+            // Guard against duplicate approval
+            const existingPayment = payments.find(p => p.id === paymentId) || studentPayments.find(p => p.id === paymentId);
+            if (existingPayment?.status === 'approved') {
+                setAlertMessage({ type: 'error', text: 'This payment has already been approved.' });
+                return;
+            }
+
             const student = students.find(s => s.id === studentId);
             const studentFeesAmount = student ? student.fees_amount : (selectedStudent?.fees_amount || 0);
             const studentFeesBasis = student ? student.fees_basis : (selectedStudent?.fees_basis || basis || 'monthly');
@@ -1548,6 +1598,9 @@ export default function FeesManagementDashboard() {
                                                             {status === 'good' && (
                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">Active</span>
                                                             )}
+                                                            {status === 'pending_verification' && (
+                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700">Needs Review</span>
+                                                            )}
                                                             {status === 'overdue' && (
                                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700">Overdue</span>
                                                             )}
@@ -1559,10 +1612,17 @@ export default function FeesManagementDashboard() {
                                                             <button onClick={() => openHistoryModal(student)} className="p-1.5 rounded-lg border border-slate-200 text-slate-500">
                                                                 <History className="size-4" />
                                                             </button>
-                                                            {status !== 'setup_required' && (
-                                                                <button onClick={() => openPaymentModal(student)} className="px-3 py-1.5 text-xs font-black bg-[#ecb613] text-white rounded-lg shadow-sm">
-                                                                    Collect ₹
+                                                            {status === 'pending_verification' ? (
+                                                                <button onClick={() => openPaymentModal(student)} className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg shadow-sm flex items-center gap-1">
+                                                                    <Check className="size-3.5" />
+                                                                    Review ₹
                                                                 </button>
+                                                            ) : (
+                                                                status !== 'setup_required' && (
+                                                                    <button onClick={() => openPaymentModal(student)} className="px-3 py-1.5 text-xs font-black bg-[#ecb613] text-white rounded-lg shadow-sm">
+                                                                        Collect ₹
+                                                                    </button>
+                                                                )
                                                             )}
                                                         </div>
                                                     </div>
@@ -1860,7 +1920,7 @@ export default function FeesManagementDashboard() {
                                                             {/* Actions (Single Line Row) */}
                                                             <td className="px-4 py-3.5 text-right whitespace-nowrap">
                                                                 <div className="flex items-center justify-end gap-1.5">
-                                                                    {status !== 'good' && status !== 'setup_required' && (
+                                                                    {status !== 'good' && status !== 'setup_required' && status !== 'pending_verification' && (
                                                                         <button
                                                                             onClick={() => handleSendReminder(student, status === 'due_classes' ? 'classes_completed' : 'due_date')}
                                                                             title="Send Reminder Email"
@@ -1876,14 +1936,25 @@ export default function FeesManagementDashboard() {
                                                                     >
                                                                         <History className="size-4" />
                                                                     </button>
-                                                                    {status !== 'setup_required' && (
+                                                                    {status === 'pending_verification' ? (
                                                                         <button
                                                                             onClick={() => openPaymentModal(student)}
-                                                                            title="Record Payment"
-                                                                            className="px-3 py-1.5 text-xs font-bold bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 rounded-lg transition-all shadow-xs"
+                                                                            title="Review & Confirm Submitted Payment"
+                                                                            className="px-3 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1"
                                                                         >
-                                                                            Record ₹
+                                                                            <Check className="size-3.5" />
+                                                                            Review ₹
                                                                         </button>
+                                                                    ) : (
+                                                                        status !== 'setup_required' && (
+                                                                            <button
+                                                                                onClick={() => openPaymentModal(student)}
+                                                                                title="Record Payment"
+                                                                                className="px-3 py-1.5 text-xs font-bold bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 rounded-lg transition-all shadow-xs"
+                                                                            >
+                                                                                Record ₹
+                                                                            </button>
+                                                                        )
                                                                     )}
                                                                 </div>
                                                             </td>
@@ -2094,15 +2165,34 @@ export default function FeesManagementDashboard() {
                     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/10">
                             <div>
-                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Record Fee Payment</h3>
-                                <p className="text-xs text-slate-400 mt-1">Collecting fees in advance for {selectedStudent.name}</p>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                                    {pendingPaymentToReconcile ? 'Review & Confirm Payment' : 'Record Fee Payment'}
+                                </h3>
+                                <p className="text-xs text-slate-400 mt-1">
+                                    {pendingPaymentToReconcile
+                                        ? `Reviewing payment reported by ${selectedStudent.name}`
+                                        : `Collecting fees in advance for ${selectedStudent.name}`}
+                                </p>
                             </div>
-                            <button onClick={() => setShowPaymentModal(false)} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            <button onClick={() => { setShowPaymentModal(false); setPendingPaymentToReconcile(null); }} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <span className="material-symbols-outlined text-lg">close</span>
                             </button>
                         </div>
 
                         <form onSubmit={handleRecordPayment} className="p-6 space-y-4">
+                            {pendingPaymentToReconcile && (
+                                <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl flex items-start gap-2.5 text-xs text-blue-900 dark:text-blue-200">
+                                    <AlertCircle className="size-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="font-bold">Student Payment Awaiting Review</p>
+                                        <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
+                                            {selectedStudent.name} reported a payment of ₹{Number(pendingPaymentToReconcile.amount).toLocaleString('en-IN')} on {new Date(pendingPaymentToReconcile.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ({pendingPaymentToReconcile.payment_method}).
+                                            Confirming will approve this payment, add classes, and clear &quot;Pending Review&quot;.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Amount Paid (₹)</label>
@@ -2152,8 +2242,6 @@ export default function FeesManagementDashboard() {
                                 </div>
                             </div>
 
-
-
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Notes / Memo</label>
                                 <textarea
@@ -2165,25 +2253,48 @@ export default function FeesManagementDashboard() {
                                 />
                             </div>
 
-                            <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPaymentModal(false)}
-                                    className="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={recordingPayment}
-                                    className="px-6 py-2.5 text-sm font-black bg-[#ecb613] text-white hover:bg-[#ecb613]/90 rounded-xl shadow-md shadow-[#ecb613]/20 flex items-center gap-2"
-                                >
-                                    {recordingPayment ? (
-                                        <><Loader2 className="size-4 animate-spin" /> Recording...</>
-                                    ) : (
-                                        <><Check size={16} /> Record Payment</>
-                                    )}
-                                </button>
+                            <div className="pt-4 flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800">
+                                {pendingPaymentToReconcile ? (
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            if (window.confirm(`Reject this submitted payment of ₹${pendingPaymentToReconcile.amount}?`)) {
+                                                await handleRejectPayment(pendingPaymentToReconcile.id);
+                                                setShowPaymentModal(false);
+                                                setPendingPaymentToReconcile(null);
+                                            }
+                                        }}
+                                        className="px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors border border-rose-200 dark:border-rose-800"
+                                    >
+                                        Reject Submission
+                                    </button>
+                                ) : (
+                                    <div />
+                                )}
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowPaymentModal(false); setPendingPaymentToReconcile(null); }}
+                                        className="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={recordingPayment}
+                                        className={`px-6 py-2.5 text-sm font-black text-white rounded-xl shadow-md flex items-center gap-2 ${
+                                            pendingPaymentToReconcile
+                                                ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
+                                                : 'bg-[#ecb613] hover:bg-[#ecb613]/90 shadow-[#ecb613]/20'
+                                        }`}
+                                    >
+                                        {recordingPayment ? (
+                                            <><Loader2 className="size-4 animate-spin" /> {pendingPaymentToReconcile ? 'Approving...' : 'Recording...'}</>
+                                        ) : (
+                                            <><Check size={16} /> {pendingPaymentToReconcile ? 'Approve & Confirm' : 'Record Payment'}</>
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>
