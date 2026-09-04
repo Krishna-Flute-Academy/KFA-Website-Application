@@ -4,6 +4,7 @@ import React from 'react';
 import { BookOpen, Clock, Award, Check, Music, Video, Info, FileText, X, Star } from 'lucide-react';
 import AutoLinkText from '../common/AutoLinkText';
 import { sanitizeHtml } from '../../lib/text-utils';
+import { getCurriculumMediaInfo } from '../../lib/curriculum-media';
 
 interface LessonViewerProps {
     topic: any;
@@ -21,15 +22,6 @@ interface LessonViewerProps {
     onClose?: () => void;
     isMobile?: boolean;
 }
-
-const getCleanDuration = (duration: string, fileSize: string) => {
-    if (!duration) return '';
-    if (fileSize && duration.includes(fileSize)) {
-        const parts = duration.split('•');
-        return parts[0].trim();
-    }
-    return duration;
-};
 
 export default function LessonViewer({
     topic,
@@ -168,30 +160,40 @@ export default function LessonViewer({
             ) : null}
 
             {/* Metadata Badges */}
-            <div className="flex flex-wrap gap-2 pt-0.5">
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200/60 px-2.5 py-1 rounded-full">
-                    <Clock className="w-3 h-3 text-slate-400" />
-                    {getCleanDuration(topic.duration, topic.file_size) || '5 mins'}
-                </span>
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200/60 px-2.5 py-1 rounded-full">
-                    <Award className="w-3 h-3 text-slate-400" />
-                    {topic.difficulty || 'Easy'}
-                </span>
-                {topic.file_size && (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200/60 px-2.5 py-1 rounded-full">
-                        💾 {topic.file_size}
-                    </span>
-                )}
-                {topic.material_type && (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#7C5E3F] bg-[#FAF5EE] border border-[#7C5E3F]/10 px-2.5 py-1 rounded-full capitalize">
-                        {topic.material_type === 'pdf' ? <FileText className="w-3 h-3" /> : 
-                         topic.material_type === 'audio' ? <Music className="w-3 h-3" /> : 
-                         (topic.material_type === 'video' || topic.material_type === 'youtube_url') ? <Video className="w-3 h-3" /> : 
-                         <Info className="w-3 h-3" />}
-                        {topic.material_type === 'youtube_url' ? 'YouTube Video' : topic.material_type}
-                    </span>
-                )}
-            </div>
+            {(() => {
+                const mediaInfo = getCurriculumMediaInfo(topic);
+                return (
+                    <div className="flex flex-wrap gap-2 pt-0.5">
+                        {mediaInfo.isVideo && mediaInfo.videoDuration && (
+                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200/60 px-2.5 py-1 rounded-full">
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                {mediaInfo.videoDuration}
+                            </span>
+                        )}
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200/60 px-2.5 py-1 rounded-full">
+                            <Award className="w-3 h-3 text-slate-400" />
+                            {topic.difficulty || 'Easy'}
+                        </span>
+                        {mediaInfo.hasMedia && topic.file_size && (
+                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100/80 border border-slate-200/60 px-2.5 py-1 rounded-full">
+                                💾 {topic.file_size}
+                            </span>
+                        )}
+                        {mediaInfo.hasMedia && (
+                            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#7C5E3F] bg-[#FAF5EE] border border-[#7C5E3F]/10 px-2.5 py-1 rounded-full capitalize">
+                                {mediaInfo.isPdf ? <FileText className="w-3 h-3" /> : 
+                                 mediaInfo.isAudio ? <Music className="w-3 h-3" /> : 
+                                 mediaInfo.isVideo ? <Video className="w-3 h-3" /> : 
+                                 <Info className="w-3 h-3" />}
+                                {mediaInfo.isPdf ? 'PDF' :
+                                 mediaInfo.isAudio ? 'Audio' :
+                                 mediaInfo.isVideo ? (topic.material_type === 'youtube_url' || (topic.link_url && (topic.link_url.includes('youtube') || topic.link_url.includes('youtu.be'))) ? 'YouTube Video' : 'Video') :
+                                 'Attachment'}
+                            </span>
+                        )}
+                    </div>
+                );
+            })()}
 
             {/* Key Practice Focus / Bullet Points */}
             {topic.bullet_points && topic.bullet_points.length > 0 && (

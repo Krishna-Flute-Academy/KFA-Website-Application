@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, X, BookOpen, ChevronDown, ChevronUp, FileText, Video, Music, Image as ImageIcon } from 'lucide-react';
+import { getCurriculumMediaInfo } from '../../../lib/curriculum-media';
 
 interface InventoryPickerModalProps {
     isOpen: boolean;
@@ -276,36 +277,39 @@ export default function InventoryPickerModal({
 
                                                                             {isChapExpanded && (
                                                                                 <div className="space-y-1 pt-1.5 pl-1">
-                                                                                    {chap.lessons.map((lesson: any) => (
-                                                                                        <button
-                                                                                            key={lesson.id}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                onSelectLesson({
-                                                                                                    id: lesson.id,
-                                                                                                    title: lesson.title
-                                                                                                });
-                                                                                                onClose();
-                                                                                            }}
-                                                                                            className="w-full text-left p-2 hover:bg-[#ecb613]/10 dark:hover:bg-[#ecb613]/20 rounded-lg border border-transparent hover:border-[#ecb613]/30 transition-all flex items-center gap-2.5 group/lesson"
-                                                                                        >
-                                                                                            <div className="w-7 h-7 rounded-md bg-[#f8f8f6] dark:bg-slate-900 flex items-center justify-center text-[#ecb613] shrink-0 border border-slate-100 dark:border-slate-800">
-                                                                                                {getLessonMaterialIcon(lesson.material_type, !!(lesson.material_url || lesson.link_url))}
-                                                                                            </div>
-                                                                                            <div className="min-w-0 flex-1">
-                                                                                                <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate group-hover/lesson:text-[#ecb613] transition-colors">
-                                                                                                    {lesson.title}
-                                                                                                </h5>
-                                                                                                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">
-                                                                                                    {lesson.material_url 
-                                                                                                        ? `File: ${lesson.file_name || 'Material'} • ${lesson.file_size || 'PDF'}` 
-                                                                                                        : lesson.link_url 
-                                                                                                            ? `Link: ${lesson.link_url}` 
-                                                                                                            : 'Curriculum Topic'}
-                                                                                                </p>
-                                                                                            </div>
-                                                                                        </button>
-                                                                                    ))}
+                                                                                    {chap.lessons.map((lesson: any) => {
+                                                                                        const mediaInfo = getCurriculumMediaInfo(lesson);
+                                                                                        return (
+                                                                                            <button
+                                                                                                key={lesson.id}
+                                                                                                type="button"
+                                                                                                onClick={() => {
+                                                                                                    onSelectLesson({
+                                                                                                        id: lesson.id,
+                                                                                                        title: lesson.title
+                                                                                                    });
+                                                                                                    onClose();
+                                                                                                }}
+                                                                                                className="w-full text-left p-2 hover:bg-[#ecb613]/10 dark:hover:bg-[#ecb613]/20 rounded-lg border border-transparent hover:border-[#ecb613]/30 transition-all flex items-center gap-2.5 group/lesson"
+                                                                                            >
+                                                                                                <div className="w-7 h-7 rounded-md bg-[#f8f8f6] dark:bg-slate-900 flex items-center justify-center text-[#ecb613] shrink-0 border border-slate-100 dark:border-slate-800">
+                                                                                                    {getLessonMaterialIcon(mediaInfo.mediaType || lesson.material_type, mediaInfo.hasMedia)}
+                                                                                                </div>
+                                                                                                <div className="min-w-0 flex-1">
+                                                                                                    <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate group-hover/lesson:text-[#ecb613] transition-colors">
+                                                                                                        {lesson.title}
+                                                                                                    </h5>
+                                                                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium truncate">
+                                                                                                        {lesson.material_url 
+                                                                                                            ? `File: ${lesson.file_name || 'Material'}${mediaInfo.badgeLabel ? ` • ${mediaInfo.badgeLabel}` : (lesson.file_size ? ` • ${lesson.file_size}` : '')}` 
+                                                                                                            : lesson.link_url 
+                                                                                                                ? (mediaInfo.isVideo ? 'Video Link' : `Link: ${lesson.link_url}`) 
+                                                                                                                : 'Curriculum Topic'}
+                                                                                                    </p>
+                                                                                                </div>
+                                                                                            </button>
+                                                                                        );
+                                                                                    })}
                                                                                     {chap.lessons.length === 0 && (
                                                                                         <p className="text-[10px] text-slate-400 italic pl-2">No topics in this chapter.</p>
                                                                                     )}

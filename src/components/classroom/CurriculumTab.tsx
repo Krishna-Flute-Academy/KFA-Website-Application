@@ -56,6 +56,7 @@ interface CurriculumTabProps {
 }
 
 import { stripHtml } from '../../lib/text-utils';
+import { getCurriculumMediaInfo } from '../../lib/curriculum-media';
 
 export default function CurriculumTab({
     curriculumTab,
@@ -821,9 +822,7 @@ export default function CurriculumTab({
                                                                                     const isUpdating = isUpdatingProgress === lesson.id;
                                                                                     const pacing = getLessonPacingStatus(lesson.id);
 
-                                                                                    const isAudio = lesson.material_type === 'audio';
-                                                                                    const isVideo = lesson.material_type === 'video';
-                                                                                    const isPdf = lesson.material_type === 'pdf';
+                                                                                    const { isVideo, isAudio, isPdf } = getCurriculumMediaInfo(lesson);
 
                                                                                     return (
                                                                                         <div 
@@ -834,20 +833,22 @@ export default function CurriculumTab({
                                                                                         <div className="flex items-start gap-2.5 w-full">
                                                                                             {/* Left side: Material Type Icon */}
                                                                                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
-                                                                                                isPdf 
-                                                                                                    ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/[0.05] border-blue-500/20'
-                                                                                                    : isVideo 
+                                                                                                isVideo 
                                                                                                     ? 'text-rose-500 bg-rose-500/10 dark:bg-rose-500/[0.05] border-rose-500/20' 
                                                                                                     : isAudio 
                                                                                                     ? 'text-amber-550 bg-amber-500/10 border-amber-500/20' 
-                                                                                                    : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                                                                                                    : isPdf 
+                                                                                                    ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/[0.05] border-blue-500/20'
+                                                                                                    : 'text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'
                                                                                             }`}>
                                                                                                 {isVideo ? (
                                                                                                     <Film className="size-3.5" />
                                                                                                 ) : isAudio ? (
                                                                                                     <Music className="size-3.5" />
-                                                                                                ) : (
+                                                                                                ) : isPdf ? (
                                                                                                     <FileText className="size-3.5" />
+                                                                                                ) : (
+                                                                                                    <BookOpen className="size-3.5" />
                                                                                                 )}
                                                                                             </div>
 

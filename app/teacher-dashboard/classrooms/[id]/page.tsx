@@ -20,6 +20,7 @@ import { htmlToPlainText, sanitizeHtml } from '../../../../src/lib/text-utils';
 import SecureCurriculumMaterial from '../../../../src/components/SecureCurriculumMaterial';
 import AudioRecorderWidget from '../../../../src/components/AudioRecorderWidget';
 import AutoLinkText from '../../../../src/components/common/AutoLinkText';
+import { getCurriculumMediaInfo } from '../../../../src/lib/curriculum-media';
 
 import dynamic from 'next/dynamic';
 
@@ -5209,28 +5210,29 @@ export default function ClassroomDashboardPage({
                     const chap = courseChapters.find(c => c.id === selectedTopic.chapter_id);
                     const mod = chap ? courseModules.find(m => m.id === chap.module_id) : null;
                     
-                    const isAudio = selectedTopic.material_type === 'audio';
-                    const isVideo = selectedTopic.material_type === 'video';
-                    const isPdf = selectedTopic.material_type === 'pdf';
-                    const isImage = selectedTopic.material_type === 'image';
+                    const mediaInfo = getCurriculumMediaInfo(selectedTopic);
+                    const isAudio = mediaInfo.isAudio;
+                    const isVideo = mediaInfo.isVideo;
+                    const isPdf = mediaInfo.isPdf;
+                    const isImage = mediaInfo.isImage;
                     const hasMaterial = !!selectedTopic.material_url;
                     
                     const styleConfig = isVideo ? {
-                        badge: 'bg-amber-505/10 text-amber-600 dark:text-amber-400 border border-amber-505/20',
-                        icon: <Film className="size-5 text-[#ecb613]" />,
+                        badge: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20',
+                        icon: <Film className="size-5 text-rose-500" />,
                         label: 'Video Tutorial'
                     } : isAudio ? {
-                        badge: 'bg-amber-505/10 text-amber-600 dark:text-amber-455 border border-amber-505/20',
+                        badge: 'bg-amber-500/10 text-amber-600 dark:text-amber-455 border border-amber-500/20',
                         icon: <Music className="size-5 text-amber-500 animate-pulse" />,
                         label: 'Audio Guide'
                     } : isPdf ? {
-                        badge: 'bg-amber-505/10 text-amber-600 dark:text-amber-455 border border-amber-505/20',
-                        icon: <FileText className="size-5 text-[#ecb613]" />,
+                        badge: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20',
+                        icon: <FileText className="size-5 text-blue-500" />,
                         label: 'PDF Sheet Music'
                     } : {
-                        badge: 'bg-amber-505/10 text-amber-600 dark:text-amber-455 border border-amber-505/20',
-                        icon: <BookOpen className="size-5 text-amber-500" />,
-                        label: 'Interactive Guide'
+                        badge: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700',
+                        icon: <BookOpen className="size-5 text-slate-500" />,
+                        label: 'Curriculum Lesson'
                     };
 
                     return (
@@ -5540,17 +5542,20 @@ export default function ClassroomDashboardPage({
                                                                                                     const isLessonAllocated = curriculumTab === 'individual' && selectedStudentForCurriculum
                                                                                                         ? classroomInventoryAllocations.some(a => a.lesson_id === lesson.id && a.allocated_to_student_id === selectedStudentForCurriculum.student_id)
                                                                                                         : classroomInventoryAllocations.some(a => a.lesson_id === lesson.id);
+                                                                                                    const lessonMedia = getCurriculumMediaInfo(lesson);
 
                                                                                                     return (
                                                                                                         <div key={lesson.id} className="flex items-center justify-between gap-3 py-1.5">
                                                                                                             <div className="flex items-center gap-2 min-w-0">
                                                                                                                 <div className="w-5.5 h-5.5 rounded bg-slate-105 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                                                                                                                    {lesson.material_type === 'video' ? (
-                                                                                                                        <Film className="size-3 text-amber-555" />
-                                                                                                                    ) : lesson.material_type === 'audio' ? (
-                                                                                                                        <Music className="size-3 text-amber-555 animate-pulse" />
+                                                                                                                    {lessonMedia.isVideo ? (
+                                                                                                                        <Film className="size-3 text-rose-500" />
+                                                                                                                    ) : lessonMedia.isAudio ? (
+                                                                                                                        <Music className="size-3 text-amber-500 animate-pulse" />
+                                                                                                                    ) : lessonMedia.isPdf ? (
+                                                                                                                        <FileText className="size-3 text-blue-500" />
                                                                                                                     ) : (
-                                                                                                                        <FileText className="size-3 text-slate-400" />
+                                                                                                                        <BookOpen className="size-3 text-slate-400" />
                                                                                                                     )}
                                                                                                                 </div>
                                                                                                                 <span className="text-[11px] font-bold text-slate-655 dark:text-slate-355 truncate leading-none mt-0.5">{lesson.title}</span>

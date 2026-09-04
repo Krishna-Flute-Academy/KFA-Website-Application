@@ -57,6 +57,7 @@ import {
 } from './initial-data';
 
 import { stripHtml, sanitizeHtml } from '../../../src/lib/text-utils';
+import { getCurriculumMediaInfo } from '../../../src/lib/curriculum-media';
 
 const cleanChapterTitle = (title: string) =>
     (title || '').replace(/^\s*Chapter\s*[-:]?\s*\d+\s*[-:]?\s*/i, '').trim();
@@ -367,15 +368,6 @@ export default function InventoryLibrary() {
         return chapters
             .filter(c => c.module_id === moduleId)
             .sort((a, b) => a.chapter_number - b.chapter_number);
-    };
-
-    const getCleanDuration = (duration: string, fileSize: string) => {
-        if (!duration) return '';
-        if (fileSize && duration.includes(fileSize)) {
-            const parts = duration.split('•');
-            return parts[0].trim();
-        }
-        return duration;
     };
 
     const getMaterialIcon = (type: string, hasUrl: boolean = true) => {
@@ -1773,6 +1765,7 @@ export default function InventoryLibrary() {
                                                         const chap = chapters.find(c => c.id === lesson.chapter_id);
                                                         const mod = chap ? modules.find(m => m.id === chap.module_id) : null;
                                                         const hasAttachment = !!lesson.material_url;
+                                                        const mediaInfo = getCurriculumMediaInfo(lesson);
 
                                                         return (
                                                             <div 
@@ -1782,7 +1775,7 @@ export default function InventoryLibrary() {
                                                                 <div className="space-y-1.5">
                                                                     <div className="flex items-center justify-between gap-4">
                                                                         <div className="flex flex-wrap items-center gap-1.5">
-                                                                            {getMaterialIcon(lesson.material_type, hasAttachment)}
+                                                                            {getMaterialIcon(mediaInfo.mediaType || lesson.material_type, mediaInfo.hasMedia)}
                                                                             <span className="text-[10px] font-extrabold text-[#d97706] dark:text-amber-400 uppercase tracking-widest font-mono">
                                                                                 Topic {lesson.lesson_number}
                                                                             </span>
@@ -1819,10 +1812,10 @@ export default function InventoryLibrary() {
 
                                                                 <div className="flex flex-wrap items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 gap-2">
                                                                     <div className="text-[10px] font-bold font-mono text-slate-400 flex items-center gap-1.5">
-                                                                        {hasAttachment && lesson.file_size && (
+                                                                        {mediaInfo.hasMedia && lesson.file_size && (
                                                                             <span className="text-slate-400 mr-1.5">💾 {lesson.file_size}</span>
                                                                         )}
-                                                                        <span>{hasAttachment ? (getCleanDuration(lesson.duration, lesson.file_size) || 'FILE ATTACHMENT') : 'LINK/TOPIC REFERENCE'}</span>
+                                                                        <span>{mediaInfo.badgeLabel || (hasAttachment ? 'FILE ATTACHMENT' : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE'))}</span>
                                                                     </div>
 
                                                                     <div className="flex items-center gap-2">
@@ -2272,6 +2265,7 @@ export default function InventoryLibrary() {
                                                                         {chapLessons.map(lesson => {
                                                                             const isLinkClickable = !!lesson.link_url;
                                                                             const hasAttachment = !!lesson.material_url;
+                                                                            const mediaInfo = getCurriculumMediaInfo(lesson);
                                                                             
                                                                             return (
                                                                                 <div 
@@ -2293,7 +2287,7 @@ export default function InventoryLibrary() {
                                                                                     <div className="space-y-1.5">
                                                                                         <div className="flex items-center justify-between gap-4 select-none">
                                                                                             <div className="flex items-center gap-2">
-                                                                                                {getMaterialIcon(lesson.material_type, hasAttachment)}
+                                                                                                {getMaterialIcon(mediaInfo.mediaType || lesson.material_type, mediaInfo.hasMedia)}
                                                                                                 <span className="text-[10px] font-extrabold text-[#d97706] dark:text-amber-400 uppercase tracking-widest font-mono">
                                                                                                     Topic {lesson.lesson_number}
                                                                                                 </span>
@@ -2332,9 +2326,8 @@ export default function InventoryLibrary() {
                                                                                                 <span className="text-slate-450 mr-1.5 shrink-0">💾 {lesson.file_size}</span>
                                                                                             )}
                                                                                             <span className="truncate">
-                                                                                                {hasAttachment 
-                                                                                                    ? (getCleanDuration(lesson.duration, lesson.file_size) || 'FILE ATTACHMENT') 
-                                                                                                    : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE')}
+                                                                                                {mediaInfo.badgeLabel 
+                                                                                                    || (hasAttachment ? 'FILE ATTACHMENT' : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE'))}
                                                                                             </span>
                                                                                         </div>
                                                                                         
@@ -2924,14 +2917,16 @@ export default function InventoryLibrary() {
                 )}
 
                 {/* 4. PREMIUM TOPIC CARD DETAILED POPUP MODAL */}
-                {selectedLessonPreview && (
+                {selectedLessonPreview && (() => {
+                    const previewMedia = getCurriculumMediaInfo(selectedLessonPreview);
+                    return (
                     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl space-y-6 text-left animate-scaleIn select-none max-h-[90vh] overflow-y-auto">
                             <div className="flex justify-between items-start gap-4">
                                 <div className="space-y-1">
                                     <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-[10px] text-amber-600 dark:text-amber-400 font-extrabold tracking-wide uppercase leading-none">
-                                        {getMaterialIcon(selectedLessonPreview.material_type, !!selectedLessonPreview.material_url)}
-                                        <span>Topic {selectedLessonPreview.lesson_number} {selectedLessonPreview.material_url ? `• ${selectedLessonPreview.material_type?.toUpperCase()}` : ''}</span>
+                                        {getMaterialIcon(previewMedia.mediaType || selectedLessonPreview.material_type, previewMedia.hasMedia)}
+                                        <span>Topic {selectedLessonPreview.lesson_number}{previewMedia.hasMedia && previewMedia.mediaType ? ` • ${previewMedia.mediaType.toUpperCase()}` : ''}</span>
                                     </div>
                                     <h3 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white leading-tight font-sans">
                                         {selectedLessonPreview.title}
@@ -2974,9 +2969,9 @@ export default function InventoryLibrary() {
                             {/* Attachment Details pill / row */}
                             {selectedLessonPreview.material_url && (
                                 <div className="flex flex-wrap items-center gap-3 select-none text-[10px] font-extrabold font-mono text-slate-400 uppercase tracking-wider">
-                                    {selectedLessonPreview.duration && (
+                                    {previewMedia.hasMedia && previewMedia.badgeLabel && (
                                         <span className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-750 text-slate-600 dark:text-slate-300">
-                                            {getCleanDuration(selectedLessonPreview.duration, selectedLessonPreview.file_size)}
+                                            {previewMedia.badgeLabel}
                                         </span>
                                     )}
                                     {selectedLessonPreview.file_name && (
@@ -3032,7 +3027,8 @@ export default function InventoryLibrary() {
                             </div>
                         </div>
                     </div>
-                )}
+                    );
+                })()}
 
                 {/* 5. PREMIUM RECYCLE BIN MODAL */}
                 {showTrashModal && (
@@ -3091,6 +3087,7 @@ export default function InventoryLibrary() {
                                         trashLessons.map((lesson) => {
                                             const chap = chapters.find(c => c.id === lesson.chapter_id);
                                             const mod = chap ? modules.find(m => m.id === chap.module_id) : null;
+                                            const mediaInfo = getCurriculumMediaInfo(lesson);
                                             
                                             return (
                                                 <div 
@@ -3099,7 +3096,7 @@ export default function InventoryLibrary() {
                                                 >
                                                     <div className="min-w-0 space-y-1">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            {getMaterialIcon(lesson.material_type, !!lesson.material_url)}
+                                                            {getMaterialIcon(mediaInfo.mediaType || lesson.material_type, mediaInfo.hasMedia)}
                                                             <h4 className="font-extrabold text-xs text-slate-900 dark:text-white leading-tight truncate max-w-[180px]">
                                                                 {lesson.title}
                                                             </h4>

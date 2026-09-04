@@ -10,6 +10,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import { stripHtml } from '../../lib/text-utils';
+import { getCurriculumMediaInfo } from '../../lib/curriculum-media';
 
 interface StudentProfile {
     id: string;
@@ -701,9 +702,14 @@ export default function OverviewTab({
                                     </p>
 
                                     <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-                                        <span className="text-[9px] font-bold text-[#7C5E3F] bg-[#FAF5EE] px-2 py-0.5 rounded-full">
-                                            {learningFocus.lesson.duration || '20 Mins'}
-                                        </span>
+                                        {(() => {
+                                            const mediaInfo = getCurriculumMediaInfo(learningFocus.lesson);
+                                            return mediaInfo.badgeLabel ? (
+                                                <span className="text-[9px] font-bold text-[#7C5E3F] bg-[#FAF5EE] px-2 py-0.5 rounded-full">
+                                                    {mediaInfo.badgeLabel}
+                                                </span>
+                                            ) : null;
+                                        })()}
                                         <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
                                             {learningFocus.lesson.difficulty || 'Intermediate'}
                                         </span>
@@ -1374,9 +1380,14 @@ export default function OverviewTab({
                                         </p>
 
                                         <div className="flex items-center gap-2 pt-0.5 flex-wrap">
-                                            <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-[#7C5E3F] bg-[#FAF5EE] px-2 py-0.5 rounded-full">
-                                                <Clock className="w-3 h-3 text-[#7C5E3F]" /> {learningFocus.lesson.duration || '20 Mins'}
-                                            </span>
+                                            {(() => {
+                                                const mediaInfo = getCurriculumMediaInfo(learningFocus.lesson);
+                                                return mediaInfo.badgeLabel ? (
+                                                    <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-[#7C5E3F] bg-[#FAF5EE] px-2 py-0.5 rounded-full">
+                                                        <Clock className="w-3 h-3 text-[#7C5E3F]" /> {mediaInfo.badgeLabel}
+                                                    </span>
+                                                ) : null;
+                                            })()}
                                             <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-[#5383B4] bg-[#E3ECF5] px-2 py-0.5 rounded-full">
                                                 <Award className="w-3 h-3" /> {learningFocus.lesson.difficulty || 'Intermediate'}
                                             </span>

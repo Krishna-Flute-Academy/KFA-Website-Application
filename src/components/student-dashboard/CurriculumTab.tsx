@@ -7,6 +7,7 @@ import {
 import AutoLinkText from '../common/AutoLinkText';
 import LessonViewer from './LessonViewer';
 import { stripHtml } from '../../lib/text-utils';
+import { formatCurriculumSubtitle, getCurriculumMediaInfo } from '../../lib/curriculum-media';
 
 interface ClassroomInfo {
     id: string;
@@ -57,14 +58,6 @@ const cleanModuleDescription = (desc: string) => {
     return stripHtml(clean);
 };
 
-const getCleanDuration = (duration: string, fileSize: string) => {
-    if (!duration) return '';
-    if (fileSize && duration.includes(fileSize)) {
-        const parts = duration.split('•');
-        return parts[0].trim();
-    }
-    return duration;
-};
 
 /**
  * CurriculumTab displays the syllabus and detailed lesson information for students.
@@ -407,9 +400,14 @@ export default function CurriculumTab({
                                                                                                             </span>
                                                                                                         )}
                                                                                                     </div>
-                                                                                                    <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                                                                                        {getCleanDuration(lesson.duration, lesson.file_size) || '5 mins'} · {lesson.difficulty || 'Easy'}{lesson.file_size ? ` · 💾 ${lesson.file_size}` : ''}
-                                                                                                    </p>
+                                                                                                    {(() => {
+                                                                                                        const mediaInfo = getCurriculumMediaInfo(lesson);
+                                                                                                        return (
+                                                                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                                                                                                                {formatCurriculumSubtitle(lesson)}{mediaInfo.hasMedia && lesson.file_size ? ` · 💾 ${lesson.file_size}` : ''}
+                                                                                                            </p>
+                                                                                                        );
+                                                                                                    })()}
                                                                                                 </div>
                                                                                             </div>
 
