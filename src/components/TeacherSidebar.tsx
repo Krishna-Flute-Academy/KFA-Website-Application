@@ -324,11 +324,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
 
         fetchUnassignedCount();
-
-        // Polling: refresh count every 30 seconds instead of using heavy realtime subscriptions
-        const intervalId = setInterval(fetchUnassignedCount, 30000);
-
-        return () => { clearInterval(intervalId); };
+        // Polling removed to protect Supabase Disk IO Budget
     }, [userRole]);
 
     useEffect(() => {
@@ -349,11 +345,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
 
         fetchPendingPaymentsCount();
-
-        // Polling: refresh count every 30 seconds instead of using heavy realtime subscriptions
-        const intervalId = setInterval(fetchPendingPaymentsCount, 30000);
-
-        return () => { clearInterval(intervalId); };
+        // Polling removed to protect Supabase Disk IO Budget
     }, [userRole]);
 
     useEffect(() => {
@@ -401,9 +393,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
 
         fetchPendingLeavesCount();
-
-        const pollingInterval = setInterval(fetchPendingLeavesCount, 30000);
-        return () => clearInterval(pollingInterval);
+        // Polling removed to protect Supabase Disk IO Budget
     }, [teacherProfile, userRole]);
 
     useEffect(() => {
@@ -438,16 +428,10 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
 
         fetchNotificationCounts();
-
-        // Polling: refresh notifications every 30 seconds instead of heavy realtime subscriptions
-        const intervalId = setInterval(fetchNotificationCounts, 30000);
-
-        return () => {
-            clearInterval(intervalId);
-        };
+        // Polling removed to protect Supabase Disk IO Budget
     }, [teacherProfile?.id]);
 
-    // Fetch active session from classrooms table and use polling
+    // Fetch active session from classrooms table
     useEffect(() => {
         if (!teacherProfile?.id) return;
 
@@ -491,9 +475,7 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
         };
 
         checkActiveSessionInDB();
-
-        const pollingInterval = setInterval(checkActiveSessionInDB, 30000);
-        return () => clearInterval(pollingInterval);
+        // Polling removed to protect Supabase Disk IO Budget
     }, [teacherProfile?.id, userRole]);
 
     // Timer effect for the active session widget
