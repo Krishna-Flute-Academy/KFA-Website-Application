@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 
 declare global {
     interface Window {
@@ -64,129 +64,111 @@ function loadScript(src: string): Promise<void> {
 }
 
 export default function useDrivePicker(): [(config: DrivePickerConfig) => void, boolean] {
-    const [isLoading, setIsLoading] = useState(false);
-    const scriptsReady = useRef(false);
-    const pickerApiReady = useRef(false);
+    const [openPickerCallback, setOpenPickerCallback] = useState<boolean>(false);
 
-    // Pre-load Google scripts on mount so they are ready when user clicks
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
+    const openPicker = async (config: DrivePickerConfig) => {
+        try {
+            setOpenPickerCallback(true);
 
-        const preload = async () => {
-            try {
-                await Promise.all([
-                    loadScript('https://apis.google.com/js/api.js'),
-                    loadScript('https://accounts.google.com/gsi/client'),
-                ]);
-                scriptsReady.current = true;
+            // Load Google API and GIS scripts in parallel
+            await Promise.all([
+                loadScript('https://apis.google.com/js/api.js'),
+                loadScript('https://accounts.google.com/gsi/client'),
+            ]);
 
-                // Pre-load the picker API
-                if (window.gapi && !pickerApiReady.current) {
-                    window.gapi.load('picker', () => {
-                        pickerApiReady.current = true;
-                    });
+            // Ensure gapi.picker is loaded
+            await new Promise<void>((resolve) => {
+                if (window.gapi?.picker) {
+                    resolve();
+                } else if (window.gapi) {
+                    window.gapi.load('picker', () => resolve());
+                } else {
+                    resolve();
                 }
-            } catch (err) {
-                console.error('Failed to preload Google scripts:', err);
-            }
-        };
-
-        preload();
-    }, []);
-
-    // This function runs SYNCHRONOUSLY from the click handler
-    // so the popup will not be blocked by Chrome
-    const openPicker = (config: DrivePickerConfig) => {
-        if (!scriptsReady.current || !window.google?.accounts?.oauth2) {
-            console.warn('Google Drive Picker: Scripts not loaded yet. Please try again.');
-            return;
-        }
-
-        if (!config.clientId || !config.developerKey) {
-            console.warn('Google Drive Picker: Missing clientId or developerKey.');
-            return;
-        }
-
-        setIsLoading(true);
-
-        const createAndShowPicker = (oauthToken: string) => {
-            if (!window.google?.picker) {
-                console.error('Google Picker API not available.');
-                setIsLoading(false);
-                return;
-            }
-
-            const googlePicker = window.google.picker;
-            const viewIdEnum = googlePicker.ViewId[config.viewId || 'DOCS'] || googlePicker.ViewId.DOCS;
-            const view = new googlePicker.DocsView(viewIdEnum);
-
-            if (config.showUploadFolders || config.setIncludeFolders) {
-                view.setIncludeFolders(true);
-            }
-            if (config.setSelectFolderEnabled) {
-                view.setSelectFolderEnabled(true);
-            }
-            if (config.supportDrives) {
-                view.setEnableDrives(true);
-            }
-
-            const pickerBuilder = new googlePicker.PickerBuilder()
-                .addView(view)
-                .setOAuthToken(oauthToken)
-                .setDeveloperKey(config.developerKey)
-                .setCallback((data: any) => {
-                    config.callbackFunction(data);
-                    setIsLoading(false);
-                });
-
-            if (config.showUploadView) {
-                pickerBuilder.addView(new googlePicker.DocsUploadView());
-            }
-            if (config.locale) {
-                pickerBuilder.setLocale(config.locale);
-            }
-            if (config.appId) {
-                pickerBuilder.setAppId(config.appId);
-            }
-            if (config.multiselect) {
-                pickerBuilder.enableFeature(googlePicker.Feature.MULTISELECT_ENABLED);
-            }
-            if (config.supportDrives) {
-                pickerBuilder.enableFeature(googlePicker.Feature.SUPPORT_DRIVES);
-            }
-
-            const picker = pickerBuilder.build();
-            picker.setVisible(true);
-        };
-
-        if (config.token) {
-            createAndShowPicker(config.token);
-        } else {
-            const scopes = (config.customScopes && config.customScopes.length > 0)
-                ? config.customScopes.join(' ')
-                : 'https://www.googleapis.com/auth/drive.file';
-
-            // This MUST be called synchronously from the click handler
-            // to avoid Chrome popup blocker
-            const tokenClient = window.google.accounts.oauth2.initTokenClient({
-                client_id: config.clientId,
-                scope: scopes,
-                callback: (tokenResponse: any) => {
-                    if (tokenResponse?.error) {
-                        console.error('Google OAuth token error:', tokenResponse.error);
-                        setIsLoading(false);
-                        return;
-                    }
-                    if (tokenResponse?.access_token) {
-                        createAndShowPicker(tokenResponse.access_token);
-                    }
-                },
             });
 
-            // requestAccessToken opens the popup — must happen synchronously
-            tokenClient.requestAccessToken({ prompt: '' });
+            const createAndShowPicker = (oauthToken: string) => {
+                if (!window.google?.picker) {
+                    console.error('Google Picker API not available.');
+                    return;
+                }
+
+                const googlePicker = window.google.picker;
+                const viewIdEnum = googlePicker.ViewId[config.viewId || 'DOCS'] || googlePicker.ViewId.DOCS;
+                const view = new googlePicker.DocsView(viewIdEnum);
+
+                if (config.showUploadFolders || config.setIncludeFolders) {
+                    view.setIncludeFolders(true);
+                }
+                if (config.setSelectFolderEnabled) {
+                    view.setSelectFolderEnabled(true);
+                }
+                if (config.supportDrives) {
+                    view.setEnableDrives(true);
+                }
+
+                const pickerBuilder = new googlePicker.PickerBuilder()
+                    .addView(view)
+                    .setOAuthToken(oauthToken)
+                    .setDeveloperKey(config.developerKey)
+                    .setCallback((data: any) => {
+                        config.callbackFunction(data);
+                    });
+
+                if (config.showUploadView) {
+                    pickerBuilder.addView(new googlePicker.DocsUploadView());
+                }
+                if (config.locale) {
+                    pickerBuilder.setLocale(config.locale);
+                }
+                if (config.appId) {
+                    pickerBuilder.setAppId(config.appId);
+                }
+                if (config.multiselect) {
+                    pickerBuilder.enableFeature(googlePicker.Feature.MULTISELECT_ENABLED);
+                }
+                if (config.supportDrives) {
+                    pickerBuilder.enableFeature(googlePicker.Feature.SUPPORT_DRIVES);
+                }
+                if (config.disableDefaultView) {
+                    pickerBuilder.disableFeature(googlePicker.Feature.NAV_HIDDEN);
+                }
+
+                const picker = pickerBuilder.build();
+                picker.setVisible(true);
+            };
+
+            if (config.token) {
+                createAndShowPicker(config.token);
+            } else if (window.google?.accounts?.oauth2 && config.clientId) {
+                const scopes = (config.customScopes && config.customScopes.length > 0)
+                    ? config.customScopes.join(' ')
+                    : 'https://www.googleapis.com/auth/drive.file';
+
+                const tokenClient = window.google.accounts.oauth2.initTokenClient({
+                    client_id: config.clientId,
+                    scope: scopes,
+                    callback: (tokenResponse: any) => {
+                        if (tokenResponse?.error) {
+                            console.error('Google OAuth token error:', tokenResponse.error);
+                            return;
+                        }
+                        if (tokenResponse?.access_token) {
+                            createAndShowPicker(tokenResponse.access_token);
+                        }
+                    },
+                });
+
+                tokenClient.requestAccessToken({ prompt: '' });
+            } else {
+                console.warn('Google Drive Picker: Missing token or clientId.');
+            }
+        } catch (error) {
+            console.error('Error opening Google Drive Picker:', error);
+        } finally {
+            setOpenPickerCallback(false);
         }
     };
 
-    return [openPicker, isLoading];
+    return [openPicker, openPickerCallback];
 }

@@ -88,6 +88,7 @@ interface AssignmentsTabProps {
     deletingAssignmentId: string | null;
     handleDeleteAssignment: (id: string) => Promise<void>;
     handleOpenReviewModal: (studentSubmission: any, assignment: any) => void;
+    handleEditAssignment?: (assignment: any) => void;
 }
 
 const NOTE_COLORS = {
@@ -166,7 +167,8 @@ export default function AssignmentsTab({
     setExpandedAssignmentId,
     deletingAssignmentId,
     handleDeleteAssignment,
-    handleOpenReviewModal
+    handleOpenReviewModal,
+    handleEditAssignment
 }: AssignmentsTabProps) {
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 text-left">
@@ -557,6 +559,19 @@ CREATE POLICY "Allow all student_topic_progress" ON public.student_topic_progres
 
                                             {/* Actions */}
                                             <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                                {handleEditAssignment && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleEditAssignment(asg);
+                                                        }}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors cursor-pointer"
+                                                        title="Edit assignment"
+                                                    >
+                                                        <Edit3 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 {asg.assignment_students && asg.assignment_students.length > 0 && (
                                                     <button
                                                         onClick={(e) => {

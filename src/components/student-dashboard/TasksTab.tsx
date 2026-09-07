@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { ClipboardList, Download, Video, Search, Calendar, Award, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { ClipboardList, Download, Video, Search, Calendar, Award, CheckCircle2, AlertCircle, Loader2, BookOpen, Volume2, Paperclip } from 'lucide-react';
 import AutoLinkText from '../common/AutoLinkText';
 
 interface EnrichedAssignment {
@@ -12,6 +12,20 @@ interface EnrichedAssignment {
     file_url?: string | null;
     file_name?: string | null;
     file_size?: number | null;
+    inventory_ref_id?: string | null;
+    inventory_ref_title?: string | null;
+    inventory_ref_type?: string | null;
+    attachments?: Array<{
+        id: string;
+        attachment_type: 'inventory' | 'document' | 'audio' | 'video' | 'link';
+        title: string;
+        file_url?: string | null;
+        file_name?: string | null;
+        file_size?: number | null;
+        duration_seconds?: number | null;
+        inventory_ref_type?: string | null;
+        inventory_ref_id?: string | null;
+    }>;
     status: 'pending' | 'submitted' | 'reviewed' | 'approved';
     score?: number | null;
     proficiency_level?: string | null;
@@ -209,20 +223,71 @@ export default function TasksTab({
                                         </div>
                                     )}
 
-                                    {/* Attachment file */}
-                                    {asg.file_url && (
-                                        <div className="pt-0.5 space-y-1.5">
-                                            <a 
-                                                href={asg.file_url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors shadow-2xs"
-                                            >
-                                                <Download className="w-3.5 h-3.5 text-amber-500" />
-                                                <span className="truncate max-w-[180px]">{asg.file_name || 'Instruction Attachment'}</span>
-                                            </a>
-                                            {(asg.file_url.includes('.webm') || asg.file_url.includes('.mp3') || asg.file_url.includes('.wav') || asg.file_url.includes('.m4a') || asg.file_url.includes('.ogg') || (asg.file_name && asg.file_name.toLowerCase().includes('voice'))) && (
-                                                <audio src={asg.file_url} controls className="w-full h-8 rounded-lg" />
+                                    {/* Task Materials & Attachments */}
+                                    {((asg.attachments && asg.attachments.length > 0) || asg.inventory_ref_title || asg.file_url) && (
+                                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+                                            <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">Materials & Instructions</p>
+                                            
+                                            {asg.attachments && asg.attachments.length > 0 ? (
+                                                <div className="space-y-1.5">
+                                                    {asg.attachments.map((item) => (
+                                                        <div key={item.id} className="p-2 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-100 dark:border-slate-800 space-y-1">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                                    {item.attachment_type === 'inventory' ? (
+                                                                        <BookOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                                                    ) : item.attachment_type === 'audio' ? (
+                                                                        <Volume2 className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                                                                    ) : (
+                                                                        <Paperclip className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                                                    )}
+                                                                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 truncate">
+                                                                        {item.title}
+                                                                    </span>
+                                                                </div>
+                                                                {item.file_url && item.attachment_type !== 'audio' && (
+                                                                    <a 
+                                                                        href={item.file_url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline shrink-0 flex items-center gap-0.5"
+                                                                    >
+                                                                        <Download className="w-3 h-3" />
+                                                                        View
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                            {item.attachment_type === 'audio' && item.file_url && (
+                                                                <audio src={item.file_url} controls className="w-full h-7 rounded-lg mt-1" />
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                    {asg.inventory_ref_title && (
+                                                        <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300 font-bold p-1.5 bg-amber-500/10 rounded-lg">
+                                                            <BookOpen className="w-3.5 h-3.5" />
+                                                            <span>{asg.inventory_ref_title}</span>
+                                                        </div>
+                                                    )}
+                                                    {asg.file_url && (
+                                                        <div className="pt-0.5 space-y-1.5">
+                                                            <a 
+                                                                href={asg.file_url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors shadow-2xs"
+                                                            >
+                                                                <Download className="w-3.5 h-3.5 text-amber-500" />
+                                                                <span className="truncate max-w-[180px]">{asg.file_name || 'Instruction Attachment'}</span>
+                                                            </a>
+                                                            {(asg.file_url.includes('.webm') || asg.file_url.includes('.mp3') || asg.file_url.includes('.wav') || asg.file_url.includes('.m4a') || asg.file_url.includes('.ogg') || (asg.file_name && asg.file_name.toLowerCase().includes('voice'))) && (
+                                                                <audio src={asg.file_url} controls className="w-full h-8 rounded-lg" />
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                     )}

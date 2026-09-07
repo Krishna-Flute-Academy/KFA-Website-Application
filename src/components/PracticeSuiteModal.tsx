@@ -1931,45 +1931,21 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                     </div>
                                 </div>
 
-                                {/* Tuning Mode Select */}
-                                <div>
-                                    <span className="text-[#d46211]/70 text-xs font-black uppercase tracking-wider block mb-2">Tuning Mode</span>
-                                    <div className="grid grid-cols-2 gap-1.5">
-                                        {TUNING_MODES.map((mode) => (
-                                            <button
-                                                key={mode.id}
-                                                onClick={() => setSelectedTuningMode(mode)}
-                                                className={`text-left p-2 rounded-xl border transition-all ${
-                                                    selectedTuningMode.id === mode.id 
-                                                        ? 'bg-[#d46211]/10 border-[#d46211] text-white' 
-                                                        : 'border-white/5 text-white/40 hover:border-white/10 hover:text-white/70'
-                                                }`}
-                                            >
-                                                <p className="font-extrabold text-xs text-[#d46211]">{mode.label.split(' ')[2]} Drone</p>
-                                                <p className="text-[10px] text-white/40 mt-0.5 truncate">{mode.desc}</p>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
                                 {/* 4 Plucking Strings visualizer */}
-                                <div className="bg-black/40 border border-white/5 rounded-2xl p-4 flex justify-around items-stretch h-32 relative overflow-hidden shadow-inner my-2">
-                                    {[0, 1, 2, 3].map((idx) => {
-                                        const stringLabel = idx === 0 ? selectedTuningMode.id : idx === 3 ? 'Sa' : 'Sa';
-                                        return (
-                                            <div key={idx} className="flex flex-col items-center justify-between relative w-8">
-                                                <span className={`text-[10px] font-black transition-colors ${isTanpuraPlaying ? 'text-[#d46211] animate-pulse' : 'text-white/20'}`}>
-                                                    {stringLabel}
-                                                </span>
-                                                <div className="relative flex-1 flex items-center justify-center w-full my-2">
-                                                    <div className={`w-[1.5px] h-full transition-all duration-300 ${
-                                                        isTanpuraPlaying ? 'bg-[#d46211] shadow-[0_0_8px_rgba(212,98,17,0.8)] animate-pulse' : 'bg-white/5'
-                                                    }`} />
-                                                </div>
-                                                <div className={`w-2 h-2 rounded-full border transition-all ${isTanpuraPlaying ? 'bg-[#d46211] border-orange-400' : 'bg-black border-white/10'}`} />
+                                <div className="bg-black/40 border border-white/5 rounded-2xl px-4 py-2.5 flex justify-around items-stretch h-20 relative overflow-hidden shadow-inner my-1">
+                                    {['Pa', 'Sa', 'Sa', 'Sa'].map((stringLabel, idx) => (
+                                        <div key={idx} className="flex flex-col items-center justify-between relative w-8">
+                                            <span className={`text-[10px] font-black transition-colors ${isTanpuraPlaying ? 'text-[#d46211] animate-pulse' : 'text-white/20'}`}>
+                                                {stringLabel}
+                                            </span>
+                                            <div className="relative flex-1 flex items-center justify-center w-full my-1">
+                                                <div className={`w-[1.5px] h-full transition-all duration-300 ${
+                                                    isTanpuraPlaying ? 'bg-[#d46211] shadow-[0_0_8px_rgba(212,98,17,0.8)] animate-pulse' : 'bg-white/5'
+                                                }`} />
                                             </div>
-                                        );
-                                    })}
+                                            <div className={`w-1.5 h-1.5 rounded-full border transition-all ${isTanpuraPlaying ? 'bg-[#d46211] border-orange-400' : 'bg-black border-white/10'}`} />
+                                        </div>
+                                    ))}
                                 </div>
 
                                 {/* Volume controls */}
@@ -2377,21 +2353,7 @@ export default function PracticeSuiteModal({ onClose, defaultTab = 'metronome' }
                                         </select>
                                     </div>
 
-                                    <div>
-                                        <label className="text-[10px] font-black text-white/40 uppercase tracking-wider block mb-1.5">Tuning Mode</label>
-                                        <select 
-                                            value={selectedTuningMode.id}
-                                            onChange={(e) => {
-                                                const m = TUNING_MODES.find(x => x.id === e.target.value);
-                                                if (m) setSelectedTuningMode(m);
-                                            }}
-                                            className="w-full bg-black/45 border border-white/10 hover:border-[#d46211]/30 text-white text-xs font-bold rounded-xl p-2.5 outline-none cursor-pointer transition-all"
-                                        >
-                                            {TUNING_MODES.map(m => (
-                                                <option key={m.id} value={m.id} className="bg-[#141b22] text-white font-bold">{m.label}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+
 
                                     <div className="flex flex-col gap-1 mt-1">
                                         <div className="flex justify-between items-center text-[10px] font-bold text-white/50 uppercase tracking-widest">

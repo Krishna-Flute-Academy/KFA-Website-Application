@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { FileText, Info, Music, BookOpen, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { detectMaterialType } from '../lib/curriculum-media';
 
 interface Props {
     url?: string | null;
@@ -104,18 +105,21 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
     }, []);
 
     const watermark = 'Krishna Flute Academy';
-    const lowerUrl = (url || '').toLowerCase().split('?')[0];
-    const isYouTube = lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be');
-    const isPdf = materialType === 'pdf' || lowerUrl.endsWith('.pdf');
-    const isAudio = materialType === 'audio' || /\.(mp3|wav|m4a|ogg)$/.test(lowerUrl);
-    const isVideo = materialType === 'video' || /\.(mp4|webm|ogv)$/.test(lowerUrl);
-    const isImage = materialType === 'image' || /\.(png|jpe?g|gif|svg|webp)$/.test(lowerUrl);
-    const isLink = materialType === 'link' || (!isYouTube && !isPdf && !isAudio && !isVideo && !isImage && !!url);
+    const detectedType = detectMaterialType(url, materialType);
+    const isYouTube = detectedType === 'youtube';
+    const isPdf = detectedType === 'pdf';
+    const isAudio = detectedType === 'audio';
+    const isVideo = detectedType === 'video';
+    const isImage = detectedType === 'image';
+    const isLink = detectedType === 'link';
 
     return (
         <div className="relative w-full h-full overflow-hidden select-none" onContextMenu={event => event.preventDefault()} onDragStart={event => event.preventDefault()} onCopy={event => event.preventDefault()}>
-            {!url ? (
-                <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-400 bg-white dark:bg-slate-900"><Info className="w-12 h-12 text-slate-300 mb-3" /><p className="text-sm font-bold text-slate-700 dark:text-slate-300">No material file is available for this topic.</p></div>
+            {!url || detectedType === 'none' ? (
+                <div className="w-full h-full flex flex-col items-center justify-center p-6 text-slate-400 bg-white dark:bg-slate-900">
+                    <Info className="w-12 h-12 text-slate-300 mb-3" />
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No material available</p>
+                </div>
             ) : isYouTube ? (
                 <iframe src={getYouTubeEmbedUrl(url)} className="w-full h-full border-0" allow="accelerometer; autoplay; encrypted-media; gyroscope" referrerPolicy="strict-origin-when-cross-origin" title={title} />
             ) : isPdf ? (
@@ -220,23 +224,36 @@ export default function SecureCurriculumMaterial({ url, title, materialType, vie
                     </div>
                 </div>
             ) : isLink ? (
-                <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-slate-900">
-                    <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center border border-slate-100 dark:border-slate-700 shadow-sm mb-4">
-                        <BookOpen className="w-8 h-8 text-slate-400" />
+                <div className="relative w-full h-full bg-slate-900 flex flex-col overflow-hidden select-none">
+                    {/* Top Link Quick Action Bar */}
+                    <div className="w-full bg-slate-950/90 border-b border-slate-800 px-4 py-2 flex items-center justify-between z-10 shrink-0 text-slate-300 text-xs font-mono">
+                        <div className="flex items-center gap-2 truncate pr-2">
+                            <BookOpen className="size-4 text-blue-400 shrink-0" />
+                            <span className="truncate font-bold text-white text-[11px]">{title}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 hover:text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                            >
+                                <ExternalLink className="size-3" />
+                                Open Full View
+                            </a>
+                        </div>
                     </div>
-                    <h4 className="font-bold text-slate-800 dark:text-white text-base mb-2">Material Link Reference</h4>
-                    <p className="text-xs text-slate-500 max-w-md mb-6 leading-relaxed">
-                        This reference link cannot be embedded directly. Click the button below to open it in a new window.
-                    </p>
-                    <a
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-[#7C5E3F] hover:bg-[#634a31] text-white text-xs font-black rounded-xl transition-all shadow-md hover:shadow-lg animate-in fade-in-50 duration-300"
-                    >
-                        <BookOpen className="w-4 h-4" />
-                        Open External Reference
-                    </a>
+
+                    {/* Embedded Web / Blog Iframe */}
+                    <div className="w-full flex-1 min-h-0 bg-white relative">
+                        <iframe
+                            src={url}
+                            className="w-full h-full border-0 bg-white"
+                            title={title}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            loading="lazy"
+                        />
+                    </div>
                 </div>
             ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-slate-900"><FileText className="w-16 h-16 text-slate-400 mb-4" /><h4 className="font-bold text-slate-800 dark:text-white">Preview unavailable</h4><p className="text-xs text-slate-500 max-w-md mt-2">For content protection, this file type cannot be opened or downloaded from the dashboard.</p></div>

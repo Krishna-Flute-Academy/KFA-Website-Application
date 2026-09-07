@@ -23,7 +23,7 @@ const LibraryTab = dynamic(() => import('./LibraryTab'), { ssr: false });
 const ClassroomTab = dynamic(() => import('./ClassroomTab'), { ssr: false });
 const FeesTab = dynamic(() => import('./FeesTab'), { ssr: false });
 const PoliciesTab = dynamic(() => import('./PoliciesTab'), { ssr: false });
-import { checkAndSendTaskDueReminders } from '../../lib/task-reminders';
+// Note: task reminders are triggered via the API route to avoid client-side Supabase auth issues
 const AcademyPolicies = dynamic(() => import('../AcademyPolicies'), { ssr: false });
 const SettingsTab = dynamic(() => import('./SettingsTab'), { ssr: false });
 const MentorHubTab = dynamic(() => import('./MentorHubTab'), { ssr: false });
@@ -200,6 +200,43 @@ export default function StudentDashboardContainer() {
     const [showMaterialPopup, setShowMaterialPopup] = useState(false);
     const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
     const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
+    const [studentSpotlights, setStudentSpotlights] = useState<{ teacherSpotlight: any | null; studentSpotlight: any | null }>({ teacherSpotlight: null, studentSpotlight: null });
+    const [lessonDescriptions, setLessonDescriptions] = useState<Record<string, string>>({});
+    const [loadingDescriptionLessonId, setLoadingDescriptionLessonId] = useState<string | null>(null);
+    const [descriptionErrorLessonId, setDescriptionErrorLessonId] = useState<string | null>(null);
+
+    // Lazy load lesson description on-demand with in-memory session caching
+    const fetchLessonDescription = useCallback(async (lessonId: string) => {
+        if (!lessonId) return;
+        if (lessonDescriptions[lessonId] !== undefined) return;
+
+        setLoadingDescriptionLessonId(lessonId);
+        setDescriptionErrorLessonId(null);
+        try {
+            const { data, error } = await supabaseAuth
+                .from('course_lessons')
+                .select('description')
+                .eq('id', lessonId)
+                .maybeSingle();
+
+            if (error) throw error;
+            setLessonDescriptions(prev => ({
+                ...prev,
+                [lessonId]: data?.description || ''
+            }));
+        } catch (err: any) {
+            console.error(`[course_lessons] Error lazy-fetching description for lesson ${lessonId}:`, err);
+            setDescriptionErrorLessonId(lessonId);
+        } finally {
+            setLoadingDescriptionLessonId(null);
+        }
+    }, [lessonDescriptions]);
+
+    useEffect(() => {
+        if (selectedTopic?.id) {
+            fetchLessonDescription(selectedTopic.id);
+        }
+    }, [selectedTopic?.id, fetchLessonDescription]);
 
     const allocatedModuleIds = useMemo(() => {
         const direct = studentAllocations.map(a => a.module_id).filter(Boolean);
@@ -273,101 +310,7 @@ export default function StudentDashboardContainer() {
         }
     }, []);
 
-    // Mentorship states
-    const [mentorInfo, setMentorInfo] = useState<any | null>(null);
-    const [menteesList, setMenteesList] = useState<any[]>([]);
-    const [menteeSubmissions, setMenteeSubmissions] = useState<any[]>([]);
 
-    const fetchMentorshipData = async (userId: string) => {
-        try {
-            const { data: mentorPair } = await supabaseAuth
-                .from('student_mentors')
-                .select('mentor:users!student_mentors_mentor_id_fkey(id, name, email, level, profile_pic_url)')
-                .eq('student_id', userId)
-                .maybeSingle();
-
-            if (mentorPair?.mentor) {
-                const m = Array.isArray(mentorPair.mentor) ? mentorPair.mentor[0] : mentorPair.mentor;
-                setMentorInfo(m);
-            } else {
-                setMentorInfo(null);
-            }
-
-            const { data: menteesPairs } = await supabaseAuth
-                .from('student_mentors')
-                .select('student_id, student:users!student_mentors_student_id_fkey(id, name, email, level, profile_pic_url)')
-                .eq('mentor_id', userId);
-
-            if (menteesPairs && menteesPairs.length > 0) {
-                const mList = menteesPairs.map((p: any) => {
-                    const s = Array.isArray(p.student) ? p.student[0] : p.student;
-                    return {
-                        id: p.student_id,
-                        student_id: p.student_id,
-                        name: s?.name || 'Student',
-                        email: s?.email || '',
-                        level: s?.level || 'Beginner',
-                        profile_pic_url: s?.profile_pic_url || null
-                    };
-                });
-                setMenteesList(mList);
-
-                const menteeIds = mList.map(m => m.student_id);
-                const { data: subData } = await supabaseAuth
-                    .from('assignment_students')
-                    .select(`
-                        id,
-                        assignment_id,
-                        student_id,
-                        status,
-                        score,
-                        proficiency_level,
-                        feedback_text,
-                        video_url,
-                        submitted_at,
-                        reviewed_at,
-                        reviewed_by,
-                        assignments:assignment_id(title, description, due_date),
-                        student:users!assignment_students_student_id_fkey(name, email, level, profile_pic_url)
-                    `)
-                    .in('student_id', menteeIds)
-                    .order('submitted_at', { ascending: false });
-
-                if (subData) {
-                    const formattedSubs = subData.map((row: any) => {
-                        const assign = Array.isArray(row.assignments) ? row.assignments[0] : row.assignments;
-                        const st = Array.isArray(row.student) ? row.student[0] : row.student;
-                        return {
-                            id: row.id,
-                            assignment_id: row.assignment_id,
-                            student_id: row.student_id,
-                            student_name: st?.name || 'Student',
-                            student_email: st?.email || '',
-                            student_level: st?.level || '',
-                            student_pic: st?.profile_pic_url || null,
-                            assignment_title: assign?.title || 'Assignment',
-                            assignment_description: assign?.description || '',
-                            due_date: assign?.due_date || null,
-                            status: row.status || 'pending',
-                            score: row.score,
-                            proficiency_level: row.proficiency_level,
-                            feedback_text: row.feedback_text,
-                            video_url: row.video_url,
-                            submitted_at: row.submitted_at,
-                            reviewed_at: row.reviewed_at,
-                            reviewed_by: row.reviewed_by
-                        };
-                    });
-                    setMenteeSubmissions(formattedSubs);
-                }
-            } else {
-                setMenteesList([]);
-                setMenteeSubmissions([]);
-            }
-        } catch (e) {
-            console.error('Error fetching mentorship details:', e);
-        }
-    };
 
     // Defer rendering of non-active tabs to prevent main-thread blocking on initial load
     const [renderBackgroundTabs, setRenderBackgroundTabs] = useState(false);
@@ -606,9 +549,6 @@ export default function StudentDashboardContainer() {
 
             const userId = session.user.id;
 
-            // Trigger automated 2-day pre-due-date task reminders in background
-            checkAndSendTaskDueReminders().catch(err => console.error('Error running task reminders:', err));
-
             // CRITICAL PHASE 1 (Identity & Classroom Routing): Only what is strictly necessary to render the shell
             const [
                 userRes,
@@ -760,7 +700,7 @@ export default function StudentDashboardContainer() {
                 supabaseAuth.from('broadcasts').select('*, sender:users!teacher_id(name, role)').order('created_at', { ascending: false }),
 
                 // 4. Notifications
-                supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+                supabaseAuth.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(30),
 
                 // 5. Modules
                 supabaseAuth.from('course_modules').select('id, title, description, module_number').order('module_number', { ascending: true }),
@@ -769,7 +709,7 @@ export default function StudentDashboardContainer() {
                 supabaseAuth.from('course_chapters').select('id, module_id, title, description, chapter_number').order('chapter_number', { ascending: true }),
 
                 // 7. Lessons
-                supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, link_url, file_size, duration, bullet_points').order('lesson_number', { ascending: true }),
+                supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, material_type, material_url, link_url, file_size, duration, bullet_points').order('lesson_number', { ascending: true }),
 
                 // 8. Curriculum Progress
                 supabaseAuth.from('student_topic_progress').select('*').eq('student_id', userId),
@@ -911,6 +851,19 @@ export default function StudentDashboardContainer() {
                         console.error('Error fetching allocations:', e);
                         return { data: [], error: null };
                     }
+                })(),
+
+                // P10: student_curriculum_spotlights (Teacher & Student Spotlights)
+                (async () => {
+                    try {
+                        const { data, error } = await supabaseAuth
+                            .from('student_curriculum_spotlights')
+                            .select('*')
+                            .eq('student_id', userId);
+                        return { data: data || [], error: null };
+                    } catch (e) {
+                        return { data: [], error: null };
+                    }
                 })()
             ];
 
@@ -924,10 +877,17 @@ export default function StudentDashboardContainer() {
                 logsRes,
                 schedulesRes,
                 cmRes,
-                allocationsRes
+                allocationsRes,
+                spotlightsRes
             ] = await Promise.all(promisesPhase2B);
 
             setStudentAllocations(allocationsRes.data || []);
+
+            const spotlightsData = spotlightsRes?.data || [];
+            setStudentSpotlights({
+                teacherSpotlight: spotlightsData.find((s: any) => s.spotlight_type === 'teacher') || null,
+                studentSpotlight: spotlightsData.find((s: any) => s.spotlight_type === 'student') || null,
+            });
 
             const tempClasses = tempClassesRes.data || [];
             const activeRooms = (activeRoomsRes.data || []).filter((r: any) => r.status !== 'inactive' && r.status !== 'archived');
@@ -1028,6 +988,26 @@ export default function StudentDashboardContainer() {
             classroomAssignments.forEach(a => assignmentMap.set(a.id, a));
             individualAssignments.forEach(a => assignmentMap.set(a.id, a));
 
+            const allAssignmentIds = Array.from(assignmentMap.keys());
+            let attachmentsByAssignmentId = new Map<string, any[]>();
+            if (allAssignmentIds.length > 0) {
+                try {
+                    const { data: studentAtts } = await supabaseAuth
+                        .from('assignment_attachments')
+                        .select('*')
+                        .in('assignment_id', allAssignmentIds);
+                    if (studentAtts) {
+                        studentAtts.forEach((att: any) => {
+                            const list = attachmentsByAssignmentId.get(att.assignment_id) || [];
+                            list.push(att);
+                            attachmentsByAssignmentId.set(att.assignment_id, list);
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[StudentDashboard] assignment_attachments fetch warning:', e);
+                }
+            }
+
             const enriched = Array.from(assignmentMap.values())
                 .filter((asg: any) => {
                     if (asg.target_type === 'individual') {
@@ -1046,6 +1026,10 @@ export default function StudentDashboardContainer() {
                         file_url: asg.file_url,
                         file_name: asg.file_name,
                         file_size: asg.file_size,
+                        inventory_ref_id: asg.inventory_ref_id || null,
+                        inventory_ref_title: asg.inventory_ref_title || null,
+                        inventory_ref_type: asg.inventory_ref_type || null,
+                        attachments: attachmentsByAssignmentId.get(asg.id) || [],
                         status: studentAsg?.status || 'pending',
                         score: studentAsg?.score ?? null,
                         feedback_text: studentAsg?.feedback_text ?? null,
@@ -1097,8 +1081,7 @@ export default function StudentDashboardContainer() {
             // Classroom messages (Reversed for chronological order)
             setClassroomMessages([...(cmRes.data || [])].reverse());
 
-            // Fetch mentorship pairs and mentee task submissions
-            await fetchMentorshipData(userId);
+
 
         } catch (err) {
             console.error('Error fetching secondary dashboard data:', err);
@@ -1184,6 +1167,11 @@ export default function StudentDashboardContainer() {
                             fetchStudentFeeData();
                         }
 
+                        // Targeted prompt refresh of classroom messages if notification is related to classroom or messages
+                        if (newNotif.type === 'classroom' || newNotif.type === 'messages' || notifTitle.includes('message') || notifTitle.includes('classroom') || notifMsg.includes('classroom')) {
+                            fetchClassroomMessages();
+                        }
+
                         // Play a soft flute-like chime sound using the browser's Web Audio API
                         try {
                             const ctx = audioCtxRef.current;
@@ -1234,6 +1222,151 @@ export default function StudentDashboardContainer() {
             supabaseAuth.removeChannel(notifChannel);
         };
     }, [profile?.id, fetchStudentFeeData]);
+
+    const fetchClassroomMessages = useCallback(async () => {
+        const ids = classroomIdsRef.current.length > 0 
+            ? classroomIdsRef.current 
+            : (classroom?.id ? [classroom.id] : []);
+        if (ids.length === 0) return;
+        try {
+            const { data, error } = await supabaseAuth
+                .from('classroom_messages')
+                .select('*, sender:users!classroom_messages_sender_id_fkey(name, role, profile_pic_url)')
+                .in('classroom_id', ids)
+                .order('created_at', { ascending: false })
+                .limit(100);
+            if (!error && data) {
+                setClassroomMessages([...data].reverse());
+            }
+        } catch (err) {
+            console.error('Error fetching classroom messages:', err);
+        }
+    }, [classroom?.id]);
+
+    // Realtime subscription for classroom messages (chat tab)
+    useEffect(() => {
+        const cIds = classroomIdsRef.current.length > 0
+            ? classroomIdsRef.current
+            : (classroom?.id ? [classroom.id] : []);
+
+        if (!profile?.id || cIds.length === 0) return;
+
+        const channels = cIds.map(cId => {
+            return supabaseAuth
+                .channel(`student-classroom-messages-${cId}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'classroom_messages',
+                        filter: `classroom_id=eq.${cId}`
+                    },
+                    (payload) => {
+                        if (payload.eventType === 'DELETE') {
+                            const deletedId = (payload.old as any)?.id;
+                            if (deletedId) {
+                                setClassroomMessages(prev => prev.filter(m => m.id !== deletedId));
+                            }
+                            return;
+                        }
+
+                        if (payload.eventType === 'UPDATE') {
+                            const updatedRawMsg = payload.new as any;
+                            if (updatedRawMsg?.id) {
+                                setClassroomMessages(prev => prev.map(m => {
+                                    if (m.id === updatedRawMsg.id) {
+                                        return {
+                                            ...m,
+                                            ...updatedRawMsg,
+                                            sender: m.sender || updatedRawMsg.sender
+                                        };
+                                    }
+                                    return m;
+                                }));
+                            }
+                            return;
+                        }
+
+                        if (payload.eventType === 'INSERT') {
+                            const newRawMsg = payload.new as any;
+                            if (!newRawMsg?.id) return;
+
+                            const appendMessage = (enrichedMsg: any) => {
+                                setClassroomMessages(prev => {
+                                    if (prev.some(m => m.id === enrichedMsg.id)) {
+                                        return prev.map(m => m.id === enrichedMsg.id ? { ...m, ...enrichedMsg, sender: m.sender || enrichedMsg.sender } : m);
+                                    }
+                                    const updated = [...prev, enrichedMsg];
+                                    return updated.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                                });
+                            };
+
+                            // Check if sender is self
+                            if (newRawMsg.sender_id === profile.id) {
+                                appendMessage({
+                                    ...newRawMsg,
+                                    sender: {
+                                        name: profile.name,
+                                        role: profile.role || 'student',
+                                        profile_pic_url: profile.profile_pic_url || null
+                                    }
+                                });
+                                return;
+                            }
+
+                            // Check if sender is teacher
+                            if (newRawMsg.sender_id === classroom?.teacher_id) {
+                                appendMessage({
+                                    ...newRawMsg,
+                                    sender: {
+                                        name: classroom.teacher_name || 'Academy Instructor',
+                                        role: 'teacher',
+                                        profile_pic_url: null
+                                    }
+                                });
+                                return;
+                            }
+
+                            // Check if sender is classmate
+                            const matchedMate = classmates.find(c => c.id === newRawMsg.sender_id);
+                            if (matchedMate) {
+                                appendMessage({
+                                    ...newRawMsg,
+                                    sender: {
+                                        name: matchedMate.name,
+                                        role: 'student',
+                                        profile_pic_url: matchedMate.profile_pic_url
+                                    }
+                                });
+                                return;
+                            }
+
+                            // Fallback: fetch sender profile asynchronously
+                            (async () => {
+                                let senderObj = { name: 'Class member', role: 'student', profile_pic_url: null };
+                                try {
+                                    const { data } = await supabaseAuth
+                                        .from('users')
+                                        .select('name, role, profile_pic_url')
+                                        .eq('id', newRawMsg.sender_id)
+                                        .maybeSingle();
+                                    if (data) senderObj = data;
+                                } catch (e) {
+                                    console.warn('Failed to fetch sender profile for message:', e);
+                                }
+                                appendMessage({ ...newRawMsg, sender: senderObj });
+                            })();
+                        }
+                    }
+                )
+                .subscribe();
+        });
+
+        return () => {
+            channels.forEach(ch => supabaseAuth.removeChannel(ch));
+        };
+    }, [profile?.id, classroom?.id, classroom?.teacher_id, classroom?.teacher_name, profile?.name, profile?.role, profile?.profile_pic_url, classmates]);
 
 
 
@@ -1626,6 +1759,56 @@ export default function StudentDashboardContainer() {
         }
     };
 
+    // Toggle Student My Spotlight (Personal Learning Focus)
+    const handleToggleStudentSpotlight = async (lessonId: string) => {
+        if (!profile?.id) return;
+        const isCurrentlySet = studentSpotlights.studentSpotlight?.lesson_id === lessonId;
+
+        if (isCurrentlySet) {
+            setStudentSpotlights(prev => ({ ...prev, studentSpotlight: null }));
+            try {
+                const { error } = await supabaseAuth
+                    .from('student_curriculum_spotlights')
+                    .delete()
+                    .eq('student_id', profile.id)
+                    .eq('spotlight_type', 'student');
+                if (error) throw error;
+            } catch (err: any) {
+                console.error('Error removing student spotlight:', err);
+            }
+        } else {
+            const newSpotlight = {
+                student_id: profile.id,
+                lesson_id: lessonId,
+                spotlight_type: 'student',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            setStudentSpotlights(prev => ({ ...prev, studentSpotlight: newSpotlight }));
+
+            try {
+                const { data, error } = await supabaseAuth
+                    .from('student_curriculum_spotlights')
+                    .upsert({
+                        student_id: profile.id,
+                        lesson_id: lessonId,
+                        spotlight_type: 'student',
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'student_id, spotlight_type' })
+                    .select('*')
+                    .maybeSingle();
+
+                if (error) throw error;
+                if (data) {
+                    setStudentSpotlights(prev => ({ ...prev, studentSpotlight: data }));
+                }
+            } catch (err: any) {
+                console.error('Error setting student spotlight:', err);
+                alert(`Failed to set My Spotlight: ${err.message}`);
+            }
+        }
+    };
+
     // Submit assignment
     const handleSubmitTask = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -2000,22 +2183,144 @@ export default function StudentDashboardContainer() {
         return studentProgress.filter(p => p.status === 'completed').length;
     }, [studentProgress]);
 
-    const featuredLesson = useMemo(() => {
-        if (allocatedLessons.length === 0) return null;
-        for (const lesson of allocatedLessons) {
-            const status = getLessonStatus(lesson.id, lesson.chapter_id);
-            if (status === 'unlocked') {
-                return lesson;
+    const sortedAllocatedLessons = useMemo(() => {
+        const lessons = allocatedLessons.length > 0 ? allocatedLessons : courseLessons;
+        return [...lessons].sort((a, b) => {
+            const chapA = courseChapters.find(c => c.id === a.chapter_id);
+            const chapB = courseChapters.find(c => c.id === b.chapter_id);
+            const modA = courseModules.find(m => m.id === chapA?.module_id);
+            const modB = courseModules.find(m => m.id === chapB?.module_id);
+
+            const modNumA = modA?.module_number ?? 0;
+            const modNumB = modB?.module_number ?? 0;
+            if (modNumA !== modNumB) return modNumA - modNumB;
+
+            const chapNumA = chapA?.chapter_number ?? 0;
+            const chapNumB = chapB?.chapter_number ?? 0;
+            if (chapNumA !== chapNumB) return chapNumA - chapNumB;
+
+            const lessonNumA = a.lesson_number ?? 0;
+            const lessonNumB = b.lesson_number ?? 0;
+            return lessonNumA - lessonNumB;
+        });
+    }, [allocatedLessons, courseLessons, courseChapters, courseModules]);
+
+    const learningFocus = useMemo(() => {
+        if (sortedAllocatedLessons.length === 0) return null;
+
+        // 1. Teacher Spotlight (Highest Priority)
+        if (studentSpotlights.teacherSpotlight) {
+            const tLesson = sortedAllocatedLessons.find(l => l.id === studentSpotlights.teacherSpotlight.lesson_id) || courseLessons.find(l => l.id === studentSpotlights.teacherSpotlight.lesson_id);
+            if (tLesson) {
+                const tStatus = getLessonStatus(tLesson.id, tLesson.chapter_id);
+                let secSpotlight: any = null;
+                if (studentSpotlights.studentSpotlight && studentSpotlights.studentSpotlight.lesson_id !== tLesson.id) {
+                    const sLesson = sortedAllocatedLessons.find(l => l.id === studentSpotlights.studentSpotlight.lesson_id) || courseLessons.find(l => l.id === studentSpotlights.studentSpotlight.lesson_id);
+                    if (sLesson) {
+                        secSpotlight = {
+                            lesson: sLesson,
+                            type: 'student',
+                            status: getLessonStatus(sLesson.id, sLesson.chapter_id)
+                        };
+                    }
+                }
+
+                return {
+                    type: 'teacher_spotlight' as const,
+                    badgeLabel: '⭐ Teacher Spotlight',
+                    badgeType: 'teacher' as const,
+                    lesson: tLesson,
+                    status: tStatus,
+                    recommendedBy: studentSpotlights.teacherSpotlight.recommended_by_name || 'Instructor',
+                    actionLabel: tStatus === 'completed' ? 'Practice Again' : 'Practice Now',
+                    secondarySpotlight: secSpotlight
+                };
             }
         }
-        return allocatedLessons[0] || null;
-    }, [allocatedLessons, studentProgress]);
+
+        // 2. My Spotlight (Student Focus)
+        if (studentSpotlights.studentSpotlight) {
+            const sLesson = sortedAllocatedLessons.find(l => l.id === studentSpotlights.studentSpotlight.lesson_id) || courseLessons.find(l => l.id === studentSpotlights.studentSpotlight.lesson_id);
+            if (sLesson) {
+                const sStatus = getLessonStatus(sLesson.id, sLesson.chapter_id);
+                return {
+                    type: 'student_spotlight' as const,
+                    badgeLabel: '★ My Spotlight',
+                    badgeType: 'student' as const,
+                    lesson: sLesson,
+                    status: sStatus,
+                    actionLabel: sStatus === 'completed' ? 'Practice Again' : 'Continue Learning',
+                    secondarySpotlight: null
+                };
+            }
+        }
+
+        // 3. Find highest / last completed lesson in sequential order
+        let lastCompletedIndex = -1;
+        for (let i = sortedAllocatedLessons.length - 1; i >= 0; i--) {
+            if (getLessonStatus(sortedAllocatedLessons[i].id, sortedAllocatedLessons[i].chapter_id) === 'completed') {
+                lastCompletedIndex = i;
+                break;
+            }
+        }
+
+        // Next lesson is the one right after the highest completed lesson (or first incomplete)
+        let nextLesson: any = null;
+        if (lastCompletedIndex >= 0 && lastCompletedIndex < sortedAllocatedLessons.length - 1) {
+            nextLesson = sortedAllocatedLessons[lastCompletedIndex + 1];
+        } else if (lastCompletedIndex === -1) {
+            nextLesson = sortedAllocatedLessons[0];
+        }
+
+        if (nextLesson) {
+            const nextStatus = getLessonStatus(nextLesson.id, nextLesson.chapter_id);
+            return {
+                type: 'continue_learning' as const,
+                badgeLabel: nextStatus === 'unlocked' ? '▶ Continue Learning' : '🎯 Up Next',
+                badgeType: nextStatus === 'unlocked' ? ('continue' as const) : ('up_next' as const),
+                lesson: nextLesson,
+                status: nextStatus,
+                actionLabel: nextStatus === 'unlocked' ? 'Continue Lesson' : 'Start Lesson',
+                secondarySpotlight: null
+            };
+        }
+
+        // 4. All Caught Up
+        return {
+            type: 'all_caught_up' as const,
+            badgeLabel: '✅ All Caught Up',
+            badgeType: 'all_caught_up' as const,
+            lesson: null,
+            status: 'completed' as const,
+            actionLabel: 'Review Syllabus',
+            secondarySpotlight: null
+        };
+    }, [studentSpotlights, sortedAllocatedLessons, courseLessons, studentProgress, getLessonStatus]);
+
+    const featuredLesson = useMemo(() => {
+        if (learningFocus?.lesson) return learningFocus.lesson;
+        if (sortedAllocatedLessons.length === 0) return null;
+        return sortedAllocatedLessons[0] || null;
+    }, [learningFocus, sortedAllocatedLessons]);
 
     useEffect(() => {
-        if (featuredLesson && !selectedTopic) {
+        if (featuredLesson) {
             setSelectedTopic(featuredLesson);
         }
-    }, [featuredLesson, selectedTopic]);
+    }, [featuredLesson]);
+
+    // Automatically expand the parent module and chapter for the active selected topic
+    useEffect(() => {
+        if (selectedTopic && courseChapters.length > 0) {
+            const chap = courseChapters.find(c => c.id === selectedTopic.chapter_id);
+            if (chap) {
+                setExpandedChapters(prev => ({ ...prev, [chap.id]: true }));
+                if (chap.module_id) {
+                    setExpandedModules(prev => ({ ...prev, [chap.module_id]: true }));
+                }
+            }
+        }
+    }, [selectedTopic?.id, selectedTopic?.chapter_id, courseChapters]);
 
     const getTopicBreadcrumbs = (topic: any) => {
         const chap = courseChapters.find(c => c.id === topic.chapter_id);
@@ -2477,7 +2782,7 @@ export default function StudentDashboardContainer() {
                             { id: 'attendance', label: 'Attendance logs', icon: Calendar },
                             { id: 'library', label: 'Tools', icon: FileText },
                             { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
-                            ...(profile?.role === 'mentor' || menteesList.length > 0 ? [{ id: 'mentor_hub', label: 'Mentor Hub', icon: Sparkles }] : []),
+                            { id: 'mentor_hub', label: 'Mentor Hub', icon: Sparkles },
                             { id: 'policies', label: 'Academy Policies', icon: Scroll },
                             { id: 'settings', label: 'Profile Settings', icon: User },
                         ].filter(item => {
@@ -2842,7 +3147,11 @@ export default function StudentDashboardContainer() {
                                     courseChapters={allocatedChapters}
                                     courseModules={allocatedModules}
                                     attendance={attendance}
-
+                                    batchSchedules={batchSchedules}
+                                    makeupSchedules={makeupSchedules}
+                                    learningFocus={learningFocus}
+                                    studentSpotlights={studentSpotlights}
+                                    onToggleStudentSpotlight={handleToggleStudentSpotlight}
                                 />
                             </div>
                         )}
@@ -2897,6 +3206,12 @@ export default function StudentDashboardContainer() {
                                     setShowMaterialPopup={setShowMaterialPopup}
                                     classmates={classmates}
                                     onRefreshCurriculum={refreshData}
+                                    studentSpotlights={studentSpotlights}
+                                    onToggleStudentSpotlight={handleToggleStudentSpotlight}
+                                    lessonDescriptions={lessonDescriptions}
+                                    loadingDescriptionLessonId={loadingDescriptionLessonId}
+                                    descriptionErrorLessonId={descriptionErrorLessonId}
+                                    onRetryLessonDescription={fetchLessonDescription}
                                 />
                             </div>
                         )}
@@ -2933,8 +3248,6 @@ export default function StudentDashboardContainer() {
                                     setNotifications={setNotifications}
                                     onMarkMessagesAsRead={handleMarkMessagesAsRead}
                                     selectedFeedProp={selectedMessagesFeed}
-                                    mentorInfo={mentorInfo}
-                                    mentees={menteesList}
                                 />
                             </div>
                         )}
@@ -2944,6 +3257,7 @@ export default function StudentDashboardContainer() {
                                 <AttendanceTab
                                     attendanceStats={attendanceStats}
                                     mergedLogs={mergedLogs}
+                                    attendanceRecords={attendance}
                                     myLeaveRequests={myLeaveRequests}
                                     showExcuseModal={showExcuseModal}
                                     setShowExcuseModal={setShowExcuseModal}
@@ -2994,18 +3308,7 @@ export default function StudentDashboardContainer() {
 
                         {(renderBackgroundTabs || activeTab === 'mentor_hub') && (
                             <div style={{ display: activeTab === 'mentor_hub' ? 'block' : 'none' }}>
-                                <MentorHubTab
-                                    profile={profile}
-                                    mentees={menteesList}
-                                    submissions={menteeSubmissions}
-                                    onRefreshSubmissions={async () => {
-                                        if (profile?.id) await fetchMentorshipData(profile.id);
-                                    }}
-                                    onNavigateToChat={(studentId, studentName) => {
-                                        setSelectedMessagesFeed({ type: 'chat', id: studentId, name: studentName });
-                                        setActiveTab('messages');
-                                    }}
-                                />
+                                <MentorHubTab profile={profile} />
                             </div>
                         )}
                     </main>

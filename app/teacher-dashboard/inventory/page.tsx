@@ -39,12 +39,14 @@ import {
     RefreshCw,
     Database,
     Zap,
-    Download
+    Download,
+    Mic
 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import RichTextEditor from '../../../src/components/RichTextEditor';
 import SecureCurriculumMaterial from '../../../src/components/SecureCurriculumMaterial';
+import AudioRecorderWidget from '../../../src/components/AudioRecorderWidget';
 import { 
     CourseCategory,
     CourseModule, 
@@ -57,6 +59,7 @@ import {
 } from './initial-data';
 
 import { stripHtml, sanitizeHtml } from '../../../src/lib/text-utils';
+import { getCurriculumMediaInfo } from '../../../src/lib/curriculum-media';
 
 const cleanChapterTitle = (title: string) =>
     (title || '').replace(/^\s*Chapter\s*[-:]?\s*\d+\s*[-:]?\s*/i, '').trim();
@@ -128,6 +131,9 @@ export default function InventoryLibrary() {
     
     // File Upload Progress State
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+    // In-browser Audio Recorder State
+    const [showAudioRecorder, setShowAudioRecorder] = useState(false);
     
     // Media Play Preview overlay state
     const [mediaPreview, setMediaPreview] = useState<{ type: string; url: string; title: string } | null>(null);
@@ -194,9 +200,9 @@ export default function InventoryLibrary() {
             const categoriesReq = supabaseAuth.from('course_categories').select('*').order('category_order', { ascending: true });
             const modulesReq = supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
             const chaptersReq = supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-            const lessonsReq = supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+            const lessonsReq = supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, file_name, bullet_points, link_url, duration, file_size').order('lesson_number', { ascending: true });
             const studentCountReq = supabaseAuth.from('users').select('*', { count: 'exact', head: true }).or('role.eq.student,role.eq.pending,role.eq.mentor');
-            const progressReq = supabaseAuth.from('student_topic_progress').select('lesson_id, status');
+            const progressReq = supabaseAuth.from('student_topic_progress').select('lesson_id, status').eq('status', 'completed');
 
             const [
                 { data: dbCategories },
@@ -269,7 +275,7 @@ export default function InventoryLibrary() {
             // Reload seedings
             const { data: dbModules } = await supabaseAuth.from('course_modules').select('*').order('module_number', { ascending: true });
             const { data: dbChapters } = await supabaseAuth.from('course_chapters').select('*').order('chapter_number', { ascending: true });
-            const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('*').order('lesson_number', { ascending: true });
+            const { data: dbLessons } = await supabaseAuth.from('course_lessons').select('id, chapter_id, lesson_number, title, description, material_type, material_url, file_name, bullet_points, link_url, duration, file_size').order('lesson_number', { ascending: true });
             
             if (dbModules) setModules(dbModules);
             if (dbChapters) setChapters(dbChapters || []);
@@ -367,15 +373,6 @@ export default function InventoryLibrary() {
         return chapters
             .filter(c => c.module_id === moduleId)
             .sort((a, b) => a.chapter_number - b.chapter_number);
-    };
-
-    const getCleanDuration = (duration: string, fileSize: string) => {
-        if (!duration) return '';
-        if (fileSize && duration.includes(fileSize)) {
-            const parts = duration.split('•');
-            return parts[0].trim();
-        }
-        return duration;
     };
 
     const getMaterialIcon = (type: string, hasUrl: boolean = true) => {
@@ -1015,8 +1012,9 @@ export default function InventoryLibrary() {
     };
 
     // Open Lesson Card Edit Modal (populates correctly on card edit click)
-    const openLessonModal = (chapterId: string, lesson?: CourseLesson, e?: React.MouseEvent) => {
+    const openLessonModal = (chapterId: string, lesson?: CourseLesson, e?: React.MouseEvent, startWithAudioRecorder?: boolean) => {
         if (e) e.stopPropagation();
+        setShowAudioRecorder(!!startWithAudioRecorder);
 
         if (lesson) {
             setEditingItem(lesson);
@@ -1053,11 +1051,8 @@ export default function InventoryLibrary() {
         setActiveModal('lesson');
     };
 
-    // Simplified Attachment File Upload
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
+    // Generic Attachment File / Recorded Audio Upload
+    const uploadFile = async (file: File) => {
         let friendlySize = '';
         if (file.size >= 1024 * 1024) {
             friendlySize = `${(file.size / (1024 * 1024)).toFixed(1)}MB`;
@@ -1069,11 +1064,11 @@ export default function InventoryLibrary() {
 
         // MIME Mapping rule
         let mappedType = 'file';
-        if (file.type.startsWith('audio/')) {
+        if (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|webm)$/i.test(file.name)) {
             mappedType = 'audio';
-        } else if (file.type.startsWith('video/')) {
+        } else if (file.type.startsWith('video/') || /\.(mp4|webm|ogv|mov|m4v|mkv)$/i.test(file.name)) {
             mappedType = 'video';
-        } else if (file.type.includes('pdf') || file.name.endsWith('.pdf')) {
+        } else if (file.type.includes('pdf') || file.name.toLowerCase().endsWith('.pdf')) {
             mappedType = 'pdf';
         } else if (file.type.startsWith('image/')) {
             mappedType = 'image';
@@ -1108,7 +1103,7 @@ export default function InventoryLibrary() {
         } else {
             // Live Upload to Supabase bucket 'inventory_materials'
             try {
-                const fileExt = file.name.split('.').pop();
+                const fileExt = file.name.split('.').pop() || 'bin';
                 const randomName = `${Math.random().toString(36).substring(2, 12)}_${Date.now()}.${fileExt}`;
                 const filePath = `materials/${randomName}`;
 
@@ -1157,6 +1152,13 @@ export default function InventoryLibrary() {
                 }, 300);
             }
         }
+    };
+
+    // Simplified Attachment File Upload
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        await uploadFile(file);
     };
 
     // Save Lesson card details
@@ -1220,6 +1222,7 @@ export default function InventoryLibrary() {
             updatedLess = [...updatedLess, ...newLessonsForChapter];
             persistLocalData(modules, chapters, updatedLess);
             setLoading(false);
+            setShowAudioRecorder(false);
             setActiveModal(null);
         } else {
             try {
@@ -1281,6 +1284,7 @@ export default function InventoryLibrary() {
                 }
 
                 await loadDatabaseData();
+                setShowAudioRecorder(false);
                 setActiveModal(null);
             } catch (err) {
                 console.error(err);
@@ -1773,6 +1777,7 @@ export default function InventoryLibrary() {
                                                         const chap = chapters.find(c => c.id === lesson.chapter_id);
                                                         const mod = chap ? modules.find(m => m.id === chap.module_id) : null;
                                                         const hasAttachment = !!lesson.material_url;
+                                                        const mediaInfo = getCurriculumMediaInfo(lesson);
 
                                                         return (
                                                             <div 
@@ -1782,7 +1787,7 @@ export default function InventoryLibrary() {
                                                                 <div className="space-y-1.5">
                                                                     <div className="flex items-center justify-between gap-4">
                                                                         <div className="flex flex-wrap items-center gap-1.5">
-                                                                            {getMaterialIcon(lesson.material_type, hasAttachment)}
+                                                                            {getMaterialIcon(mediaInfo.mediaType || lesson.material_type, mediaInfo.hasMedia)}
                                                                             <span className="text-[10px] font-extrabold text-[#d97706] dark:text-amber-400 uppercase tracking-widest font-mono">
                                                                                 Topic {lesson.lesson_number}
                                                                             </span>
@@ -1819,10 +1824,10 @@ export default function InventoryLibrary() {
 
                                                                 <div className="flex flex-wrap items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 gap-2">
                                                                     <div className="text-[10px] font-bold font-mono text-slate-400 flex items-center gap-1.5">
-                                                                        {hasAttachment && lesson.file_size && (
+                                                                        {mediaInfo.hasMedia && lesson.file_size && (
                                                                             <span className="text-slate-400 mr-1.5">💾 {lesson.file_size}</span>
                                                                         )}
-                                                                        <span>{hasAttachment ? (getCleanDuration(lesson.duration, lesson.file_size) || 'FILE ATTACHMENT') : 'LINK/TOPIC REFERENCE'}</span>
+                                                                        <span>{mediaInfo.badgeLabel || (hasAttachment ? 'FILE ATTACHMENT' : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE'))}</span>
                                                                     </div>
 
                                                                     <div className="flex items-center gap-2">
@@ -2252,13 +2257,23 @@ export default function InventoryLibrary() {
                                                                     <div className="text-[10px] font-bold font-mono text-slate-400 uppercase tracking-wider">
                                                                         TOPICS LIST ({chapLessons.length})
                                                                     </div>
-                                                                    <button
-                                                                        onClick={(e) => openLessonModal(chap.id, undefined, e)}
-                                                                        className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-[#ecb613] hover:bg-amber-500 text-slate-950 px-3 py-1.5 rounded-full transition-all uppercase tracking-wider active:scale-95 shadow-sm"
-                                                                    >
-                                                                        <PlusCircle className="size-3.5" />
-                                                                        <span>Add Material Card</span>
-                                                                    </button>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <button
+                                                                            onClick={(e) => openLessonModal(chap.id, undefined, e, true)}
+                                                                            className="inline-flex items-center gap-1.5 text-[10px] font-extrabold bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-400/30 px-3 py-1.5 rounded-full transition-all uppercase tracking-wider active:scale-95 shadow-xs cursor-pointer"
+                                                                            title="Record an audio topic"
+                                                                        >
+                                                                            <Mic className="size-3.5 text-amber-600 dark:text-amber-400" />
+                                                                            <span>Record Audio</span>
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => openLessonModal(chap.id, undefined, e)}
+                                                                            className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-[#ecb613] hover:bg-amber-500 text-slate-950 px-3 py-1.5 rounded-full transition-all uppercase tracking-wider active:scale-95 shadow-sm cursor-pointer"
+                                                                        >
+                                                                            <PlusCircle className="size-3.5" />
+                                                                            <span>Add Material Card</span>
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
 
                                                                 {/* Chapter topics simple cards rendering */}
@@ -2272,6 +2287,7 @@ export default function InventoryLibrary() {
                                                                         {chapLessons.map(lesson => {
                                                                             const isLinkClickable = !!lesson.link_url;
                                                                             const hasAttachment = !!lesson.material_url;
+                                                                            const mediaInfo = getCurriculumMediaInfo(lesson);
                                                                             
                                                                             return (
                                                                                 <div 
@@ -2293,7 +2309,7 @@ export default function InventoryLibrary() {
                                                                                     <div className="space-y-1.5">
                                                                                         <div className="flex items-center justify-between gap-4 select-none">
                                                                                             <div className="flex items-center gap-2">
-                                                                                                {getMaterialIcon(lesson.material_type, hasAttachment)}
+                                                                                                {getMaterialIcon(mediaInfo.mediaType || lesson.material_type, mediaInfo.hasMedia)}
                                                                                                 <span className="text-[10px] font-extrabold text-[#d97706] dark:text-amber-400 uppercase tracking-widest font-mono">
                                                                                                     Topic {lesson.lesson_number}
                                                                                                 </span>
@@ -2332,9 +2348,8 @@ export default function InventoryLibrary() {
                                                                                                 <span className="text-slate-450 mr-1.5 shrink-0">💾 {lesson.file_size}</span>
                                                                                             )}
                                                                                             <span className="truncate">
-                                                                                                {hasAttachment 
-                                                                                                    ? (getCleanDuration(lesson.duration, lesson.file_size) || 'FILE ATTACHMENT') 
-                                                                                                    : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE')}
+                                                                                                {mediaInfo.badgeLabel 
+                                                                                                    || (hasAttachment ? 'FILE ATTACHMENT' : (lesson.link_url ? 'LINK REFERENCE' : 'TOPIC REFERENCE'))}
                                                                                             </span>
                                                                                         </div>
                                                                                         
@@ -2723,7 +2738,7 @@ export default function InventoryLibrary() {
                                 <h3 className="text-base font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-none">
                                     {editingItem ? 'Edit Topic Material' : 'Add Topic Material'}
                                 </h3>
-                                <button onClick={() => setActiveModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
+                                <button onClick={() => { setActiveModal(null); setShowAudioRecorder(false); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-all">
                                     <X className="size-5" />
                                 </button>
                             </div>
@@ -2773,16 +2788,25 @@ export default function InventoryLibrary() {
                                     />
                                 </div>
 
-                                {/* Field 3: Attachment Uploader (File, Image, PDF, Audio, or Video) */}
-                                <div className="space-y-2">
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
-                                        3. Attachment Upload (PDF, Audio, Video, Image, File)
-                                    </label>
+                                {/* Field 3: Attachment Uploader (File, Image, PDF, Audio, or Video) + In-Browser Audio Recorder */}
+                                <div className="space-y-2.5">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                            3. Attachment (PDF, Audio, Video, Image, File)
+                                        </label>
+                                        {lessonForm.material_url && (
+                                            <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                                                {lessonForm.material_type} Attached
+                                            </span>
+                                        )}
+                                    </div>
                                     
-                                    <div className="flex items-center gap-3">
-                                        <label className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none">
-                                            <UploadCloud className="size-6 text-slate-400 mb-1" />
-                                            <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Select Attachment File</span>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {/* Option A: Select File */}
+                                        <label className="flex flex-col items-center justify-center p-3.5 border border-dashed border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 rounded-xl cursor-pointer bg-slate-50/50 dark:bg-slate-950/20 transition-all select-none text-center group">
+                                            <UploadCloud className="size-5 text-slate-400 group-hover:text-amber-500 mb-1 transition-colors" />
+                                            <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Upload File</span>
+                                            <span className="text-[9px] text-slate-400">PDF, Audio, Video, Image</span>
                                             <input 
                                                 type="file" 
                                                 className="hidden"
@@ -2790,7 +2814,38 @@ export default function InventoryLibrary() {
                                                 onChange={handleFileUpload}
                                             />
                                         </label>
+
+                                        {/* Option B: Record Audio Directly */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowAudioRecorder(prev => !prev)}
+                                            className={`flex flex-col items-center justify-center p-3.5 border border-dashed rounded-xl cursor-pointer transition-all select-none text-center group ${
+                                                showAudioRecorder
+                                                    ? 'border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-2 ring-amber-400/20'
+                                                    : 'border-slate-300 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 bg-slate-50/50 dark:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                                            }`}
+                                        >
+                                            <Mic className={`size-5 mb-1 transition-transform group-hover:scale-110 ${showAudioRecorder ? 'text-amber-500' : 'text-slate-400'}`} />
+                                            <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                                                {showAudioRecorder ? 'Hide Recorder' : 'Record Audio'}
+                                            </span>
+                                            <span className="text-[9px] text-slate-400">Live mic recording</span>
+                                        </button>
                                     </div>
+
+                                    {/* Embedded In-Browser Audio Recorder */}
+                                    {showAudioRecorder && (
+                                        <div className="p-3 bg-amber-50/60 dark:bg-slate-800/80 rounded-2xl border border-amber-300/60 dark:border-amber-500/30 animate-in fade-in duration-200">
+                                            <AudioRecorderWidget
+                                                onAudioRecorded={async (recordedFile) => {
+                                                    await uploadFile(recordedFile);
+                                                    setShowAudioRecorder(false);
+                                                }}
+                                                onCancel={() => setShowAudioRecorder(false)}
+                                                label="Record Audio Lesson"
+                                            />
+                                        </div>
+                                    )}
 
                                     {uploadProgress !== null && (
                                         <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
@@ -2800,7 +2855,14 @@ export default function InventoryLibrary() {
 
                                     {lessonForm.material_url && (
                                         <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl flex items-center justify-between gap-4 text-[10px] font-bold font-mono text-slate-400 select-all">
-                                            <span className="truncate pr-4 leading-none">{lessonForm.file_name || lessonForm.material_url}</span>
+                                            <div className="flex items-center gap-2 truncate pr-2 min-w-0">
+                                                {lessonForm.material_type === 'audio' ? (
+                                                    <Music className="size-4 text-amber-500 shrink-0" />
+                                                ) : (
+                                                    <FileText className="size-4 text-slate-400 shrink-0" />
+                                                )}
+                                                <span className="truncate leading-none">{lessonForm.file_name || lessonForm.material_url}</span>
+                                            </div>
                                             <div className="flex items-center gap-2 shrink-0">
                                                 <button 
                                                     type="button" 
@@ -2814,6 +2876,7 @@ export default function InventoryLibrary() {
                                                     type="button" 
                                                     onClick={() => setLessonForm(prev => ({ ...prev, material_url: '', file_name: '', file_size: '', duration: '', material_type: 'file' }))}
                                                     className="p-1 hover:bg-red-500/10 rounded-lg text-red-500 transition-all shrink-0 cursor-pointer"
+                                                    title="Remove attachment"
                                                 >
                                                     <X className="size-3.5" />
                                                 </button>
@@ -2924,14 +2987,16 @@ export default function InventoryLibrary() {
                 )}
 
                 {/* 4. PREMIUM TOPIC CARD DETAILED POPUP MODAL */}
-                {selectedLessonPreview && (
+                {selectedLessonPreview && (() => {
+                    const previewMedia = getCurriculumMediaInfo(selectedLessonPreview);
+                    return (
                     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl space-y-6 text-left animate-scaleIn select-none max-h-[90vh] overflow-y-auto">
                             <div className="flex justify-between items-start gap-4">
                                 <div className="space-y-1">
                                     <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-[10px] text-amber-600 dark:text-amber-400 font-extrabold tracking-wide uppercase leading-none">
-                                        {getMaterialIcon(selectedLessonPreview.material_type, !!selectedLessonPreview.material_url)}
-                                        <span>Topic {selectedLessonPreview.lesson_number} {selectedLessonPreview.material_url ? `• ${selectedLessonPreview.material_type?.toUpperCase()}` : ''}</span>
+                                        {getMaterialIcon(previewMedia.mediaType || selectedLessonPreview.material_type, previewMedia.hasMedia)}
+                                        <span>Topic {selectedLessonPreview.lesson_number}{previewMedia.hasMedia && previewMedia.mediaType ? ` • ${previewMedia.mediaType.toUpperCase()}` : ''}</span>
                                     </div>
                                     <h3 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white leading-tight font-sans">
                                         {selectedLessonPreview.title}
@@ -2974,9 +3039,9 @@ export default function InventoryLibrary() {
                             {/* Attachment Details pill / row */}
                             {selectedLessonPreview.material_url && (
                                 <div className="flex flex-wrap items-center gap-3 select-none text-[10px] font-extrabold font-mono text-slate-400 uppercase tracking-wider">
-                                    {selectedLessonPreview.duration && (
+                                    {previewMedia.hasMedia && previewMedia.badgeLabel && (
                                         <span className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-750 text-slate-600 dark:text-slate-300">
-                                            {getCleanDuration(selectedLessonPreview.duration, selectedLessonPreview.file_size)}
+                                            {previewMedia.badgeLabel}
                                         </span>
                                     )}
                                     {selectedLessonPreview.file_name && (
@@ -3032,7 +3097,8 @@ export default function InventoryLibrary() {
                             </div>
                         </div>
                     </div>
-                )}
+                    );
+                })()}
 
                 {/* 5. PREMIUM RECYCLE BIN MODAL */}
                 {showTrashModal && (
@@ -3091,6 +3157,7 @@ export default function InventoryLibrary() {
                                         trashLessons.map((lesson) => {
                                             const chap = chapters.find(c => c.id === lesson.chapter_id);
                                             const mod = chap ? modules.find(m => m.id === chap.module_id) : null;
+                                            const mediaInfo = getCurriculumMediaInfo(lesson);
                                             
                                             return (
                                                 <div 
@@ -3099,7 +3166,7 @@ export default function InventoryLibrary() {
                                                 >
                                                     <div className="min-w-0 space-y-1">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            {getMaterialIcon(lesson.material_type, !!lesson.material_url)}
+                                                            {getMaterialIcon(mediaInfo.mediaType || lesson.material_type, mediaInfo.hasMedia)}
                                                             <h4 className="font-extrabold text-xs text-slate-900 dark:text-white leading-tight truncate max-w-[180px]">
                                                                 {lesson.title}
                                                             </h4>

@@ -12,11 +12,74 @@ import TextAlign from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
 import ImageExtension from '@tiptap/extension-image';
 import { LineHeight } from '../lib/tiptap-extensions';
+import { supabaseAuth } from '../lib/supabase-auth';
 import { 
     Bold, Italic, Underline as UnderlineIcon, Type,
     List, ListOrdered, AlignLeft, AlignCenter, AlignRight,
-    Highlighter, Image as ImageIcon, Upload, X, Link as LinkIcon
+    Highlighter, Image as ImageIcon, Upload, X, Link as LinkIcon, Loader2
 } from 'lucide-react';
+
+const sanitizeFileName = (originalName: string): string => {
+    return originalName
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[^a-zA-Z0-9_-]/g, '_')
+        .substring(0, 40);
+};
+
+const getUniqueStoragePath = (file: File): string => {
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const cleanName = sanitizeFileName(file.name) || 'image';
+    const uuid = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+    return `course-lessons/${uuid}-${cleanName}.${ext}`;
+};
+
+const uploadEditorImage = async (file: File): Promise<string> => {
+    if (!file || !file.type.startsWith('image/')) {
+        throw new Error('Please upload a valid image file (PNG, JPG, WEBP, GIF, SVG).');
+    }
+
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+        throw new Error('Image size is too large (maximum allowed size is 10MB).');
+    }
+
+    const filePath = getUniqueStoragePath(file);
+    let uploadBucket = 'inventory_materials';
+
+    let { data, error } = await supabaseAuth.storage
+        .from(uploadBucket)
+        .upload(filePath, file, {
+            contentType: file.type || 'image/jpeg',
+            upsert: true
+        });
+
+    if (error) {
+        console.warn(`[RichTextEditor] Upload to ${uploadBucket} failed:`, error.message, '- attempting fallback bucket');
+        uploadBucket = 'curriculum-images';
+        const fallbackRes = await supabaseAuth.storage
+            .from(uploadBucket)
+            .upload(filePath, file, {
+                contentType: file.type || 'image/jpeg',
+                upsert: true
+            });
+
+        if (fallbackRes.error) {
+            throw new Error(`Failed to upload image to storage: ${error.message || fallbackRes.error.message}`);
+        }
+    }
+
+    const { data: urlData } = supabaseAuth.storage
+        .from(uploadBucket)
+        .getPublicUrl(filePath);
+
+    if (!urlData?.publicUrl) {
+        throw new Error('Failed to retrieve public URL for uploaded image.');
+    }
+
+    return urlData.publicUrl;
+};
 
 // Custom Font Size extension
 const FontSize = Extension.create({
@@ -85,6 +148,7 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [showImageModal, setShowImageModal] = useState(false);
     const [imageUrlInput, setImageUrlInput] = useState('');
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
 
     const editor = useEditor({
         extensions: [
@@ -130,15 +194,21 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                 if (imageItem) {
                     event.preventDefault();
                     const file = imageItem.getAsFile();
-                    if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                            const base64 = e.target?.result as string;
-                            if (base64 && editor) {
-                                editor.chain().focus().setImage({ src: base64 }).run();
-                            }
-                        };
-                        reader.readAsDataURL(file);
+                    if (file && editor) {
+                        setIsUploadingImage(true);
+                        uploadEditorImage(file)
+                            .then((url) => {
+                                if (editor && !editor.isDestroyed) {
+                                    editor.chain().focus().setImage({ src: url }).run();
+                                }
+                            })
+                            .catch((err: any) => {
+                                console.error('[RichTextEditor] Paste upload failed:', err);
+                                alert(`Image upload failed: ${err.message || 'Unknown error'}`);
+                            })
+                            .finally(() => {
+                                setIsUploadingImage(false);
+                            });
                     }
                     return true;
                 }
@@ -149,14 +219,22 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                     const file = event.dataTransfer.files[0];
                     if (file.type.startsWith('image/')) {
                         event.preventDefault();
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                            const base64 = e.target?.result as string;
-                            if (base64 && editor) {
-                                editor.chain().focus().setImage({ src: base64 }).run();
-                            }
-                        };
-                        reader.readAsDataURL(file);
+                        if (editor) {
+                            setIsUploadingImage(true);
+                            uploadEditorImage(file)
+                                .then((url) => {
+                                    if (editor && !editor.isDestroyed) {
+                                        editor.chain().focus().setImage({ src: url }).run();
+                                    }
+                                })
+                                .catch((err: any) => {
+                                    console.error('[RichTextEditor] Drop upload failed:', err);
+                                    alert(`Image upload failed: ${err.message || 'Unknown error'}`);
+                                })
+                                .finally(() => {
+                                    setIsUploadingImage(false);
+                                });
+                        }
                         return true;
                     }
                 }
@@ -187,19 +265,24 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
         editor.chain().focus().setFontSize(`${newSize}px`).run();
     };
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !editor) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const base64 = event.target?.result as string;
-            if (base64) {
-                editor.chain().focus().setImage({ src: base64 }).run();
+        
+        setIsUploadingImage(true);
+        try {
+            const url = await uploadEditorImage(file);
+            if (editor && !editor.isDestroyed) {
+                editor.chain().focus().setImage({ src: url }).run();
             }
-        };
-        reader.readAsDataURL(file);
-        e.target.value = '';
-        setShowImageModal(false);
+            setShowImageModal(false);
+        } catch (err: any) {
+            console.error('[RichTextEditor] File upload error:', err);
+            alert(`Image upload failed: ${err.message || 'Unknown error'}`);
+        } finally {
+            setIsUploadingImage(false);
+            e.target.value = '';
+        }
     };
 
     const insertImageUrl = () => {
@@ -419,7 +502,15 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
             </div>
 
             {/* Editor Content Area */}
-            <EditorContent editor={editor} />
+            <div className="relative">
+                {isUploadingImage && (
+                    <div className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-amber-500 text-slate-950 px-3 py-1.5 rounded-xl text-xs font-black shadow-lg animate-pulse pointer-events-none">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Uploading Image to Storage...</span>
+                    </div>
+                )}
+                <EditorContent editor={editor} />
+            </div>
 
             {/* Image Upload/Link Modal */}
             {showImageModal && (
@@ -430,7 +521,12 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                                 <ImageIcon className="w-4 h-4 text-amber-500" />
                                 Insert Picture into Description
                             </h4>
-                            <button type="button" onClick={() => setShowImageModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                            <button 
+                                type="button" 
+                                disabled={isUploadingImage}
+                                onClick={() => setShowImageModal(false)} 
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-50"
+                            >
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
@@ -440,10 +536,19 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">1. Upload Image File</label>
                                 <button
                                     type="button"
+                                    disabled={isUploadingImage}
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="w-full py-3 bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-amber-400 rounded-xl transition-all font-bold text-xs text-slate-600 dark:text-slate-300 flex items-center justify-center gap-2 cursor-pointer"
+                                    className="w-full py-3 bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-amber-400 rounded-xl transition-all font-bold text-xs text-slate-600 dark:text-slate-300 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                                 >
-                                    <Upload className="w-4 h-4 text-amber-500" /> Pick Image from Computer
+                                    {isUploadingImage ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 text-amber-500 animate-spin" /> Uploading to Storage...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Upload className="w-4 h-4 text-amber-500" /> Pick Image from Computer
+                                        </>
+                                    )}
                                 </button>
                             </div>
 
@@ -459,10 +564,11 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                                     <LinkIcon className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                     <input
                                         type="url"
+                                        disabled={isUploadingImage}
                                         placeholder="https://example.com/image.png"
                                         value={imageUrlInput}
                                         onChange={(e) => setImageUrlInput(e.target.value)}
-                                        className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 font-medium"
+                                        className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 font-medium disabled:opacity-50"
                                     />
                                 </div>
                             </div>
@@ -471,14 +577,15 @@ export default function RichTextEditor({ value, onChange, placeholder }: RichTex
                         <div className="mt-5 flex justify-end gap-2">
                             <button
                                 type="button"
+                                disabled={isUploadingImage}
                                 onClick={() => setShowImageModal(false)}
-                                className="px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                                className="px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl disabled:opacity-50"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="button"
-                                disabled={!imageUrlInput.trim()}
+                                disabled={!imageUrlInput.trim() || isUploadingImage}
                                 onClick={insertImageUrl}
                                 className="px-4 py-1.5 bg-[#ecb613] hover:bg-[#d8a310] text-slate-950 text-xs font-black rounded-xl transition-all shadow-xs disabled:opacity-40"
                             >

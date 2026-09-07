@@ -26,6 +26,7 @@ interface Student {
     profile_pic_url?: string;
     selected: boolean;
     classroom_ids: string[];
+    classroom_names?: string[];
 }
 
 interface Assignment {
@@ -194,29 +195,46 @@ export default function EditTaskPage() {
                     return;
                 }
 
-                const { data: enrollments, error: enrollError } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('student_id, classroom_id')
-                    .in('classroom_id', classroomIds);
+                const [enrollmentsRes, overridesRes] = await Promise.all([
+                    supabaseAuth.from('classroom_students').select('student_id, classroom_id').in('classroom_id', classroomIds),
+                    supabaseAuth.from('session_student_overrides').select('student_id, target_classroom_id').in('target_classroom_id', classroomIds)
+                ]);
 
-                if (enrollError || !enrollments || enrollments.length === 0) {
-                    console.error('Error or no enrollments:', enrollError);
-                    setLoading(false);
-                    return;
-                }
-
-                const studentIds = [...new Set(enrollments.map(e => e.student_id))];
+                const enrollments = enrollmentsRes.data || [];
+                const overrides = overridesRes.data || [];
 
                 const studentClassroomMap: Record<string, string[]> = {};
-                enrollments.forEach(e => {
-                    if (!studentClassroomMap[e.student_id]) {
-                        studentClassroomMap[e.student_id] = [];
-                    }
-                    studentClassroomMap[e.student_id].push(e.classroom_id);
+                enrollments.forEach((e: any) => {
+                    if (!studentClassroomMap[e.student_id]) studentClassroomMap[e.student_id] = [];
+                    if (!studentClassroomMap[e.student_id].includes(e.classroom_id)) studentClassroomMap[e.student_id].push(e.classroom_id);
+                });
+                overrides.forEach((o: any) => {
+                    if (!studentClassroomMap[o.student_id]) studentClassroomMap[o.student_id] = [];
+                    if (!studentClassroomMap[o.student_id].includes(o.target_classroom_id)) studentClassroomMap[o.student_id].push(o.target_classroom_id);
                 });
 
+                let studentIds = [...new Set([
+                    ...enrollments.map((e: any) => e.student_id),
+                    ...overrides.map((o: any) => o.student_id)
+                ])];
+
+                // Also fetch direct students assigned to teacher
+                let directQuery = supabaseAuth
+                    .from('users')
+                    .select('id')
+                    .or('role.eq.student,role.eq.pending,role.eq.mentor');
+                if (!isAdmin) {
+                    directQuery = directQuery.eq('teacher_id', teacherProfile.id);
+                }
+                const { data: directStudents } = await directQuery;
+                if (directStudents) {
+                    directStudents.forEach(item => {
+                        if (!studentIds.includes(item.id)) studentIds.push(item.id);
+                    });
+                }
+
                 // 3. Fetch current mappings from assignment_students to pre-check them
-                const { data: currentMappings, error: mappingsError } = await supabaseAuth
+                const { data: currentMappings } = await supabaseAuth
                     .from('assignment_students')
                     .select('student_id')
                     .eq('assignment_id', assignmentId);
@@ -224,30 +242,34 @@ export default function EditTaskPage() {
                 const assignedIds = new Set((currentMappings || []).map(m => m.student_id));
 
                 // 4. Fetch user details for students
-                const { data: studentUsers, error: usersError } = await supabaseAuth
-                    .from('users')
-                    .select('id, name, profile_pic_url')
-                    .in('id', studentIds);
+                if (studentIds.length > 0) {
+                    const { data: studentUsers, error: usersError } = await supabaseAuth
+                        .from('users')
+                        .select('id, name, profile_pic_url')
+                        .in('id', studentIds);
 
-                if (usersError) {
-                    console.error('Error fetching student details:', usersError);
-                    setLoading(false);
-                    return;
-                }
+                    if (studentUsers) {
+                        const classroomNameMap: Record<string, string> = {};
+                        classrooms.forEach(c => {
+                            classroomNameMap[c.id] = c.name;
+                        });
 
-                if (studentUsers) {
-                    const formatted = studentUsers.map((item: any) => ({
-                        id: item.id,
-                        name: item.name || 'Unknown Student',
-                        profile_pic_url: item.profile_pic_url || null,
-                        selected: assignedIds.has(item.id),
-                        classroom_ids: studentClassroomMap[item.id] || []
-                    }));
-                    setStudents(formatted);
-                    
-                    // If target_type is 'all' and it's active, select all in this classroom
-                    if (assignmentData.target_type === 'all' && assignmentData.status !== 'draft') {
-                        setSelectAll(true);
+                        const isTargetAll = assignmentData.target_type === 'all';
+                        const formatted = studentUsers.map((item: any) => {
+                            const cids = studentClassroomMap[item.id] || [];
+                            const cnames = cids.map(cid => classroomNameMap[cid]).filter(Boolean);
+                            const isInClass = assignmentData.classroom_id ? cids.includes(assignmentData.classroom_id) : true;
+                            const isSelected = assignedIds.size > 0 ? assignedIds.has(item.id) : (isTargetAll ? isInClass : false);
+                            return {
+                                id: item.id,
+                                name: item.name || 'Unknown Student',
+                                profile_pic_url: item.profile_pic_url || null,
+                                selected: isSelected,
+                                classroom_ids: cids,
+                                classroom_names: cnames
+                            };
+                        });
+                        setStudents(formatted);
                     }
                 }
             } catch (err) {
@@ -268,8 +290,11 @@ export default function EditTaskPage() {
             result = result.filter(s => s.classroom_ids?.includes(selectedClassroom));
         }
         if (studentSearch.trim() !== '') {
-            const lowerQuery = studentSearch.toLowerCase();
-            result = result.filter(s => s.name.toLowerCase().includes(lowerQuery));
+            const lowerQuery = studentSearch.toLowerCase().trim();
+            result = result.filter(s => 
+                s.name.toLowerCase().includes(lowerQuery) ||
+                (s.classroom_names && s.classroom_names.some(cn => cn.toLowerCase().includes(lowerQuery)))
+            );
         }
         return result;
     }, [students, selectedClassroom, studentSearch]);
@@ -283,6 +308,10 @@ export default function EditTaskPage() {
         return filteredStudents.filter(s => s.selected).length;
     }, [filteredStudents]);
 
+    const totalSelectedCount = useMemo(() => {
+        return students.filter(s => s.selected).length;
+    }, [students]);
+
     const isAllFilteredSelected = useMemo(() => {
         return filteredStudents.length > 0 && filteredStudents.every(s => s.selected);
     }, [filteredStudents]);
@@ -290,15 +319,6 @@ export default function EditTaskPage() {
     const handleClassroomChange = (classroomId: string) => {
         setSelectedClassroom(classroomId);
         setCurrentPage(1);
-        
-        if (classroomId === 'all') {
-            setStudents(prev => prev.map(s => ({ ...s, selected: true })));
-        } else {
-            setStudents(prev => prev.map(s => ({
-                ...s,
-                selected: s.classroom_ids?.includes(classroomId) || false
-            })));
-        }
     };
 
     const handleToggleStudent = (studentId: string) => {
@@ -327,7 +347,7 @@ export default function EditTaskPage() {
 
     const handleSaveEditedTask = async (isDraft: boolean = false) => {
         if (!teacherProfile || !assignment) return;
-        if (!title || !description) {
+        if (!title.trim() || !description.trim()) {
             alert('Please fill in task title and instructions.');
             return;
         }
@@ -337,10 +357,7 @@ export default function EditTaskPage() {
             return;
         }
 
-        let selectedStudents = students.filter(s => s.selected);
-        if (selectedClassroom && selectedClassroom !== 'all') {
-            selectedStudents = selectedStudents.filter(s => s.classroom_ids?.includes(selectedClassroom));
-        }
+        const selectedStudents = students.filter(s => s.selected);
         if (!isDraft && selectedStudents.length === 0) {
             alert('Please select at least one student.');
             return;
@@ -348,53 +365,20 @@ export default function EditTaskPage() {
 
         setIsSaving(true);
         try {
-            // Group selected students by classroom ID
-            const studentsByClass: Record<string, string[]> = {};
+            const primaryClassId = (selectedClassroom && selectedClassroom !== 'all')
+                ? selectedClassroom
+                : (selectedStudents[0]?.classroom_ids[0] || assignment.classroom_id);
             
-            if (selectedStudents.length > 0) {
-                selectedStudents.forEach(s => {
-                    let studentClassId = assignment.classroom_id;
-                    if (selectedClassroom && selectedClassroom !== 'all') {
-                        studentClassId = selectedClassroom;
-                    } else if (s.classroom_ids && s.classroom_ids.length > 0) {
-                        studentClassId = s.classroom_ids[0];
-                    }
-                    
-                    if (!studentsByClass[studentClassId]) {
-                        studentsByClass[studentClassId] = [];
-                    }
-                    studentsByClass[studentClassId].push(s.id);
-                });
-            } else {
-                // If saving as draft with no selected students, keep the current or selected classroom
-                const classId = selectedClassroom === 'all' ? assignment.classroom_id : selectedClassroom;
-                studentsByClass[classId] = [];
-            }
-
-            const classGroups = Object.entries(studentsByClass);
-            
-            // Step 1: Update/Publish the original assignment with the first group
-            const [primaryClassId, primaryStudentIds] = classGroups[0] || [assignment.classroom_id, []];
-            
-            const isAdmin = teacherProfile.role === 'admin';
-            if (!isAdmin) {
-                const ownsClassroom = classrooms.some(c => c.id === primaryClassId);
-                if (!ownsClassroom) {
-                    alert("You are not authorized to assign tasks to this classroom.");
-                    return;
-                }
-            }
-
-            const primaryClassroomObj = classrooms.find(c => c.id === primaryClassId);
-            const primaryTeacherId = primaryClassroomObj?.teacher_id || teacherProfile.id;
+            const classroomObj = classrooms.find(c => c.id === primaryClassId);
+            const primaryTeacherId = classroomObj?.teacher_id || teacherProfile.id;
 
             const updateData: any = {
-                title,
-                description,
+                title: title.trim(),
+                description: description.trim(),
                 due_date: dueDate || null,
                 classroom_id: primaryClassId,
                 teacher_id: primaryTeacherId,
-                target_type: selectedClassroom === 'all' && isAllFilteredSelected ? 'all' : 'individual',
+                target_type: selectedClassroom === 'all' ? 'all' : 'individual',
                 status: isDraft ? 'draft' : 'active',
                 file_url: fileUrl || null,
                 file_name: fileName || null,
@@ -406,39 +390,31 @@ export default function EditTaskPage() {
                 .update(updateData)
                 .eq('id', assignmentId);
 
-            // FALLBACK: If status column is missing on DB, retry updating without status column
-            if (updateError && (updateError.code === '42703' || updateError.message?.includes('status'))) {
-                console.warn('status column missing in assignments, running fallback update...');
-                delete updateData.status;
-                const fallback = await supabaseAuth
-                    .from('assignments')
-                    .update(updateData)
-                    .eq('id', assignmentId);
-                updateError = fallback.error;
-            }
-
             if (updateError) throw updateError;
 
-            // Sync student mappings for the primary assignment
-            if (isDraft) {
-                // Draft assignments have no assigned students in DB
-                const { error: deleteError } = await supabaseAuth
-                    .from('assignment_students')
-                    .delete()
-                    .eq('assignment_id', assignmentId);
-                if (deleteError) console.error('Error clearing old mappings for draft:', deleteError);
-            } else {
-                // Fetch currently assigned student IDs for this assignment
+            // Sync student mappings safely without deleting student submissions
+            if (!isDraft) {
+                const targetStudentIds = new Set(selectedStudents.map(s => s.id));
                 const { data: currentMappings } = await supabaseAuth
                     .from('assignment_students')
-                    .select('student_id')
+                    .select('id, student_id, status, video_url, feedback_text')
                     .eq('assignment_id', assignmentId);
 
-                const existingStudentIds = new Set((currentMappings || []).map(m => m.student_id));
-                const targetStudentIds = new Set(primaryStudentIds);
+                const existingMap = new Map((currentMappings || []).map(m => [m.student_id, m]));
+                const existingStudentIds = new Set(existingMap.keys());
 
-                // Students to remove
-                const toRemove = [...existingStudentIds].filter(id => !targetStudentIds.has(id));
+                // Students to remove (only delete if NO submitted work or reviewed status)
+                const toRemove: string[] = [];
+                for (const studentId of existingStudentIds) {
+                    if (!targetStudentIds.has(studentId)) {
+                        const rec = existingMap.get(studentId);
+                        const hasSubmission = rec && (rec.status !== 'pending' || rec.video_url || rec.feedback_text);
+                        if (!hasSubmission) {
+                            toRemove.push(studentId);
+                        }
+                    }
+                }
+
                 if (toRemove.length > 0) {
                     await supabaseAuth
                         .from('assignment_students')
@@ -448,7 +424,7 @@ export default function EditTaskPage() {
                 }
 
                 // Students to add
-                const toAdd = primaryStudentIds.filter(id => !existingStudentIds.has(id));
+                const toAdd = Array.from(targetStudentIds).filter(id => !existingStudentIds.has(id));
                 if (toAdd.length > 0) {
                     const newMappings = toAdd.map(studentId => ({
                         assignment_id: assignmentId,
@@ -462,65 +438,12 @@ export default function EditTaskPage() {
                 }
             }
 
-            // Step 2: For other classroom groups, create completely new assignments (Partitioning Logic)
-            if (classGroups.length > 1) {
-                for (let i = 1; i < classGroups.length; i++) {
-                    const [classId, studentIds] = classGroups[i];
-                    if (studentIds.length === 0) continue;
-
-                    const classroomObj = classrooms.find(c => c.id === classId);
-                    const classTeacherId = classroomObj?.teacher_id || teacherProfile.id;
-
-                    const newInsertData: any = {
-                        classroom_id: classId,
-                        teacher_id: classTeacherId,
-                        title,
-                        description,
-                        due_date: dueDate || null,
-                        target_type: 'individual',
-                        status: isDraft ? 'draft' : 'active',
-                        created_at: new Date().toISOString()
-                    };
-
-                    let { data: newAssignment, error: newAssignmentError } = await supabaseAuth
-                        .from('assignments')
-                        .insert(newInsertData)
-                        .select()
-                        .single();
-
-                    if (newAssignmentError && (newAssignmentError.code === '42703' || newAssignmentError.message?.includes('status'))) {
-                        delete newInsertData.status;
-                        const fallback = await supabaseAuth
-                            .from('assignments')
-                            .insert(newInsertData)
-                            .select()
-                            .single();
-                        newAssignment = fallback.data;
-                        newAssignmentError = fallback.error;
-                    }
-
-                    if (newAssignmentError) throw newAssignmentError;
-
-                    if (!isDraft && newAssignment && studentIds.length > 0) {
-                        const newMappings = studentIds.map(studentId => ({
-                            assignment_id: newAssignment.id,
-                            student_id: studentId,
-                            status: 'pending'
-                        }));
-                        const { error: mappingError } = await supabaseAuth
-                            .from('assignment_students')
-                            .insert(newMappings);
-                        if (mappingError) throw mappingError;
-                    }
-                }
-            }
-
             alert(isDraft ? 'Task draft saved successfully!' : 'Task changes saved successfully!');
             router.push('/teacher-dashboard/tasks');
 
         } catch (error: any) {
-            console.error('Error saving/publishing task:', error);
-            alert(`Failed to save task: ${error.message}`);
+            console.error('Error saving task:', error);
+            alert(`Failed to save task: ${error.message || 'Unknown error'}`);
         } finally {
             setIsSaving(false);
         }
@@ -768,7 +691,12 @@ export default function EditTaskPage() {
                                                                      <div className="text-primary text-[10px] font-black">{student.name.charAt(0)}</div>
                                                                  )}
                                                              </div>
-                                                             <span className={`text-sm font-bold tracking-tight transition-colors truncate ${student.selected ? 'text-amber-800 dark:text-amber-300' : 'text-slate-600'}`}>{student.name}</span>
+                                                             <div className="min-w-0 flex-1">
+                                                                 <span className={`text-xs sm:text-sm font-bold tracking-tight transition-colors truncate block ${student.selected ? 'text-amber-800 dark:text-amber-300' : 'text-slate-700 dark:text-slate-300'}`}>{student.name}</span>
+                                                                 <span className="text-[10px] text-slate-400 font-medium truncate block">
+                                                                     {student.classroom_names && student.classroom_names.length > 0 ? student.classroom_names.join(', ') : 'Direct Student'}
+                                                                 </span>
+                                                             </div>
                                                          </label>
                                                          <button
                                                              type="button"

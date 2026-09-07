@@ -56,6 +56,7 @@ interface CurriculumTabProps {
 }
 
 import { stripHtml } from '../../lib/text-utils';
+import { getCurriculumMediaInfo } from '../../lib/curriculum-media';
 
 export default function CurriculumTab({
     curriculumTab,
@@ -425,12 +426,12 @@ export default function CurriculumTab({
                                                                                         e.stopPropagation();
                                                                                         handleDeallocateItem('level', mod);
                                                                                     }}
-                                                                                    disabled={deletingAssignmentId === mod.id || deletingAssignmentId === mod.allocationId}
+                                                                                    disabled={!!deletingAssignmentId && (deletingAssignmentId === mod.id || (!!mod.allocationId && deletingAssignmentId === mod.allocationId))}
                                                                                     className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all duration-200 border border-transparent hover:border-rose-600/10 shadow-xs cursor-pointer text-left"
                                                                                     title="Deallocate level from class"
                                                                                     type="button"
                                                                                 >
-                                                                                    {deletingAssignmentId === mod.id || deletingAssignmentId === mod.allocationId ? (
+                                                                                    {!!deletingAssignmentId && (deletingAssignmentId === mod.id || (!!mod.allocationId && deletingAssignmentId === mod.allocationId)) ? (
                                                                                         <Loader2 className="size-3.5 animate-spin" />
                                                                                     ) : (
                                                                                         <Trash2 className="size-3.5" />
@@ -706,12 +707,12 @@ export default function CurriculumTab({
                                                                                                                             e.stopPropagation();
                                                                                                                             handleDeallocateItem('chapter', chap);
                                                                                                                         }}
-                                                                                                                        disabled={deletingAssignmentId === chap.id || deletingAssignmentId === chap.allocationId}
+                                                                                                                        disabled={!!deletingAssignmentId && (deletingAssignmentId === chap.id || (!!chap.allocationId && deletingAssignmentId === chap.allocationId))}
                                                                                                                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black text-rose-500 hover:text-white bg-rose-500/10 hover:bg-rose-500 transition-all duration-200 border border-transparent shadow-xs cursor-pointer text-left"
                                                                                                                         title="Deallocate chapter from class"
                                                                                                                         type="button"
                                                                                                                     >
-                                                                                                                        {deletingAssignmentId === chap.id || deletingAssignmentId === chap.allocationId ? (
+                                                                                                                        {!!deletingAssignmentId && (deletingAssignmentId === chap.id || (!!chap.allocationId && deletingAssignmentId === chap.allocationId)) ? (
                                                                                                                             <Loader2 className="size-3 animate-spin" />
                                                                                                                         ) : (
                                                                                                                             <Trash2 className="size-3" />
@@ -821,9 +822,7 @@ export default function CurriculumTab({
                                                                                     const isUpdating = isUpdatingProgress === lesson.id;
                                                                                     const pacing = getLessonPacingStatus(lesson.id);
 
-                                                                                    const isAudio = lesson.material_type === 'audio';
-                                                                                    const isVideo = lesson.material_type === 'video';
-                                                                                    const isPdf = lesson.material_type === 'pdf';
+                                                                                    const { isVideo, isAudio, isPdf } = getCurriculumMediaInfo(lesson);
 
                                                                                     return (
                                                                                         <div 
@@ -834,20 +833,22 @@ export default function CurriculumTab({
                                                                                         <div className="flex items-start gap-2.5 w-full">
                                                                                             {/* Left side: Material Type Icon */}
                                                                                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-xs border transition-colors ${
-                                                                                                isPdf 
-                                                                                                    ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/[0.05] border-blue-500/20'
-                                                                                                    : isVideo 
+                                                                                                isVideo 
                                                                                                     ? 'text-rose-500 bg-rose-500/10 dark:bg-rose-500/[0.05] border-rose-500/20' 
                                                                                                     : isAudio 
                                                                                                     ? 'text-amber-550 bg-amber-500/10 border-amber-500/20' 
-                                                                                                    : 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+                                                                                                    : isPdf 
+                                                                                                    ? 'text-blue-500 bg-blue-500/10 dark:bg-blue-500/[0.05] border-blue-500/20'
+                                                                                                    : 'text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'
                                                                                             }`}>
                                                                                                 {isVideo ? (
                                                                                                     <Film className="size-3.5" />
                                                                                                 ) : isAudio ? (
                                                                                                     <Music className="size-3.5" />
-                                                                                                ) : (
+                                                                                                ) : isPdf ? (
                                                                                                     <FileText className="size-3.5" />
+                                                                                                ) : (
+                                                                                                    <BookOpen className="size-3.5" />
                                                                                                 )}
                                                                                             </div>
 
@@ -989,11 +990,11 @@ export default function CurriculumTab({
                                                                                                             e.stopPropagation();
                                                                                                             handleDeallocateItem('topic', lesson);
                                                                                                         }}
-                                                                                                        disabled={deletingAssignmentId === lesson.id || deletingAssignmentId === lesson.allocationId}
+                                                                                                        disabled={!!deletingAssignmentId && (deletingAssignmentId === lesson.id || (!!lesson.allocationId && deletingAssignmentId === lesson.allocationId))}
                                                                                                         className="w-8 h-8 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white flex items-center justify-center border border-transparent transition-all cursor-pointer"
                                                                                                         title="Deallocate topic from class"
                                                                                                     >
-                                                                                                        {deletingAssignmentId === lesson.id || deletingAssignmentId === lesson.allocationId ? (
+                                                                                                        {!!deletingAssignmentId && (deletingAssignmentId === lesson.id || (!!lesson.allocationId && deletingAssignmentId === lesson.allocationId)) ? (
                                                                                                             <Loader2 className="size-3.5 animate-spin" />
                                                                                                         ) : (
                                                                                                             <Trash2 className="size-3.5" />

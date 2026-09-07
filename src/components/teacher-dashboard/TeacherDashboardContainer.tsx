@@ -317,8 +317,6 @@ export default function TeacherDashboardContainer() {
 
             const schedulesReq = supabaseAuth.from('batch_schedules').select('id, classroom_id, classrooms(name, description), day_of_week, start_time, end_time');
             const tempsDetailReq = supabaseAuth.from('temporary_classes').select('id, classroom_id, classrooms(name, description), title, class_date, start_time, end_time');
-            const classStudsReq = supabaseAuth.from('classroom_students').select('classroom_id, student_id, users!student_id(name)');
-            const overridesReq = supabaseAuth.from('session_student_overrides').select('target_classroom_id, student_id, override_date, users!student_id(name)');
 
             const [
                 { data: dbClassrooms },
@@ -329,9 +327,7 @@ export default function TeacherDashboardContainer() {
                 { data: collections },
                 { data: teacherUsers },
                 { data: schedules },
-                { data: temps },
-                { data: classStudsData },
-                { data: overridesData }
+                { data: temps }
             ] = await Promise.all([
                 classReq,
                 tempReq,
@@ -341,9 +337,7 @@ export default function TeacherDashboardContainer() {
                 feesReq,
                 teacherUsersReq,
                 schedulesReq,
-                tempsDetailReq,
-                classStudsReq,
-                overridesReq
+                tempsDetailReq
             ]);
 
             if (teacherUsers) setTeachers(teacherUsers);
@@ -557,9 +551,24 @@ export default function TeacherDashboardContainer() {
                 localTemps = formattedTemps;
 
                 // Fetch classroom students for timing roster
-                const { data: classStudsData } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('classroom_id, student_id, users!student_id(name)');
+                const allPhase2ClassIds = Array.from(new Set([...classIds, ...(localTemps || []).map((t: any) => t.classroom_id).filter(Boolean)]));
+                
+                const classStudsPromise = (profile.role === 'admin')
+                    ? supabaseAuth.from('classroom_students').select('classroom_id, student_id, users!student_id(name)')
+                    : (allPhase2ClassIds.length > 0)
+                        ? supabaseAuth.from('classroom_students').select('classroom_id, student_id, users!student_id(name)').in('classroom_id', allPhase2ClassIds)
+                        : Promise.resolve({ data: [] });
+
+                const overridesPromise = (profile.role === 'admin')
+                    ? supabaseAuth.from('session_student_overrides').select('target_classroom_id, student_id, override_date, users!student_id(name)')
+                    : (allPhase2ClassIds.length > 0)
+                        ? supabaseAuth.from('session_student_overrides').select('target_classroom_id, student_id, override_date, users!student_id(name)').in('target_classroom_id', allPhase2ClassIds)
+                        : Promise.resolve({ data: [] });
+
+                const [{ data: classStudsData }, { data: overridesData }] = await Promise.all([
+                    classStudsPromise,
+                    overridesPromise
+                ]);
                 
                 const classStudsMap: Record<string, string[]> = {};
                 if (classStudsData) {
@@ -574,11 +583,6 @@ export default function TeacherDashboardContainer() {
                     });
                 }
                 setClassroomStudents(classStudsMap);
-
-                // Fetch session student overrides for temporary classes
-                const { data: overridesData } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .select('target_classroom_id, student_id, override_date, users!student_id(name)');
 
                 const overridesMap: Record<string, { override_date: string, student_name: string }[]> = {};
                 if (overridesData) {

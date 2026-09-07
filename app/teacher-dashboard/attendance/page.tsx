@@ -412,59 +412,88 @@ export default function AttendancePage() {
     // Fetch summaries for all active batches on selectedDate (to display present/absent counts on headers)
     useEffect(() => {
         const fetchHeaderSummaries = async () => {
-            if (activeBatchesOnSelectedDate.length === 0) return;
-            
-            const summaries: Record<string, { present: number; absent: number; late: number; excused: number; total: number }> = {};
-            
-            await Promise.all(activeBatchesOnSelectedDate.map(async (batch) => {
-                try {
-                    let total = 0;
-                    let attendanceData: { status: string }[] | null = [];
+            if (activeBatchesOnSelectedDate.length === 0) {
+                setBatchSummaries({});
+                return;
+            }
 
-                    if (batch.type === 'permanent') {
-                        const [
-                            { count: enrolledCount },
-                            { count: overrideCount },
-                            { data: attData }
-                        ] = await Promise.all([
-                            supabaseAuth.from('classroom_students').select('*', { count: 'exact', head: true }).eq('classroom_id', batch.id),
-                            supabaseAuth.from('session_student_overrides').select('*', { count: 'exact', head: true }).eq('target_classroom_id', batch.id).eq('override_date', selectedDate),
-                            supabaseAuth.from('attendance').select('status').eq('classroom_id', batch.id).eq('date', selectedDate)
-                        ]);
-                        total = (enrolledCount || 0) + (overrideCount || 0);
-                        attendanceData = attData;
-                    } else {
-                        const [
-                            { count },
-                            { data: attData }
-                        ] = await Promise.all([
-                            supabaseAuth.from('session_student_overrides').select('*', { count: 'exact', head: true }).eq('target_classroom_id', batch.id).eq('override_date', selectedDate),
-                            supabaseAuth.from('attendance').select('status').eq('classroom_id', batch.id).eq('date', selectedDate)
-                        ]);
-                        total = count || 0;
-                        attendanceData = attData;
+            try {
+                const permanentBatchIds = activeBatchesOnSelectedDate.filter(b => b.type === 'permanent').map(b => b.id);
+                const allBatchIds = activeBatchesOnSelectedDate.map(b => b.id);
+
+                const permStudentsPromise = permanentBatchIds.length > 0
+                    ? supabaseAuth.from('classroom_students').select('classroom_id').in('classroom_id', permanentBatchIds)
+                    : Promise.resolve({ data: [] });
+
+                const overridesPromise = allBatchIds.length > 0
+                    ? supabaseAuth.from('session_student_overrides').select('target_classroom_id').in('target_classroom_id', allBatchIds).eq('override_date', selectedDate)
+                    : Promise.resolve({ data: [] });
+
+                const attendancePromise = allBatchIds.length > 0
+                    ? supabaseAuth.from('attendance').select('classroom_id, status').in('classroom_id', allBatchIds).eq('date', selectedDate)
+                    : Promise.resolve({ data: [] });
+
+                const [
+                    { data: permRows },
+                    { data: overrideRows },
+                    { data: attRows }
+                ] = await Promise.all([
+                    permStudentsPromise,
+                    overridesPromise,
+                    attendancePromise
+                ]);
+
+                const enrolledCountMap = new Map<string, number>();
+                (permRows || []).forEach(r => {
+                    enrolledCountMap.set(r.classroom_id, (enrolledCountMap.get(r.classroom_id) || 0) + 1);
+                });
+
+                const overrideCountMap = new Map<string, number>();
+                (overrideRows || []).forEach(r => {
+                    overrideCountMap.set(r.target_classroom_id, (overrideCountMap.get(r.target_classroom_id) || 0) + 1);
+                });
+
+                const attendanceStatsMap = new Map<string, { present: number; absent: number; late: number; excused: number }>();
+                (attRows || []).forEach(r => {
+                    if (!attendanceStatsMap.has(r.classroom_id)) {
+                        attendanceStatsMap.set(r.classroom_id, { present: 0, absent: 0, late: 0, excused: 0 });
                     }
+                    const stats = attendanceStatsMap.get(r.classroom_id)!;
+                    if (r.status === 'present') stats.present++;
+                    else if (r.status === 'absent') stats.absent++;
+                    else if (r.status === 'late') stats.late++;
+                    else if (r.status === 'excused') stats.excused++;
+                });
 
-                    const present = (attendanceData || []).filter(r => r.status === 'present').length;
-                    const absent = (attendanceData || []).filter(r => r.status === 'absent').length;
-                    const late = (attendanceData || []).filter(r => r.status === 'late').length;
-                    const excused = (attendanceData || []).filter(r => r.status === 'excused').length;
-                    
-                    summaries[batch.id] = { present, absent, late, excused, total };
-                } catch (e) {
-                    console.error('Error fetching summaries:', e);
-                }
-            }));
-            
-            setBatchSummaries(summaries);
+                const summaries: Record<string, { present: number; absent: number; late: number; excused: number; total: number }> = {};
 
-            // Update dashboard global stats for this day
-            const values = Object.values(summaries);
-            const total = values.reduce((acc, curr) => acc + curr.total, 0);
-            const present = values.reduce((acc, curr) => acc + curr.present + curr.late, 0);
-            const absent = values.reduce((acc, curr) => acc + curr.absent, 0);
-            const rate = total > 0 ? `${Math.round((present / total) * 100)}%` : '0%';
-            setStats({ total, present, absent, rate });
+                activeBatchesOnSelectedDate.forEach(batch => {
+                    const enrolledCount = batch.type === 'permanent' ? (enrolledCountMap.get(batch.id) || 0) : 0;
+                    const overrideCount = overrideCountMap.get(batch.id) || 0;
+                    const total = enrolledCount + overrideCount;
+
+                    const stats = attendanceStatsMap.get(batch.id) || { present: 0, absent: 0, late: 0, excused: 0 };
+                    summaries[batch.id] = {
+                        present: stats.present,
+                        absent: stats.absent,
+                        late: stats.late,
+                        excused: stats.excused,
+                        total
+                    };
+                });
+
+                setBatchSummaries(summaries);
+
+                // Update dashboard global stats for this day
+                const values = Object.values(summaries);
+                const total = values.reduce((acc, curr) => acc + curr.total, 0);
+                const present = values.reduce((acc, curr) => acc + curr.present + curr.late, 0);
+                const absent = values.reduce((acc, curr) => acc + curr.absent, 0);
+                const rate = total > 0 ? `${Math.round((present / total) * 100)}%` : '0%';
+                setStats({ total, present, absent, rate });
+            } catch (e) {
+                console.error('Error fetching summaries:', e);
+            }
         };
 
         fetchHeaderSummaries();

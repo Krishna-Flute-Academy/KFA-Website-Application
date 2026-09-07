@@ -191,8 +191,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Types of Flutes',
         description: 'Small flute (higher pitch), medium flute, bass / long flute, pitch examples (C, D, E, F, G etc.), and which flute beginners should start with.',
         lesson_number: 2,
-        material_type: 'video',
-        duration: 'VIDEO • 12:45',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -228,8 +227,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Correct Sitting & Body Posture',
         description: 'Sitting position, back posture, hand position, how to hold the flute properly, and yoga for flute.',
         lesson_number: 4,
-        material_type: 'video',
-        duration: 'VIDEO • 08:20',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -246,8 +244,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Breath & Blowing Basics',
         description: 'How to blow air, breath control basics, and common mistakes beginners make.',
         lesson_number: 5,
-        material_type: 'video',
-        duration: 'VIDEO • 15:10',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: true,
         bullet_points: [
@@ -332,8 +329,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'First Blow – Producing the Sound',
         description: 'Understanding how to blow into the flute, lip position (embouchure), and producing the first clear sound.',
         lesson_number: 1,
-        material_type: 'video',
-        duration: 'VIDEO • 10:15',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -383,8 +379,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Understanding Rhythm – 4/4',
         description: 'Introduction to 4/4 rhythm (Teentaal counting style for beginners), using a metronome, and counting: 1 – 2 – 3 – 4.',
         lesson_number: 4,
-        material_type: 'video',
-        duration: 'VIDEO • 08:45',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -416,8 +411,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Ascending and Descending Practice',
         description: 'Practice note movements: Sa Re Ga Ma, Ma Ga Re Sa to develop finger coordination.',
         lesson_number: 6,
-        material_type: 'video',
-        duration: 'VIDEO • 06:30',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -432,8 +426,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Long Note Practice',
         description: 'Students should hold each note for 4–6 beats to improve breath control, tone quality, and stability of sound.',
         lesson_number: 7,
-        material_type: 'video',
-        duration: 'VIDEO • 12:00',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: true,
         bullet_points: [
@@ -503,8 +496,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Understanding the Flute Octaves',
         description: 'Deep dive explanation of the three major octaves in bansuri playing: Mandra, Madhya, and Taar Saptak register details.',
         lesson_number: 3,
-        material_type: 'video',
-        duration: 'VIDEO • 08:30',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -520,8 +512,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Finger Position for Lower Notes',
         description: 'Critical hole coverage details and hand positions to play Dha and Ni properly without air leaks.',
         lesson_number: 4,
-        material_type: 'video',
-        duration: 'VIDEO • 11:15',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -536,8 +527,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Long Note Practice',
         description: 'Breathing stamina and pitch stabilization practice in the lower register on notes N., D., and P.',
         lesson_number: 5,
-        material_type: 'video',
-        duration: 'VIDEO • 14:00',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: true,
         bullet_points: [
@@ -570,8 +560,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Learning Base Pa',
         description: 'Introducing the lowest reference note on the flute, Lower Pa (P.), with breathing and scale jumping intervals.',
         lesson_number: 7,
-        material_type: 'video',
-        duration: 'VIDEO • 10:45',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -605,8 +594,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Rhythm Practice Patterns',
         description: '<p>This topic introduces students to rhythm-based practice using a 4/4 time signature and a metronome. These exercises improve timing, finger coordination, breath control, and note clarity while building a strong rhythmic foundation.</p><p><strong>Practice Patterns:</strong></p><ul class="list-disc pl-5 space-y-1"><li>1234</li><li>1234 – 4321</li><li>21 Pattern</li><li>123 Pattern</li></ul>',
         lesson_number: 1,
-        material_type: 'video',
-        duration: 'VIDEO • 11:30',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -719,8 +707,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Beginner Composition',
         description: '<p>Students learn a simple composition using the techniques developed in previous exercises. The focus is on expression, timing, and smooth note transitions.</p><p><strong>Composition:</strong></p><div class="font-mono bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 p-3 rounded-xl inline-block my-1 font-semibold leading-relaxed">D.N.D. | S — — |</div>',
         lesson_number: 7,
-        material_type: 'video',
-        duration: 'VIDEO • 09:15',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: false,
         bullet_points: [
@@ -737,8 +724,7 @@ export const INITIAL_LESSONS: CourseLesson[] = [
         title: 'Beginner Songs',
         description: '<p>Students apply their rhythm, fingering, and breath control skills by learning simple and familiar melodies.</p><p><strong>Songs:</strong></p><ul class="list-disc pl-5 space-y-1"><li>Bella Ciao</li><li>Dilwale Dulhania Le Janege (DDLJ Theme)</li><li>Achyutam Keshavam</li></ul>',
         lesson_number: 8,
-        material_type: 'video',
-        duration: 'VIDEO • 15:45',
+        material_type: 'note',
         is_introductory: false,
         is_very_important: true,
         bullet_points: [

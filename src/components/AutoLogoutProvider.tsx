@@ -12,6 +12,7 @@ export default function AutoLogoutProvider({ children }: { children: React.React
     const pathname = usePathname();
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const lastHeartbeatTimeRef = useRef<number>(Date.now());
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     // Memory fallback for session ID in case sessionStorage is restricted/disabled (e.g. mobile/private tabs)
@@ -58,6 +59,25 @@ export default function AutoLogoutProvider({ children }: { children: React.React
 
     // Check if user is logged in and setup session tracking
     useEffect(() => {
+        const sendHeartbeat = async () => {
+            // Visibility-aware: never write last_activity_at when tab is hidden
+            if (typeof document !== 'undefined' && document.hidden) {
+                return;
+            }
+            const curSessionId = safeGetSessionId();
+            if (curSessionId) {
+                try {
+                    await supabaseAuth
+                        .from('user_sessions')
+                        .update({ last_activity_at: new Date().toISOString() })
+                        .eq('id', curSessionId);
+                    lastHeartbeatTimeRef.current = Date.now();
+                } catch (e) {
+                    console.error('Heartbeat update failed:', e);
+                }
+            }
+        };
+
         const checkAuth = async () => {
             const { data: { session } } = await supabaseAuth.auth.getSession();
             setIsAuthenticated(!!session);
@@ -71,35 +91,35 @@ export default function AutoLogoutProvider({ children }: { children: React.React
             if (session) {
                 const userId = session.user.id;
                 let sessionUuid = safeGetSessionId();
-                if (!sessionUuid) {
-                    sessionUuid = generateUUID();
-                    safeSetSessionId(sessionUuid);
+
+                // Only create/upsert a session row when a new KFA session genuinely starts.
+                // Do NOT rewrite login_at or upsert again on TOKEN_REFRESHED / USER_UPDATED.
+                const isNewSession = !sessionUuid || event === 'SIGNED_IN';
+
+                if (isNewSession) {
+                    if (!sessionUuid) {
+                        sessionUuid = generateUUID();
+                        safeSetSessionId(sessionUuid);
+                    }
+
+                    try {
+                        const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent : '';
+                        await supabaseAuth.from('user_sessions').upsert([{
+                            id: sessionUuid,
+                            user_id: userId,
+                            login_at: new Date().toISOString(),
+                            last_activity_at: new Date().toISOString(),
+                            user_agent: userAgent
+                        }], { onConflict: 'id' });
+                        lastHeartbeatTimeRef.current = Date.now();
+                    } catch (e) {
+                        console.error('Error starting tracking session:', e);
+                    }
                 }
 
-                try {
-                    const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent : '';
-                    await supabaseAuth.from('user_sessions').upsert([{
-                        id: sessionUuid,
-                        user_id: userId,
-                        login_at: new Date().toISOString(),
-                        last_activity_at: new Date().toISOString(),
-                        user_agent: userAgent
-                    }], { onConflict: 'id' });
-
-                    // Start heartbeat if not running (every 5 minutes to minimize database writes)
-                    if (!heartbeatIntervalRef.current) {
-                        heartbeatIntervalRef.current = setInterval(async () => {
-                            const curSessionId = safeGetSessionId();
-                            if (curSessionId) {
-                                await supabaseAuth
-                                    .from('user_sessions')
-                                    .update({ last_activity_at: new Date().toISOString() })
-                                    .eq('id', curSessionId);
-                            }
-                        }, 5 * 60 * 1000);
-                    }
-                } catch (e) {
-                    console.error('Error starting tracking session:', e);
+                // Start single heartbeat interval if not running (every 5 minutes, visibility-aware)
+                if (!heartbeatIntervalRef.current) {
+                    heartbeatIntervalRef.current = setInterval(sendHeartbeat, 5 * 60 * 1000);
                 }
             } else {
                 const prevSessionUuid = safeGetSessionId();
@@ -136,8 +156,20 @@ export default function AutoLogoutProvider({ children }: { children: React.React
             }
         });
 
+        // Update heartbeat once on focus if more than 5 minutes elapsed while hidden
+        const handleVisibilityChange = () => {
+            if (!document.hidden && safeGetSessionId()) {
+                const now = Date.now();
+                if (now - lastHeartbeatTimeRef.current >= 5 * 60 * 1000) {
+                    sendHeartbeat();
+                }
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
         return () => {
             subscription.unsubscribe();
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             if (heartbeatIntervalRef.current) {
                 clearInterval(heartbeatIntervalRef.current);
                 heartbeatIntervalRef.current = null;

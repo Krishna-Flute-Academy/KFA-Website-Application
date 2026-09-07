@@ -1,419 +1,650 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { X, BookOpen, ChevronRight, ExternalLink, Sparkles, Play, Youtube } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { 
+    X, ExternalLink, Sparkles, Play, Youtube, Bell, BookOpen, 
+    Calendar, Folder, ChevronRight, ChevronLeft, Move, Globe, Check, Minus
+} from 'lucide-react';
+import { supabaseAuth } from '../../lib/supabase-auth';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface BlogPost {
+export interface FeaturedUpdate {
     id: string;
+    creator_id?: string;
     title: string;
-    slug: string;
-    excerpt?: string;
-    featured_image?: string;
-    published_at?: string | null;
-    target_url?: string;
-}
-
-interface YouTubeVideo {
-    videoId: string;
-    title: string;
-    published?: string;
-    description?: string;
-    thumbnail: string;
+    description?: string | null;
     url: string;
+    thumbnail_url?: string | null;
+    content_type: string;
+    cta_label?: string | null;
+    recipients?: any[];
+    status: 'draft' | 'active' | 'paused' | 'archived';
+    start_date?: string | null;
+    end_date?: string | null;
+    notify_reset_at?: string | null;
+    created_at?: string;
+    updated_at?: string;
 }
 
-interface BlogNotificationProps {
+interface FeaturedUpdatesWidgetProps {
     studentId: string;
-    broadcasts?: any[];
+    broadcasts?: any[]; // Kept for interface backward compatibility
 }
 
-import { stripHtml } from '../../lib/text-utils';
+export type ReadTrackingRecord = Record<string, string>; // updateId -> readAt ISO string
 
-const BLOG_KEY  = 'kfa-student-seen-blog';
-const VIDEO_KEY = 'kfa-student-seen-video';
+const READS_KEY_PREFIX = 'kfa_student_featured_reads';
+const POS_KEY = 'kfa_floating_widget_pos';
 
-function getSeen(baseKey: string, studentId: string) {
+// ─── Read State Helpers (Structured for easy swap to Supabase table later) ───
+
+export function getStudentReads(studentId: string): ReadTrackingRecord {
     try {
-        const raw = localStorage.getItem(`${baseKey}-${studentId}`);
+        const raw = localStorage.getItem(`${READS_KEY_PREFIX}_${studentId}`);
         return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
+    } catch {
+        return {};
+    }
 }
-function setSeen(baseKey: string, studentId: string, data: object) {
-    localStorage.setItem(`${baseKey}-${studentId}`, JSON.stringify(data));
+
+export function saveStudentRead(studentId: string, updateId: string): ReadTrackingRecord {
+    try {
+        const current = getStudentReads(studentId);
+        current[updateId] = new Date().toISOString();
+        localStorage.setItem(`${READS_KEY_PREFIX}_${studentId}`, JSON.stringify(current));
+        return { ...current };
+    } catch {
+        return {};
+    }
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+export function isUpdateRead(update: FeaturedUpdate, reads: ReadTrackingRecord): boolean {
+    const readAt = reads[update.id];
+    if (!readAt) return false;
+    if (update.notify_reset_at) {
+        const resetTime = new Date(update.notify_reset_at).getTime();
+        const readTime = new Date(readAt).getTime();
+        if (resetTime > readTime) return false;
+    }
+    return true;
+}
 
-export default function BlogNotification({ studentId, broadcasts }: BlogNotificationProps) {
-    const [newPost,  setNewPost]  = useState<BlogPost | null>(null);
-    const [newVideo, setNewVideo] = useState<YouTubeVideo | null>(null);
+function getSavedPosition(): { x: number; y: number } | null {
+    try {
+        const raw = localStorage.getItem(POS_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+                return parsed;
+            }
+        }
+    } catch {}
+    return null;
+}
 
-    // Popup: shows whichever new items exist
-    const [showPopup,  setShowPopup]  = useState(false);
+function savePosition(pos: { x: number; y: number }) {
+    try {
+        localStorage.setItem(POS_KEY, JSON.stringify(pos));
+    } catch {}
+}
 
-    // Banners: individual corner cards after popup is dismissed
-    const [showBlogBanner,  setShowBlogBanner]  = useState(false);
-    const [showVideoBanner, setShowVideoBanner] = useState(false);
+// Helper to get type-specific badge style and icon
+function getTypeMeta(contentType: string) {
+    const type = (contentType || 'other').toLowerCase();
+    switch (type) {
+        case 'youtube':
+            return { label: 'YouTube Video', icon: Youtube, color: 'bg-rose-500/20 text-rose-400 border-rose-500/30' };
+        case 'blog':
+        case 'article':
+            return { label: 'Academy Article', icon: BookOpen, color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+        case 'tutorial':
+            return { label: 'Tutorial Lesson', icon: Play, color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' };
+        case 'event':
+            return { label: 'Academy Event', icon: Calendar, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
+        case 'resource':
+            return { label: 'Learning Resource', icon: Folder, color: 'bg-sky-500/20 text-sky-400 border-sky-500/30' };
+        case 'announcement':
+            return { label: 'Announcement', icon: Bell, color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' };
+        case 'external':
+            return { label: 'Featured Link', icon: Globe, color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+        default:
+            return { label: 'Featured Update', icon: Sparkles, color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+    }
+}
 
-    // ── Fetch both in parallel ────────────────────────────────────────────────
+export default function BlogNotification({ studentId }: FeaturedUpdatesWidgetProps) {
+    const [updates, setUpdates] = useState<FeaturedUpdate[]>([]);
+    const [reads, setReads] = useState<ReadTrackingRecord>({});
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    // Desktop draggable coordinates
+    const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+    const isDraggingRef = useRef(false);
+    const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number }>({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
+    const widgetRef = useRef<HTMLDivElement | null>(null);
+
+    // ── Fetch active targeted featured updates from Supabase ─────────────────
     useEffect(() => {
         if (!studentId) return;
 
-        const fetchAll = async () => {
-            let blogBc: any = null;
-            let videoBc: any = null;
+        const loadReadsAndUpdates = async () => {
+            try {
+                const currentReads = getStudentReads(studentId);
+                setReads(currentReads);
 
-            if (broadcasts && broadcasts.length > 0) {
-                blogBc = broadcasts.find((b: any) => 
-                    b.channel === 'blog' || b.recipients?.some((r: any) => r._meta && r.type === 'blog')
-                );
-                videoBc = broadcasts.find((b: any) => 
-                    b.channel === 'video' || b.recipients?.some((r: any) => r._meta && r.type === 'video')
-                );
-            }
+                // Strict RLS evaluates role = 'student', active status, date range, master toggle, and recipient targeting
+                const { data, error } = await supabaseAuth
+                    .from('featured_updates')
+                    .select('*')
+                    .order('created_at', { ascending: false });
 
-            // Blog & YouTube in parallel
-            const [blogResult, videoResult] = await Promise.allSettled([
-                !blogBc 
-                    ? supabase
-                        .from('blog_posts')
-                        .select('id, title, slug, excerpt, featured_image, published_at')
-                        .eq('published', true)
-                        .order('published_at', { ascending: false })
-                        .limit(1)
-                        .maybeSingle()
-                    : Promise.resolve({ data: null }),
-                !videoBc 
-                    ? fetch('/api/latest-youtube-video').then(r => r.ok ? r.json() : null)
-                    : Promise.resolve(null)
-            ]);
-
-            let hasNew = false;
-
-            // Blog
-            if (blogBc) {
-                const meta = blogBc.recipients?.find((r: any) => r._meta && r.type === 'blog') || {};
-                const post: BlogPost = {
-                    id: blogBc.id,
-                    title: blogBc.subject,
-                    slug: meta.target_url || '/blog',
-                    excerpt: stripHtml(blogBc.content || ''),
-                    featured_image: meta.image_url || undefined,
-                    target_url: meta.target_url || '/blog'
-                };
-                const seen = getSeen(BLOG_KEY, studentId);
-                if (seen.popupShown !== post.id) {
-                    setNewPost(post);
-                    hasNew = true;
-                } else if (seen.bannerDismissed !== post.id) {
-                    setShowBlogBanner(true);
-                    setNewPost(post);
+                if (error) {
+                    console.warn('[FeaturedUpdates] Fetch error (RLS or table status):', error.message);
+                    return;
                 }
-            } else if (blogResult.status === 'fulfilled' && blogResult.value.data) {
-                const post = blogResult.value.data as BlogPost;
-                const seen = getSeen(BLOG_KEY, studentId);
-                if (seen.popupShown !== post.id) {
-                    setNewPost(post);
-                    hasNew = true;
-                } else if (seen.bannerDismissed !== post.id) {
-                    setShowBlogBanner(true);
-                    setNewPost(post);
-                }
-            }
 
-            // YouTube
-            if (videoBc) {
-                const meta = videoBc.recipients?.find((r: any) => r._meta && r.type === 'video') || {};
-                const video: YouTubeVideo = {
-                    videoId: videoBc.id,
-                    title: videoBc.subject,
-                    description: stripHtml(videoBc.content || ''),
-                    thumbnail: meta.image_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&q=80',
-                    url: meta.target_url || 'https://www.youtube.com'
-                };
-                const seen = getSeen(VIDEO_KEY, studentId);
-                if (seen.popupShown !== video.videoId) {
-                    setNewVideo(video);
-                    hasNew = true;
-                } else if (seen.bannerDismissed !== video.videoId) {
-                    setShowVideoBanner(true);
-                    setNewVideo(video);
-                }
-            } else if (videoResult.status === 'fulfilled' && videoResult.value?.videoId) {
-                const video = videoResult.value as YouTubeVideo;
-                const seen = getSeen(VIDEO_KEY, studentId);
-                if (seen.popupShown !== video.videoId) {
-                    setNewVideo(video);
-                    hasNew = true;
-                } else if (seen.bannerDismissed !== video.videoId) {
-                    setShowVideoBanner(true);
-                    setNewVideo(video);
-                }
-            }
+                if (data && data.length > 0) {
+                    const activeUpdates = data as FeaturedUpdate[];
+                    setUpdates(activeUpdates);
 
-            // Show combined popup after a short delay if anything is new
-            if (hasNew) {
-                setTimeout(() => setShowPopup(true), 1500);
+                    // Find unread updates
+                    const firstUnreadIdx = activeUpdates.findIndex(u => !isUpdateRead(u, currentReads));
+                    if (firstUnreadIdx !== -1) {
+                        // Unread updates exist -> auto-open to the first unread update
+                        setCurrentIndex(firstUnreadIdx);
+                        setIsExpanded(true);
+                    } else {
+                        // All updates are already read -> keep as quiet floating pill
+                        setCurrentIndex(0);
+                        setIsExpanded(false);
+                    }
+                } else {
+                    setUpdates([]);
+                }
+            } catch (err) {
+                console.warn('[FeaturedUpdates] Failed to load updates:', err);
             }
         };
 
-        fetchAll();
-    }, [studentId, broadcasts]);
+        loadReadsAndUpdates();
+    }, [studentId]);
 
-    // ── Mark helpers ──────────────────────────────────────────────────────────
+    // ── Initialize or restore desktop position ───────────────────────────────
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const saved = getSavedPosition();
+        if (saved) {
+            const maxX = Math.max(16, window.innerWidth - 380);
+            const maxY = Math.max(16, window.innerHeight - 340);
+            setPos({
+                x: Math.max(16, Math.min(maxX, saved.x)),
+                y: Math.max(16, Math.min(maxY, saved.y))
+            });
+        }
+    }, []);
 
-    const markBlogPopupSeen = () => {
-        if (!newPost) return;
-        const seen = getSeen(BLOG_KEY, studentId);
-        setSeen(BLOG_KEY, studentId, { ...seen, popupShown: newPost.id });
-    };
-    const markBlogBannerDismissed = () => {
-        if (!newPost) return;
-        const seen = getSeen(BLOG_KEY, studentId);
-        setSeen(BLOG_KEY, studentId, { ...seen, bannerDismissed: newPost.id });
-    };
-    const markVideoPopupSeen = () => {
-        if (!newVideo) return;
-        const seen = getSeen(VIDEO_KEY, studentId);
-        setSeen(VIDEO_KEY, studentId, { ...seen, popupShown: newVideo.videoId });
-    };
-    const markVideoBannerDismissed = () => {
-        if (!newVideo) return;
-        const seen = getSeen(VIDEO_KEY, studentId);
-        setSeen(VIDEO_KEY, studentId, { ...seen, bannerDismissed: newVideo.videoId });
-    };
+    // ── Drag Handlers ────────────────────────────────────────────────────────
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        const target = e.target as HTMLElement;
+        if (target.closest('button') || target.closest('a')) return;
 
-    // ── Popup dismiss (collapses to banners) ──────────────────────────────────
+        isDraggingRef.current = true;
+        const rect = widgetRef.current?.getBoundingClientRect();
+        const currentX = rect ? rect.left : (window.innerWidth - 380);
+        const currentY = rect ? rect.top : (window.innerHeight - 340);
 
-    const dismissPopup = () => {
-        if (newPost)  { markBlogPopupSeen();  setShowBlogBanner(true); }
-        if (newVideo) { markVideoPopupSeen(); setShowVideoBanner(true); }
-        setShowPopup(false);
-    };
+        dragStartRef.current = {
+            mouseX: e.clientX,
+            mouseY: e.clientY,
+            startX: currentX,
+            startY: currentY
+        };
 
-    // ── Read / Watch (fully dismiss) ──────────────────────────────────────────
-
-    const readBlog = () => {
-        if (!newPost) return;
-        markBlogPopupSeen();
-        markBlogBannerDismissed();
-        setShowPopup(false);
-        setShowBlogBanner(false);
-        // If video is still new, collapse video to banner
-        if (newVideo) { markVideoPopupSeen(); setShowVideoBanner(true); }
-        const destination = newPost.target_url || (newPost.slug ? (newPost.slug.startsWith('http') || newPost.slug.startsWith('/') ? newPost.slug : `/blog/${newPost.slug}`) : '/blog');
-        window.open(destination, '_blank');
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'grabbing';
     };
 
-    const watchVideo = () => {
-        if (!newVideo) return;
-        markVideoPopupSeen();
-        markVideoBannerDismissed();
-        setShowPopup(false);
-        setShowVideoBanner(false);
-        // If blog is still new, collapse blog to banner
-        if (newPost) { markBlogPopupSeen(); setShowBlogBanner(true); }
-        window.open(newVideo.url, '_blank');
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDraggingRef.current) return;
+            const deltaX = e.clientX - dragStartRef.current.mouseX;
+            const deltaY = e.clientY - dragStartRef.current.mouseY;
+            const widgetWidth = widgetRef.current?.offsetWidth || 360;
+            const widgetHeight = widgetRef.current?.offsetHeight || 120;
+
+            const newX = Math.max(16, Math.min(window.innerWidth - widgetWidth - 16, dragStartRef.current.startX + deltaX));
+            const newY = Math.max(16, Math.min(window.innerHeight - widgetHeight - 16, dragStartRef.current.startY + deltaY));
+
+            setPos({ x: newX, y: newY });
+        };
+
+        const handleMouseUp = () => {
+            if (isDraggingRef.current) {
+                isDraggingRef.current = false;
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+                setPos(currentPos => {
+                    if (currentPos) savePosition(currentPos);
+                    return currentPos;
+                });
+            }
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
+
+    // ── Computed States ──────────────────────────────────────────────────────
+    const unreadCount = useMemo(() => {
+        return updates.filter(u => !isUpdateRead(u, reads)).length;
+    }, [updates, reads]);
+
+    const currentUpdate = updates[currentIndex] || updates[0];
+    const isCurrentRead = currentUpdate ? isUpdateRead(currentUpdate, reads) : false;
+
+    // ── Mark as Read & Actions ───────────────────────────────────────────────
+    const handleMarkAsRead = (updateId: string) => {
+        if (!studentId || !updateId) return;
+        const updatedReads = saveStudentRead(studentId, updateId);
+        setReads(updatedReads);
+
+        // Check if there are other unread updates left
+        const nextUnreadIdx = updates.findIndex((u, idx) => idx !== currentIndex && !isUpdateRead(u, updatedReads));
+        if (nextUnreadIdx !== -1) {
+            // Advance to next unread
+            setCurrentIndex(nextUnreadIdx);
+        } else {
+            // All updates are now read -> collapse gracefully into the floating pill
+            setIsExpanded(false);
+        }
     };
 
-    const dismissBlogBanner = () => { markBlogBannerDismissed(); setShowBlogBanner(false); };
-    const dismissVideoBanner = () => { markVideoBannerDismissed(); setShowVideoBanner(false); };
+    const handleOpenCTA = () => {
+        if (!currentUpdate) return;
+        // Also mark as read upon clicking CTA
+        if (!isCurrentRead) {
+            handleMarkAsRead(currentUpdate.id);
+        }
+        window.open(currentUpdate.url, '_blank');
+    };
 
-    // ── Nothing to show ───────────────────────────────────────────────────────
-    if (!newPost && !newVideo) return null;
+    // If there are no active updates targeted to this student, render nothing
+    if (updates.length === 0 || !currentUpdate) {
+        return null;
+    }
 
-    // ── How many cards in popup ───────────────────────────────────────────────
-    const bothNew  = !!newPost && !!newVideo && showPopup;
-    const onlyBlog = !!newPost && !newVideo  && showPopup;
-    const onlyVid  = !newPost  && !!newVideo && showPopup;
+    const typeMeta = getTypeMeta(currentUpdate.content_type);
+    const TypeIcon = typeMeta.icon;
 
     return (
         <>
-            {/* ══════════ COMBINED POPUP ═══════════════════════════════════════ */}
-            {showPopup && (
-                <div
-                    className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-3 sm:p-4"
-                    style={{ background: 'rgba(5,5,15,0.7)', backdropFilter: 'blur(8px)' }}
-                    onClick={dismissPopup}
-                >
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {/* DESKTOP VIEW (sm and above)                                         */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            <div
+                ref={widgetRef}
+                style={pos ? { left: `${pos.x}px`, top: `${pos.y}px` } : { right: '24px', bottom: '24px' }}
+                className="hidden sm:block fixed z-[9990] select-none"
+            >
+                {/* 1. COLLAPSED FLOATING PILL */}
+                {!isExpanded ? (
                     <div
-                        className={`relative w-full flex flex-col sm:flex-row gap-3 animate-in fade-in slide-in-from-bottom-6 duration-500 ${bothNew ? 'max-w-2xl' : 'max-w-md'}`}
-                        onClick={e => e.stopPropagation()}
+                        onMouseDown={handleMouseDown}
+                        onClick={() => setIsExpanded(true)}
+                        className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-full shadow-2xl border backdrop-blur-xl cursor-pointer hover:scale-105 active:scale-95 transition-all duration-200 ${
+                            unreadCount > 0
+                                ? 'border-amber-500/60 bg-gradient-to-r from-[#210c00] via-[#1a0f2b] to-[#12081f] text-white ring-2 ring-amber-500/20 shadow-amber-500/10'
+                                : 'border-slate-700/80 bg-slate-900/90 text-slate-200 hover:border-amber-500/40'
+                        }`}
+                        title="Click to view KFA Updates"
                     >
-                        {/* Global close */}
-                        <button
-                            onClick={dismissPopup}
-                            className="absolute -top-3 -right-3 z-20 w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-slate-700 transition-all shadow-lg"
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                            unreadCount > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                            <Sparkles className={`w-3.5 h-3.5 ${unreadCount > 0 ? 'animate-pulse' : ''}`} />
+                        </div>
+
+                        <span className="text-xs font-black tracking-wide text-white">
+                            What&apos;s New
+                        </span>
+
+                        {unreadCount > 0 ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#ecb613] text-slate-950 shadow-xs">
+                                {unreadCount} NEW
+                            </span>
+                        ) : (
+                            <span className="text-[10px] font-bold text-slate-400 group-hover:text-amber-400 transition-colors">
+                                {updates.length} {updates.length === 1 ? 'update' : 'updates'}
+                            </span>
+                        )}
+
+                        <span className="text-white/30 group-hover:text-white/70 transition-colors ml-0.5">
+                            <ChevronRight className="w-3.5 h-3.5" />
+                        </span>
+                    </div>
+                ) : (
+                    /* 2. EXPANDED CAROUSEL CARD */
+                    <div className="w-92 rounded-3xl shadow-2xl border border-amber-500/40 overflow-hidden backdrop-blur-xl animate-in fade-in duration-200">
+                        {/* Background Gradient */}
+                        <div 
+                            className="absolute inset-0 -z-10" 
+                            style={{ background: 'linear-gradient(145deg, #1a0a00 0%, #120e1f 50%, #0d0a14 100%)' }} 
+                        />
+
+                        {/* Top Accent Strip */}
+                        <div className="h-1 w-full bg-gradient-to-r from-amber-600 via-[#ecb613] to-rose-600" />
+
+                        {/* Header (Acts as drag handle) */}
+                        <div
+                            onMouseDown={handleMouseDown}
+                            className="px-4 py-3 flex items-center justify-between border-b border-white/10 cursor-grab active:cursor-grabbing bg-white/[0.03]"
                         >
-                            <X className="w-4 h-4" />
-                        </button>
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="text-white text-xs font-black tracking-wide truncate">
+                                        What&apos;s New at KFA
+                                    </h3>
+                                    <p className="text-[10px] font-bold text-amber-400/80">
+                                        {updates.length > 1 ? `Update ${currentIndex + 1} of ${updates.length}` : 'Featured Update'}
+                                        {unreadCount > 0 && ` · ${unreadCount} unread`}
+                                    </p>
+                                </div>
+                            </div>
 
-                        {/* ── Blog Card ── */}
-                        {(bothNew || onlyBlog) && newPost && (
-                            <div
-                                className="flex-1 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
-                                style={{ background: 'linear-gradient(145deg, #1a0a00, #2d1400, #3d1f00)' }}
-                            >
-                                <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #a15912, #f5c842, #a15912)' }} />
+                            <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                                {/* Drag Icon Indicator */}
+                                <span title="Drag to reposition widget" className="p-1 text-white/30 hover:text-white/70 transition-colors">
+                                    <Move className="w-3.5 h-3.5" />
+                                </span>
 
-                                {newPost.featured_image && (
-                                    <div className="relative h-36 overflow-hidden">
-                                        <img src={newPost.featured_image} alt={newPost.title} className="w-full h-full object-cover opacity-80" />
-                                        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #1a0a00 0%, transparent 60%)' }} />
-                                        <div className="absolute top-2 left-2 flex items-center gap-1 bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">
-                                            <Sparkles className="w-2.5 h-2.5" /> New Post
+                                {/* Minimize Button (Collapse into pill without marking as read) */}
+                                <button
+                                    type="button"
+                                    onClick={() => setIsExpanded(false)}
+                                    className="p-1 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-all text-xs font-bold"
+                                    title="Minimize to floating pill"
+                                >
+                                    <Minus className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Body Content */}
+                        <div className="p-4 space-y-3.5 text-left">
+                            {/* Optional Thumbnail / Header Media */}
+                            {currentUpdate.thumbnail_url ? (
+                                <div 
+                                    className="relative w-full h-36 rounded-2xl overflow-hidden bg-black/40 border border-white/10 group cursor-pointer" 
+                                    onClick={handleOpenCTA}
+                                >
+                                    <img
+                                        src={currentUpdate.thumbnail_url}
+                                        alt={currentUpdate.title}
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                                    
+                                    <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                                        <div className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md border border-white/20 bg-black/60 text-amber-300">
+                                            <TypeIcon className="w-2.5 h-2.5" />
+                                            <span>{typeMeta.label}</span>
                                         </div>
+                                        {!isCurrentRead ? (
+                                            <span className="px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase bg-[#ecb613] text-slate-950 shadow-sm">
+                                                NEW
+                                            </span>
+                                        ) : (
+                                            <span className="px-2 py-0.5 rounded-full text-[8.5px] font-bold uppercase bg-black/50 text-white/60 border border-white/10">
+                                                ✓ READ
+                                            </span>
+                                        )}
                                     </div>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-between">
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${typeMeta.color}`}>
+                                        <TypeIcon className="w-3 h-3" />
+                                        <span>{typeMeta.label}</span>
+                                    </span>
+                                    {!isCurrentRead ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-[#ecb613] text-slate-950 shadow-sm">
+                                            NEW
+                                        </span>
+                                    ) : (
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-white/10 text-white/60">
+                                            ✓ READ
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Title & Description */}
+                            <div>
+                                <h4 className="text-white text-sm font-black leading-snug hover:text-amber-300 transition-colors">
+                                    {currentUpdate.title}
+                                </h4>
+                                {currentUpdate.description && (
+                                    <p className="text-slate-300/80 text-xs leading-relaxed mt-1.5 line-clamp-3">
+                                        {currentUpdate.description}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Actions & Pagination Footer */}
+                            <div className="pt-1 flex items-center justify-between gap-2 border-t border-white/10">
+                                {/* Multi-update pagination controls */}
+                                {updates.length > 1 ? (
+                                    <div className="flex items-center gap-1 text-white/50">
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentIndex(prev => (prev > 0 ? prev - 1 : updates.length - 1))}
+                                            className="p-1 rounded-lg hover:bg-white/10 hover:text-white transition-colors"
+                                            title="Previous update"
+                                        >
+                                            <ChevronLeft className="w-4 h-4" />
+                                        </button>
+                                        <span className="text-[10px] font-bold text-white/70 px-1">
+                                            {currentIndex + 1}/{updates.length}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setCurrentIndex(prev => (prev < updates.length - 1 ? prev + 1 : 0))}
+                                            className="p-1 rounded-lg hover:bg-white/10 hover:text-white transition-colors"
+                                            title="Next update"
+                                        >
+                                            <ChevronRight className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span className="text-[10px] font-semibold text-white/40">Academy Notice</span>
                                 )}
 
-                                <div className="p-4 flex flex-col flex-1">
-                                    {!newPost.featured_image && (
-                                        <div className="flex items-center gap-1 mb-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-black px-2 py-0.5 rounded-full w-fit uppercase tracking-widest">
-                                            <Sparkles className="w-2.5 h-2.5" /> New Blog Post
-                                        </div>
+                                <div className="flex items-center gap-2 ml-auto">
+                                    {/* Mark as Read / Dismiss Action */}
+                                    {!isCurrentRead ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleMarkAsRead(currentUpdate.id)}
+                                            className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-white/70 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1 cursor-pointer"
+                                            title="Mark this update as read"
+                                        >
+                                            <Check className="w-3 h-3 text-emerald-400" />
+                                            <span>Mark as Read</span>
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsExpanded(false)}
+                                            className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                            title="Collapse into floating pill"
+                                        >
+                                            Close
+                                        </button>
                                     )}
-                                    <div className="flex gap-2 mb-2">
-                                        <div className="p-1.5 rounded-lg bg-amber-500/20 shrink-0 h-fit">
-                                            <BookOpen className="w-4 h-4 text-amber-400" />
-                                        </div>
-                                        <div>
-                                            <p className="text-amber-300/60 text-[10px] font-medium">From the Academy</p>
-                                            <h3 className="text-white font-bold text-sm leading-snug line-clamp-2">{newPost.title}</h3>
-                                        </div>
-                                    </div>
-                                    {newPost.excerpt && (
-                                        <p className="text-amber-100/50 text-xs leading-relaxed line-clamp-2 mb-3">{newPost.excerpt}</p>
-                                    )}
+
+                                    {/* Open CTA Action */}
                                     <button
-                                        onClick={readBlog}
-                                        className="mt-auto w-full flex items-center justify-center gap-1.5 py-2 rounded-xl font-bold text-xs text-white transition-all active:scale-95 shadow-lg"
-                                        style={{ background: 'linear-gradient(135deg, #a15912, #c97a1e)' }}
+                                        type="button"
+                                        onClick={handleOpenCTA}
+                                        className="px-4 py-2 rounded-xl text-xs font-black text-slate-950 bg-[#ecb613] hover:bg-[#ecb613]/90 active:scale-95 shadow-lg shadow-amber-500/20 flex items-center gap-1.5 transition-all cursor-pointer"
                                     >
-                                        Read Article <ChevronRight className="w-3.5 h-3.5" />
+                                        <span>{currentUpdate.cta_label || 'Learn More'}</span>
+                                        <ExternalLink className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
                             </div>
-                        )}
+                        </div>
+                    </div>
+                )}
+            </div>
 
-                        {/* ── YouTube Card ── */}
-                        {(bothNew || onlyVid) && newVideo && (
-                            <div
-                                className="flex-1 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
-                                style={{ background: 'linear-gradient(145deg, #0d0d1a, #1a1a2e, #16213e)' }}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {/* MOBILE VIEW (sm:hidden - Mobile Bottom Action)                      */}
+            {/* ═══════════════════════════════════════════════════════════════════ */}
+            {!isExpanded ? (
+                /* Mobile Floating Action Pill */
+                <div
+                    onClick={() => setIsExpanded(true)}
+                    className={`sm:hidden fixed bottom-20 right-3.5 z-[9990] flex items-center gap-2 px-3.5 py-2 rounded-full shadow-2xl border backdrop-blur-xl cursor-pointer active:scale-95 transition-all duration-200 ${
+                        unreadCount > 0
+                            ? 'border-amber-500/60 bg-gradient-to-r from-[#210c00] via-[#1a0f2b] to-[#12081f] text-white ring-2 ring-amber-500/20'
+                            : 'border-slate-700/80 bg-slate-900/90 text-slate-200'
+                    }`}
+                >
+                    <Sparkles className={`w-3.5 h-3.5 ${unreadCount > 0 ? 'text-amber-400 animate-pulse' : 'text-slate-400'}`} />
+                    <span className="text-xs font-black text-white">What&apos;s New</span>
+                    {unreadCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-[#ecb613] text-slate-950">
+                            {unreadCount}
+                        </span>
+                    )}
+                </div>
+            ) : (
+                /* Mobile Bottom Sheet Card */
+                <div className="sm:hidden fixed bottom-3 left-3 right-3 z-[9990] rounded-2xl shadow-2xl border border-amber-500/40 overflow-hidden backdrop-blur-xl animate-in slide-in-from-bottom-3 duration-200">
+                    <div 
+                        className="absolute inset-0 -z-10" 
+                        style={{ background: 'linear-gradient(145deg, #180900 0%, #120e1f 100%)' }} 
+                    />
+                    <div className="h-0.5 w-full bg-gradient-to-r from-amber-600 via-[#ecb613] to-rose-600" />
+
+                    <div className="p-3.5 space-y-2.5 text-left">
+                        {/* Header Row */}
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${typeMeta.color}`}>
+                                    <TypeIcon className="w-2.5 h-2.5" />
+                                    <span className="truncate">{typeMeta.label}</span>
+                                </span>
+                                {updates.length > 1 && (
+                                    <span className="text-[10px] font-bold text-amber-400">
+                                        ({currentIndex + 1}/{updates.length})
+                                    </span>
+                                )}
+                                {!isCurrentRead ? (
+                                    <span className="px-1.5 py-0.2 rounded-full text-[8px] font-black bg-[#ecb613] text-slate-950">
+                                        NEW
+                                    </span>
+                                ) : (
+                                    <span className="px-1.5 py-0.2 rounded-full text-[8px] font-bold bg-white/10 text-white/60">
+                                        READ
+                                    </span>
+                                )}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setIsExpanded(false)}
+                                className="p-1 rounded-lg text-white/60 hover:text-white"
+                                aria-label="Minimize"
                             >
-                                <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #cc0000, #ff6b6b, #cc0000)' }} />
+                                <Minus className="w-4 h-4" />
+                            </button>
+                        </div>
 
-                                {/* Thumbnail */}
-                                <div className="relative h-36 overflow-hidden group cursor-pointer" onClick={watchVideo}>
-                                    <img src={newVideo.thumbnail} alt={newVideo.title} className="w-full h-full object-cover" />
-                                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-all flex items-center justify-center">
-                                        <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
-                                            <Play className="w-5 h-5 text-white fill-white ml-0.5" />
-                                        </div>
-                                    </div>
-                                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest shadow">
-                                        <Youtube className="w-2.5 h-2.5" /> New Video
-                                    </div>
-                                    <div className="absolute inset-x-0 bottom-0 h-12" style={{ background: 'linear-gradient(to top, #0d0d1a, transparent)' }} />
-                                </div>
+                        {/* Content */}
+                        <div className="flex items-start gap-3">
+                            {currentUpdate.thumbnail_url && (
+                                <img
+                                    src={currentUpdate.thumbnail_url}
+                                    alt={currentUpdate.title}
+                                    className="w-16 h-16 rounded-xl object-cover border border-white/10 shrink-0"
+                                />
+                            )}
+                            <div className="min-w-0 flex-1">
+                                <h4 className="text-white text-xs font-black leading-snug line-clamp-2">
+                                    {currentUpdate.title}
+                                </h4>
+                                {currentUpdate.description && (
+                                    <p className="text-slate-300/80 text-[11px] leading-tight line-clamp-2 mt-1">
+                                        {currentUpdate.description}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
 
-                                <div className="p-4 flex flex-col flex-1">
-                                    <div className="flex gap-2 mb-2">
-                                        <div className="p-1.5 rounded-lg bg-red-500/20 shrink-0 h-fit">
-                                            <Youtube className="w-4 h-4 text-red-400" />
-                                        </div>
-                                        <div>
-                                            <p className="text-red-300/60 text-[10px] font-medium">Krishna Flute Academy · YouTube</p>
-                                            <h3 className="text-white font-bold text-sm leading-snug line-clamp-2">{newVideo.title}</h3>
-                                        </div>
-                                    </div>
-                                    {newVideo.description && (
-                                        <p className="text-slate-400 text-xs leading-relaxed line-clamp-2 mb-3">{newVideo.description}</p>
-                                    )}
+                        {/* Footer Actions */}
+                        <div className="pt-1 flex items-center justify-between gap-2 border-t border-white/10">
+                            {updates.length > 1 ? (
+                                <div className="flex items-center gap-1 text-white/60">
                                     <button
-                                        onClick={watchVideo}
-                                        className="mt-auto w-full flex items-center justify-center gap-1.5 py-2 rounded-xl font-bold text-xs text-white transition-all active:scale-95 shadow-lg"
-                                        style={{ background: 'linear-gradient(135deg, #cc0000, #ff4444)' }}
+                                        type="button"
+                                        onClick={() => setCurrentIndex(prev => (prev > 0 ? prev - 1 : updates.length - 1))}
+                                        className="p-1 rounded hover:bg-white/10"
                                     >
-                                        <Play className="w-3.5 h-3.5 fill-white" /> Watch Now
+                                        <ChevronLeft className="w-3.5 h-3.5" />
+                                    </button>
+                                    <span className="text-[10px] font-bold text-white/70">
+                                        {currentIndex + 1}/{updates.length}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentIndex(prev => (prev < updates.length - 1 ? prev + 1 : 0))}
+                                        className="p-1 rounded hover:bg-white/10"
+                                    >
+                                        <ChevronRight className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
+                            ) : <div />}
+
+                            <div className="flex items-center gap-2">
+                                {!isCurrentRead ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleMarkAsRead(currentUpdate.id)}
+                                        className="px-2 py-1 text-[11px] font-bold text-white/70 hover:text-white"
+                                    >
+                                        Mark Read
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsExpanded(false)}
+                                        className="px-2 py-1 text-[11px] font-bold text-white/50 hover:text-white"
+                                    >
+                                        Close
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={handleOpenCTA}
+                                    className="px-3.5 py-1.5 rounded-xl text-xs font-black text-slate-950 bg-[#ecb613] shadow-md flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                                >
+                                    <span>{currentUpdate.cta_label || 'View'}</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                </button>
                             </div>
-                        )}
-                    </div>
-
-                    {/* Dismiss hint */}
-                    <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/30 text-xs tracking-wide pointer-events-none hidden sm:block">
-                        Tap outside to dismiss
-                    </p>
-                </div>
-            )}
-
-            {/* ══════════ CORNER BANNERS (stacked) ═════════════════════════════ */}
-
-            {/* Blog Banner */}
-            {showBlogBanner && !showPopup && newPost && (
-                <div
-                    className={`fixed right-4 z-[9997] max-w-[270px] w-full rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-right-4 fade-in duration-400 transition-all ${showVideoBanner ? 'bottom-40' : 'bottom-4'}`}
-                    style={{ background: 'linear-gradient(135deg, #1e0d00, #2d1400)', border: '1px solid rgba(161,89,18,0.4)' }}
-                >
-                    <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #a15912, #f5c842, #a15912)' }} />
-                    <div className="p-3">
-                        <div className="flex items-start gap-2">
-                            {newPost.featured_image
-                                ? <img src={newPost.featured_image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 opacity-90" />
-                                : <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0"><BookOpen className="w-4 h-4 text-amber-400" /></div>
-                            }
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1 mb-0.5">
-                                    <span className="text-amber-400 text-[9px] font-black uppercase tracking-widest">New Blog</span>
-                                    <Sparkles className="w-2 h-2 text-amber-400" />
-                                </div>
-                                <p className="text-white text-xs font-semibold leading-snug line-clamp-2">{newPost.title}</p>
-                            </div>
-                            <button onClick={dismissBlogBanner} className="shrink-0 p-0.5 text-white/30 hover:text-white/70 transition-colors">
-                                <X className="w-3 h-3" />
-                            </button>
                         </div>
-                        <button onClick={readBlog} className="mt-2.5 w-full flex items-center justify-center gap-1 py-1.5 rounded-xl text-[11px] font-bold text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #a15912, #c97a1e)' }}>
-                            <ExternalLink className="w-2.5 h-2.5" /> Read Article
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* YouTube Banner */}
-            {showVideoBanner && !showPopup && newVideo && (
-                <div
-                    className="fixed bottom-4 right-4 z-[9998] max-w-[270px] w-full rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-right-4 fade-in duration-400"
-                    style={{ background: 'linear-gradient(135deg, #0d0d1a, #1a1a2e)', border: '1px solid rgba(220,38,38,0.35)' }}
-                >
-                    <div className="h-0.5 w-full" style={{ background: 'linear-gradient(90deg, #cc0000, #ff6b6b, #cc0000)' }} />
-                    <div className="p-3">
-                        <div className="flex items-start gap-2">
-                            <div className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0">
-                                <img src={newVideo.thumbnail} alt="" className="w-full h-full object-cover" />
-                                <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                                    <Play className="w-3 h-3 text-white fill-white" />
-                                </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1 mb-0.5">
-                                    <Youtube className="w-2.5 h-2.5 text-red-500" />
-                                    <span className="text-red-400 text-[9px] font-black uppercase tracking-widest">New Video</span>
-                                </div>
-                                <p className="text-white text-xs font-semibold leading-snug line-clamp-2">{newVideo.title}</p>
-                            </div>
-                            <button onClick={dismissVideoBanner} className="shrink-0 p-0.5 text-white/30 hover:text-white/70 transition-colors">
-                                <X className="w-3 h-3" />
-                            </button>
-                        </div>
-                        <button onClick={watchVideo} className="mt-2.5 w-full flex items-center justify-center gap-1 py-1.5 rounded-xl text-[11px] font-bold text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #cc0000, #ff4444)' }}>
-                            <Play className="w-2.5 h-2.5 fill-white" /> Watch on YouTube
-                        </button>
                     </div>
                 </div>
             )}

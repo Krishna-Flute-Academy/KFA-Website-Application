@@ -46,6 +46,7 @@ export default function MeetingPage() {
 
     // Unified Hub states
     const [secondsElapsed, setSecondsElapsed] = useState(0);
+    const [isLiveSession, setIsLiveSession] = useState(false);
 
     // ── Fetch classroom + enrolled students ──────────────────────────────────
     useEffect(() => {
@@ -115,6 +116,7 @@ export default function MeetingPage() {
                         
                         const elapsed = Math.floor((Date.now() - new Date(classroom.live_session_started_at).getTime()) / 1000);
                         setSecondsElapsed(elapsed > 0 ? elapsed : 0);
+                        setIsLiveSession(true);
                         setStep(3);
 
                         // Populate local storage for backup consistency
@@ -300,17 +302,27 @@ export default function MeetingPage() {
 
             if (liveError) throw liveError;
 
-            // Trigger push & in-app notifications for students in this classroom
+            // Trigger push & in-app notifications for students in this classroom (only if starting fresh session)
+            const wasAlreadyLive = isLiveSession;
             const targetStudentIds = students.map(s => s.id);
-            if (targetStudentIds.length > 0) {
+            if (!wasAlreadyLive && targetStudentIds.length > 0) {
+                const isOnline = (sessionType || 'online') === 'online';
+                const notifTitle = `Class Started: ${classroomName}`;
+                const notifMessage = isOnline && meetingLink
+                    ? `The online class for "${classroomName}" has started. Join here: ${meetingLink}`
+                    : `The class for "${classroomName}" has started.`;
+
                 sendClassroomNotification({
-                    teacherId: teacherProfile.id,
+                    teacherId: teacherProfile?.id,
                     recipients: [{ id: classroomId, name: classroomName, type: 'class' }],
-                    title: 'Class Started',
-                    message: `The class session for "${classroomName}" has started.`,
-                    studentIds: targetStudentIds
+                    title: notifTitle,
+                    message: notifMessage,
+                    studentIds: targetStudentIds,
+                    type: 'live_class'
                 }).catch(err => console.error('Failed to send classroom notifications:', err));
             }
+
+            setIsLiveSession(true);
 
             // Save active session info to localStorage for floating PIP widget support
             localStorage.setItem('active_class_session', JSON.stringify({
@@ -385,6 +397,7 @@ export default function MeetingPage() {
                 })
                 .eq('id', classroomId);
 
+            setIsLiveSession(false);
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('active_class_session');
                 window.dispatchEvent(new Event('storage'));

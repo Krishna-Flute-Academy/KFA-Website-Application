@@ -35,6 +35,7 @@ out/
 # Scratch and test files
 scratch/
 test_upsert.cjs
+migration-backups/
 
 # TypeScript build info
 *.tsbuildinfo
