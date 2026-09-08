@@ -144,7 +144,7 @@ export default function PendingApprovalPage() {
                 <div className="text-xs text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-6 mb-6">
                     <p className="font-medium">Need immediate assistance or role change?</p>
                     <p className="mt-1">
-                        Email: <a href="mailto:krishnafluteacademy@gmail.com" className="text-[#a15912] font-semibold hover:underline">krishnafluteacademy@gmail.com</a>
+                        Email: <a href="mailto:kgbhaumik86@gmail.com" className="text-[#a15912] font-semibold hover:underline">kgbhaumik86@gmail.com</a>
                     </p>
                     <p>
                         Phone: <a href="tel:+919836952545" className="text-[#a15912] font-semibold hover:underline">+91 98369 52545</a>

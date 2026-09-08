@@ -123,6 +123,7 @@ interface OverviewTabProps {
     learningFocus?: any | null;
     studentSpotlights?: { teacherSpotlight: any | null; studentSpotlight: any | null };
     onToggleStudentSpotlight?: (lessonId: string) => Promise<void> | void;
+    onOpenGuideModal?: (slug: string) => void;
 }
 
 const formatTime = (timeStr?: string) => {
@@ -168,6 +169,7 @@ export default function OverviewTab({
     batchSchedules = [],
     makeupSchedules = [],
     learningFocus,
+    onOpenGuideModal
 }: OverviewTabProps) {
     const [latestPost, setLatestPost] = useState<BlogPostItem | null>(null);
     const [latestVideo, setLatestVideo] = useState<YouTubeVideoItem | null>(null);
@@ -763,9 +765,23 @@ export default function OverviewTab({
                                 <span className="text-emerald-700">All Done ✓</span>
                             )}
                         </h4>
-                        <p className="text-[9px] text-[#7C5E3F] font-bold mt-0.5">
-                            {pendingTasks.length > 0 ? 'Submit Tasks →' : `${assignments.length} total`}
-                        </p>
+                        <div className="flex items-center justify-between mt-0.5">
+                            <p className="text-[9px] text-[#7C5E3F] font-bold">
+                                {pendingTasks.length > 0 ? 'Submit Tasks →' : `${assignments.length} total`}
+                            </p>
+                            {pendingTasks.length > 0 && onOpenGuideModal && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenGuideModal('how-to-submit-task');
+                                    }}
+                                    className="text-[9px] font-bold text-[#d46211] hover:underline cursor-pointer"
+                                >
+                                    ? How
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* 6. Next Class */}
@@ -777,9 +793,23 @@ export default function OverviewTab({
                         <h4 className="font-extrabold text-xs text-[#3E3A35] truncate mt-0.5">
                             {nextClass ? nextClass.formattedDate : (classroom ? classroom.name : 'No Class')}
                         </h4>
-                        <p className="text-[9px] text-amber-800 font-bold mt-0.5 truncate">
-                            {nextClass?.start_time ? formatTime(nextClass.start_time) : 'Active Batch'}
-                        </p>
+                        <div className="flex items-center justify-between mt-0.5">
+                            <p className="text-[9px] text-amber-800 font-bold truncate">
+                                {nextClass?.start_time ? formatTime(nextClass.start_time) : 'Active Batch'}
+                            </p>
+                            {nextClass && onOpenGuideModal && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenGuideModal('how-to-apply-leave');
+                                    }}
+                                    className="text-[9px] font-bold text-[#7C5E3F] hover:underline shrink-0 cursor-pointer"
+                                >
+                                    ? Leave
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -1205,13 +1235,25 @@ export default function OverviewTab({
                                     <span>{overdueTasks.length} Overdue Task{overdueTasks.length > 1 ? 's' : ''}</span>
                                 </div>
                             ) : dueSoonTasks.length > 0 ? (
-                                <div 
-                                    onClick={() => setActiveTab('tasks')}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-900 border border-amber-500/40 text-xs font-black cursor-pointer transition-colors shrink-0"
-                                    title="Click to view tasks due soon"
-                                >
-                                    <Clock className="w-3.5 h-3.5 text-amber-700" />
-                                    <span>{dueSoonTasks.length} Task{dueSoonTasks.length > 1 ? 's' : ''} Due Soon</span>
+                                <div className="inline-flex items-center gap-1.5 shrink-0">
+                                    <div 
+                                        onClick={() => setActiveTab('tasks')}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-900 border border-amber-500/40 text-xs font-black cursor-pointer transition-colors"
+                                        title="Click to view tasks due soon"
+                                    >
+                                        <Clock className="w-3.5 h-3.5 text-amber-700" />
+                                        <span>{dueSoonTasks.length} Task{dueSoonTasks.length > 1 ? 's' : ''} Due Soon</span>
+                                    </div>
+                                    {onOpenGuideModal && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onOpenGuideModal('how-to-submit-task')}
+                                            className="text-[10px] font-bold text-[#d46211] hover:underline px-1 py-0.5 cursor-pointer"
+                                            title="View submission guide"
+                                        >
+                                            ? How to submit
+                                        </button>
+                                    )}
                                 </div>
                             ) : pendingTasks.length > 0 ? (
                                 <div 
@@ -1514,9 +1556,23 @@ export default function OverviewTab({
                                     </>
                                 ) : classroom ? classroom.name : 'No Class'}
                             </h3>
-                            <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E] mt-0.5 truncate">
-                                {nextClass?.start_time ? formatTime(nextClass.start_time) : (classroom ? 'Active Batch' : 'Not Enrolled')}
-                            </p>
+                            <div className="flex items-center justify-between mt-0.5">
+                                <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E] truncate">
+                                    {nextClass?.start_time ? formatTime(nextClass.start_time) : (classroom ? 'Active Batch' : 'Not Enrolled')}
+                                </p>
+                                {nextClass && onOpenGuideModal && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onOpenGuideModal('how-to-apply-leave');
+                                        }}
+                                        className="text-[10px] font-bold text-[#7C5E3F] hover:underline shrink-0 cursor-pointer"
+                                    >
+                                        ? How Leave Works
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -1567,11 +1623,25 @@ export default function OverviewTab({
                                     <span className="text-emerald-700">All Done ✓</span>
                                 )}
                             </h3>
-                            <div className="mt-0.5">
+                            <div className="mt-0.5 flex items-center justify-between">
                                 {pendingTasks.length > 0 ? (
-                                    <span className="text-[10px] font-bold text-[#7C5E3F] inline-flex items-center gap-0.5 hover:underline">
-                                        Submit Tasks →
-                                    </span>
+                                    <>
+                                        <span className="text-[10px] font-bold text-[#7C5E3F] inline-flex items-center gap-0.5 hover:underline">
+                                            Submit Tasks →
+                                        </span>
+                                        {onOpenGuideModal && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onOpenGuideModal('how-to-submit-task');
+                                                }}
+                                                className="text-[10px] font-bold text-[#d46211] hover:underline cursor-pointer"
+                                            >
+                                                ? How to submit
+                                            </button>
+                                        )}
+                                    </>
                                 ) : (
                                     <p className="text-[9px] sm:text-[10px] font-semibold text-[#9A958E]">
                                         {assignments.length} total tasks

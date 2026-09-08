@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Calendar, 
     X, 
@@ -37,6 +37,8 @@ interface AttendanceTabProps {
     setExcuseError?: (err: string | null) => void;
     isSubmittingExcuse: boolean;
     handleSubmitExcuse: (e: React.FormEvent) => Promise<void>;
+    onNavigateToGuide?: (guideId: string) => void;
+    onOpenGuideModal?: (slug: string) => void;
 }
 
 function normalizeDateStr(d: any): string | null {
@@ -74,8 +76,39 @@ export default function AttendanceTab({
     excuseError,
     setExcuseError,
     isSubmittingExcuse,
-    handleSubmitExcuse
+    handleSubmitExcuse,
+    onNavigateToGuide,
+    onOpenGuideModal
 }: AttendanceTabProps) {
+    const [isFirstTimeLeaveDismissed, setIsFirstTimeLeaveDismissed] = useState(true);
+
+    // Track if student has ever submitted a leave request
+    const hasSubmittedAnyLeave = useMemo(() => {
+        return (myLeaveRequests && myLeaveRequests.length > 0) || (attendanceRecords && attendanceRecords.some((r: any) => r.status === 'excused'));
+    }, [myLeaveRequests, attendanceRecords]);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const dismissed = localStorage.getItem('kfa_dismissed_first_leave_guide') === 'true';
+            setIsFirstTimeLeaveDismissed(dismissed);
+        }
+    }, []);
+
+    const handleDismissFirstTimeLeave = () => {
+        setIsFirstTimeLeaveDismissed(true);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('kfa_dismissed_first_leave_guide', 'true');
+        }
+    };
+
+    const triggerOpenLeaveGuide = () => {
+        if (onOpenGuideModal) {
+            onOpenGuideModal('how-to-apply-leave');
+        } else if (onNavigateToGuide) {
+            onNavigateToGuide('how-to-apply-leave');
+        }
+    };
+
     // 1. Date Range Filter State
     const [fromDate, setFromDate] = useState<string>('');
     const [toDate, setToDate] = useState<string>('');
@@ -220,12 +253,55 @@ export default function AttendanceTab({
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
+            {/* First-Time Guidance Prompt (Only for students who have never requested leave and not dismissed) */}
+            {!hasSubmittedAnyLeave && !isFirstTimeLeaveDismissed && (
+                <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50/60 dark:from-slate-850 dark:to-slate-800 border border-amber-200/80 dark:border-amber-900/40 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left shadow-xs animate-in fade-in duration-200">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xl">💡</span>
+                        <div>
+                            <h4 className="text-xs sm:text-sm font-extrabold text-slate-850 dark:text-white">
+                                Applying for leave for the first time?
+                            </h4>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                Learn how to request an excused absence at least 24 hours in advance.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <button
+                            type="button"
+                            onClick={triggerOpenLeaveGuide}
+                            className="px-3.5 py-1.5 bg-[#7C5E3F] hover:bg-[#644b32] text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer min-h-[36px]"
+                        >
+                            Show Me How
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleDismissFirstTimeLeave}
+                            className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-medium cursor-pointer min-h-[36px]"
+                        >
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Header section with title and excuse absence button */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
                     <div>
                         <h3 className="font-extrabold text-slate-800 dark:text-white text-base mb-1">Attendance Tracker</h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Total attendance stats, calendar overview and class record history</p>
+                        <div className="flex items-center gap-2 mt-2">
+                            <button
+                                type="button"
+                                onClick={triggerOpenLeaveGuide}
+                                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#d46211] hover:underline cursor-pointer"
+                            >
+                                <span>💡 Need to miss a class?</span>
+                                <span>How to Apply for Leave →</span>
+                            </button>
+                        </div>
                     </div>
                     <button 
                         type="button"
@@ -704,6 +780,15 @@ export default function AttendanceTab({
                             <p className="text-xs text-slate-500 leading-relaxed">
                                 Informing your teacher and academy admin in advance helps us reschedule classes. Submitting this request logs an <strong>Excused Absence</strong> and makes you eligible for a makeup/alternative slot.
                             </p>
+                            {(onOpenGuideModal || onNavigateToGuide) && (
+                                <button
+                                    type="button"
+                                    onClick={triggerOpenLeaveGuide}
+                                    className="text-[11px] font-bold text-[#d46211] hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                    Need help? View step-by-step guide: How to Apply for Leave →
+                                </button>
+                            )}
 
                             <div className="space-y-1">
                                 <label className="block text-[10px] font-black text-[#7C5E3F] uppercase tracking-wider pl-1">Absence Date *</label>

@@ -13,6 +13,7 @@ import {
 import dynamic from 'next/dynamic';
 
 const PracticeSuiteModal = dynamic(() => import('../PracticeSuiteModal'), { ssr: false });
+const FluteTunerModal = dynamic(() => import('../tools/tuner/FluteTunerModal'), { ssr: false });
 
 const OverviewTab = dynamic(() => import('./OverviewTab'), { ssr: false });
 const CurriculumTab = dynamic(() => import('./CurriculumTab'), { ssr: false });
@@ -27,6 +28,7 @@ const PoliciesTab = dynamic(() => import('./PoliciesTab'), { ssr: false });
 const AcademyPolicies = dynamic(() => import('../AcademyPolicies'), { ssr: false });
 const SettingsTab = dynamic(() => import('./SettingsTab'), { ssr: false });
 const MentorHubTab = dynamic(() => import('./MentorHubTab'), { ssr: false });
+const HowToGuideViewer = dynamic(() => import('../HowToGuideViewer'), { ssr: false });
 import SubmitTaskModal from './SubmitTaskModal';
 import SecureCurriculumMaterial from '../SecureCurriculumMaterial';
 import BlogNotification from './BlogNotification';
@@ -287,8 +289,32 @@ export default function StudentDashboardContainer() {
     const [selectedMessagesFeed, setSelectedMessagesFeed] = useState<{ type: 'category' | 'chat'; id: string; name: string } | null>(null);
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
+    const [showFluteTuner, setShowFluteTuner] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>('metronome');
     const [snoozedFeeNotifIds, setSnoozedFeeNotifIds] = useState<string[]>([]);
+    const [policiesInitialSubTab, setPoliciesInitialSubTab] = useState<'policies' | 'how-to'>('policies');
+    const [policiesTargetGuideId, setPoliciesTargetGuideId] = useState<string | null>(null);
+    const [activeGuideModalSlug, setActiveGuideModalSlug] = useState<string | null>(null);
+
+    const handleNavigateToGuide = (guideId: string) => {
+        setPoliciesInitialSubTab('how-to');
+        setPoliciesTargetGuideId(guideId);
+        setActiveTab('policies');
+    };
+
+    const handleOpenGuideModal = (slug: string) => {
+        setActiveGuideModalSlug(slug);
+    };
+
+    const handleCloseGuideModal = () => {
+        setActiveGuideModalSlug(null);
+    };
+
+    const handleNavigateToPolicy = (policyId: string) => {
+        setActiveGuideModalSlug(null);
+        setPoliciesInitialSubTab('policies');
+        setActiveTab('policies');
+    };
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -2726,6 +2752,12 @@ export default function StudentDashboardContainer() {
                 />
             )}
 
+            {showFluteTuner && (
+                <FluteTunerModal
+                    onClose={() => setShowFluteTuner(false)}
+                />
+            )}
+
             <div className="flex min-h-screen bg-[#FAF6F0]" style={{ fontFamily: 'Lexend, sans-serif' }}>
                 {/* Google Fonts */}
                 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -2779,11 +2811,11 @@ export default function StudentDashboardContainer() {
                             { id: 'curriculum', label: 'Curriculum Progress', icon: BookOpen },
                             { id: 'tasks', label: 'Tasks & Submissions', icon: ClipboardList },
                             { id: 'messages', label: 'Message Center', icon: Mail },
-                            { id: 'attendance', label: 'Attendance logs', icon: Calendar },
+                            { id: 'attendance', label: 'Attendance & Leave', icon: Calendar },
                             { id: 'library', label: 'Tools', icon: FileText },
                             { id: 'fees', label: 'Fees & Payments', icon: CreditCard },
                             { id: 'mentor_hub', label: 'Mentor Hub', icon: Sparkles },
-                            { id: 'policies', label: 'Academy Policies', icon: Scroll },
+                            { id: 'policies', label: 'Policies & How-To', icon: Scroll },
                             { id: 'settings', label: 'Profile Settings', icon: User },
                         ].filter(item => {
                             if (item.id === 'fees' && (profile?.status === 'archived' || profile?.status === 'inactive')) {
@@ -2879,7 +2911,7 @@ export default function StudentDashboardContainer() {
                                 <Music className="w-5 h-5" />
                             </div>
                             <h2 className="text-[#3E3A35] font-extrabold tracking-tight capitalize text-sm md:text-base">
-                                {activeTab === 'library' ? 'Tools' : activeTab === 'tasks' ? 'Tasks & Submissions' : activeTab === 'settings' ? 'Profile Settings' : activeTab}
+                                {activeTab === 'library' ? 'Tools' : activeTab === 'tasks' ? 'Tasks & Submissions' : activeTab === 'settings' ? 'Profile Settings' : activeTab === 'policies' ? 'Policies & How-To' : activeTab}
                             </h2>
                         </div>
 
@@ -3152,6 +3184,7 @@ export default function StudentDashboardContainer() {
                                     learningFocus={learningFocus}
                                     studentSpotlights={studentSpotlights}
                                     onToggleStudentSpotlight={handleToggleStudentSpotlight}
+                                    onOpenGuideModal={handleOpenGuideModal}
                                 />
                             </div>
                         )}
@@ -3228,6 +3261,8 @@ export default function StudentDashboardContainer() {
                                     setSubmissionType={setSubmissionType}
                                     isSubmittingTask={isSubmittingTask}
                                     handleSubmitTask={handleSubmitTask}
+                                    onNavigateToGuide={handleNavigateToGuide}
+                                    onOpenGuideModal={handleOpenGuideModal}
                                 />
                             </div>
                         )}
@@ -3269,6 +3304,8 @@ export default function StudentDashboardContainer() {
                                     setExcuseError={setExcuseError}
                                     isSubmittingExcuse={isSubmittingExcuse}
                                     handleSubmitExcuse={handleSubmitExcuse}
+                                    onNavigateToGuide={handleNavigateToGuide}
+                                    onOpenGuideModal={handleOpenGuideModal}
                                 />
                             </div>
                         )}
@@ -3278,6 +3315,7 @@ export default function StudentDashboardContainer() {
                                 <LibraryTab
                                     setPracticeSuiteTab={setPracticeSuiteTab}
                                     setShowPracticeSuite={setShowPracticeSuite}
+                                    onOpenTuner={() => setShowFluteTuner(true)}
                                 />
                             </div>
                         )}
@@ -3296,7 +3334,11 @@ export default function StudentDashboardContainer() {
 
                         {(renderBackgroundTabs || activeTab === 'policies') && (
                             <div style={{ display: activeTab === 'policies' ? 'block' : 'none' }}>
-                                <AcademyPolicies />
+                                <AcademyPolicies 
+                                    initialSubTab={policiesInitialSubTab}
+                                    targetGuideId={policiesTargetGuideId}
+                                    onClearTargetGuide={() => setPoliciesTargetGuideId(null)}
+                                />
                             </div>
                         )}
 
@@ -3628,6 +3670,20 @@ export default function StudentDashboardContainer() {
                     setSubmissionType={setSubmissionType}
                     isSubmittingTask={isSubmittingTask}
                     handleSubmitTask={handleSubmitTask}
+                    onNavigateToGuide={handleNavigateToGuide}
+                    onOpenGuideModal={handleOpenGuideModal}
+                />
+            )}
+
+            {/* Contextual How-To Guide Modal (Surface tutorial without navigating away) */}
+            {Boolean(activeGuideModalSlug) && (
+                <HowToGuideViewer
+                    isOpen={Boolean(activeGuideModalSlug)}
+                    guideSlug={activeGuideModalSlug}
+                    onClose={handleCloseGuideModal}
+                    onNavigateToPolicy={handleNavigateToPolicy}
+                    mode="modal"
+                    returnActionLabel="Got it"
                 />
             )}
         </>

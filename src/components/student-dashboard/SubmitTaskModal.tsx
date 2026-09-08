@@ -37,6 +37,8 @@ interface SubmitTaskModalProps {
     setSubmitAudioBlob?: (blob: Blob | null) => void;
     isSubmittingTask: boolean;
     handleSubmitTask: (e: React.FormEvent) => Promise<void>;
+    onNavigateToGuide?: (guideId: string) => void;
+    onOpenGuideModal?: (slug: string) => void;
 }
 
 export default function SubmitTaskModal({
@@ -48,7 +50,9 @@ export default function SubmitTaskModal({
     submissionType,
     setSubmissionType,
     isSubmittingTask,
-    handleSubmitTask
+    handleSubmitTask,
+    onNavigateToGuide,
+    onOpenGuideModal
 }: SubmitTaskModalProps) {
     if (!selectedAssignment) return null;
 
@@ -103,7 +107,25 @@ export default function SubmitTaskModal({
                 {/* Modal Body */}
                 <form onSubmit={handleSubmitTask} className="p-6 space-y-5 overflow-y-auto flex-1">
                     <div className="space-y-1.5 bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                        <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">Assignment Brief</h4>
+                        <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">Assignment Brief</h4>
+                            {(onOpenGuideModal || onNavigateToGuide) && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (onOpenGuideModal) {
+                                            onOpenGuideModal('how-to-submit-task');
+                                        } else if (onNavigateToGuide) {
+                                            handleClose();
+                                            onNavigateToGuide('how-to-submit-task');
+                                        }
+                                    }}
+                                    className="text-[11px] font-bold text-[#d46211] hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                    First time submitting? How-to Guide →
+                                </button>
+                            )}
+                        </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 mt-1">
                             <AutoLinkText text={selectedAssignment.description || 'No instruction notes provided by the teacher.'} preserveNewlines />
                         </p>

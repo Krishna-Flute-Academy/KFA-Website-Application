@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ClipboardList, Download, Video, Search, Calendar, Award, CheckCircle2, AlertCircle, Loader2, BookOpen, Volume2, Paperclip } from 'lucide-react';
 import AutoLinkText from '../common/AutoLinkText';
 
@@ -44,15 +44,48 @@ interface TasksTabProps {
     setSubmissionType?: (type: 'link' | 'upload') => void;
     isSubmittingTask?: boolean;
     handleSubmitTask?: (e: React.FormEvent) => Promise<void>;
+    onNavigateToGuide?: (guideId: string) => void;
+    onOpenGuideModal?: (slug: string) => void;
 }
 
 export default function TasksTab({
     assignments,
     setSelectedAssignment,
     setSubmitVideoUrl,
+    onNavigateToGuide,
+    onOpenGuideModal
 }: TasksTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'submitted' | 'graded'>('all');
+    const [isFirstTimeDismissed, setIsFirstTimeDismissed] = useState(true);
+
+    // Track if student has ever submitted an assignment
+    const hasSubmittedAnyTask = useMemo(() => {
+        return assignments.some(a => a.status === 'submitted' || a.status === 'reviewed' || a.status === 'approved' || (a.score !== null && a.score !== undefined));
+    }, [assignments]);
+
+    // Load first-time dismissal status from localStorage
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const dismissed = localStorage.getItem('kfa_dismissed_first_task_guide') === 'true';
+            setIsFirstTimeDismissed(dismissed);
+        }
+    }, []);
+
+    const handleDismissFirstTime = () => {
+        setIsFirstTimeDismissed(true);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('kfa_dismissed_first_task_guide', 'true');
+        }
+    };
+
+    const triggerOpenGuide = () => {
+        if (onOpenGuideModal) {
+            onOpenGuideModal('how-to-submit-task');
+        } else if (onNavigateToGuide) {
+            onNavigateToGuide('how-to-submit-task');
+        }
+    };
 
 
 
@@ -88,12 +121,55 @@ export default function TasksTab({
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
+            {/* First-Time Guidance Prompt (Only for students who have never submitted and not dismissed) */}
+            {!hasSubmittedAnyTask && !isFirstTimeDismissed && (
+                <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50/60 dark:from-slate-850 dark:to-slate-800 border border-amber-200/80 dark:border-amber-900/40 rounded-3xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left shadow-xs animate-in fade-in duration-200">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xl">💡</span>
+                        <div>
+                            <h4 className="text-xs sm:text-sm font-extrabold text-slate-850 dark:text-white">
+                                Submitting your first KFA task?
+                            </h4>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                See exactly how to submit your practice recording or paste a video link.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <button
+                            type="button"
+                            onClick={triggerOpenGuide}
+                            className="px-3.5 py-1.5 bg-[#d46211] hover:bg-[#b8540d] text-white text-xs font-bold rounded-xl transition-colors shadow-xs cursor-pointer min-h-[36px]"
+                        >
+                            Show Me How
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleDismissFirstTime}
+                            className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-medium cursor-pointer min-h-[36px]"
+                        >
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Header and Controls */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs text-left">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div>
                         <h3 className="font-extrabold text-slate-808 dark:text-white text-base">Tasks & Submissions</h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Submit practice video recordings and review instructor feedback</p>
+                        <div className="flex items-center gap-2 mt-2">
+                            <button
+                                type="button"
+                                onClick={triggerOpenGuide}
+                                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#d46211] hover:underline cursor-pointer"
+                            >
+                                <span>💡 Need help submitting?</span>
+                                <span>How to Submit →</span>
+                            </button>
+                        </div>
                     </div>
 
                     {/* Search Bar */}
