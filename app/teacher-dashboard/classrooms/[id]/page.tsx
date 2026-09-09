@@ -2873,15 +2873,25 @@ export default function ClassroomDashboardPage({
     }, [assignments, assignmentFilter]);
 
     const allocatedInventoryItems = useMemo(() => {
+        const permanentStudentIds = new Set(
+            students.filter(s => !s.is_makeup).map(s => s.student_id)
+        );
+
         return classroomInventoryAllocations
             .filter(item => {
                 if (item.classroom_id !== classroomId) return false;
                 if (curriculumTab === 'classwide') {
-                    return !item.allocated_to_student_id;
+                    if (!item.allocated_to_student_id) return true;
+                    return permanentStudentIds.has(item.allocated_to_student_id);
                 } else {
                     if (!selectedStudentForCurriculum) return false;
                     return item.allocated_to_student_id === selectedStudentForCurriculum.student_id || !item.allocated_to_student_id;
                 }
+            })
+            .sort((a, b) => {
+                if (!a.allocated_to_student_id && b.allocated_to_student_id) return -1;
+                if (a.allocated_to_student_id && !b.allocated_to_student_id) return 1;
+                return 0;
             })
             .map(item => {
                 let type: 'module' | 'chapter' | 'lesson' = 'module';
@@ -2907,28 +2917,37 @@ export default function ClassroomDashboardPage({
                     const les = courseLessons.find(l => l.id === refId);
                     title = les?.title || 'Unknown Lesson';
                     description = les?.description || '';
+                } else if (item.inventory_ref_id) {
+                    type = item.inventory_ref_type || 'module';
+                    refId = item.inventory_ref_id;
+                    if (type === 'module') {
+                        const mod = courseModules.find(m => m.id === refId);
+                        title = mod?.title || item.inventory_ref_title || 'Unknown Module';
+                        description = mod?.description || '';
+                    } else if (type === 'chapter') {
+                        const chap = courseChapters.find(c => c.id === refId);
+                        title = chap?.title || item.inventory_ref_title || 'Unknown Chapter';
+                        description = chap?.description || '';
+                    } else if (type === 'lesson') {
+                        const les = courseLessons.find(l => l.id === refId);
+                        title = les?.title || item.inventory_ref_title || 'Unknown Lesson';
+                        description = les?.description || '';
+                    }
                 }
 
                 return {
-                    id: item.id,
-                    classroom_id: item.classroom_id,
-                    teacher_id: item.allocated_by,
-                    module_id: item.module_id || null,
-                    chapter_id: item.chapter_id || null,
-                    lesson_id: item.lesson_id || null,
-                    allocated_to_student_id: item.allocated_to_student_id || null,
+                    ...item,
+                    type,
+                    refId,
                     title,
                     description,
-                    due_date: null,
-                    target_type: item.allocated_to_student_id ? 'individual' : 'all',
-                    created_at: item.created_at,
                     inventory_ref_type: type,
                     inventory_ref_id: refId,
                     inventory_ref_title: title,
                     assignment_students: item.allocated_to_student_id ? [{ student_id: item.allocated_to_student_id }] : []
                 };
             });
-    }, [classroomInventoryAllocations, classroomId, curriculumTab, selectedStudentForCurriculum, courseModules, courseChapters, courseLessons]);
+    }, [classroomInventoryAllocations, classroomId, curriculumTab, selectedStudentForCurriculum, students, courseModules, courseChapters, courseLessons]);
 
     const isInventoryItemAllocatedToCurrentContext = useCallback((
         type: 'module' | 'chapter' | 'lesson',
@@ -2991,7 +3010,7 @@ export default function ClassroomDashboardPage({
         itemType: 'level' | 'chapter' | 'topic',
         itemId: string
     ) => {
-        const activeRoster = students.map(s => ({
+        const activeRoster = students.filter(s => !s.is_makeup).map(s => ({
             student_id: s.student_id,
             name: s.name || 'Student',
             profile_pic_url: s.profile_pic_url || null
@@ -3000,21 +3019,28 @@ export default function ClassroomDashboardPage({
         return activeRoster.map(student => {
             const studentId = student.student_id;
             
-            // Check if item is allocated to this student
+            // Check if item is allocated to this student (classwide or student-specific, including parent/child hierarchy)
             let isAllocated = false;
             if (itemType === 'level') {
+                const chapsInMod = courseChapters.filter(c => c.module_id === itemId).map(c => c.id);
+                const lessonsInMod = courseLessons.filter(l => chapsInMod.includes(l.chapter_id)).map(l => l.id);
                 isAllocated = classroomInventoryAllocations.some(
                     a => a.classroom_id === classroomId && (
-                        (a.module_id === itemId && a.allocated_to_student_id === studentId) ||
-                        (a.module_id === itemId && !a.allocated_to_student_id)
+                        ((a.module_id === itemId || (a.inventory_ref_type === 'module' && a.inventory_ref_id === itemId)) ||
+                         (a.chapter_id && chapsInMod.includes(a.chapter_id)) ||
+                         (a.lesson_id && lessonsInMod.includes(a.lesson_id))) &&
+                        (a.allocated_to_student_id === studentId || !a.allocated_to_student_id)
                     )
                 );
             } else if (itemType === 'chapter') {
                 const chap = courseChapters.find(c => c.id === itemId);
                 const modId = chap?.module_id;
+                const lessonsInChap = courseLessons.filter(l => l.chapter_id === itemId).map(l => l.id);
                 isAllocated = classroomInventoryAllocations.some(
                     a => a.classroom_id === classroomId && (
-                        (a.chapter_id === itemId || (modId && a.module_id === modId)) && 
+                        ((a.chapter_id === itemId || (a.inventory_ref_type === 'chapter' && a.inventory_ref_id === itemId)) ||
+                         (modId && (a.module_id === modId || (a.inventory_ref_type === 'module' && a.inventory_ref_id === modId))) ||
+                         (a.lesson_id && lessonsInChap.includes(a.lesson_id))) &&
                         (a.allocated_to_student_id === studentId || !a.allocated_to_student_id)
                     )
                 );
@@ -3024,24 +3050,12 @@ export default function ClassroomDashboardPage({
                 const modId = chap?.module_id;
                 isAllocated = classroomInventoryAllocations.some(
                     a => a.classroom_id === classroomId && (
-                        (a.lesson_id === itemId || (lesson && a.chapter_id === lesson.chapter_id) || (modId && a.module_id === modId)) && 
+                        (a.lesson_id === itemId || (a.inventory_ref_type === 'lesson' && a.inventory_ref_id === itemId) ||
+                         (lesson && (a.chapter_id === lesson.chapter_id || (a.inventory_ref_type === 'chapter' && a.inventory_ref_id === lesson.chapter_id))) ||
+                         (modId && (a.module_id === modId || (a.inventory_ref_type === 'module' && a.inventory_ref_id === modId)))) &&
                         (a.allocated_to_student_id === studentId || !a.allocated_to_student_id)
                     )
                 );
-            }
-
-            // Also check implicit allocations from studentProgress
-            if (!isAllocated) {
-                if (itemType === 'topic') {
-                    isAllocated = studentProgress.some(p => p.student_id === studentId && p.lesson_id === itemId);
-                } else if (itemType === 'chapter') {
-                    const lessonsInChap = courseLessons.filter(l => l.chapter_id === itemId).map(l => l.id);
-                    isAllocated = studentProgress.some(p => p.student_id === studentId && lessonsInChap.includes(p.lesson_id));
-                } else if (itemType === 'level') {
-                    const chapsInMod = courseChapters.filter(c => c.module_id === itemId).map(c => c.id);
-                    const lessonsInMod = courseLessons.filter(l => chapsInMod.includes(l.chapter_id)).map(l => l.id);
-                    isAllocated = studentProgress.some(p => p.student_id === studentId && lessonsInMod.includes(p.lesson_id));
-                }
             }
 
             // Check completion and unlock status
