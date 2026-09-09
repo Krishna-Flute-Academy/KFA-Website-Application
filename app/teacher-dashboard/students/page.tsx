@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { Loader2, Lightbulb, Sparkles, X, Check, Target } from 'lucide-react';
@@ -8,6 +9,7 @@ import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
+import { getStudentStatusBadge } from '../../../src/lib/student-lifecycle';
 
 const GUIDANCE_TEMPLATES = [
     {
@@ -72,6 +74,12 @@ const GUIDANCE_TEMPLATES = [
     }
 ];
 
+export interface AttentionIssue {
+    type: 'unassigned_batch' | 'low_attendance' | 'overdue_tasks' | 'spotlight_pending';
+    label: string;
+    detail?: string;
+}
+
 interface StudentData {
     id: string;
     user_id: string;
@@ -81,8 +89,11 @@ interface StudentData {
     profile_pic_url?: string;
     student_id_formatted: string;
     batch: string;
+    classroom_id?: string | null;
+    classroom_name?: string | null;
     attendance_pct: number;
     status: string;
+    attention_issues?: AttentionIssue[];
     pacing_status?: 'Consistent' | 'Improving' | 'At Risk';
     is_online?: boolean;
     created_at?: string;
@@ -114,6 +125,198 @@ interface Classroom {
     teacher_id?: string | null;
 }
 
+const AttentionPopoverPortal: React.FC<{
+    student: StudentData | null;
+    triggerEl: HTMLElement | null;
+    onClose: () => void;
+    onMouseEnter: () => void;
+    onMouseLeave: () => void;
+}> = ({ student, triggerEl, onClose, onMouseEnter, onMouseLeave }) => {
+    const [mounted, setMounted] = useState(false);
+    const popoverRef = useRef<HTMLDivElement>(null);
+    const [coords, setCoords] = useState<{
+        top: number;
+        left: number;
+        width: number;
+        maxHeight: number;
+        placement: 'top' | 'bottom';
+    } | null>(null);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    const updatePosition = useCallback(() => {
+        if (!triggerEl) return;
+        const triggerRect = triggerEl.getBoundingClientRect();
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        // If trigger is scrolled completely out of viewport, close it
+        if (triggerRect.bottom < 0 || triggerRect.top > viewportHeight) {
+            onClose();
+            return;
+        }
+
+        const isMobile = viewportWidth < 768;
+        const padding = isMobile ? 12 : 16;
+        const gap = 8;
+        const popoverWidth = isMobile
+            ? Math.min(340, viewportWidth - (padding * 2))
+            : 300;
+
+        const popoverEl = popoverRef.current;
+        const measuredHeight = popoverEl ? Math.max(popoverEl.offsetHeight, popoverEl.scrollHeight) : 220;
+
+        const spaceBelow = viewportHeight - triggerRect.bottom - gap - padding;
+        const spaceAbove = triggerRect.top - gap - padding;
+
+        let placement: 'top' | 'bottom' = 'bottom';
+        let top: number;
+        let maxHeight: number;
+
+        // Auto flip upward if space below is insufficient AND space above is greater
+        if (spaceBelow < measuredHeight && spaceAbove > spaceBelow) {
+            placement = 'top';
+            maxHeight = Math.max(160, Math.min(360, spaceAbove));
+            const actualHeight = Math.min(measuredHeight, maxHeight);
+            top = Math.max(padding, triggerRect.top - actualHeight - gap);
+        } else {
+            placement = 'bottom';
+            maxHeight = Math.max(160, Math.min(360, spaceBelow));
+            top = Math.min(viewportHeight - padding - Math.min(measuredHeight, maxHeight), triggerRect.bottom + gap);
+        }
+
+        // Horizontal positioning: center on mobile, clamp on desktop
+        let left: number;
+        if (isMobile) {
+            left = Math.max(padding, (viewportWidth - popoverWidth) / 2);
+        } else {
+            left = triggerRect.left;
+            if (left + popoverWidth > viewportWidth - padding) {
+                left = Math.max(padding, viewportWidth - popoverWidth - padding);
+            }
+            if (left < padding) {
+                left = padding;
+            }
+        }
+
+        setCoords({ top, left, width: popoverWidth, maxHeight, placement });
+    }, [triggerEl, onClose]);
+
+    useLayoutEffect(() => {
+        if (student && triggerEl) {
+            updatePosition();
+        }
+    }, [student, triggerEl, updatePosition]);
+
+    useEffect(() => {
+        if (!student || !triggerEl) return;
+
+        window.addEventListener('scroll', updatePosition, true);
+        window.addEventListener('resize', updatePosition);
+
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node;
+            if (
+                popoverRef.current &&
+                !popoverRef.current.contains(target) &&
+                triggerEl &&
+                !triggerEl.contains(target)
+            ) {
+                onClose();
+            }
+        };
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            window.removeEventListener('scroll', updatePosition, true);
+            window.removeEventListener('resize', updatePosition);
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [student, triggerEl, updatePosition, onClose]);
+
+    if (!mounted || !student || !triggerEl) return null;
+
+    const issues = (student.status === 'Active' ? student.attention_issues : []) || [];
+    if (issues.length === 0) return null;
+
+    return createPortal(
+        <div
+            ref={popoverRef}
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
+            style={{
+                position: 'fixed',
+                top: coords ? `${coords.top}px` : '-9999px',
+                left: coords ? `${coords.left}px` : '-9999px',
+                width: coords ? `${coords.width}px` : '300px',
+                maxHeight: coords ? `${coords.maxHeight}px` : '360px',
+                zIndex: 99999,
+                opacity: coords ? 1 : 0,
+                transform: coords ? 'scale(1)' : 'scale(0.96)',
+                transition: 'opacity 150ms ease-out, transform 150ms ease-out',
+            }}
+            className="p-3.5 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-amber-200 dark:border-amber-800/70 text-left flex flex-col pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="Needs Attention Details"
+        >
+            {/* Header */}
+            <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                <span className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-amber-600 dark:text-amber-400">warning</span>
+                    Needs Attention ({issues.length})
+                </span>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="size-6 flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    aria-label="Close"
+                >
+                    <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+            </div>
+
+            {/* Bullets List with Auto Scroll */}
+            <ul className="space-y-2 mb-2.5 overflow-y-auto pr-1 flex-1 min-h-0">
+                {issues.map((issue, idx) => (
+                    <li key={idx} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2">
+                        <span className="text-amber-500 font-bold leading-tight select-none mt-0.5">•</span>
+                        <div className="flex-1 min-w-0">
+                            <span className="font-semibold block leading-tight text-slate-900 dark:text-slate-100">{issue.label}</span>
+                            {issue.detail && (
+                                <span className="text-[11px] text-slate-500 dark:text-slate-400 block leading-tight mt-0.5">{issue.detail}</span>
+                            )}
+                        </div>
+                    </li>
+                ))}
+            </ul>
+
+            {/* Profile Action Link */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                <Link
+                    href={`/teacher-dashboard/students/${student.id}`}
+                    onClick={onClose}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 hover:underline cursor-pointer"
+                >
+                    View Student Profile →
+                </Link>
+            </div>
+        </div>,
+        document.body
+    );
+};
+
 export default function StudentDirectory() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
@@ -133,8 +336,89 @@ export default function StudentDirectory() {
     const [claimTeacherId, setClaimTeacherId] = useState('');
     const [selectedBatch, setSelectedBatch] = useState<string>('All Batches');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'archived' | 'inactive'>('active');
+    const [attentionFilter, setAttentionFilter] = useState<'all' | 'needs_attention' | 'no_attention'>('all');
+    const [activeAttentionStudent, setActiveAttentionStudent] = useState<StudentData | null>(null);
+    const [activeAttentionTrigger, setActiveAttentionTrigger] = useState<HTMLElement | null>(null);
+    const [isAttentionPinned, setIsAttentionPinned] = useState(false);
+    const attentionCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleAttentionTriggerMouseEnter = (student: StudentData, el: HTMLElement) => {
+        if (attentionCloseTimerRef.current) {
+            clearTimeout(attentionCloseTimerRef.current);
+            attentionCloseTimerRef.current = null;
+        }
+        setActiveAttentionStudent(student);
+        setActiveAttentionTrigger(el);
+    };
+
+    const handleAttentionTriggerMouseLeave = () => {
+        if (!isAttentionPinned) {
+            attentionCloseTimerRef.current = setTimeout(() => {
+                setActiveAttentionStudent(null);
+                setActiveAttentionTrigger(null);
+            }, 150);
+        }
+    };
+
+    const handleAttentionTriggerClick = (student: StudentData, el: HTMLElement, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (attentionCloseTimerRef.current) {
+            clearTimeout(attentionCloseTimerRef.current);
+            attentionCloseTimerRef.current = null;
+        }
+        if (activeAttentionStudent?.id === student.id && isAttentionPinned) {
+            setActiveAttentionStudent(null);
+            setActiveAttentionTrigger(null);
+            setIsAttentionPinned(false);
+        } else {
+            setActiveAttentionStudent(student);
+            setActiveAttentionTrigger(el);
+            setIsAttentionPinned(true);
+        }
+    };
+
+    const handleCloseAttentionPopover = () => {
+        if (attentionCloseTimerRef.current) {
+            clearTimeout(attentionCloseTimerRef.current);
+            attentionCloseTimerRef.current = null;
+        }
+        setActiveAttentionStudent(null);
+        setActiveAttentionTrigger(null);
+        setIsAttentionPinned(false);
+    };
+
+    const handlePopoverMouseEnter = () => {
+        if (attentionCloseTimerRef.current) {
+            clearTimeout(attentionCloseTimerRef.current);
+            attentionCloseTimerRef.current = null;
+        }
+    };
+
+    const handlePopoverMouseLeave = () => {
+        if (!isAttentionPinned) {
+            attentionCloseTimerRef.current = setTimeout(() => {
+                setActiveAttentionStudent(null);
+                setActiveAttentionTrigger(null);
+            }, 150);
+        }
+    };
+
+    const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
+    const actionMenuRef = useRef<HTMLDivElement>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+                setActiveActionMenuId(null);
+            }
+        }
+        if (activeActionMenuId) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [activeActionMenuId]);
 
     // Single delete
     const [studentToDelete, setStudentToDelete] = useState<{ id: string, name: string } | null>(null);
@@ -375,7 +659,6 @@ export default function StudentDirectory() {
                     : supabaseAuth.from('classrooms').select('id, name, teacher_id').eq('teacher_id', userId);
 
                 const teachersReq = supabaseAuth.from('users').select('id, name').in('role', ['teacher', 'admin']);
-                const lessonsReq = supabaseAuth.from('course_lessons').select('*', { count: 'exact', head: true });
                 const sessionsReq = supabaseAuth.from('user_sessions').select('user_id').is('logout_at', null).gt('last_activity_at', fiveMinutesAgoForQuery);
 
                 const studentsBaseReq = supabaseAuth
@@ -398,7 +681,8 @@ export default function StudentDirectory() {
                         fees_collection_date,
                         fees_classes_paid,
                         classroom_students(
-                            classrooms(name)
+                            classroom_id,
+                            classrooms(id, name)
                         )
                     `)
                     .eq('role', 'student');
@@ -410,18 +694,16 @@ export default function StudentDirectory() {
                 const [
                     { data: rooms },
                     { data: teachersData },
-                    { count: totalLessonsCountVal },
                     { data: activeSessions },
                     { data: studentsData, error: studentsError }
                 ] = await Promise.all([
                     roomsReq,
                     teachersReq,
-                    lessonsReq,
                     sessionsReq,
                     studentsReq
                 ]);
 
-                // 2. Fetch scoped secondary student data (attendance, progress, assignments)
+                // 2. Fetch scoped secondary student data (attendance, completed topics, assignments with due dates, teacher spotlights)
                 const studentIds = (studentsData || []).map(s => s.id);
 
                 const attendancePromise = isAdminUser
@@ -431,25 +713,33 @@ export default function StudentDirectory() {
                         : Promise.resolve({ data: [] as any });
 
                 const progressPromise = isAdminUser
-                    ? supabaseAuth.from('student_topic_progress').select('student_id').eq('status', 'completed')
+                    ? supabaseAuth.from('student_topic_progress').select('student_id, lesson_id').eq('status', 'completed')
                     : studentIds.length > 0
-                        ? supabaseAuth.from('student_topic_progress').select('student_id').eq('status', 'completed').in('student_id', studentIds)
+                        ? supabaseAuth.from('student_topic_progress').select('student_id, lesson_id').eq('status', 'completed').in('student_id', studentIds)
                         : Promise.resolve({ data: [] as any });
 
                 const assignmentsPromise = isAdminUser
-                    ? supabaseAuth.from('assignment_students').select('student_id, status, score')
+                    ? supabaseAuth.from('assignment_students').select('student_id, status, assignments(id, title, due_date)')
                     : studentIds.length > 0
-                        ? supabaseAuth.from('assignment_students').select('student_id, status, score').in('student_id', studentIds)
+                        ? supabaseAuth.from('assignment_students').select('student_id, status, assignments(id, title, due_date)').in('student_id', studentIds)
+                        : Promise.resolve({ data: [] as any });
+
+                const spotlightsPromise = isAdminUser
+                    ? supabaseAuth.from('student_curriculum_spotlights').select('student_id, lesson_id, spotlight_type, created_at').eq('spotlight_type', 'teacher')
+                    : studentIds.length > 0
+                        ? supabaseAuth.from('student_curriculum_spotlights').select('student_id, lesson_id, spotlight_type, created_at').eq('spotlight_type', 'teacher').in('student_id', studentIds)
                         : Promise.resolve({ data: [] as any });
 
                 const [
                     { data: allAttendance },
                     { data: allProgress },
-                    { data: allAssignments }
+                    { data: allAssignments },
+                    { data: allSpotlights }
                 ] = await Promise.all([
                     attendancePromise,
                     progressPromise,
-                    assignmentsPromise
+                    assignmentsPromise,
+                    spotlightsPromise
                 ]);
 
                 if (rooms) setClassrooms(rooms);
@@ -460,28 +750,51 @@ export default function StudentDirectory() {
                     teachersData.forEach(t => teacherMap.set(t.id, t.name));
                 }
 
-                const totalLessonsCount = totalLessonsCountVal || 0;
                 const onlineUserIds = new Set<string>(activeSessions?.map(sess => sess.user_id) || []);
 
                 const attendanceMap = new Map<string, string[]>();
-                allAttendance?.forEach(a => {
+                allAttendance?.forEach((a: any) => {
                     if (!attendanceMap.has(a.student_id)) {
                         attendanceMap.set(a.student_id, []);
                     }
                     attendanceMap.get(a.student_id)!.push(a.status);
                 });
 
-                const progressCountMap = new Map<string, number>();
-                allProgress?.forEach(p => {
-                    progressCountMap.set(p.student_id, (progressCountMap.get(p.student_id) || 0) + 1);
+                const completedLessonsMap = new Map<string, Set<string>>();
+                allProgress?.forEach((p: any) => {
+                    if (!completedLessonsMap.has(p.student_id)) {
+                        completedLessonsMap.set(p.student_id, new Set());
+                    }
+                    completedLessonsMap.get(p.student_id)!.add(p.lesson_id);
                 });
 
-                const assignmentsMap = new Map<string, { status: string; score: number | null }[]>();
-                allAssignments?.forEach(a => {
+                const todayIso = new Date().toISOString().slice(0, 10);
+                const overdueTasksMap = new Map<string, number>();
+                const assignmentsMap = new Map<string, any[]>();
+                allAssignments?.forEach((a: any) => {
                     if (!assignmentsMap.has(a.student_id)) {
                         assignmentsMap.set(a.student_id, []);
                     }
-                    assignmentsMap.get(a.student_id)!.push({ status: a.status, score: a.score ? Number(a.score) : null });
+                    assignmentsMap.get(a.student_id)!.push(a);
+
+                    const asg = Array.isArray(a.assignments) ? a.assignments[0] : a.assignments;
+                    const isPending = a.status === 'pending';
+                    const isOverdue = isPending && asg?.due_date && asg.due_date < todayIso;
+                    if (isOverdue) {
+                        overdueTasksMap.set(a.student_id, (overdueTasksMap.get(a.student_id) || 0) + 1);
+                    }
+                });
+
+                const pendingSpotlightsMap = new Map<string, number>();
+                allSpotlights?.forEach((spot: any) => {
+                    const completedSet = completedLessonsMap.get(spot.student_id);
+                    const isCompleted = completedSet?.has(spot.lesson_id);
+                    if (!isCompleted && spot.created_at) {
+                        const daysOld = Math.floor((Date.now() - new Date(spot.created_at).getTime()) / (1000 * 60 * 60 * 24));
+                        if (daysOld >= 7) {
+                            pendingSpotlightsMap.set(spot.student_id, daysOld);
+                        }
+                    }
                 });
 
                 if (studentsError) {
@@ -497,51 +810,60 @@ export default function StudentDirectory() {
                 if (studentsData) {
                     const formatted: StudentData[] = studentsData.map((s: any) => {
                         const studentAttendance = attendanceMap.get(s.id) || [];
-                        const completedCount = progressCountMap.get(s.id) || 0;
-                        const studentAssignments = assignmentsMap.get(s.id) || [];
 
                         // 1. Calculate Attendance Percentage
                         let attendancePct = 100;
-                        const eligibleAttendance = studentAttendance.filter(status => status !== 'excused');
+                        const eligibleAttendance = studentAttendance.filter((status: string) => status !== 'excused');
                         if (eligibleAttendance.length > 0) {
-                            const presentCount = eligibleAttendance.filter(status => status === 'present' || status === 'late').length;
+                            const presentCount = eligibleAttendance.filter((status: string) => status === 'present' || status === 'late').length;
                             attendancePct = Math.round((presentCount / eligibleAttendance.length) * 100);
                         }
 
-                        // 2. Calculate Progress Percentage
-                        const progressPct = totalLessonsCount > 0 ? Math.round((completedCount / totalLessonsCount) * 100) : 0;
+                        const cs = s.classroom_students?.[0];
+                        const room = Array.isArray(cs?.classrooms) ? cs?.classrooms[0] : cs?.classrooms;
+                        const resolvedRoomName = room?.name || null;
+                        const resolvedRoomId = cs?.classroom_id || room?.id || null;
 
-                        // 3. Calculate Submissions and Avg Score
-                        let submissionPct = 100;
-                        let avgScore = 10;
-                        if (studentAssignments.length > 0) {
-                            const submittedCount = studentAssignments.filter(a => a.status === 'submitted' || a.status === 'reviewed' || a.status === 'approved').length;
-                            submissionPct = Math.round((submittedCount / studentAssignments.length) * 105) % 100; // Keep it clean
-                            
-                            const graded = studentAssignments.filter(a => a.score !== null);
-                            if (graded.length > 0) {
-                                const sum = graded.reduce((acc, curr) => acc + curr.score!, 0);
-                                avgScore = sum / graded.length;
+                        // 2. Evaluate KFA Needs Attention Rules (Active Students Only)
+                        const attentionIssues: AttentionIssue[] = [];
+                        if (s.status === 'active') {
+                            // Priority 1: Batch Unassigned
+                            if (!resolvedRoomName || resolvedRoomName === 'Unassigned' || resolvedRoomName.toLowerCase().includes('learning circle')) {
+                                attentionIssues.push({
+                                    type: 'unassigned_batch',
+                                    label: 'Batch Unassigned',
+                                    detail: 'Active student has no regular classroom batch allocated.'
+                                });
                             }
-                        }
 
-                        // 4. Calculate Pacing Status
-                        const calcValues = [progressPct];
-                        if (studentAssignments.length > 0) {
-                            calcValues.push(submissionPct);
-                            calcValues.push(avgScore * 10);
-                        }
-                        if (studentAttendance.length > 0) {
-                            calcValues.push(attendancePct);
-                        }
+                            // Priority 2: Low Attendance (minimum 3 eligible sessions)
+                            if (eligibleAttendance.length >= 3 && attendancePct < 75) {
+                                attentionIssues.push({
+                                    type: 'low_attendance',
+                                    label: `Low Attendance — ${attendancePct}%`,
+                                    detail: `Attended only ${eligibleAttendance.filter((st: string) => st === 'present' || st === 'late').length} of ${eligibleAttendance.length} eligible classes.`
+                                });
+                            }
 
-                        const cumulativeAverage = Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
+                            // Priority 3: Overdue Task
+                            const overdueCount = overdueTasksMap.get(s.id) || 0;
+                            if (overdueCount > 0) {
+                                attentionIssues.push({
+                                    type: 'overdue_tasks',
+                                    label: overdueCount === 1 ? '1 Overdue Task' : `${overdueCount} Overdue Tasks`,
+                                    detail: `${overdueCount} assigned task${overdueCount > 1 ? 's are' : ' is'} past the due date.`
+                                });
+                            }
 
-                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'Consistent';
-                        if (studentAttendance.length > 0 || studentAssignments.length > 0) {
-                            if (cumulativeAverage >= 80) calculatedStatus = 'Consistent';
-                            else if (cumulativeAverage >= 65) calculatedStatus = 'Improving';
-                            else calculatedStatus = 'At Risk';
+                            // Priority 4: Spotlight Pending (Teacher spotlight active >= 7 days)
+                            const spotlightDays = pendingSpotlightsMap.get(s.id);
+                            if (spotlightDays !== undefined) {
+                                attentionIssues.push({
+                                    type: 'spotlight_pending',
+                                    label: `Spotlight pending for ${spotlightDays} days`,
+                                    detail: `Teacher recommended spotlight lesson has remained incomplete for ${spotlightDays} days.`
+                                });
+                            }
                         }
 
                         return {
@@ -551,11 +873,14 @@ export default function StudentDirectory() {
                             email: s.email,
                             role: s.role,
                             student_id_formatted: `KFA-2024-${s.id.slice(0, 3).toUpperCase()}`,
-                            batch: (s.status === 'archived' || s.status === 'inactive') ? (s.classroom_students?.[0]?.classrooms?.name || 'KFA Learning Circle') : (s.classroom_students?.[0]?.classrooms?.name || 'Unassigned'),
+                            batch: resolvedRoomName || 'Unassigned',
+                            classroom_id: resolvedRoomId,
+                            classroom_name: resolvedRoomName,
                             attendance_pct: attendancePct,
                             profile_pic_url: s.profile_pic_url,
-                            status: (s.status === 'archived' || s.status === 'inactive') ? 'Archived' : 'Active',
-                            pacing_status: calculatedStatus,
+                            status: s.status === 'active' ? 'Active' : s.status === 'archived' ? 'Archived' : 'Inactive',
+                            attention_issues: attentionIssues,
+                            pacing_status: 'Consistent',
                             is_online: onlineUserIds.has(s.id),
                             created_at: s.created_at,
                             join_date: s.join_date,
@@ -634,49 +959,30 @@ export default function StudentDirectory() {
                 }
 
                 if (unassignedData) {
-                    const formattedUnassigned = unassignedData.map((s: any) => {
+                    const formattedUnassigned: StudentData[] = unassignedData.map((s: any) => {
                         const studentAttendance = attendanceMap.get(s.id) || [];
-                        const completedCount = progressCountMap.get(s.id) || 0;
-                        const studentAssignments = assignmentsMap.get(s.id) || [];
 
                         let attendancePct = 100;
-                        const eligibleAttendance = studentAttendance.filter(status => status !== 'excused');
+                        const eligibleAttendance = studentAttendance.filter((status: string) => status !== 'excused');
                         if (eligibleAttendance.length > 0) {
-                            const presentCount = eligibleAttendance.filter(status => status === 'present' || status === 'late').length;
+                            const presentCount = eligibleAttendance.filter((status: string) => status === 'present' || status === 'late').length;
                             attendancePct = Math.round((presentCount / eligibleAttendance.length) * 100);
                         }
 
-                        const progressPct = totalLessonsCount > 0 ? Math.round((completedCount / totalLessonsCount) * 100) : 0;
-
-                        let submissionPct = 100;
-                        let avgScore = 10;
-                        if (studentAssignments.length > 0) {
-                            const submittedCount = studentAssignments.filter(a => a.status === 'submitted' || a.status === 'reviewed' || a.status === 'approved').length;
-                            submissionPct = Math.round((submittedCount / studentAssignments.length) * 100);
-                            
-                            const graded = studentAssignments.filter(a => a.score !== null);
-                            if (graded.length > 0) {
-                                const sum = graded.reduce((acc, curr) => acc + curr.score!, 0);
-                                avgScore = sum / graded.length;
+                        const attentionIssues: AttentionIssue[] = [];
+                        if (s.status === 'active') {
+                            attentionIssues.push({
+                                type: 'unassigned_batch',
+                                label: 'Batch Unassigned',
+                                detail: 'Active student is not allocated to any classroom batch.'
+                            });
+                            if (eligibleAttendance.length >= 3 && attendancePct < 75) {
+                                attentionIssues.push({
+                                    type: 'low_attendance',
+                                    label: `Low Attendance — ${attendancePct}%`,
+                                    detail: `Attended only ${eligibleAttendance.filter((st: string) => st === 'present' || st === 'late').length} of ${eligibleAttendance.length} eligible classes.`
+                                });
                             }
-                        }
-
-                        const calcValues = [progressPct];
-                        if (studentAssignments.length > 0) {
-                            calcValues.push(submissionPct);
-                            calcValues.push(avgScore * 10);
-                        }
-                        if (studentAttendance.length > 0) {
-                            calcValues.push(attendancePct);
-                        }
-
-                        const cumulativeAverage = Math.round(calcValues.reduce((a, b) => a + b, 0) / calcValues.length);
-
-                        let calculatedStatus: 'Consistent' | 'Improving' | 'At Risk' = 'Consistent';
-                        if (studentAttendance.length > 0 || studentAssignments.length > 0) {
-                            if (cumulativeAverage >= 80) calculatedStatus = 'Consistent';
-                            else if (cumulativeAverage >= 65) calculatedStatus = 'Improving';
-                            else calculatedStatus = 'At Risk';
                         }
 
                         return {
@@ -689,8 +995,9 @@ export default function StudentDirectory() {
                             batch: 'Unassigned',
                             attendance_pct: attendancePct,
                             profile_pic_url: s.profile_pic_url,
-                            status: s.status === 'active' ? 'Active' : 'Inactive',
-                            pacing_status: calculatedStatus,
+                            status: s.status === 'active' ? 'Active' : s.status === 'archived' ? 'Archived' : 'Inactive',
+                            attention_issues: attentionIssues,
+                            pacing_status: 'Consistent' as const,
                             is_online: onlineUserIds.has(s.id),
                             created_at: s.created_at,
                             join_date: s.join_date,
@@ -750,7 +1057,7 @@ export default function StudentDirectory() {
                             batch: 'Unassigned',
                             attendance_pct: 0,
                             profile_pic_url: newStudent.profile_pic_url,
-                            status: newStudent.status === 'active' ? 'Active' : 'Inactive',
+                            status: newStudent.status === 'active' ? 'Active' : newStudent.status === 'archived' ? 'Archived' : 'Inactive',
                             created_at: newStudent.created_at || new Date().toISOString(),
                             phone: newStudent.phone || 'No Phone'
                         }, ...prev]);
@@ -887,91 +1194,97 @@ export default function StudentDirectory() {
     const [reactivateBatchId, setReactivateBatchId] = useState('');
     const [isReactivating, setIsReactivating] = useState(false);
 
-    const toggleStudentStatus = async (studentId: string, currentStatus: string) => {
-        const isArchiving = currentStatus === 'Active';
-        const student = students.find(s => s.id === studentId);
-
-        if (!isArchiving) {
-            if (student) {
-                const defaultRoom = classrooms.find(c => !c.name.toLowerCase().includes('learning circle'))?.id || classrooms[0]?.id || '';
-                setReactivateBatchId(defaultRoom);
-                setShowReactivateModal(student);
-            }
-            return;
-        }
-
-        if (!confirm(`Archive ${student?.name || 'this student'}? They will be automatically assigned to KFA Learning Circle.`)) {
+    const handlePauseStudent = async (student: StudentData) => {
+        if (!confirm(`Pause learning for ${student.name}? Their classes and task alerts will be temporarily suspended.`)) {
             return;
         }
 
         // Optimistic update
-        setStudents(prev => prev.map(s => {
-            if (s.id === studentId) {
-                return {
-                    ...s,
-                    status: 'Archived',
-                    batch: 'KFA Learning Circle'
-                };
-            }
-            return s;
-        }));
+        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: 'Inactive' } : s));
 
         try {
             const { error: userError } = await supabaseAuth
                 .from('users')
                 .update({ status: 'inactive' })
-                .eq('id', studentId);
-                
+                .eq('id', student.id);
+
+            if (userError) throw userError;
+        } catch (err: any) {
+            console.error('Error pausing student:', err);
+            alert(`Error pausing student: ${err.message || err.details || String(err)}`);
+            // Revert on error
+            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: student.status } : s));
+        }
+    };
+
+    const handleArchiveStudent = async (student: StudentData) => {
+        if (!confirm(`Archive ${student.name}? They will be marked as a former student with preserved history.`)) {
+            return;
+        }
+
+        // Optimistic update
+        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: 'Archived' } : s));
+
+        try {
+            const { error: userError } = await supabaseAuth
+                .from('users')
+                .update({ status: 'archived' })
+                .eq('id', student.id);
+
+            if (userError) throw userError;
+        } catch (err: any) {
+            console.error('Error archiving student:', err);
+            alert(`Error archiving student: ${err.message || err.details || String(err)}`);
+            // Revert on error
+            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: student.status } : s));
+        }
+    };
+
+    const handleResumeStudent = async (student: StudentData) => {
+        const batchName = (student.classroom_name || student.batch || '').trim();
+        const isInvalidBatch = !student.classroom_id ||
+            !batchName ||
+            batchName.toLowerCase() === 'unassigned' ||
+            batchName.toLowerCase().includes('learning circle');
+
+        if (isInvalidBatch) {
+            alert("This student's classroom enrollment requires review before learning can be resumed.");
+            return;
+        }
+
+        if (!confirm(`Resume learning for ${student.name}?\nThey will return to their current batch:\n${batchName}`)) {
+            return;
+        }
+
+        // Optimistic update
+        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: 'Active' } : s));
+
+        try {
+            const { error: userError } = await supabaseAuth
+                .from('users')
+                .update({ status: 'active' })
+                .eq('id', student.id);
+
             if (userError) throw userError;
 
-            let circleRoomId: string | null = null;
-            const { data: circleRoom } = await supabaseAuth
-                .from('classrooms')
-                .select('id')
-                .ilike('name', '%Learning Circle%')
-                .maybeSingle();
-
-            if (circleRoom) {
-                circleRoomId = circleRoom.id;
-            } else {
-                const { data: newRoom } = await supabaseAuth
-                    .from('classrooms')
-                    .insert([{
-                        name: 'KFA Learning Circle',
-                        type: 'learning_circle',
-                        description: 'Community & Self-Paced Learning Circle for KFA Alumni & Inactive Students',
-                        status: 'active'
-                    }])
-                    .select('id')
-                    .single();
-
-                if (newRoom) circleRoomId = newRoom.id;
-            }
-
-            if (circleRoomId) {
-                await supabaseAuth
-                    .from('classroom_students')
-                    .delete()
-                    .eq('student_id', studentId);
-
-                await supabaseAuth
-                    .from('classroom_students')
-                    .insert([{
-                        classroom_id: circleRoomId,
-                        student_id: studentId,
-                        joined_at: new Date().toISOString()
-                    }]);
-            }
+            alert(`Student ${student.name} has resumed learning in batch: ${batchName}`);
         } catch (err: any) {
-            console.error('Error updating status:', err);
-            alert(`Error updating status: ${err.message || err.details || String(err)}`);
+            console.error('Error resuming student:', err);
+            alert(`Error resuming student: ${err.message || err.details || String(err)}`);
             // Revert on error
-            setStudents(prev => prev.map(s => s.id === studentId ? { ...s, status: currentStatus } : s));
+            setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: student.status } : s));
         }
+    };
+
+    const handleOpenReactivateModal = (student: StudentData) => {
+        const defaultRoom = classrooms.find(c => !c.name.toLowerCase().includes('learning circle'))?.id || classrooms[0]?.id || '';
+        setReactivateBatchId(defaultRoom);
+        setShowReactivateModal(student);
     };
 
     const confirmReactivateStudent = async () => {
         if (!showReactivateModal || !reactivateBatchId) return;
+        if (showReactivateModal.status !== 'Archived') return;
 
         setIsReactivating(true);
         try {
@@ -1004,9 +1317,10 @@ export default function StudentDirectory() {
             setStudents(prev => prev.map(s => s.id === targetStudentId ? { ...s, status: 'Active', batch: roomName } : s));
 
             const studentName = showReactivateModal.name;
+            const isReEnroll = showReactivateModal.status === 'Archived';
             setShowReactivateModal(null);
             setReactivateBatchId('');
-            alert(`Student ${studentName} reactivated and allocated to ${roomName}!`);
+            alert(`Student ${studentName} successfully ${isReEnroll ? 're-enrolled' : 'resumed'} and allocated to ${roomName}!`);
         } catch (err: any) {
             console.error('Error reactivating student:', err);
             alert(`Error reactivating student: ${err.message || err.details || String(err)}`);
@@ -1353,6 +1667,11 @@ export default function StudentDirectory() {
 
     const availableBatches = Array.from(new Set(students.map(s => s.batch).filter(b => b !== 'Unassigned'))).sort();
 
+    const getStudentAttentionIssues = React.useCallback((student: StudentData): AttentionIssue[] => {
+        if (student.status !== 'Active') return [];
+        return student.attention_issues || [];
+    }, []);
+
     const allUnassignedStudents = React.useMemo(() => {
         const map = new Map<string, StudentData>();
         
@@ -1369,6 +1688,25 @@ export default function StudentDirectory() {
         return Array.from(map.values());
     }, [students, unassignedStudents]);
 
+    const summaryCounts = React.useMemo(() => {
+        let active = 0;
+        let paused = 0;
+        let archived = 0;
+        students.forEach(s => {
+            const st = (s.status || '').toLowerCase();
+            if (st === 'active') active++;
+            else if (st === 'inactive') paused++;
+            else if (st === 'archived') archived++;
+        });
+        return {
+            total: students.length,
+            active,
+            paused,
+            archived,
+            unassigned: allUnassignedStudents.length
+        };
+    }, [students, allUnassignedStudents]);
+
     const displayedStudents = React.useMemo(() => {
         let result = filterMode === 'unassigned' ? [...allUnassignedStudents] : [...students];
 
@@ -1378,11 +1716,13 @@ export default function StudentDirectory() {
             }
 
             if (statusFilter !== 'all') {
-                if (statusFilter === 'archived' || statusFilter === 'inactive') {
-                    result = result.filter(s => s.status.toLowerCase() === 'archived' || s.status.toLowerCase() === 'inactive');
-                } else {
-                    result = result.filter(s => s.status.toLowerCase() === statusFilter);
-                }
+                result = result.filter(s => s.status.toLowerCase() === statusFilter.toLowerCase());
+            }
+
+            if (attentionFilter === 'needs_attention') {
+                result = result.filter(s => getStudentAttentionIssues(s).length > 0);
+            } else if (attentionFilter === 'no_attention') {
+                result = result.filter(s => s.status === 'Active' && getStudentAttentionIssues(s).length === 0);
             }
         }
 
@@ -1418,7 +1758,7 @@ export default function StudentDirectory() {
         }
 
         return result;
-    }, [students, allUnassignedStudents, filterMode, selectedBatch, statusFilter, searchQuery]);
+    }, [students, allUnassignedStudents, filterMode, selectedBatch, statusFilter, attentionFilter, searchQuery, getStudentAttentionIssues]);
 
     const totalPages = Math.ceil(displayedStudents.length / ITEMS_PER_PAGE);
     const paginatedStudents = displayedStudents.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -1904,9 +2244,11 @@ export default function StudentDirectory() {
                             <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-4">
                                 <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-2xl">unarchive</span>
                             </div>
-                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Reactivate Student</h3>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                                Re-enroll Student
+                            </h3>
                             <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
-                                You are reactivating <span className="font-bold text-slate-700 dark:text-slate-300">{showReactivateModal.name}</span>. Please select which classroom batch to allocate them to:
+                                You are re-enrolling <span className="font-bold text-slate-700 dark:text-slate-300">{showReactivateModal.name}</span>. Please select which classroom batch to allocate them to:
                             </p>
                             
                             <div className="space-y-2">
@@ -1941,7 +2283,7 @@ export default function StudentDirectory() {
                                 ) : (
                                     <span className="material-symbols-outlined text-lg">unarchive</span>
                                 )}
-                                {isReactivating ? 'Reactivating...' : 'Reactivate & Allocate'}
+                                {isReactivating ? 'Re-enrolling...' : 'Re-enroll & Allocate'}
                             </button>
                         </div>
                     </div>
@@ -2230,533 +2572,1130 @@ export default function StudentDirectory() {
                     />
 
                     <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
-                        <div className="w-full grid grid-cols-12 gap-8">
-                            <div className="col-span-12 lg:col-span-8 space-y-6">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                    <div>
-                                        <h1 className="admin-page-title">Student Directory</h1>
-                                        <p className="admin-page-subtitle">Manage and track progress for {students.length} enrolled students.</p>
-                                    </div>
+                        <div className="max-w-7xl mx-auto w-full space-y-6">
+                            {/* ── Page Header & Top Actions ────────────────────────── */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                    <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Student Management</h1>
+                                    <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                        Manage enrollment, monitor student progress, and take immediate lifecycle actions.
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2 flex-wrap">
                                     {(teacherProfile?.role === 'admin' || teacherProfile?.role === 'teacher') && (
-                                        <div className="admin-btn-group">
+                                        <>
                                             <button
                                                 onClick={() => setShowRecycleBin(true)}
-                                                className="admin-btn admin-btn-secondary"
+                                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-xs transition-all cursor-pointer"
                                                 title={`Recycle Bin (${recycleBin.length} deleted students)`}
                                             >
-                                                <span className="material-symbols-outlined text-lg shrink-0">delete_sweep</span>
-                                                <span className="hidden sm:inline">Recycle Bin ({recycleBin.length})</span>
+                                                <span className="material-symbols-outlined text-base shrink-0 text-slate-400">delete_sweep</span>
+                                                <span>Recycle Bin ({recycleBin.length})</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setShowBulkEnrollModal(true)}
+                                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-xs transition-all cursor-pointer"
+                                                title="Bulk Enroll Students via CSV"
+                                            >
+                                                <span className="material-symbols-outlined text-base shrink-0 text-slate-400">upload_file</span>
+                                                <span className="hidden sm:inline">Bulk Enroll</span>
+                                            </button>
+                                            <button
+                                                onClick={handleExportCSV}
+                                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-xs transition-all cursor-pointer"
+                                                title="Export Student Directory as CSV"
+                                            >
+                                                <span className="material-symbols-outlined text-base shrink-0 text-slate-400">download</span>
+                                                <span className="hidden sm:inline">Export</span>
                                             </button>
                                             <Link
                                                 href="/teacher-dashboard/students/add"
-                                                className="admin-btn admin-btn-primary"
+                                                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-950 bg-[#ecb613] hover:bg-[#d49f0e] rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
                                                 title="Add New Student"
                                             >
-                                                <span className="material-symbols-outlined text-lg shrink-0">person_add</span>
-                                                <span className="hidden sm:inline">Add New Student</span>
+                                                <span className="material-symbols-outlined text-base shrink-0">person_add</span>
+                                                <span>Add Student</span>
                                             </Link>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* ── Pending Signup Requests Banner ────────────────── */}
+                            {pendingUsers.length > 0 && (
+                                <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 dark:bg-amber-950/20 dark:border-amber-700/80 overflow-hidden shadow-xs">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 bg-amber-100/70 dark:bg-amber-900/30 border-b border-amber-200/80 dark:border-amber-700/80">
+                                        <div className="flex items-center gap-2">
+                                            <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                                            </span>
+                                            <span className="font-bold text-xs sm:text-sm text-amber-900 dark:text-amber-300">
+                                                {pendingUsers.length} New Registration Request{pendingUsers.length !== 1 ? 's' : ''} Awaiting Approval
+                                            </span>
+                                        </div>
+                                        <Link
+                                            href="/teacher-dashboard/role-allocation"
+                                            className="text-xs font-bold text-amber-800 dark:text-amber-300 hover:underline flex items-center gap-1 shrink-0 self-start sm:self-auto"
+                                        >
+                                            Go to Role Allocation →
+                                        </Link>
+                                    </div>
+                                    <div className="divide-y divide-amber-100 dark:divide-amber-900/30">
+                                        {pendingUsers.slice(0, 5).map(u => (
+                                            <div key={u.id} className="flex items-center justify-between p-3.5 sm:px-4 sm:py-3 gap-3">
+                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-200/80 dark:bg-amber-800/80 flex items-center justify-center text-amber-900 dark:text-amber-100 font-black text-xs sm:text-sm shrink-0 border border-amber-300/50">
+                                                        {u.name?.charAt(0)?.toUpperCase() || '?'}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">{u.name}</p>
+                                                        </div>
+                                                        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">{u.email}{u.phone ? ` · ${u.phone}` : ''}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <span className="text-[11px] font-medium text-slate-400 hidden md:inline">
+                                                        {new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                                    </span>
+                                                    <Link
+                                                        href="/teacher-dashboard/role-allocation"
+                                                        className="admin-btn-sm admin-btn-primary whitespace-nowrap"
+                                                        title="Assign Role"
+                                                    >
+                                                        <span className="material-symbols-outlined text-base shrink-0">manage_accounts</span>
+                                                        <span className="hidden sm:inline">Assign Role</span>
+                                                    </Link>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {pendingUsers.length > 5 && (
+                                            <div className="px-4 py-2.5 text-center bg-amber-50/50 dark:bg-amber-950/10">
+                                                <Link href="/teacher-dashboard/role-allocation" className="text-xs text-amber-800 dark:text-amber-400 font-bold hover:underline">
+                                                    View all {pendingUsers.length} pending requests →
+                                                </Link>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── Bulk Selection Action Bar ────────────────────────── */}
+                            {selectedIds.size > 0 && (
+                                <div className="flex items-center justify-between p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 rounded-xl animate-in slide-in-from-top-2 duration-200 shadow-xs">
+                                    <div className="flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-rose-500">check_box</span>
+                                        <span className="text-xs sm:text-sm font-bold text-rose-700 dark:text-rose-400">
+                                            {selectedIds.size} student{selectedIds.size !== 1 ? 's' : ''} selected
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <button
+                                            onClick={openBulkGuidanceModal}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-950 bg-[#ecb613] hover:bg-[#d49f0e] rounded-lg transition-all shadow-xs cursor-pointer active:scale-95"
+                                        >
+                                            <Lightbulb className="w-3.5 h-3.5 text-slate-950" />
+                                            <span>+ Add Guidance ({selectedIds.size})</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setSelectedIds(new Set())}
+                                            className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                        >
+                                            Clear
+                                        </button>
+                                        <button
+                                            onClick={() => setShowBulkDeleteModal(true)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-sm cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-base">delete_sweep</span>
+                                            Delete ({selectedIds.size})
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── Compact Summary Cards (Clickable Filter Shortcuts) ── */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                                {/* Active Card */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFilterMode('all');
+                                        setStatusFilter('active');
+                                        setCurrentPage(1);
+                                    }}
+                                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                                        filterMode !== 'unassigned' && statusFilter === 'active'
+                                            ? 'bg-emerald-50/80 border-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-700 shadow-xs ring-2 ring-emerald-500/20'
+                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Active</span>
+                                        <span className="size-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-base">school</span>
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 flex items-baseline gap-2">
+                                        <span className="text-2xl font-black text-slate-900 dark:text-white">{summaryCounts.active}</span>
+                                        <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">Regular Students</span>
+                                    </div>
+                                </button>
+
+                                {/* Learning Paused Card */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFilterMode('all');
+                                        setStatusFilter('inactive');
+                                        setCurrentPage(1);
+                                    }}
+                                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                                        filterMode !== 'unassigned' && statusFilter === 'inactive'
+                                            ? 'bg-amber-50/80 border-amber-300 dark:bg-amber-950/30 dark:border-amber-700 shadow-xs ring-2 ring-amber-500/20'
+                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Learning Paused</span>
+                                        <span className="size-7 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-base">pause_circle</span>
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 flex items-baseline gap-2">
+                                        <span className="text-2xl font-black text-slate-900 dark:text-white">{summaryCounts.paused}</span>
+                                        <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">Temporary Break</span>
+                                    </div>
+                                </button>
+
+                                {/* Archived Card */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFilterMode('all');
+                                        setStatusFilter('archived');
+                                        setCurrentPage(1);
+                                    }}
+                                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                                        filterMode !== 'unassigned' && statusFilter === 'archived'
+                                            ? 'bg-slate-100 border-slate-300 dark:bg-slate-800 dark:border-slate-600 shadow-xs ring-2 ring-slate-400/20'
+                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Archived</span>
+                                        <span className="size-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-base">archive</span>
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 flex items-baseline gap-2">
+                                        <span className="text-2xl font-black text-slate-900 dark:text-white">{summaryCounts.archived}</span>
+                                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Former Students</span>
+                                    </div>
+                                </button>
+
+                                {/* Unassigned Card */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFilterMode('unassigned');
+                                        setCurrentPage(1);
+                                    }}
+                                    className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                                        filterMode === 'unassigned'
+                                            ? 'bg-blue-50/80 border-blue-300 dark:bg-blue-950/30 dark:border-blue-700 shadow-xs ring-2 ring-blue-500/20'
+                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Unassigned</span>
+                                        <span className="size-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-base">group_add</span>
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 flex items-baseline gap-2">
+                                        <span className="text-2xl font-black text-slate-900 dark:text-white">{summaryCounts.unassigned}</span>
+                                        <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Needs Classroom</span>
+                                    </div>
+                                </button>
+                            </div>
+
+                            {/* ── Filter Controls Card ─────────────────────────────── */}
+                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs p-4 space-y-3">
+                                {/* Search & Secondary Filters */}
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                    <div className="relative flex-1 min-w-[240px]">
+                                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                                        <input
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={(e) => {
+                                                setSearchQuery(e.target.value);
+                                                setCurrentPage(1);
+                                            }}
+                                            placeholder="Search student by name, ID, phone, email, batch..."
+                                            className="w-full pl-10 pr-9 py-2 text-xs sm:text-sm bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-slate-900 dark:text-white placeholder:text-slate-400"
+                                        />
+                                        {searchQuery && (
+                                            <button
+                                                onClick={() => setSearchQuery('')}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-base">close</span>
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {filterMode !== 'unassigned' && (
+                                        <div className="flex items-center gap-2.5 flex-wrap">
+                                            {/* Batch Selector */}
+                                            <div className="relative flex items-center bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase mr-2 select-none">Batch:</span>
+                                                <select
+                                                    value={selectedBatch}
+                                                    onChange={(e) => {
+                                                        setSelectedBatch(e.target.value);
+                                                        setCurrentPage(1);
+                                                    }}
+                                                    className="text-xs font-semibold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 pr-4 cursor-pointer outline-none"
+                                                >
+                                                    <option value="All Batches">All Batches</option>
+                                                    {availableBatches.map(batch => (
+                                                        <option key={batch} value={batch}>{batch}</option>
+                                                    ))}
+                                                    <option value="Unassigned">Unassigned</option>
+                                                </select>
+                                            </div>
+
+                                            {/* Focus / Attention Selector */}
+                                            <div className="relative flex items-center bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 shadow-xs">
+                                                <span className="text-[10px] text-slate-400 font-bold uppercase mr-2 select-none">Focus:</span>
+                                                <select
+                                                    value={attentionFilter}
+                                                    onChange={(e) => {
+                                                        setAttentionFilter(e.target.value as any);
+                                                        setCurrentPage(1);
+                                                    }}
+                                                    className="text-xs font-semibold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 pr-4 cursor-pointer outline-none"
+                                                >
+                                                    <option value="all">All Students</option>
+                                                    <option value="needs_attention">⚠ Needs Attention</option>
+                                                    <option value="no_attention">✓ No Attention</option>
+                                                </select>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
 
-                                {/* ── Pending Signup Requests Banner ────────────────── */}
-                                {pendingUsers.length > 0 && (
-                                    <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 dark:bg-amber-950/20 dark:border-amber-700/80 overflow-hidden shadow-xs">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 bg-amber-100/70 dark:bg-amber-900/30 border-b border-amber-200/80 dark:border-amber-700/80">
-                                            <div className="flex items-center gap-2">
-                                                <span className="relative flex h-2.5 w-2.5 shrink-0">
-                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
-                                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-                                                </span>
-                                                <span className="font-bold text-xs sm:text-sm text-amber-900 dark:text-amber-300">
-                                                    {pendingUsers.length} New Registration Request{pendingUsers.length !== 1 ? 's' : ''} Awaiting Approval
-                                                </span>
-                                            </div>
-                                            <Link
-                                                href="/teacher-dashboard/role-allocation"
-                                                className="text-xs font-bold text-amber-800 dark:text-amber-300 hover:underline flex items-center gap-1 shrink-0 self-start sm:self-auto"
+                                {/* Primary Status Tabs */}
+                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none border-t border-slate-100 dark:border-slate-800 pt-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setFilterMode('all');
+                                            setStatusFilter('all');
+                                            setCurrentPage(1);
+                                        }}
+                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 cursor-pointer ${
+                                            filterMode !== 'unassigned' && statusFilter === 'all'
+                                                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        All Students ({students.length})
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setFilterMode('all');
+                                            setStatusFilter('active');
+                                            setCurrentPage(1);
+                                        }}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 cursor-pointer ${
+                                            filterMode !== 'unassigned' && statusFilter === 'active'
+                                                ? 'bg-emerald-600 text-white shadow-xs'
+                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        <span className={`size-1.5 rounded-full ${filterMode !== 'unassigned' && statusFilter === 'active' ? 'bg-white' : 'bg-emerald-500'}`} />
+                                        Active ({summaryCounts.active})
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setFilterMode('all');
+                                            setStatusFilter('inactive');
+                                            setCurrentPage(1);
+                                        }}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 cursor-pointer ${
+                                            filterMode !== 'unassigned' && statusFilter === 'inactive'
+                                                ? 'bg-amber-600 text-white shadow-xs'
+                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        <span className={`size-1.5 rounded-full ${filterMode !== 'unassigned' && statusFilter === 'inactive' ? 'bg-white' : 'bg-amber-500'}`} />
+                                        Learning Paused ({summaryCounts.paused})
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setFilterMode('all');
+                                            setStatusFilter('archived');
+                                            setCurrentPage(1);
+                                        }}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 cursor-pointer ${
+                                            filterMode !== 'unassigned' && statusFilter === 'archived'
+                                                ? 'bg-slate-700 text-white shadow-xs'
+                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        <span className={`size-1.5 rounded-full ${filterMode !== 'unassigned' && statusFilter === 'archived' ? 'bg-white' : 'bg-slate-400'}`} />
+                                        Archived ({summaryCounts.archived})
+                                    </button>
+
+                                    {teacherProfile && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setFilterMode('unassigned');
+                                                setCurrentPage(1);
+                                            }}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shrink-0 cursor-pointer ${
+                                                filterMode === 'unassigned'
+                                                    ? 'bg-blue-600 text-white shadow-xs'
+                                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                            }`}
+                                        >
+                                            <span className={`size-1.5 rounded-full ${filterMode === 'unassigned' ? 'bg-white' : 'bg-blue-500'}`} />
+                                            Unassigned ({allUnassignedStudents.length})
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* ── Main Students Table & Mobile Cards ───────────────── */}
+                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+                                {/* Mobile Cards View (Hidden on Tablet / Desktop) */}
+                                <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                                    {paginatedStudents.map((student) => {
+                                        const studentAttentionIssues = getStudentAttentionIssues(student);
+                                        const hasAttention = student.status === 'Active' && studentAttentionIssues.length > 0;
+                                        const primaryIssue = hasAttention ? studentAttentionIssues[0] : null;
+                                        const moreCount = hasAttention && studentAttentionIssues.length > 1 ? studentAttentionIssues.length - 1 : 0;
+
+                                        return (
+                                            <div 
+                                                key={student.id}
+                                                onClick={() => router.push(`/teacher-dashboard/students/${student.id}`)}
+                                                className="p-4 space-y-3 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors cursor-pointer"
                                             >
-                                                Go to Role Allocation →
-                                            </Link>
-                                        </div>
-                                        <div className="divide-y divide-amber-100 dark:divide-amber-900/30">
-                                            {pendingUsers.slice(0, 5).map(u => (
-                                                <div key={u.id} className="flex items-center justify-between p-3.5 sm:px-4 sm:py-3 gap-3">
-                                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-200/80 dark:bg-amber-800/80 flex items-center justify-center text-amber-900 dark:text-amber-100 font-black text-xs sm:text-sm shrink-0 border border-amber-300/50">
-                                                            {u.name?.charAt(0)?.toUpperCase() || '?'}
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <p className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">{u.name}</p>
+                                                {/* ROW 1: Identity (Avatar, Name, ID, Lifecycle Status) & 3-dot Action Menu */}
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                                                        {/* Avatar */}
+                                                        <div className="relative shrink-0 mt-0.5">
+                                                            <div className="size-10 rounded-full bg-amber-500/10 dark:bg-amber-400/10 flex items-center justify-center overflow-hidden border border-amber-500/20 shadow-xs">
+                                                                {student.profile_pic_url ? (
+                                                                    <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{student.name.charAt(0).toUpperCase()}</span>
+                                                                )}
                                                             </div>
-                                                            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">{u.email}{u.phone ? ` · ${u.phone}` : ''}</p>
+                                                            {student.is_online && (
+                                                                <span className="absolute bottom-0 right-0 block size-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
+                                                            )}
+                                                        </div>
+
+                                                        {/* Name, KFA ID, and Lifecycle Badge */}
+                                                        <div className="min-w-0 flex-1 space-y-1">
+                                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate leading-snug">
+                                                                {student.name}
+                                                            </h4>
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="text-[11px] font-mono font-medium text-slate-500 dark:text-slate-400">
+                                                                    {student.student_id_formatted}
+                                                                </span>
+                                                                {student.status === 'Active' ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                                                                        <span className="size-1.5 rounded-full bg-emerald-500" />
+                                                                        Active
+                                                                    </span>
+                                                                ) : student.status === 'Inactive' ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+                                                                        <span className="size-1.5 rounded-full bg-amber-500" />
+                                                                        Paused
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                                        <span className="size-1.5 rounded-full bg-slate-400" />
+                                                                        Archived
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-2 shrink-0">
-                                                        <span className="text-[11px] font-medium text-slate-400 hidden md:inline">
-                                                            {new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                                                        </span>
-                                                        <Link
-                                                            href="/teacher-dashboard/role-allocation"
-                                                            className="admin-btn-sm admin-btn-primary whitespace-nowrap"
-                                                            title="Assign Role"
+
+                                                    {/* 3-dot Action Menu (min 44x44px touch target) */}
+                                                    <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setActiveActionMenuId(activeActionMenuId === student.id ? null : student.id)}
+                                                            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                                            aria-label="Student actions"
                                                         >
-                                                            <span className="material-symbols-outlined text-base shrink-0">manage_accounts</span>
-                                                            <span className="hidden sm:inline">Assign Role</span>
-                                                        </Link>
+                                                            <span className="material-symbols-outlined text-xl">more_vert</span>
+                                                        </button>
+                                                        {activeActionMenuId === student.id && (
+                                                            <div 
+                                                                ref={actionMenuRef}
+                                                                className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 text-left"
+                                                            >
+                                                                <Link
+                                                                    href={`/teacher-dashboard/students/${student.id}`}
+                                                                    onClick={() => setActiveActionMenuId(null)}
+                                                                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-sm text-slate-400">visibility</span>
+                                                                    View Profile
+                                                                </Link>
+                                                                <Link
+                                                                    href={`/teacher-dashboard/students/${student.id}/edit`}
+                                                                    onClick={() => setActiveActionMenuId(null)}
+                                                                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-sm text-slate-400">edit</span>
+                                                                    Edit Student
+                                                                </Link>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setActiveActionMenuId(null);
+                                                                        openSingleGuidanceModal(student);
+                                                                    }}
+                                                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-left cursor-pointer"
+                                                                >
+                                                                    <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                                                                    Add Guidance Note
+                                                                </button>
+                                                                <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                                                                {student.status === 'Active' ? (
+                                                                    <>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setActiveActionMenuId(null);
+                                                                                handlePauseStudent(student);
+                                                                            }}
+                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-left cursor-pointer"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">pause_circle</span>
+                                                                            Pause Learning
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setActiveActionMenuId(null);
+                                                                                handleArchiveStudent(student);
+                                                                            }}
+                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-left cursor-pointer"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">archive</span>
+                                                                            Archive Student
+                                                                        </button>
+                                                                    </>
+                                                                ) : student.status === 'Inactive' ? (
+                                                                    <>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setActiveActionMenuId(null);
+                                                                                handleResumeStudent(student);
+                                                                            }}
+                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-left cursor-pointer"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">play_circle</span>
+                                                                            Resume Learning
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setActiveActionMenuId(null);
+                                                                                handleArchiveStudent(student);
+                                                                            }}
+                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-left cursor-pointer"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">archive</span>
+                                                                            Archive Student
+                                                                        </button>
+                                                                    </>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setActiveActionMenuId(null);
+                                                                            handleOpenReactivateModal(student);
+                                                                        }}
+                                                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-left cursor-pointer"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-sm">unarchive</span>
+                                                                        Re-enroll Student
+                                                                    </button>
+                                                                )}
+                                                                {teacherProfile?.role === 'admin' && (
+                                                                    <>
+                                                                        <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setActiveActionMenuId(null);
+                                                                                setStudentToDelete({ id: student.id, name: student.name });
+                                                                            }}
+                                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-left cursor-pointer"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">delete</span>
+                                                                            Delete Student
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
-                                            ))}
-                                            {pendingUsers.length > 5 && (
-                                                <div className="px-4 py-2.5 text-center bg-amber-50/50 dark:bg-amber-950/10">
-                                                    <Link href="/teacher-dashboard/role-allocation" className="text-xs text-amber-800 dark:text-amber-400 font-bold hover:underline">
-                                                        View all {pendingUsers.length} pending requests →
-                                                    </Link>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
 
-                                {/* Bulk action bar — shown when students are selected */}
-                                {selectedIds.size > 0 && (
-                                    <div className="flex items-center justify-between p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-xl animate-in slide-in-from-top-2 duration-200">
-                                        <div className="flex items-center gap-2">
-                                            <span className="material-symbols-outlined text-rose-500">check_box</span>
-                                            <span className="text-sm font-bold text-rose-700 dark:text-rose-400">
-                                                {selectedIds.size} student{selectedIds.size !== 1 ? 's' : ''} selected
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <button
-                                                onClick={openBulkGuidanceModal}
-                                                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-slate-950 bg-[#ecb613] hover:bg-[#d49f0e] rounded-lg transition-all shadow-xs cursor-pointer active:scale-95"
-                                            >
-                                                <Lightbulb className="w-3.5 h-3.5 text-slate-950" />
-                                                <span>+ Add Guidance ({selectedIds.size})</span>
-                                            </button>
-                                            <button
-                                                onClick={() => setSelectedIds(new Set())}
-                                                className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                                            >
-                                                Clear
-                                            </button>
-                                            <button
-                                                onClick={() => setShowBulkDeleteModal(true)}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-sm cursor-pointer"
-                                            >
-                                                <span className="material-symbols-outlined text-base">delete_sweep</span>
-                                                Delete ({selectedIds.size})
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                    <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-800/50">
-                                        {/* Row 1: Filter tabs and export button */}
-                                        <div className="flex items-center justify-between gap-3 w-full">
-                                            <div className="flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-850 overflow-x-auto scrollbar-none snap-x flex-1 max-w-sm sm:flex-initial">
-                                                <button 
-                                                    onClick={() => setFilterMode('all')}
-                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'all' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>All Students</button>
-                                                <button 
-                                                    onClick={() => setFilterMode('recent')}
-                                                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'recent' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Recent</button>
-                                                {teacherProfile && (
-                                                    <button 
-                                                        onClick={() => setFilterMode('unassigned')}
-                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 snap-start ${filterMode === 'unassigned' ? 'bg-white dark:bg-slate-700 shadow-sm border border-slate-200 dark:border-slate-650 text-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>Unassigned ({allUnassignedStudents.length})</button>
+                                                {/* ROW 2: Dedicated Needs Attention Presentation (Active Students with Issues Only) */}
+                                                {hasAttention && primaryIssue && (
+                                                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleAttentionTriggerClick(student, e.currentTarget, e)}
+                                                            className={`w-full min-h-[44px] flex items-center justify-between gap-2.5 px-3.5 py-2 rounded-xl text-left transition-all cursor-pointer ${
+                                                                activeAttentionStudent?.id === student.id
+                                                                    ? 'bg-amber-100/90 dark:bg-amber-900/50 border border-amber-300 dark:border-amber-700 shadow-xs ring-2 ring-amber-500/20'
+                                                                    : 'bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200/90 dark:border-amber-800/60 hover:bg-amber-100/70 dark:hover:bg-amber-900/40 active:scale-[0.99]'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                                                <span className="material-symbols-outlined text-base text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">warning</span>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider">
+                                                                            Needs Attention
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 truncate mt-0.5">
+                                                                        {primaryIssue.label}
+                                                                        {moreCount > 0 && (
+                                                                            <span className="text-amber-600/90 dark:text-amber-400/90 font-normal">
+                                                                                {' '}• +{moreCount} more
+                                                                            </span>
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <span className="material-symbols-outlined text-base text-amber-600 dark:text-amber-400 shrink-0">
+                                                                {activeAttentionStudent?.id === student.id ? 'expand_less' : 'expand_more'}
+                                                            </span>
+                                                        </button>
+                                                    </div>
                                                 )}
+
+                                                {/* ROW 3: Class & Attendance Details */}
+                                                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Class / Batch</span>
+                                                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block mt-0.5">{student.batch}</span>
+                                                        {teacherProfile?.role === 'admin' && student.teacher_name && (
+                                                            <span className="text-[10px] text-slate-500 block truncate mt-0.5">{student.teacher_name}</span>
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                            <span>Attendance</span>
+                                                            <span className="font-bold text-slate-800 dark:text-slate-200">{student.attendance_pct}%</span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden mt-2">
+                                                            <div 
+                                                                className={`h-full rounded-full ${student.attendance_pct >= 85 ? 'bg-emerald-500' : student.attendance_pct >= 75 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                                                                style={{ width: `${student.attendance_pct}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* ROW 4: Actions Footer */}
+                                                <div className="flex items-center justify-between gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                                                    <div className="flex items-center gap-2">
+                                                        {student.phone && student.phone !== 'No Phone' && (
+                                                            <a
+                                                                href={`tel:${student.phone}`}
+                                                                className="min-h-[44px] px-3 py-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors"
+                                                            >
+                                                                <span className="material-symbols-outlined text-base text-emerald-600">call</span>
+                                                                Call
+                                                            </a>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => router.push(`/teacher-dashboard/messages?chat=${student.id}`)}
+                                                            className="min-h-[44px] px-3 py-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+                                                        >
+                                                            <span className="material-symbols-outlined text-base text-amber-600">chat</span>
+                                                            Chat
+                                                        </button>
+                                                    </div>
+
+                                                    {filterMode === 'unassigned' ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowClaimModal(student)}
+                                                            className="min-h-[44px] px-3.5 py-2 inline-flex items-center gap-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-xs cursor-pointer"
+                                                        >
+                                                            <span className="material-symbols-outlined text-base">person_add</span>
+                                                            Claim & Assign
+                                                        </button>
+                                                    ) : (
+                                                        <Link
+                                                            href={`/teacher-dashboard/students/${student.id}`}
+                                                            className="min-h-[44px] px-3.5 py-2 inline-flex items-center gap-1 text-xs font-bold text-slate-950 bg-[#ecb613] hover:bg-[#d49f0e] rounded-xl transition-colors shadow-xs"
+                                                        >
+                                                            View Student
+                                                            <span className="material-symbols-outlined text-base">arrow_forward</span>
+                                                        </Link>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <button 
-                                                onClick={handleExportCSV}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-all focus:ring-2 focus:ring-[#ecb613]/50 shrink-0">
-                                                <span className="material-symbols-outlined text-lg">download</span>
-                                                <span className="hidden sm:inline">Export</span>
-                                            </button>
+                                        );
+                                    })}
+                                    {paginatedStudents.length === 0 && (
+                                        <div className="p-8 text-center text-slate-500 text-xs">
+                                            {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found matching your filters.'}
                                         </div>
+                                    )}
+                                </div>
 
-                                        {/* Row 2: Selectors (only visible when not viewing unassigned) */}
-                                        {filterMode !== 'unassigned' && (
-                                            <div className="grid grid-cols-2 gap-3 w-full sm:flex sm:items-center sm:w-auto">
-                                                <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 shadow-xs flex items-center justify-between">
-                                                    <span className="text-[10px] text-slate-400 font-bold uppercase select-none mr-2">Batch:</span>
-                                                    <select 
-                                                        value={selectedBatch} 
-                                                        onChange={(e) => setSelectedBatch(e.target.value)} 
-                                                        className="text-xs font-bold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 py-1 pl-1 pr-6 cursor-pointer flex-1 outline-none">
-                                                        <option value="All Batches">All Batches</option>
-                                                        {availableBatches.map(batch => (
-                                                            <option key={batch} value={batch}>{batch}</option>
-                                                        ))}
-                                                        <option value="Unassigned">Unassigned</option>
-                                                    </select>
-                                                </div>
-                                                <div className="relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 shadow-xs flex items-center justify-between">
-                                                    <span className="text-[10px] text-slate-400 font-bold uppercase select-none mr-2">Status:</span>
-                                                    <select 
-                                                        value={statusFilter} 
-                                                        onChange={(e) => setStatusFilter(e.target.value as any)} 
-                                                        className="text-xs font-bold bg-transparent border-none focus:ring-0 text-slate-700 dark:text-slate-200 py-1 pl-1 pr-6 cursor-pointer flex-1 outline-none">
-                                                        <option value="all">All Status</option>
-                                                        <option value="active">Active Only</option>
-                                                        <option value="inactive">Inactive</option>
-                                                        <option value="archived">Archived</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                            {/* Mobile Cards View */}
-                                            <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-                                                {paginatedStudents.map((student) => (
-                                                    <div 
+                                {/* Desktop Table View (Fits 100% full width with zero horizontal scrolling) */}
+                                <div className="hidden md:block w-full overflow-hidden">
+                                    <table className="w-full table-fixed text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50/80 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                                                <th className="px-3 py-3.5 w-12 text-center">
+                                                    {filterMode !== 'unassigned' ? (
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={allPageSelected}
+                                                            ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
+                                                            onChange={toggleSelectAll}
+                                                            className="size-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500/20 cursor-pointer"
+                                                        />
+                                                    ) : (
+                                                        <span className="text-slate-400 text-xs">—</span>
+                                                    )}
+                                                </th>
+                                                <th className="px-4 py-3.5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[24%]">
+                                                    Student
+                                                </th>
+                                                <th className="px-4 py-3.5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[18%]">
+                                                    Status
+                                                </th>
+                                                <th className="px-4 py-3.5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[22%]">
+                                                    Class & Schedule
+                                                </th>
+                                                <th className="px-4 py-3.5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[13%]">
+                                                    Attendance
+                                                </th>
+                                                <th className="px-4 py-3.5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[13%]">
+                                                    Contact
+                                                </th>
+                                                <th className="px-4 py-3.5 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right w-[10%]">
+                                                    Actions
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                                            {paginatedStudents.map((student) => {
+                                                const studentAttentionIssues = getStudentAttentionIssues(student);
+                                                return (
+                                                    <tr 
                                                         key={student.id} 
-                                                        className={`p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}
+                                                        onClick={() => router.push(`/teacher-dashboard/students/${student.id}`)}
+                                                        className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors cursor-pointer group ${selectedIds.has(student.id) ? 'bg-amber-50/40 dark:bg-amber-950/20' : ''}`}
                                                     >
-                                                        {/* Left side: checkbox, avatar & text details */}
-                                                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                            {filterMode !== 'unassigned' && (
+                                                        {/* Checkbox */}
+                                                        <td className="px-3 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                                            {filterMode !== 'unassigned' ? (
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={selectedIds.has(student.id)}
                                                                     onChange={() => toggleSelectStudent(student.id)}
-                                                                    className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer shrink-0"
+                                                                    className="size-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500/20 cursor-pointer"
                                                                 />
+                                                            ) : (
+                                                                <span className="text-slate-400 text-xs">—</span>
                                                             )}
-                                                            <div className="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-700/50 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                                                                {student.profile_pic_url ? (
-                                                                    <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    <span className="text-amber-800 dark:text-amber-300 font-black text-xs">{student.name?.charAt(0)?.toUpperCase() || '?'}</span>
-                                                                )}
-                                                            </div>
-                                                            <Link href={`/teacher-dashboard/students/${student.id}`} className="min-w-0 flex-1 cursor-pointer">
-                                                                <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                                                                    {student.name}
-                                                                </div>
-                                                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                                                                    <span className="truncate">{student.batch}</span>
-                                                                    {teacherProfile?.role === 'admin' && student.teacher_name && (
-                                                                        <span className="truncate">• {student.teacher_name}</span>
+                                                        </td>
+
+                                                        {/* Student Profile & Attention */}
+                                                        <td className="px-4 py-4">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="relative shrink-0">
+                                                                    <div className="size-10 rounded-full bg-amber-500/10 dark:bg-amber-400/10 flex items-center justify-center overflow-hidden border border-amber-500/20 shadow-xs">
+                                                                        {student.profile_pic_url ? (
+                                                                            <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover rounded-full" loading="lazy" />
+                                                                        ) : (
+                                                                            <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{student.name.charAt(0).toUpperCase()}</span>
+                                                                        )}
+                                                                    </div>
+                                                                    {student.is_online && (
+                                                                        <span className="absolute bottom-0 right-0 block size-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" title="Online now" />
                                                                     )}
                                                                 </div>
-                                                            </Link>
-                                                        </div>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
+                                                                            {student.name}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                                                        <span className="text-[11px] font-mono font-medium text-slate-500 dark:text-slate-400 tracking-tight">
+                                                                            {student.student_id_formatted}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
 
-                                                        {/* Right side: Edit & Delete icons */}
-                                                        <div className="flex items-center gap-1 shrink-0">
+                                                        {/* Status */}
+                                                        <td className="px-4 py-4">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                {student.status === 'Active' ? (
+                                                                    <>
+                                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                                                                            <span className="size-1.5 rounded-full bg-emerald-500" />
+                                                                            Active
+                                                                        </span>
+                                                                        {studentAttentionIssues.length > 0 && (
+                                                                            <div className="inline-flex items-center" onClick={(e) => e.stopPropagation()}>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => handleAttentionTriggerClick(student, e.currentTarget, e)}
+                                                                                    onMouseEnter={(e) => handleAttentionTriggerMouseEnter(student, e.currentTarget)}
+                                                                                    onMouseLeave={handleAttentionTriggerMouseLeave}
+                                                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
+                                                                                        activeAttentionStudent?.id === student.id
+                                                                                            ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 border border-amber-400 dark:border-amber-700 ring-2 ring-amber-500/20'
+                                                                                            : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                                                                                    }`}
+                                                                                    title="Click or hover to view attention reasons"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-[13px] text-amber-600 dark:text-amber-400">warning</span>
+                                                                                    <span>Needs Attention</span>
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </>
+                                                                ) : student.status === 'Inactive' ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60">
+                                                                        <span className="size-1.5 rounded-full bg-amber-500" />
+                                                                        Learning Paused
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                                        <span className="size-1.5 rounded-full bg-slate-400" />
+                                                                        Former Student
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Class & Schedule */}
+                                                        <td className="px-4 py-4">
+                                                            <div className="min-w-0 space-y-0.5">
+                                                                <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 block truncate" title={student.batch}>
+                                                                    {student.batch}
+                                                                </span>
+                                                                {teacherProfile?.role === 'admin' && (
+                                                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate">
+                                                                        Teacher: {student.teacher_name || 'Unassigned'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Attendance */}
+                                                        <td className="px-4 py-4">
+                                                            <div className="space-y-1.5 min-w-[100px]">
+                                                                <div className="flex items-center justify-between text-xs">
+                                                                    <span className={`font-bold ${
+                                                                        student.attendance_pct >= 85 ? 'text-emerald-600 dark:text-emerald-400' :
+                                                                        student.attendance_pct >= 75 ? 'text-amber-600 dark:text-amber-400' :
+                                                                        'text-rose-600 dark:text-rose-400'
+                                                                    }`}>
+                                                                        {student.attendance_pct}%
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-400 font-medium">
+                                                                        {student.attendance_pct >= 85 ? 'Good' : student.attendance_pct >= 75 ? 'Average' : 'Low'}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                                                    <div 
+                                                                        className={`h-full rounded-full transition-all duration-300 ${
+                                                                            student.attendance_pct >= 85 ? 'bg-emerald-500' :
+                                                                            student.attendance_pct >= 75 ? 'bg-amber-500' :
+                                                                            'bg-rose-500'
+                                                                        }`}
+                                                                        style={{ width: `${Math.min(100, Math.max(0, student.attendance_pct))}%` }}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Contact */}
+                                                        <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <div className="min-w-0 flex-1">
+                                                                    {student.phone && student.phone !== 'No Phone' ? (
+                                                                        <a
+                                                                            href={`tel:${student.phone}`}
+                                                                            className="text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 truncate block transition-colors"
+                                                                            title={`Call ${student.name}: ${student.phone}`}
+                                                                        >
+                                                                            {student.phone}
+                                                                        </a>
+                                                                    ) : (
+                                                                        <span className="text-xs text-slate-400 dark:text-slate-500 italic">No phone</span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-1 shrink-0">
+                                                                    {student.phone && student.phone !== 'No Phone' && (
+                                                                        <a
+                                                                            href={`tel:${student.phone}`}
+                                                                            className="size-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
+                                                                            title={`Call ${student.phone}`}
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-[16px]">call</span>
+                                                                        </a>
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => router.push(`/teacher-dashboard/messages?chat=${student.id}`)}
+                                                                        className="size-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors cursor-pointer"
+                                                                        title="Send Message"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[16px]">chat</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+
+                                                        {/* Actions */}
+                                                        <td className="px-4 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                                                             {filterMode === 'unassigned' ? (
-                                                                <button
-                                                                    onClick={() => setShowClaimModal(student)}
-                                                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                                                                <button 
+                                                                    onClick={() => setShowClaimModal(student)} 
+                                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
                                                                 >
-                                                                    <span className="material-symbols-outlined text-base">person_add</span>
+                                                                    <span className="material-symbols-outlined text-sm">person_add</span>
                                                                     Claim
                                                                 </button>
                                                             ) : (
-                                                                <>
-                                                                    <Link
-                                                                        href={`/teacher-dashboard/students/${student.id}/edit`}
-                                                                        className="p-2 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-all flex items-center justify-center"
-                                                                        title="Edit Profile"
+                                                                <div className="flex items-center justify-end gap-1.5">
+                                                                    <Link 
+                                                                        href={`/teacher-dashboard/students/${student.id}`}
+                                                                        className="inline-flex items-center px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
                                                                     >
-                                                                        <span className="material-symbols-outlined text-xl">edit</span>
+                                                                        View
                                                                     </Link>
-                                                                    {teacherProfile?.role === 'admin' && (
+                                                                    <div className="relative">
                                                                         <button
-                                                                            onClick={() => setStudentToDelete({ id: student.id, name: student.name })}
-                                                                            className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all flex items-center justify-center"
-                                                                            title="Delete Student"
+                                                                            type="button"
+                                                                            onClick={() => setActiveActionMenuId(activeActionMenuId === student.id ? null : student.id)}
+                                                                            className="size-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                                                            title="More actions"
                                                                         >
-                                                                            <span className="material-symbols-outlined text-xl">delete</span>
+                                                                            <span className="material-symbols-outlined text-lg">more_vert</span>
                                                                         </button>
-                                                                    )}
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                {paginatedStudents.length === 0 && (
-                                                    <div className="p-6 text-center text-slate-500 text-xs">
-                                                        {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
-                                                    </div>
-                                                )}
-                                            </div>
+                                                                        {activeActionMenuId === student.id && (
+                                                                            <div 
+                                                                                ref={actionMenuRef}
+                                                                                className="absolute right-0 top-full mt-1.5 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 text-left"
+                                                                            >
+                                                                                <Link
+                                                                                    href={`/teacher-dashboard/students/${student.id}`}
+                                                                                    onClick={() => setActiveActionMenuId(null)}
+                                                                                    className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-base text-slate-400">visibility</span>
+                                                                                    View Profile
+                                                                                </Link>
+                                                                                <Link
+                                                                                    href={`/teacher-dashboard/students/${student.id}/edit`}
+                                                                                    onClick={() => setActiveActionMenuId(null)}
+                                                                                    className="flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-base text-slate-400">edit</span>
+                                                                                    Edit Student
+                                                                                </Link>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setActiveActionMenuId(null);
+                                                                                        router.push(`/teacher-dashboard/messages?chat=${student.id}`);
+                                                                                    }}
+                                                                                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-base text-slate-400">chat</span>
+                                                                                    Send Message
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setActiveActionMenuId(null);
+                                                                                        openSingleGuidanceModal(student);
+                                                                                    }}
+                                                                                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer"
+                                                                                >
+                                                                                    <Lightbulb className="w-4 h-4 text-amber-500" />
+                                                                                    Add Guidance Note
+                                                                                </button>
 
-                                            {/* Desktop Table View (Fits 100% screen width with zero horizontal scrolling) */}
-                                            <div className="hidden md:block w-full overflow-hidden">
-                                                <table className="w-full table-fixed text-left border-collapse">
-                                                    <thead>
-                                                        <tr className="bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
-                                                            <th className="px-2 py-3 w-10 text-center">
-                                                                {filterMode !== 'unassigned' ? (
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={allPageSelected}
-                                                                        ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected; }}
-                                                                        onChange={toggleSelectAll}
-                                                                        className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
-                                                                    />
-                                                                ) : (
-                                                                    <span className="text-slate-400">—</span>
-                                                                )}
-                                                            </th>
-                                                            <th className="px-3 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[34%]">Student Name & Status</th>
-                                                            <th className="px-3 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[28%]">Batch & Teacher</th>
-                                                            <th className="px-3 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[15%]">Attendance</th>
-                                                            <th className="px-3 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[13%]">Contact</th>
-                                                            <th className="px-2 py-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right w-[10%]">Actions</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                                        {paginatedStudents.map((student) => (
-                                                            <tr key={student.id} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group ${selectedIds.has(student.id) ? 'bg-rose-50/60 dark:bg-rose-900/10' : ''}`}>
-                                                                <td className="px-2 py-3 text-center">
-                                                                    {filterMode !== 'unassigned' ? (
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={selectedIds.has(student.id)}
-                                                                            onChange={() => toggleSelectStudent(student.id)}
-                                                                            className="size-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/20 cursor-pointer"
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="text-slate-400 dark:text-slate-600 text-xs">—</span>
-                                                                    )}
-                                                                </td>
-                                                                <td className="px-3 py-3">
-                                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                                        <div className="relative shrink-0">
-                                                                            <div className="size-9 rounded-full bg-[#ecb613]/10 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs">
-                                                                                {student.profile_pic_url ? (
-                                                                                    <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover rounded-full" loading="lazy" />
+                                                                                <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+                                                                                {/* Lifecycle Transitions */}
+                                                                                {student.status === 'Active' ? (
+                                                                                    <>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                setActiveActionMenuId(null);
+                                                                                                handlePauseStudent(student);
+                                                                                            }}
+                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors text-left cursor-pointer"
+                                                                                        >
+                                                                                            <span className="material-symbols-outlined text-base">pause_circle</span>
+                                                                                            Pause Learning
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                setActiveActionMenuId(null);
+                                                                                                handleArchiveStudent(student);
+                                                                                            }}
+                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer"
+                                                                                        >
+                                                                                            <span className="material-symbols-outlined text-base">archive</span>
+                                                                                            Archive Student
+                                                                                        </button>
+                                                                                    </>
+                                                                                ) : student.status === 'Inactive' ? (
+                                                                                    <>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                setActiveActionMenuId(null);
+                                                                                                handleResumeStudent(student);
+                                                                                            }}
+                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors text-left cursor-pointer"
+                                                                                        >
+                                                                                            <span className="material-symbols-outlined text-base">play_circle</span>
+                                                                                            Resume Learning
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                setActiveActionMenuId(null);
+                                                                                                handleArchiveStudent(student);
+                                                                                            }}
+                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left cursor-pointer"
+                                                                                        >
+                                                                                            <span className="material-symbols-outlined text-base">archive</span>
+                                                                                            Archive Student
+                                                                                        </button>
+                                                                                    </>
                                                                                 ) : (
-                                                                                    <span className="text-xs font-bold text-[#ecb613]">{student.name.charAt(0)}</span>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            setActiveActionMenuId(null);
+                                                                                            handleOpenReactivateModal(student);
+                                                                                        }}
+                                                                                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors text-left cursor-pointer"
+                                                                                        >
+                                                                                        <span className="material-symbols-outlined text-base">unarchive</span>
+                                                                                        Re-enroll Student
+                                                                                    </button>
+                                                                                )}
+
+                                                                                {teacherProfile?.role === 'admin' && (
+                                                                                    <>
+                                                                                        <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                setActiveActionMenuId(null);
+                                                                                                setStudentToDelete({ id: student.id, name: student.name });
+                                                                                            }}
+                                                                                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-left cursor-pointer"
+                                                                                        >
+                                                                                            <span className="material-symbols-outlined text-base">delete</span>
+                                                                                            Delete Student
+                                                                                        </button>
+                                                                                    </>
                                                                                 )}
                                                                             </div>
-                                                                            {student.is_online && (
-                                                                                <span className="absolute bottom-0 right-0 block h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-800 animate-pulse" />
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="min-w-0 flex-1">
-                                                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                                                <Link href={`/teacher-dashboard/students/${student.id}`} className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors truncate max-w-[140px] sm:max-w-none">
-                                                                                    {student.name}
-                                                                                </Link>
-                                                                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold shrink-0 ${
-                                                                                    student.pacing_status === 'Consistent' 
-                                                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                                                                                        : student.pacing_status === 'Improving'
-                                                                                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                                                                                            : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-                                                                                }`}>
-                                                                                    {student.pacing_status || 'Consistent'}
-                                                                                </span>
-                                                                            </div>
-                                                                            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-tight truncate mt-0.5">{student.student_id_formatted}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-3 py-3">
-                                                                    <div className="min-w-0">
-                                                                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block truncate" title={student.batch}>
-                                                                            {student.batch}
-                                                                        </span>
-                                                                        {teacherProfile?.role === 'admin' && (
-                                                                            <span className="text-[10px] font-medium text-slate-400 block truncate mt-0.5">
-                                                                                Teacher: {student.teacher_name || 'Unassigned'}
-                                                                            </span>
                                                                         )}
                                                                     </div>
-                                                                </td>
-                                                                <td className="px-3 py-3">
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className="text-xs font-bold text-slate-900 dark:text-white shrink-0">{student.attendance_pct}%</span>
-                                                                        <div className="w-12 bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden shrink-0">
-                                                                            <div className={`h-1.5 rounded-full ${student.attendance_pct >= 85 ? 'bg-emerald-500' : student.attendance_pct >= 70 ? 'bg-amber-500' : 'bg-rose-500'}`} style={{ width: `${student.attendance_pct}%` }} />
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-3 py-3">
-                                                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400 truncate block">
-                                                                        {student.phone || 'No Phone'}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-2 py-3 text-right">
-                                                                    {filterMode === 'unassigned' ? (
-                                                                        <div className="flex justify-end">
-                                                                            <button onClick={() => setShowClaimModal(student)} className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1">
-                                                                                Claim
-                                                                            </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="flex items-center justify-end gap-1">
-                                                                            <button
-                                                                                onClick={() => openSingleGuidanceModal(student)}
-                                                                                className="p-1.5 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg transition-all cursor-pointer"
-                                                                                title="Give Mentor Guidance / Tip"
-                                                                            >
-                                                                                <Lightbulb className="w-4 h-4 text-amber-600" />
-                                                                            </button>
-                                                                            <Link href={`/teacher-dashboard/students/${student.id}/edit`} className="p-1.5 text-slate-400 hover:text-[#ecb613] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" title="Edit profile">
-                                                                                <span className="material-symbols-outlined text-base">edit</span>
-                                                                            </Link>
-                                                                            <button 
-                                                                                onClick={() => router.push(`/teacher-dashboard/messages?chat=${student.id}`)}
-                                                                                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all" 
-                                                                                title="Message"
-                                                                            >
-                                                                                <span className="material-symbols-outlined text-base">chat</span>
-                                                                            </button>
-                                                                            {teacherProfile?.role === 'admin' && (
-                                                                                <button onClick={() => setStudentToDelete({ id: student.id, name: student.name })} className="p-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-all" title="Delete">
-                                                                                    <span className="material-symbols-outlined text-base">delete</span>
-                                                                                </button>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                        {paginatedStudents.length === 0 && (
-                                                            <tr>
-                                                                <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-xs font-semibold">
-                                                                    {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found in your directory.'}
-                                                                </td>
-                                                            </tr>
-                                                        )}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                    <div className="px-6 py-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                                        <span className="text-xs font-semibold text-slate-500">
-                                            Showing {displayedStudents.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, displayedStudents.length)} of {displayedStudents.length} results
-                                        </span>
-                                        <div className="flex items-center gap-1">
-                                            <button 
-                                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                                disabled={currentPage === 1}
-                                                className="size-8 flex items-center justify-center rounded border border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                                                <span className="material-symbols-outlined text-sm">chevron_left</span>
-                                            </button>
-                                            
-                                            {Array.from({ length: totalPages }).map((_, idx) => (
-                                                <button 
-                                                    key={idx}
-                                                    onClick={() => setCurrentPage(idx + 1)}
-                                                    className={`size-8 flex items-center justify-center rounded text-xs font-bold transition-all ${currentPage === idx + 1 ? 'bg-[#ecb613] text-slate-900 border-none' : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                                                    {idx + 1}
-                                                </button>
-                                            ))}
-
-                                            <button 
-                                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                                disabled={currentPage === totalPages || totalPages === 0}
-                                                className="size-8 flex items-center justify-center rounded border border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                                                <span className="material-symbols-outlined text-sm">chevron_right</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="col-span-12 lg:col-span-4 space-y-6">
-                                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden p-6">
-                                    <div className="flex items-center justify-between mb-6">
-                                        <h3 className="font-bold text-slate-900 dark:text-white">Performance Insights</h3>
-                                        <span className="text-xs font-bold text-[#ecb613] bg-[#ecb613]/5 px-2 py-1 rounded uppercase tracking-wide">This Month</span>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                                            <p className="text-xs font-bold text-slate-500 uppercase mb-1">Avg. Attendance</p>
-                                            <div className="flex items-end gap-2">
-                                                <span className="text-2xl font-bold text-slate-900 dark:text-white">{stats.avgAttendance}%</span>
-                                                <span className="text-xs font-bold text-green-600 mb-1 flex items-center gap-0.5">
-                                                    <span className="material-symbols-outlined text-sm">arrow_upward</span>
-                                                    2.4%
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                                            <p className="text-xs font-bold text-slate-500 uppercase mb-1">Submission Rate</p>
-                                            <div className="flex items-end gap-2">
-                                                <span className="text-2xl font-bold text-slate-900 dark:text-white">{stats.submissionRate}%</span>
-                                                <span className="text-xs font-bold text-red-500 mb-1 flex items-center gap-0.5">
-                                                    <span className="material-symbols-outlined text-sm">arrow_downward</span>
-                                                    1.1%
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="pt-2">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-tight">Top Batch Performance</span>
-                                            </div>
-                                            <div className="space-y-3 mt-4">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Morning Beginners</span>
-                                                    <span className="text-sm font-bold text-slate-900 dark:text-white">92/100</span>
-                                                </div>
-                                                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full">
-                                                    <div className="bg-[#ecb613] h-full rounded-full" style={{ width: '92%' }}></div>
-                                                </div>
-                                                <div className="flex items-center justify-between pt-1">
-                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Evening Intermediate</span>
-                                                    <span className="text-sm font-bold text-slate-900 dark:text-white">78/100</span>
-                                                </div>
-                                                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full">
-                                                    <div className="bg-slate-300 dark:bg-slate-600 h-full rounded-full" style={{ width: '78%' }}></div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {paginatedStudents.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 text-xs font-semibold">
+                                                        {filterMode === 'unassigned' ? 'No unassigned students waiting to be claimed.' : 'No students found matching your filters.'}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
 
-                                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-                                    <div className="p-5">
-                                        <h3 className="font-extrabold text-sm text-slate-900 dark:text-white mb-3 flex items-center justify-between">
-                                            <span>Quick Actions</span>
-                                            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded-full uppercase tracking-wider">Directory Tools</span>
-                                        </h3>
-                                        <div className="grid grid-cols-2 gap-2.5">
+                                {/* Pagination Footer */}
+                                <div className="px-6 py-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                        Showing {displayedStudents.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, displayedStudents.length)} of {displayedStudents.length} students
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                        <button 
+                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                            disabled={currentPage === 1}
+                                            className="size-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">chevron_left</span>
+                                        </button>
+                                        
+                                        {Array.from({ length: totalPages }).map((_, idx) => (
                                             <button 
-                                                onClick={() => router.push('/teacher-dashboard/students/add')}
-                                                className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-amber-500/10 hover:border-amber-500/30 transition-all text-left group cursor-pointer"
+                                                key={idx}
+                                                onClick={() => setCurrentPage(idx + 1)}
+                                                className={`size-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${currentPage === idx + 1 ? 'bg-[#ecb613] text-slate-950 shadow-xs' : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                                             >
-                                                <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] text-xl mb-1">person_add</span>
-                                                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">Add Student</span>
-                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Register new account</span>
+                                                {idx + 1}
                                             </button>
+                                        ))}
 
-                                            <button 
-                                                onClick={() => setShowBulkEnrollModal(true)}
-                                                className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-amber-500/10 hover:border-amber-500/30 transition-all text-left group cursor-pointer"
-                                            >
-                                                <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] text-xl mb-1">upload_file</span>
-                                                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">Bulk Enroll</span>
-                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Import CSV roster</span>
-                                            </button>
-
-                                            <button 
-                                                onClick={() => router.push('/teacher-dashboard/messages')}
-                                                className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-amber-500/10 hover:border-amber-500/30 transition-all text-left group cursor-pointer"
-                                            >
-                                                <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] text-xl mb-1">campaign</span>
-                                                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">Send Broadcast</span>
-                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Announce to students</span>
-                                            </button>
-
-                                            <button 
-                                                onClick={handleExportCSV}
-                                                className="flex flex-col items-start p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-amber-500/10 hover:border-amber-500/30 transition-all text-left group cursor-pointer"
-                                            >
-                                                <span className="material-symbols-outlined text-slate-600 dark:text-slate-400 group-hover:text-[#ecb613] text-xl mb-1">download</span>
-                                                <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-[#ecb613] transition-colors">Export CSV</span>
-                                                <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Download directory</span>
-                                            </button>
-                                        </div>
+                                        <button 
+                                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                            disabled={currentPage === totalPages || totalPages === 0}
+                                            className="size-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">chevron_right</span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -2764,6 +3703,15 @@ export default function StudentDirectory() {
                     </div>
                 </main>
             </div>
+
+            {/* Needs Attention Viewport-Aware Popover Portal */}
+            <AttentionPopoverPortal
+                student={activeAttentionStudent}
+                triggerEl={activeAttentionTrigger}
+                onClose={handleCloseAttentionPopover}
+                onMouseEnter={handlePopoverMouseEnter}
+                onMouseLeave={handlePopoverMouseLeave}
+            />
         </div>
     );
 }

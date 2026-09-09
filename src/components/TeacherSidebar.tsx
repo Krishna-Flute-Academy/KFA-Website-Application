@@ -815,13 +815,14 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                     setActiveSession(null);
 
                                     try {
+                                        const t0 = performance.now();
                                         const startedAtTime = sessionToClear.startedAt || Date.now();
                                         const endedAtTime = Date.now();
                                         const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
                                         const sessionDateStr = sessionToClear.sessionDate || new Date().toISOString().split('T')[0];
 
                                         try {
-                                            await supabaseAuth.rpc('end_classroom_session', {
+                                            const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
                                                 p_classroom_id: sessionToClear.classroomId,
                                                 p_session_date: sessionDateStr,
                                                 p_session_type: sessionToClear.sessionType || 'online',
@@ -829,18 +830,22 @@ export default function TeacherSidebar({ teacherProfile, handleLogout }: Teacher
                                                 p_ended_at: new Date(endedAtTime).toISOString(),
                                                 p_duration_seconds: durationSecs
                                             });
+                                            if (rpcErr) throw rpcErr;
                                         } catch (rpcErr) {
-                                            console.warn('RPC end_classroom_session warning/error:', rpcErr);
+                                            console.warn('RPC end_classroom_session warning/error, falling back to direct update:', rpcErr);
+                                            await supabaseAuth
+                                                .from('classrooms')
+                                                .update({
+                                                    is_live: false,
+                                                    live_meeting_link: null,
+                                                    live_session_started_at: null
+                                                })
+                                                .eq('id', sessionToClear.classroomId);
                                         }
 
-                                        await supabaseAuth
-                                            .from('classrooms')
-                                            .update({
-                                                is_live: false,
-                                                live_meeting_link: null,
-                                                live_session_started_at: null
-                                            })
-                                            .eq('id', sessionToClear.classroomId);
+                                        if (process.env.NODE_ENV !== 'production') {
+                                            console.log(`[Perf-SidebarEnd] Session ended in ${(performance.now() - t0).toFixed(1)}ms`);
+                                        }
                                     } catch (err: any) {
                                         console.error('Error ending class session from sidebar:', err);
                                     } finally {

@@ -195,6 +195,7 @@ export default function ClassroomDashboardPage({
         if (isEndingSession) return;
         if (confirm('Are you sure you want to end this active class session?')) {
             setIsEndingSession(true);
+            const t0 = performance.now();
 
             // Read active session parameters BEFORE removing from local storage
             const activeSessionStr = typeof window !== 'undefined' ? localStorage.getItem('active_class_session') : null;
@@ -227,8 +228,9 @@ export default function ClassroomDashboardPage({
                 const endedAtTime = Date.now();
                 const durationSecs = Math.max(1, Math.floor((endedAtTime - startedAtTime) / 1000));
 
+                // Single atomic RPC clears is_live, calculates attendance counts, and writes session log
                 try {
-                    await supabaseAuth.rpc('end_classroom_session', {
+                    const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
                         p_classroom_id: classroomId,
                         p_session_date: activeDate,
                         p_session_type: activeType,
@@ -236,19 +238,22 @@ export default function ClassroomDashboardPage({
                         p_ended_at: new Date(endedAtTime).toISOString(),
                         p_duration_seconds: durationSecs
                     });
+                    if (rpcErr) throw rpcErr;
                 } catch (rpcErr) {
-                    console.warn('RPC end_classroom_session warning/error:', rpcErr);
+                    console.warn('RPC end_classroom_session warning/error, falling back to direct update:', rpcErr);
+                    await supabaseAuth
+                        .from('classrooms')
+                        .update({
+                            is_live: false,
+                            live_meeting_link: null,
+                            live_session_started_at: null
+                        })
+                        .eq('id', classroomId);
                 }
 
-                // Always clear live state directly to guarantee persistence in Supabase
-                await supabaseAuth
-                    .from('classrooms')
-                    .update({
-                        is_live: false,
-                        live_meeting_link: null,
-                        live_session_started_at: null
-                    })
-                    .eq('id', classroomId);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log(`[Perf-ClassroomDetailEnd] Session ended in ${(performance.now() - t0).toFixed(1)}ms`);
+                }
 
                 if (isMeetingView) {
                     router.push(`/teacher-dashboard/classrooms/${classroomId}`);

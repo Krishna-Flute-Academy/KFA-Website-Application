@@ -51,51 +51,59 @@ export default function MeetingPage() {
     // ── Fetch classroom + enrolled students ──────────────────────────────────
     useEffect(() => {
         const init = async () => {
+            const t0 = performance.now();
             try {
                 const { data: { session } } = await supabaseAuth.auth.getSession();
                 if (!session) { router.push('/login?type=teacher'); return; }
 
-                const { data: profile } = await supabaseAuth
-                    .from('users').select('id, name, email').eq('id', session.user.id).single();
-                setTeacherProfile(profile);
+                const [profileRes, classroomRes] = await Promise.all([
+                    supabaseAuth.from('users').select('id, name, email').eq('id', session.user.id).single(),
+                    supabaseAuth.from('classrooms').select('name, type, is_live, live_meeting_link, live_session_started_at').eq('id', classroomId).single()
+                ]);
 
-                const { data: classroom } = await supabaseAuth
-                    .from('classrooms')
-                    .select('name, type, is_live, live_meeting_link, live_session_started_at')
-                    .eq('id', classroomId)
-                    .single();
-                
+                setTeacherProfile(profileRes.data);
+                const classroom = classroomRes.data;
+
                 let roster: any[] = [];
                 if (classroom) {
                     setClassroomName(classroom.name);
 
-                    if (classroom.type === 'temporary') {
-                        const { data: tempRoster } = await supabaseAuth
-                            .from('session_student_overrides')
-                            .select('student_id, users!student_id(name, profile_pic_url)')
-                            .eq('target_classroom_id', classroomId);
-                        roster = tempRoster || [];
-                    } else {
-                        const { data: permRoster } = await supabaseAuth
-                            .from('classroom_students')
-                            .select('student_id, users!student_id(name, profile_pic_url)')
-                            .eq('classroom_id', classroomId);
-                        const permList = permRoster || [];
+                    // Fetch roster, overrides, and pre-existing attendance concurrently
+                    const [rosterRes, overrideRes, attendanceRes] = await Promise.all([
+                        classroom.type === 'temporary'
+                            ? supabaseAuth
+                                .from('session_student_overrides')
+                                .select('student_id, users!student_id(name, profile_pic_url)')
+                                .eq('target_classroom_id', classroomId)
+                            : supabaseAuth
+                                .from('classroom_students')
+                                .select('student_id, users!student_id(name, profile_pic_url)')
+                                .eq('classroom_id', classroomId),
+                        classroom.type !== 'temporary'
+                            ? supabaseAuth
+                                .from('session_student_overrides')
+                                .select('student_id, users!student_id(name, profile_pic_url)')
+                                .eq('target_classroom_id', classroomId)
+                                .eq('override_date', sessionDate)
+                            : Promise.resolve({ data: [] }),
+                        supabaseAuth
+                            .from('attendance')
+                            .select('student_id, status')
+                            .eq('classroom_id', classroomId)
+                            .eq('date', sessionDate)
+                    ]);
 
-                        const { data: overrideRoster } = await supabaseAuth
-                            .from('session_student_overrides')
-                            .select('student_id, users!student_id(name, profile_pic_url)')
-                            .eq('target_classroom_id', classroomId)
-                            .eq('override_date', sessionDate);
-                        
-                        const overrideList = (overrideRoster || []).map((row: any) => ({
+                    if (classroom.type === 'temporary') {
+                        roster = rosterRes.data || [];
+                    } else {
+                        const permList = rosterRes.data || [];
+                        const overrideList = (overrideRes.data || []).map((row: any) => ({
                             ...row,
                             users: {
                                 ...row.users,
                                 name: `${row.users?.name || 'Unknown'} (Makeup)`
                             }
                         }));
-
                         roster = [...permList, ...overrideList];
                     }
 
@@ -128,33 +136,25 @@ export default function MeetingPage() {
                             startedAt: new Date(classroom.live_session_started_at).getTime()
                         }));
                     }
+
+                    const recordsMap: Record<string, AttendanceStatus> = {};
+                    (attendanceRes.data || []).forEach((row: any) => {
+                        recordsMap[row.student_id] = row.status;
+                    });
+
+                    const formatted: SessionStudent[] = (roster || []).map((r: any) => ({
+                        id: r.student_id,
+                        name: r.users?.name || 'Unknown',
+                        profile_pic_url: r.users?.profile_pic_url || null,
+                        attendance: recordsMap[r.student_id] || null,
+                    }));
+
+                    setStudents(formatted);
                 }
 
-                const formatted: SessionStudent[] = (roster || []).map((r: any) => ({
-                    id: r.student_id,
-                    name: r.users?.name || 'Unknown',
-                    profile_pic_url: r.users?.profile_pic_url || null,
-                    attendance: null,
-                }));
-
-                // Fetch existing attendance for the selected date on load
-                const { data: attendanceData } = await supabaseAuth
-                    .from('attendance')
-                    .select('student_id, status')
-                    .eq('classroom_id', classroomId)
-                    .eq('date', sessionDate);
-
-                const recordsMap: Record<string, AttendanceStatus> = {};
-                (attendanceData || []).forEach((row: any) => {
-                    recordsMap[row.student_id] = row.status;
-                });
-
-                const withAttendance = formatted.map(s => ({
-                    ...s,
-                    attendance: recordsMap[s.id] || null
-                }));
-
-                setStudents(withAttendance);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log(`[Perf-MeetingInit] Initialized session in ${(performance.now() - t0).toFixed(1)}ms`);
+                }
             } catch (err) {
                 console.error('Error initializing session:', err);
             } finally {
@@ -261,6 +261,7 @@ export default function MeetingPage() {
     const saveAttendance = async () => {
         if (!teacherProfile || !allMarked) return;
         setSavingAttendance(true);
+        const t0 = performance.now();
         try {
             const rowsToUpsert = students
                 .filter(s => s.attendance !== null)
@@ -276,33 +277,53 @@ export default function MeetingPage() {
                 .filter(s => s.attendance === null)
                 .map(s => s.id);
 
-            if (rowsToUpsert.length > 0) {
-                const { error } = await supabaseAuth
-                    .from('attendance')
-                    .upsert(rowsToUpsert, { onConflict: 'student_id, classroom_id, date' });
+            // Parallel execution: Attendance upsert, null deletion, and start_classroom_session RPC
+            // All operations target disjoint records / independent tables and can safely run in parallel!
+            const dbOps: Promise<any>[] = [];
 
-                if (error) throw error;
+            if (rowsToUpsert.length > 0) {
+                dbOps.push(
+                    (async () => {
+                        const { error } = await supabaseAuth
+                            .from('attendance')
+                            .upsert(rowsToUpsert, { onConflict: 'student_id, classroom_id, date' });
+                        if (error) throw error;
+                    })()
+                );
             }
 
             if (nullStudentIds.length > 0) {
-                await supabaseAuth
-                    .from('attendance')
-                    .delete()
-                    .in('student_id', nullStudentIds)
-                    .eq('classroom_id', classroomId)
-                    .eq('date', sessionDate);
+                dbOps.push(
+                    (async () => {
+                        const { error } = await supabaseAuth
+                            .from('attendance')
+                            .delete()
+                            .in('student_id', nullStudentIds)
+                            .eq('classroom_id', classroomId)
+                            .eq('date', sessionDate);
+                        if (error) throw error;
+                    })()
+                );
             }
 
-            // Mark classroom as live in DB via RPC
-            const { error: liveError } = await supabaseAuth.rpc('start_classroom_session', {
-                p_classroom_id: classroomId,
-                p_meeting_link: sessionType === 'online' ? meetingLink : null,
-                p_started_at: new Date().toISOString()
-            });
+            dbOps.push(
+                (async () => {
+                    const { error } = await supabaseAuth.rpc('start_classroom_session', {
+                        p_classroom_id: classroomId,
+                        p_meeting_link: sessionType === 'online' ? meetingLink : null,
+                        p_started_at: new Date().toISOString()
+                    });
+                    if (error) throw error;
+                })()
+            );
 
-            if (liveError) throw liveError;
+            await Promise.all(dbOps);
 
-            // Trigger push & in-app notifications for students in this classroom (only if starting fresh session)
+            if (process.env.NODE_ENV !== 'production') {
+                console.log(`[Perf-StartClass] Parallel attendance & live RPC completed in ${(performance.now() - t0).toFixed(1)}ms`);
+            }
+
+            // Trigger push & in-app notifications for students in this classroom (non-blocking async)
             const wasAlreadyLive = isLiveSession;
             const targetStudentIds = students.map(s => s.id);
             if (!wasAlreadyLive && targetStudentIds.length > 0) {
@@ -345,6 +366,7 @@ export default function MeetingPage() {
     const endActiveSession = async () => {
         if (isEnding) return;
         setIsEnding(true);
+        const t0 = performance.now();
         try {
             // Retrieve starting time from localStorage, fallback to elapsed calculation
             const activeSessionStr = typeof window !== 'undefined' ? localStorage.getItem('active_class_session') : null;
@@ -370,8 +392,9 @@ export default function MeetingPage() {
             const late = students.filter(s => s.attendance === 'late').length;
             const excused = students.filter(s => s.attendance === 'excused').length;
 
+            // Single atomic RPC call handles clearing is_live, attendance aggregation, and session logging
             try {
-                await supabaseAuth.rpc('end_classroom_session', {
+                const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
                     p_classroom_id: classroomId,
                     p_session_date: activeSessionDate,
                     p_session_type: sessionType || 'online',
@@ -383,19 +406,22 @@ export default function MeetingPage() {
                     p_late_count: late,
                     p_excused_count: excused
                 });
+                if (rpcErr) throw rpcErr;
             } catch (rpcErr) {
-                console.warn('RPC end_classroom_session warning/error:', rpcErr);
+                console.warn('RPC end_classroom_session warning/error, falling back to direct update:', rpcErr);
+                await supabaseAuth
+                    .from('classrooms')
+                    .update({
+                        is_live: false,
+                        live_meeting_link: null,
+                        live_session_started_at: null
+                    })
+                    .eq('id', classroomId);
             }
 
-            // Always clear the live flag directly to ensure it updates for students and teachers
-            await supabaseAuth
-                .from('classrooms')
-                .update({
-                    is_live: false,
-                    live_meeting_link: null,
-                    live_session_started_at: null
-                })
-                .eq('id', classroomId);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log(`[Perf-EndClass] Active session ended in ${(performance.now() - t0).toFixed(1)}ms`);
+            }
 
             setIsLiveSession(false);
             if (typeof window !== 'undefined') {

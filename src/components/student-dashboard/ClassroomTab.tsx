@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
     Calendar, Users, MessageSquare, Clock, ChevronLeft, ChevronRight, 
     User, CheckCircle, Info, AlertTriangle, Play, FileText, Download,
-    BookOpen, Megaphone
+    BookOpen, Megaphone, ArrowRight
 } from 'lucide-react';
 import ClassroomChatTab from '../classroom/ClassroomChatTab';
 import { sanitizeHtml } from '../../lib/text-utils';
@@ -426,10 +426,11 @@ export default function ClassroomTab({
                             href={classroom.live_meeting_link}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-full text-xs transition-all flex items-center justify-center gap-1.5 hover:scale-102 active:scale-98 shadow-xs cursor-pointer uppercase tracking-wider font-mono"
+                            className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 hover:scale-102 active:scale-98 shadow-sm cursor-pointer tracking-wider min-h-[44px]"
                         >
                             <Play className="w-3.5 h-3.5 fill-current" />
-                            Join Session
+                            <span>Join Class</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
                         </a>
                     )}
                 </div>

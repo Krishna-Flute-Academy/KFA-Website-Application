@@ -8,7 +8,7 @@ import {
     Clock, Video, Play, Music, Award, Users, Search, PlayCircle,
     Send, X, ClipboardList, Info, BarChart2, Plus, Volume2,
     HelpCircle, ChevronRight, Download, LogOut, Check, Menu,
-    Sparkles, AlertTriangle, CreditCard, Scroll, User
+    Sparkles, AlertTriangle, CreditCard, Scroll, User, ArrowRight, Copy
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
@@ -36,6 +36,7 @@ import { getStudentFeeStatus } from '../../lib/fee-utils';
 import { htmlToPlainText, truncatePlainText } from '../../lib/text-utils';
 import ProfileCompletionModal from '../common/ProfileCompletionModal';
 import { INITIAL_MODULES } from '../../../app/teacher-dashboard/inventory/initial-data';
+import { getStudentAccess } from '../../lib/student-lifecycle';
 
 interface StudentProfile {
     id: string;
@@ -154,6 +155,65 @@ export default function StudentDashboardContainer() {
     const [isSendingClassroomMessage, setIsSendingClassroomMessage] = useState(false);
     const [admins, setAdmins] = useState<any[]>([]);
     const [activeRooms, setActiveRooms] = useState<any[]>([]);
+
+    // ── Two-Layer Live Class States ──
+    const [dismissedPopupSessionKey, setDismissedPopupSessionKey] = useState<string | null>(null);
+    const [copiedMeetingLink, setCopiedMeetingLink] = useState(false);
+
+    // Central student lifecycle access rules
+    const lifecycleAccess = useMemo(() => {
+        return getStudentAccess(profile?.status);
+    }, [profile?.status]);
+
+    // Active live classroom resolution across student's primary/overridden classrooms
+    const liveClassroom = useMemo(() => {
+        if (!lifecycleAccess.canAccessLiveClass) return null;
+        const onlineRoom = (activeRooms || []).find(r => r.is_live && r.live_meeting_link)
+            || (classroom?.is_live && classroom?.live_meeting_link ? classroom : null);
+        return onlineRoom || null;
+    }, [activeRooms, classroom, lifecycleAccess.canAccessLiveClass]);
+
+    // Unique session key for current live class session
+    const liveSessionKey = useMemo(() => {
+        if (!liveClassroom) return null;
+        return `${liveClassroom.id}_${liveClassroom.live_session_started_at || 'active'}`;
+    }, [liveClassroom]);
+
+    // Popup dismissal check for this session
+    const isPopupDismissedForSession = useMemo(() => {
+        if (!liveSessionKey) return true;
+        if (dismissedPopupSessionKey === liveSessionKey) return true;
+        if (typeof window !== 'undefined') {
+            return sessionStorage.getItem(`kfa_dismissed_live_popup_${liveSessionKey}`) === 'true';
+        }
+        return false;
+    }, [liveSessionKey, dismissedPopupSessionKey]);
+
+    const showLiveClassPopup = Boolean(liveClassroom && !isPopupDismissedForSession);
+
+    const handleDismissLivePopup = useCallback(() => {
+        if (liveSessionKey && typeof window !== 'undefined') {
+            sessionStorage.setItem(`kfa_dismissed_live_popup_${liveSessionKey}`, 'true');
+        }
+        if (liveSessionKey) {
+            setDismissedPopupSessionKey(liveSessionKey);
+        }
+    }, [liveSessionKey]);
+
+    const handleJoinLiveClass = useCallback(() => {
+        if (liveClassroom?.live_meeting_link) {
+            window.open(liveClassroom.live_meeting_link, '_blank', 'noopener,noreferrer');
+            handleDismissLivePopup();
+        }
+    }, [liveClassroom?.live_meeting_link, handleDismissLivePopup]);
+
+    const handleCopyLiveMeetingLink = useCallback(() => {
+        if (liveClassroom?.live_meeting_link && typeof navigator !== 'undefined') {
+            navigator.clipboard.writeText(liveClassroom.live_meeting_link);
+            setCopiedMeetingLink(true);
+            setTimeout(() => setCopiedMeetingLink(false), 2500);
+        }
+    }, [liveClassroom?.live_meeting_link]);
 
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
@@ -350,10 +410,13 @@ export default function StudentDashboardContainer() {
     }, [loading]);
 
     useEffect(() => {
-        if ((profile?.status === 'archived' || profile?.status === 'inactive') && activeTab === 'fees') {
-            setActiveTab('overview');
+        if (!lifecycleAccess.canAccessClassroom) {
+            const restrictedTabs = ['classroom', 'tasks', 'attendance', 'fees', 'mentor_hub'];
+            if (restrictedTabs.includes(activeTab)) {
+                setActiveTab('overview');
+            }
         }
-    }, [profile?.status, activeTab]);
+    }, [lifecycleAccess.canAccessClassroom, activeTab]);
 
     // Submission modal/drawer states
     const [selectedAssignment, setSelectedAssignment] = useState<EnrichedAssignment | null>(null);
@@ -1163,6 +1226,86 @@ export default function StudentDashboardContainer() {
         }
     }, [profile?.id]);
 
+    const refreshClassroomLiveState = useCallback(async () => {
+        const ids = classroomIdsRef.current.length > 0 
+            ? classroomIdsRef.current 
+            : (classroom?.id ? [classroom.id] : []);
+        if (ids.length === 0) return;
+        try {
+            const { data: rooms, error } = await supabaseAuth
+                .from('classrooms')
+                .select('id, name, type, status, description, teacher_id, is_live, live_meeting_link, live_session_started_at, users!classrooms_teacher_id_fkey(name, email)')
+                .in('id', ids);
+
+            if (error || !rooms) return;
+
+            setActiveRooms(prev => {
+                return prev.map(existingRoom => {
+                    const updated = rooms.find(r => r.id === existingRoom.id);
+                    if (!updated) return existingRoom;
+                    const teacherUser = Array.isArray(updated.users) ? updated.users[0] : updated.users;
+                    return {
+                        ...existingRoom,
+                        name: updated.name || existingRoom.name,
+                        is_live: Boolean(updated.is_live),
+                        live_meeting_link: updated.live_meeting_link || null,
+                        live_session_started_at: updated.live_session_started_at || null,
+                        live_classroom_name: updated.is_live ? updated.name : null,
+                        teacher_name: teacherUser?.name || existingRoom.teacher_name
+                    };
+                });
+            });
+
+            setClassroom(prev => {
+                if (!prev) return prev;
+                const updated = rooms.find(r => r.id === prev.id);
+                if (!updated) return prev;
+                const teacherUser = Array.isArray(updated.users) ? updated.users[0] : updated.users;
+                return {
+                    ...prev,
+                    is_live: Boolean(updated.is_live),
+                    live_meeting_link: updated.live_meeting_link || null,
+                    live_session_started_at: updated.live_session_started_at || null,
+                    live_classroom_name: updated.is_live ? updated.name : null,
+                    teacher_name: teacherUser?.name || prev.teacher_name
+                };
+            });
+        } catch (err) {
+            console.error('Error refreshing classroom live state:', err);
+        }
+    }, [classroom?.id]);
+
+    // Realtime subscription for live classroom status changes
+    useEffect(() => {
+        const ids = classroomIdsRef.current.length > 0
+            ? classroomIdsRef.current
+            : (classroom?.id ? [classroom.id] : []);
+
+        if (ids.length === 0) return;
+
+        const channel = supabaseAuth
+            .channel(`student-classrooms-realtime-${ids.slice(0, 3).join('-')}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'classrooms'
+                },
+                (payload: any) => {
+                    const updatedRoom = payload.new;
+                    if (updatedRoom && ids.includes(updatedRoom.id)) {
+                        refreshClassroomLiveState();
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabaseAuth.removeChannel(channel);
+        };
+    }, [classroom?.id, refreshClassroomLiveState]);
+
     // Realtime subscriptions for live classrooms & notifications
     useEffect(() => {
         if (!profile?.id) return;
@@ -1196,6 +1339,11 @@ export default function StudentDashboardContainer() {
                         // Targeted prompt refresh of classroom messages if notification is related to classroom or messages
                         if (newNotif.type === 'classroom' || newNotif.type === 'messages' || notifTitle.includes('message') || notifTitle.includes('classroom') || notifMsg.includes('classroom')) {
                             fetchClassroomMessages();
+                        }
+
+                        // Targeted refresh of live class status if notification announces class start
+                        if (newNotif.type === 'live_class' || notifTitle.includes('class started') || notifMsg.includes('has started') || notifMsg.includes('live')) {
+                            refreshClassroomLiveState();
                         }
 
                         // Play a soft flute-like chime sound using the browser's Web Audio API
@@ -1247,7 +1395,7 @@ export default function StudentDashboardContainer() {
         return () => {
             supabaseAuth.removeChannel(notifChannel);
         };
-    }, [profile?.id, fetchStudentFeeData]);
+    }, [profile?.id, fetchStudentFeeData, refreshClassroomLiveState]);
 
     const fetchClassroomMessages = useCallback(async () => {
         const ids = classroomIdsRef.current.length > 0 
@@ -1753,6 +1901,11 @@ export default function StudentDashboardContainer() {
     // Toggle Complete Syllabus lesson
     const handleToggleLessonComplete = async (lessonId: string, currentStatus: string) => {
         if (!profile || !classroom) return;
+
+        if (!lifecycleAccess.canModifyCurriculum) {
+            alert('Your learning is currently paused or concluded. Curriculum is available in read-only mode.');
+            return;
+        }
 
         const nextStatus = currentStatus === 'completed' ? 'unlocked' : 'completed';
         const completedAt = nextStatus === 'completed' ? new Date().toISOString() : null;
@@ -2395,13 +2548,14 @@ export default function StudentDashboardContainer() {
     }, [broadcasts, dismissedAdminBroadcasts]);
 
     const activeFeeReminderNotification = useMemo(() => {
+        if (!lifecycleAccess.canViewFees || !lifecycleAccess.canReceiveOperationalNotifications) return null;
         return notifications.find(n => 
             !n.is_read && 
             !snoozedFeeNotifIds.includes(n.id) &&
             !n.title?.toLowerCase().includes('approved') &&
             (n.type === 'fee_reminder' || n.title?.toLowerCase().includes('fees due') || n.title?.toLowerCase().includes('billing reminder') || n.title?.toLowerCase().includes('classes completed'))
         );
-    }, [notifications, snoozedFeeNotifIds]);
+    }, [notifications, snoozedFeeNotifIds, lifecycleAccess]);
 
     const [readClassroomMsgIds, setReadClassroomMsgIds] = useState<Set<string>>(() => {
         if (typeof window !== 'undefined') {
@@ -2818,8 +2972,8 @@ export default function StudentDashboardContainer() {
                             { id: 'policies', label: 'Policies & How-To', icon: Scroll },
                             { id: 'settings', label: 'Profile Settings', icon: User },
                         ].filter(item => {
-                            if (item.id === 'fees' && (profile?.status === 'archived' || profile?.status === 'inactive')) {
-                                return false;
+                            if (!lifecycleAccess.canAccessClassroom) {
+                                return ['overview', 'curriculum', 'library', 'policies', 'settings'].includes(item.id);
                             }
                             return true;
                         }).map((item) => {
@@ -3006,39 +3160,6 @@ export default function StudentDashboardContainer() {
 
                     {/* Main Content Area */}
                     <main className="flex-1 p-3 sm:p-6 md:p-8 w-full max-w-[1400px]">
-                        {/* Live Class Notification & Join Banner (Global for non-overview tabs) */}
-                        {activeTab !== 'overview' && classroom?.is_live && (
-                            <div className="mb-6 bg-gradient-to-r from-red-600 via-[#d49900] to-amber-500 rounded-2xl p-4 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-300 border border-red-500/20 text-left">
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-10 h-10 rounded-full bg-white/20 text-white flex items-center justify-center shrink-0 animate-pulse">
-                                        <span className="material-symbols-outlined text-xl animate-bounce">video_call</span>
-                                    </div>
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[8px] font-black uppercase tracking-wider bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse font-mono">● Live</span>
-                                            {classroom.live_classroom_name && (
-                                                <span className="text-xs font-black truncate max-w-[120px] sm:max-w-xs">{classroom.live_classroom_name}</span>
-                                            )}
-                                        </div>
-                                        <p className="text-[11px] text-white/90 leading-tight font-medium mt-0.5">
-                                            Your instructor has started an active classroom session. Join now!
-                                        </p>
-                                    </div>
-                                </div>
-                                {classroom.live_meeting_link && (
-                                    <a
-                                        href={classroom.live_meeting_link}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-4 py-2 bg-white text-red-600 hover:text-red-700 hover:bg-slate-50 transition-all font-black rounded-xl text-[10px] shadow-sm flex items-center justify-center gap-1.5 shrink-0 font-sans uppercase tracking-wider cursor-pointer"
-                                    >
-                                        <PlayCircle className="w-3.5 h-3.5 text-red-600" />
-                                        Join Class
-                                    </a>
-                                )}
-                            </div>
-                        )}
-
                         {/* Fee Notification Banner */}
                         {feeDataLoaded && feeStatus && activeTab !== 'fees' && profile && profile.status !== 'archived' && profile.status !== 'inactive' && (
                             <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-300">
@@ -3152,6 +3273,50 @@ export default function StudentDashboardContainer() {
                             </div>
                         )}
 
+                        {/* ── Layer 2: Persistent Live Class Bar ── */}
+                        {liveClassroom && (
+                            <div className="mb-6 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 rounded-2xl p-4 sm:p-5 text-white shadow-lg border border-red-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in slide-in-from-top-3 duration-300 text-left">
+                                <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                                    <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center shrink-0 shadow-xs">
+                                        <span className="relative flex h-3 w-3">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-200 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+                                        </span>
+                                    </div>
+                                    <div className="min-w-0 space-y-0.5">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-[9px] font-black uppercase tracking-wider bg-black/30 text-white px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
+                                                LIVE NOW
+                                            </span>
+                                            <span className="text-xs font-extrabold text-white/95">
+                                                {liveClassroom.name || 'Live Class'} • Online
+                                            </span>
+                                            {liveClassroom.live_session_started_at && (
+                                                <span className="text-[10px] text-white/75 font-mono">
+                                                    (Started at {new Date(liveClassroom.live_session_started_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })})
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-white/90 font-medium">
+                                            Your class has started. Instructor: {liveClassroom.teacher_name || 'Academy Instructor'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 sm:self-center w-full sm:w-auto shrink-0">
+                                    <a
+                                        href={liveClassroom.live_meeting_link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="w-full sm:w-auto px-6 py-3 bg-white text-red-600 hover:bg-slate-50 hover:text-red-700 transition-all font-black rounded-xl text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 font-sans tracking-wide cursor-pointer min-h-[44px]"
+                                    >
+                                        <span>Join Class</span>
+                                        <ArrowRight className="w-4 h-4" />
+                                    </a>
+                                </div>
+                            </div>
+                        )}
+
                         {(renderBackgroundTabs || activeTab === 'overview') && (
                             <div style={{ display: activeTab === 'overview' ? 'block' : 'none' }}>
                                 <OverviewTab
@@ -3245,6 +3410,8 @@ export default function StudentDashboardContainer() {
                                     loadingDescriptionLessonId={loadingDescriptionLessonId}
                                     descriptionErrorLessonId={descriptionErrorLessonId}
                                     onRetryLessonDescription={fetchLessonDescription}
+                                    isReadOnly={!lifecycleAccess.canModifyCurriculum}
+                                    curriculumMode={lifecycleAccess.curriculumMode}
                                 />
                             </div>
                         )}
@@ -3685,6 +3852,106 @@ export default function StudentDashboardContainer() {
                     mode="modal"
                     returnActionLabel="Got it"
                 />
+            )}
+
+            {/* ─── Layer 1: Class Started Live Popup Modal ────────────────────── */}
+            {showLiveClassPopup && liveClassroom && (
+                <div 
+                    className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) handleDismissLivePopup();
+                    }}
+                >
+                    <div 
+                        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-red-500/20 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 text-left relative"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header Banner */}
+                        <div className="bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 p-6 text-white text-center relative overflow-hidden">
+                            <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none" />
+                            
+                            <button
+                                type="button"
+                                onClick={handleDismissLivePopup}
+                                className="absolute top-4 right-4 p-1.5 text-white/80 hover:text-white bg-black/20 hover:bg-black/30 rounded-full transition-colors cursor-pointer"
+                                title="Close notification"
+                                aria-label="Close"
+                            >
+                                <X className="size-4" />
+                            </button>
+
+                            <div className="size-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center mx-auto mb-3 shadow-inner">
+                                <span className="relative flex h-6 w-6 items-center justify-center">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-200 opacity-75"></span>
+                                    <PlayCircle className="relative size-6 text-white fill-white/20" />
+                                </span>
+                            </div>
+                            
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-black/30 text-white mb-2 backdrop-blur-xs font-mono">
+                                <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
+                                CLASS IS LIVE
+                            </div>
+                            <h3 className="text-xl font-display font-black tracking-tight text-white">{liveClassroom.name || 'Your Class'}</h3>
+                            {liveClassroom.teacher_name && (
+                                <p className="text-xs text-white/85 font-medium mt-0.5">Instructor: {liveClassroom.teacher_name}</p>
+                            )}
+                        </div>
+
+                        {/* Body Content */}
+                        <div className="p-6 space-y-4 text-center">
+                            <div className="space-y-1">
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                                    Your online class has started.
+                                </p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    Join the live session now to participate in instructions, ragas, and real-time guidance.
+                                </p>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="pt-2 flex flex-col gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={handleJoinLiveClass}
+                                    className="w-full py-3.5 px-4 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:brightness-105 text-white font-black rounded-xl text-sm shadow-lg shadow-red-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider min-h-[44px]"
+                                >
+                                    <PlayCircle className="size-4" />
+                                    <span>Join Class</span>
+                                    <ArrowRight className="size-4" />
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handleDismissLivePopup}
+                                    className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer min-h-[40px]"
+                                >
+                                    Maybe Later
+                                </button>
+                            </div>
+
+                            {/* Subtle Copy Meeting Link Action */}
+                            <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={handleCopyLiveMeetingLink}
+                                    className="text-[11px] font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center justify-center gap-1.5 mx-auto transition-colors cursor-pointer py-1"
+                                >
+                                    {copiedMeetingLink ? (
+                                        <>
+                                            <Check className="size-3 text-emerald-500" />
+                                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">Meeting link copied to clipboard!</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Copy className="size-3" />
+                                            <span>Copy Meeting Link</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
         </>
     );

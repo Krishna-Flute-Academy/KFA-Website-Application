@@ -221,7 +221,9 @@ export default function ReviewDrawer({
                                     submission.status === 'approved' ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300' :
                                     'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300'
                                 }`}>
-                                    {submission.status === 'submitted' ? 'Awaiting Review' : submission.status}
+                                    {submission.status === 'submitted' ? 'Awaiting Review' :
+                                     submission.status === 'reviewed' ? 'Revision Requested' :
+                                     submission.status === 'approved' ? 'Approved' : submission.status}
                                 </span>
                             </div>
                             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
@@ -242,6 +244,20 @@ export default function ReviewDrawer({
 
                 {/* Content Body */}
                 <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+                    {/* Revision Requested Notice */}
+                    {submission.status === 'reviewed' && (
+                        <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-4 rounded-2xl flex items-start gap-3">
+                            <RotateCcw className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                            <div className="text-xs space-y-1">
+                                <span className="font-extrabold text-blue-900 dark:text-blue-200 block text-sm">
+                                    Revision Requested
+                                </span>
+                                <p className="text-blue-700 dark:text-blue-300 leading-relaxed">
+                                    You previously requested changes on this submission. If the student has granted file/Drive permissions or updated their work on this same link, you can review it below and click <strong>Approve Task</strong> to finalize it.
+                                </p>
+                            </div>
+                        </div>
+                    )}
                     {/* Task Overview Card */}
                     <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
                         <div className="flex items-center justify-between gap-2">

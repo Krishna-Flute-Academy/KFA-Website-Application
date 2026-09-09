@@ -18,9 +18,10 @@ interface LessonViewerProps {
     isTeacherSpotlight?: boolean;
     onToggleSpotlight?: (lessonId: string) => Promise<void> | void;
     onOpenMaterial?: () => void;
-    onToggleComplete: (lessonId: string, currentStatus: string) => Promise<void> | void;
+    onToggleComplete?: (lessonId: string, currentStatus: string) => Promise<void> | void;
     onClose?: () => void;
     isMobile?: boolean;
+    isReadOnly?: boolean;
 }
 
 export default function LessonViewer({
@@ -37,7 +38,8 @@ export default function LessonViewer({
     onOpenMaterial,
     onToggleComplete,
     onClose,
-    isMobile = false
+    isMobile = false,
+    isReadOnly = false
 }: LessonViewerProps) {
     if (!topic) {
         return (
@@ -234,24 +236,41 @@ export default function LessonViewer({
                     </button>
                 )}
 
-                <button
-                    type="button"
-                    onClick={() => onToggleComplete(topic.id, status)}
-                    className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer ${
+                {!isReadOnly && onToggleComplete ? (
+                    <button
+                        type="button"
+                        onClick={() => onToggleComplete(topic.id, status)}
+                        className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all border flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer ${
+                            isCompleted
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
+                                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
+                        }`}
+                    >
+                        {isCompleted ? (
+                            <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                                <span>Completed</span>
+                            </>
+                        ) : (
+                            <span>Mark Complete</span>
+                        )}
+                    </button>
+                ) : (
+                    <div className={`px-4 py-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 select-none ${
                         isCompleted
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
-                            : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
-                    }`}
-                >
-                    {isCompleted ? (
-                        <>
-                            <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                            <span>Completed</span>
-                        </>
-                    ) : (
-                        <span>Mark Complete</span>
-                    )}
-                </button>
+                            ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800'
+                            : 'bg-slate-100 border-slate-200 text-slate-500'
+                    }`}>
+                        {isCompleted ? (
+                            <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                                <span>Completed</span>
+                            </>
+                        ) : (
+                            <span>In Progress (Read-Only)</span>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );

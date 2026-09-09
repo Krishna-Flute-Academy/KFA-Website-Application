@@ -21,13 +21,12 @@ export default function TaskCompletedList({
     searchQuery
 }: TaskCompletedListProps) {
     const [selectedClassroomId, setSelectedClassroomId] = useState<string>('all');
-    const [selectedStatus, setSelectedStatus] = useState<'all' | 'approved' | 'reviewed'>('all');
     const [dateSort, setDateSort] = useState<'newest' | 'oldest'>('newest');
 
-    // Only show completed (approved or reviewed) submissions
+    // Only show completed (approved only) submissions
     const completedSubmissions = useMemo(() => {
         return submissions.filter(s => 
-            (s.status === 'approved' || s.status === 'reviewed') &&
+            s.status === 'approved' &&
             s.student_id !== 'draft' && 
             s.student_id !== 'no-students'
         );
@@ -58,10 +57,6 @@ export default function TaskCompletedList({
             list = list.filter(s => (s.classroom_id || 'individual') === selectedClassroomId);
         }
 
-        if (selectedStatus !== 'all') {
-            list = list.filter(s => s.status === selectedStatus);
-        }
-
         if (searchQuery.trim() !== '') {
             const query = searchQuery.toLowerCase().trim();
             list = list.filter(s => 
@@ -77,47 +72,18 @@ export default function TaskCompletedList({
             const timeB = new Date(b.submitted_at).getTime();
             return dateSort === 'newest' ? timeB - timeA : timeA - timeB;
         });
-    }, [completedSubmissions, selectedClassroomId, selectedStatus, searchQuery, dateSort]);
+    }, [completedSubmissions, selectedClassroomId, searchQuery, dateSort]);
 
     return (
         <div className="space-y-4">
             {/* Filter Controls Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3 shadow-xs">
-                {/* Status Toggle (All / Approved / Needs Revision) */}
-                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                    <button
-                        type="button"
-                        onClick={() => setSelectedStatus('all')}
-                        className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            selectedStatus === 'all'
-                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                    >
-                        All Completed ({completedSubmissions.length})
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setSelectedStatus('approved')}
-                        className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            selectedStatus === 'approved'
-                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                    >
-                        ✅ Approved ({completedSubmissions.filter(s => s.status === 'approved').length})
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setSelectedStatus('reviewed')}
-                        className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            selectedStatus === 'reviewed'
-                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900'
-                        }`}
-                    >
-                        📝 Needs Revision ({completedSubmissions.filter(s => s.status === 'reviewed').length})
-                    </button>
+                {/* Status Indicator */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                        Approved Submissions ({completedSubmissions.length})
+                    </span>
                 </div>
 
                 {/* Filters Right: Classroom & Date Sort */}
@@ -262,11 +228,8 @@ export default function TaskCompletedList({
                                         </div>
                                     </div>
 
-                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase border shrink-0 ${
-                                        sub.status === 'approved' ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300' :
-                                        'bg-blue-100 text-blue-900 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300'
-                                    }`}>
-                                        {sub.status === 'approved' ? '✅ Approved' : '📝 Revision'}
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase border shrink-0 bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                        ✅ Approved
                                     </span>
                                 </div>
 

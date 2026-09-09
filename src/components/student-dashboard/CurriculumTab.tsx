@@ -50,6 +50,8 @@ interface CurriculumTabProps {
     loadingDescriptionLessonId?: string | null;
     descriptionErrorLessonId?: string | null;
     onRetryLessonDescription?: (lessonId: string) => void;
+    isReadOnly?: boolean;
+    curriculumMode?: 'full' | 'readonly_paused' | 'readonly_frozen';
 }
 
 const cleanModuleDescription = (desc: string) => {
@@ -86,7 +88,9 @@ export default function CurriculumTab({
     lessonDescriptions = {},
     loadingDescriptionLessonId = null,
     descriptionErrorLessonId = null,
-    onRetryLessonDescription
+    onRetryLessonDescription,
+    isReadOnly = false,
+    curriculumMode = 'full'
 }: CurriculumTabProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -185,7 +189,37 @@ export default function CurriculumTab({
     }, [courseModules, filteredChapters]);
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-300 select-none" onCopy={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()} onContextMenu={(event) => event.preventDefault()}>
+        <div className="space-y-6 animate-in fade-in duration-300 select-none" onCopy={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()} onContextMenu={(event) => event.preventDefault()}>
+            {/* Read-Only Status Banner */}
+            {isReadOnly && (
+                <div className={`p-4 sm:p-5 rounded-2xl border flex items-start gap-3.5 text-left shadow-2xs ${
+                    curriculumMode === 'readonly_paused'
+                        ? 'bg-amber-50/90 border-amber-200 text-amber-950'
+                        : 'bg-slate-50 border-slate-200 text-slate-800'
+                }`}>
+                    <Info className={`w-5 h-5 shrink-0 mt-0.5 ${curriculumMode === 'readonly_paused' ? 'text-amber-600' : 'text-slate-500'}`} />
+                    <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-bold">
+                                {curriculumMode === 'readonly_paused' ? 'Learning Paused — Read-Only Mode' : 'Former Student — Read-Only Mode'}
+                            </h4>
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                curriculumMode === 'readonly_paused'
+                                    ? 'bg-amber-200/70 text-amber-900 border border-amber-300'
+                                    : 'bg-slate-200 text-slate-700 border border-slate-300'
+                            }`}>
+                                Read-Only
+                            </span>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                            {curriculumMode === 'readonly_paused'
+                                ? 'Your learning is temporarily paused. Your curriculum progress has been safely preserved and remains available for your review and self-paced practice. Progress checklist changes are suspended.'
+                                : 'Your regular classes are concluded, but your full learning history has been preserved so you can continue revisiting your curriculum and practice materials.'}
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Classroom Header Summary */}
             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs flex flex-col md:flex-row justify-between gap-6">
                 <div className="space-y-2 max-w-xl text-left">
@@ -450,21 +484,31 @@ export default function CurriculumTab({
                                                                                                             <ChevronRight className="w-3 h-3 text-slate-900" />
                                                                                                         </button>
                                                                                                     )}
-                                                                                                    <button
-                                                                                                        type="button"
-                                                                                                        onClick={(e) => {
-                                                                                                            e.stopPropagation();
-                                                                                                            handleToggleLessonComplete(lesson.id, status);
-                                                                                                        }}
-                                                                                                        className={`px-2.5 sm:px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                                                                                    {!isReadOnly ? (
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                handleToggleLessonComplete(lesson.id, status);
+                                                                                                            }}
+                                                                                                            className={`px-2.5 sm:px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                                                                                                isCompleted
+                                                                                                                    ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-200'
+                                                                                                                    : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-700 text-slate-600 border border-slate-200/60'
+                                                                                                            }`}
+                                                                                                            title={isCompleted ? "Mark Incomplete" : "Mark Complete"}
+                                                                                                        >
+                                                                                                            {isCompleted ? '✓' : 'Done'}
+                                                                                                        </button>
+                                                                                                    ) : (
+                                                                                                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
                                                                                                             isCompleted
-                                                                                                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-200'
-                                                                                                                : 'bg-slate-100 hover:bg-amber-500/10 hover:text-amber-700 text-slate-600 border border-slate-200/60'
-                                                                                                        }`}
-                                                                                                        title={isCompleted ? "Mark Incomplete" : "Mark Complete"}
-                                                                                                    >
-                                                                                                        {isCompleted ? '✓' : 'Done'}
-                                                                                                    </button>
+                                                                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                                                                : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                                                                                        }`}>
+                                                                                                            {isCompleted ? '✓ Done' : 'Syllabus'}
+                                                                                                        </span>
+                                                                                                    )}
                                                                                                 </div>
                                                                                             )}
                                                                                         </div>
@@ -559,10 +603,10 @@ export default function CurriculumTab({
                                 status={selectedTopic ? getLessonStatus(selectedTopic.id, selectedTopic.chapter_id) : 'unlocked'}
                                 breadcrumb={selectedTopic ? getTopicBreadcrumbs(selectedTopic) : ''}
                                 isStudentSpotlight={selectedTopic ? studentSpotlights?.studentSpotlight?.lesson_id === selectedTopic.id : false}
-                                isTeacherSpotlight={selectedTopic ? studentSpotlights?.teacherSpotlight?.lesson_id === selectedTopic.id : false}
-                                onToggleSpotlight={onToggleStudentSpotlight}
+                                onToggleSpotlight={isReadOnly ? undefined : onToggleStudentSpotlight}
                                 onOpenMaterial={() => setShowMaterialPopup(true)}
-                                onToggleComplete={handleToggleLessonComplete}
+                                onToggleComplete={isReadOnly ? undefined : handleToggleLessonComplete}
+                                isReadOnly={isReadOnly}
                                 isMobile={false}
                             />
                         </div>
@@ -641,13 +685,14 @@ export default function CurriculumTab({
                                 breadcrumb={getTopicBreadcrumbs(selectedTopic)}
                                 isStudentSpotlight={selectedTopic ? studentSpotlights?.studentSpotlight?.lesson_id === selectedTopic.id : false}
                                 isTeacherSpotlight={selectedTopic ? studentSpotlights?.teacherSpotlight?.lesson_id === selectedTopic.id : false}
-                                onToggleSpotlight={onToggleStudentSpotlight}
+                                onToggleSpotlight={isReadOnly ? undefined : onToggleStudentSpotlight}
                                 onOpenMaterial={() => {
                                     setIsMobileViewerOpen(false);
                                     setShowMaterialPopup(true);
                                 }}
-                                onToggleComplete={handleToggleLessonComplete}
+                                onToggleComplete={isReadOnly ? undefined : handleToggleLessonComplete}
                                 onClose={handleCloseMobileViewer}
+                                isReadOnly={isReadOnly}
                                 isMobile={true}
                             />
                         </div>

@@ -25,6 +25,7 @@ interface StudentInfo {
     learning_mode?: 'online' | 'offline';
     notes: string;
     batch_name: string;
+    classroom_id?: string | null;
     fees_basis?: 'monthly' | 'class';
     fees_amount?: number;
     fees_collection_date?: number | null;
@@ -296,7 +297,8 @@ export default function StudentProfilePage() {
                     learning_mode: (userData as any).learning_mode || 'online',
                     notes: userData.notes || '',
                     profile_pic_url: userData.profile_pic_url,
-                    batch_name: (userData.status === 'archived' || userData.status === 'inactive') ? (batch_name || 'KFA Learning Circle') : (batch_name || 'Unassigned'),
+                    batch_name: batch_name || 'Unassigned',
+                    classroom_id: studentClassroomId,
                     fees_basis: userData.fees_basis,
                     fees_amount: userData.fees_amount,
                     fees_collection_date: userData.fees_collection_date,
@@ -654,18 +656,9 @@ export default function StudentProfilePage() {
         router.push('/');
     };
 
-    const handleToggleArchive = async () => {
+    const handlePauseStudent = async () => {
         if (!studentInfo) return;
-        const isArchived = studentInfo.status === 'archived' || studentInfo.status === 'inactive';
-
-        if (isArchived) {
-            const defaultRoom = allClassrooms.find(c => !c.name.toLowerCase().includes('learning circle'))?.id || allClassrooms[0]?.id || '';
-            setReactivateBatchId(defaultRoom);
-            setShowReactivateModal(true);
-            return;
-        }
-
-        if (!confirm(`Archive ${studentInfo.name}? They will be automatically assigned to KFA Learning Circle and excluded from regular active batch operations.`)) return;
+        if (!confirm(`Pause learning for ${studentInfo.name}? Their classes will be paused. Learning progress and practice tools will remain accessible.`)) return;
 
         try {
             const { error: userError } = await supabaseAuth
@@ -673,57 +666,80 @@ export default function StudentProfilePage() {
                 .update({ status: 'inactive' })
                 .eq('id', studentId);
 
-            if (userError) {
-                console.error('User update error:', userError);
-                throw new Error(userError.message || userError.details || 'Failed to update user status');
-            }
-
-            let circleRoomId: string | null = null;
-            const { data: circleRoom } = await supabaseAuth
-                .from('classrooms')
-                .select('id')
-                .ilike('name', '%Learning Circle%')
-                .maybeSingle();
-
-            if (circleRoom) {
-                circleRoomId = circleRoom.id;
-            } else {
-                // Auto-create KFA Learning Circle classroom if not found
-                const { data: newRoom, error: createErr } = await supabaseAuth
-                    .from('classrooms')
-                    .insert([{
-                        name: 'KFA Learning Circle',
-                        type: 'learning_circle',
-                        description: 'Community & Self-Paced Learning Circle for KFA Alumni & Inactive Students',
-                        status: 'active'
-                    }])
-                    .select('id')
-                    .single();
-
-                if (createErr) console.error('Error creating KFA Learning Circle:', createErr);
-                if (newRoom) circleRoomId = newRoom.id;
-            }
-
-            if (circleRoomId) {
-                await supabaseAuth.from('classroom_students').delete().eq('student_id', studentId);
-                const { error: insertErr } = await supabaseAuth.from('classroom_students').insert([{
-                    classroom_id: circleRoomId,
-                    student_id: studentId,
-                    joined_at: new Date().toISOString()
-                }]);
-                if (insertErr) console.error('Error linking to KFA Learning Circle:', insertErr);
-            }
+            if (userError) throw userError;
 
             setReloadTrigger(prev => prev + 1);
-            alert('Student archived and moved to KFA Learning Circle!');
+            alert(`Learning paused for ${studentInfo.name}.`);
         } catch (err: any) {
-            console.error('Error toggling archival state:', err);
-            alert(`Error: ${err.message || err.details || (typeof err === 'object' ? JSON.stringify(err) : String(err))}`);
+            console.error('Error pausing student:', err);
+            alert(`Error: ${err.message || String(err)}`);
         }
+    };
+
+    const handleArchiveStudent = async () => {
+        if (!studentInfo) return;
+        if (!confirm(`Archive ${studentInfo.name} as a Former Student? Regular classes will be concluded. Historical learning and practice tools will remain accessible.`)) return;
+
+        try {
+            const { error: userError } = await supabaseAuth
+                .from('users')
+                .update({ status: 'archived' })
+                .eq('id', studentId);
+
+            if (userError) throw userError;
+
+            setReloadTrigger(prev => prev + 1);
+            alert(`Student ${studentInfo.name} has been moved to Former Student archive.`);
+        } catch (err: any) {
+            console.error('Error archiving student:', err);
+            alert(`Error: ${err.message || String(err)}`);
+        }
+    };
+
+    const handleResumeStudent = async () => {
+        if (!studentInfo) return;
+
+        const currentBatchName = (studentInfo.batch_name || '').trim();
+        const isInvalidBatch = !classroomId ||
+            !currentBatchName ||
+            currentBatchName.toLowerCase() === 'unassigned' ||
+            currentBatchName.toLowerCase().includes('learning circle');
+
+        if (isInvalidBatch) {
+            alert("This student's classroom enrollment requires review before learning can be resumed.");
+            return;
+        }
+
+        if (!confirm(`Resume learning for ${studentInfo.name}?\nThey will return to their current batch:\n${currentBatchName}`)) {
+            return;
+        }
+
+        try {
+            const { error: userErr } = await supabaseAuth
+                .from('users')
+                .update({ status: 'active' })
+                .eq('id', studentId);
+
+            if (userErr) throw userErr;
+
+            setStudentInfo((prev: any) => prev ? { ...prev, status: 'active' } : null);
+            setReloadTrigger(prev => prev + 1);
+            alert(`Student ${studentInfo.name} has resumed learning in batch: ${currentBatchName}`);
+        } catch (err: any) {
+            console.error('Error resuming student:', err);
+            alert(`Error resuming student: ${err.message || err.details || String(err)}`);
+        }
+    };
+
+    const handleOpenReactivateModal = () => {
+        const defaultRoom = allClassrooms.find(c => !c.name.toLowerCase().includes('learning circle'))?.id || allClassrooms[0]?.id || '';
+        setReactivateBatchId(defaultRoom);
+        setShowReactivateModal(true);
     };
 
     const confirmReactivateStudent = async () => {
         if (!reactivateBatchId || !studentInfo) return;
+        if (studentInfo.status !== 'archived') return;
 
         setIsReactivating(true);
         try {
@@ -1317,11 +1333,15 @@ export default function StudentProfilePage() {
                                     }`}>
                                         {studentInfo.learning_mode === 'offline' ? 'Offline (In-Person)' : 'Online Class'}
                                     </span>
-                                    {teacherProfile?.role === 'admin' && (studentInfo.status === 'archived' || studentInfo.status === 'inactive') && (
-                                        <span className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                                            {studentInfo.status === 'archived' ? 'Archived' : 'Inactive'}
-                                        </span>
-                                    )}
+                                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                                        studentInfo.status === 'archived'
+                                            ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                                            : studentInfo.status === 'inactive'
+                                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                    }`}>
+                                        {studentInfo.status === 'archived' ? 'Former Student' : studentInfo.status === 'inactive' ? 'Learning Paused' : 'Active Student'}
+                                    </span>
                                 </div>
                                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-4 gap-y-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
                                     <span className="flex items-center gap-1.5 font-medium"><Music className="size-4 text-[#ecb613]" /> {studentInfo.batch_name}</span>
@@ -1363,20 +1383,58 @@ export default function StudentProfilePage() {
                                         <span className="hidden sm:inline">Edit Profile</span>
                                     </Link>
                                     {teacherProfile?.role === 'admin' && (
-                                        <button
-                                            onClick={handleToggleArchive}
-                                            className={`admin-btn-sm ${
-                                                studentInfo.status === 'archived' || studentInfo.status === 'inactive'
-                                                    ? 'admin-btn-secondary text-emerald-600 dark:text-emerald-400'
-                                                    : 'admin-btn-danger'
-                                            }`}
-                                            title={studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'Reactivate Student' : 'Archive Student'}
-                                        >
-                                            <span className="material-symbols-outlined text-sm shrink-0">
-                                                {studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'unarchive' : 'archive'}
-                                            </span>
-                                            <span className="hidden sm:inline">{studentInfo.status === 'archived' || studentInfo.status === 'inactive' ? 'Reactivate' : 'Archive'}</span>
-                                        </button>
+                                        <>
+                                            {studentInfo.status === 'active' && (
+                                                <>
+                                                    <button
+                                                        onClick={handlePauseStudent}
+                                                        className="admin-btn-sm admin-btn-secondary text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                                                        title="Pause Learning (Temporary Break)"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm shrink-0">pause_circle</span>
+                                                        <span className="hidden sm:inline">Pause Learning</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={handleArchiveStudent}
+                                                        className="admin-btn-sm admin-btn-danger"
+                                                        title="Archive Student (Conclude Enrollment)"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm shrink-0">archive</span>
+                                                        <span className="hidden sm:inline">Archive Student</span>
+                                                    </button>
+                                                </>
+                                            )}
+                                            {studentInfo.status === 'inactive' && (
+                                                <>
+                                                    <button
+                                                        onClick={handleResumeStudent}
+                                                        className="admin-btn-sm admin-btn-secondary text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                                                        title="Resume Learning"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm shrink-0">play_circle</span>
+                                                        <span className="hidden sm:inline">Resume Learning</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={handleArchiveStudent}
+                                                        className="admin-btn-sm admin-btn-danger"
+                                                        title="Archive Student (Conclude Enrollment)"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm shrink-0">archive</span>
+                                                        <span className="hidden sm:inline">Archive Student</span>
+                                                    </button>
+                                                </>
+                                            )}
+                                            {studentInfo.status === 'archived' && (
+                                                <button
+                                                    onClick={handleOpenReactivateModal}
+                                                    className="admin-btn-sm admin-btn-secondary text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                                                    title="Re-enroll Student (Allocate Batch)"
+                                                >
+                                                    <span className="material-symbols-outlined text-sm shrink-0">unarchive</span>
+                                                    <span className="hidden sm:inline">Re-enroll Student</span>
+                                                </button>
+                                            )}
+                                        </>
                                     )}
                                 </>
                             )}
@@ -2724,9 +2782,12 @@ export default function StudentProfilePage() {
                             <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-4">
                                 <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-2xl">unarchive</span>
                             </div>
-                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Reactivate Student</h3>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                                Re-enroll Student
+                            </h3>
                             <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
-                                You are reactivating <span className="font-bold text-slate-700 dark:text-slate-300">{studentInfo.name}</span>. Please select which classroom batch to allocate them to:
+                                You are re-enrolling{' '}
+                                <span className="font-bold text-slate-700 dark:text-slate-300">{studentInfo.name}</span>. Please select which classroom batch to allocate them to:
                             </p>
                             
                             <div className="space-y-2">
@@ -2761,7 +2822,9 @@ export default function StudentProfilePage() {
                                 ) : (
                                     <span className="material-symbols-outlined text-lg">unarchive</span>
                                 )}
-                                {isReactivating ? 'Reactivating...' : 'Reactivate & Allocate'}
+                                {isReactivating 
+                                    ? 'Re-enrolling...' 
+                                    : 'Re-enroll & Allocate'}
                             </button>
                         </div>
                     </div>

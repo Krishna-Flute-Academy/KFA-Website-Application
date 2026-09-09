@@ -4,13 +4,14 @@ import React, { useMemo, useState, useEffect } from 'react';
 import {
     Users, PlayCircle, BookOpen, Clock, Award, Calendar,
     ClipboardList, HelpCircle, CheckCircle, ChevronRight, X, Play, Music,
-    AlertTriangle, AlertCircle, Star, Sparkles, Youtube, Target, Lightbulb
+    AlertTriangle, AlertCircle, Star, Sparkles, Youtube, Target, Lightbulb, Phone
 } from 'lucide-react';
 
 import { supabase } from '../../lib/supabase';
 import { supabaseAuth } from '../../lib/supabase-auth';
 import { stripHtml } from '../../lib/text-utils';
 import { getCurriculumMediaInfo } from '../../lib/curriculum-media';
+import { getStudentAccess } from '../../lib/student-lifecycle';
 
 interface StudentProfile {
     id: string;
@@ -515,6 +516,260 @@ export default function OverviewTab({
         return { label: 'Announcement', style: 'bg-amber-100/80 text-amber-900 border-amber-300' };
     };
 
+    const lifecycleAccess = useMemo(() => {
+        return getStudentAccess(profile?.status);
+    }, [profile?.status]);
+
+    if (lifecycleAccess.dashboardMode !== 'active') {
+        const isPaused = lifecycleAccess.dashboardMode === 'learning_paused';
+        const totalLessons = courseLessons.length;
+        const completedCount = (studentProgress || []).filter(p => p.status === 'completed').length;
+        const progressPct = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
+
+        const whatsappMessage = isPaused
+            ? encodeURIComponent("Namaste Krishna Flute Academy, I would like to inquire about resuming my learning.")
+            : encodeURIComponent("Namaste Krishna Flute Academy, I am a former student interested in rejoining classes.");
+        const whatsappUrl = `https://wa.me/919836952545?text=${whatsappMessage}`;
+
+        return (
+            <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-300 text-left pb-10">
+                {/* 1. Hero Status Card */}
+                <div className={`rounded-3xl p-6 sm:p-8 border shadow-sm relative overflow-hidden ${
+                    isPaused
+                        ? 'bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border-amber-200/80 dark:border-amber-900/40 dark:from-amber-950/20'
+                        : 'bg-gradient-to-br from-slate-500/10 via-slate-500/5 to-transparent border-slate-200 dark:border-slate-800 dark:from-slate-900/30'
+                }`}>
+                    <div className="relative z-10 space-y-4">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border shadow-2xs ${
+                                isPaused
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
+                                    : 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
+                            }`}>
+                                <span className={`w-2 h-2 rounded-full ${isPaused ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
+                                {isPaused ? 'Learning Paused' : 'Former Student'}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                Student ID: #{profile?.id?.slice(0, 6)?.toUpperCase()}
+                            </span>
+                        </div>
+
+                        <div className="space-y-2">
+                            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                                {isPaused
+                                    ? 'Your KFA learning is currently paused.'
+                                    : 'Your KFA learning journey is currently concluded.'
+                                }
+                            </h1>
+                            <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-3xl">
+                                {isPaused
+                                    ? "Your regular classes and related services are temporarily unavailable. Your learning progress has been safely preserved, and you can continue reviewing your curriculum and using the available practice tools. When you're ready to resume learning, please contact Krishna Flute Academy."
+                                    : "Your regular classes are no longer active, but your learning history has been kept available so you can revisit what you learned and continue practising. If you'd like to resume learning with KFA, please contact us."
+                                }
+                            </p>
+                        </div>
+
+                        {/* Lifecycle Action Buttons */}
+                        <div className="pt-2 flex flex-wrap items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('curriculum')}
+                                className="px-5 py-3 rounded-xl text-sm font-bold bg-[#ecb613] hover:bg-[#d49f0e] text-slate-950 transition-all shadow-sm active:scale-95 flex items-center gap-2 cursor-pointer"
+                            >
+                                <BookOpen className="w-4 h-4 text-slate-950" />
+                                <span>{isPaused ? 'View My Progress' : 'View My Learning'}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('library')}
+                                className="px-5 py-3 rounded-xl text-sm font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-all shadow-2xs active:scale-95 flex items-center gap-2 cursor-pointer"
+                            >
+                                <Music className="w-4 h-4 text-[#ecb613]" />
+                                <span>{isPaused ? 'Practice Tools' : 'Practice'}</span>
+                            </button>
+
+                            <a
+                                href={whatsappUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-5 py-3 rounded-xl text-sm font-bold text-white transition-all shadow-sm active:scale-95 flex items-center gap-2 cursor-pointer bg-emerald-600 hover:bg-emerald-700"
+                            >
+                                <Phone className="w-4 h-4" />
+                                <span>{isPaused ? 'Contact KFA' : 'Rejoin KFA'}</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 2. Grid Cards: Preserved Curriculum & Practice Suite */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* Preserved Curriculum Progress Card */}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col justify-between">
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 text-amber-700 dark:text-amber-300 flex items-center justify-center">
+                                        <BookOpen className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Preserved Curriculum</h3>
+                                        <span className="text-[11px] font-semibold text-slate-400">Read-Only Archive</span>
+                                    </div>
+                                </div>
+                                <span className="text-xs font-black text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-full border border-amber-200 dark:border-amber-800">
+                                    {progressPct}% Completed
+                                </span>
+                            </div>
+
+                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                All your unlocked modules, swara exercises, compositions, and study notes remain safe. You can explore and practice every topic at your own pace.
+                            </p>
+
+                            <div className="space-y-1.5 pt-1">
+                                <div className="flex justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+                                    <span>{completedCount} Topics Mastered</span>
+                                    <span>{totalLessons} Total Allocated</span>
+                                </div>
+                                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-[#ecb613] to-amber-500 rounded-full transition-all duration-500"
+                                        style={{ width: `${progressPct}%` }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="pt-5 border-t border-slate-100 dark:border-slate-800 mt-5">
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('curriculum')}
+                                className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 hover:text-amber-900 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                                <span>Browse Preserved Curriculum</span>
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Practice Tools Suite Card */}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col justify-between">
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
+                                        <Music className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Riyaz & Practice Tools</h3>
+                                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">100% Available</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                Continue your daily flute practice with all built-in acoustic tools, including fine pitch tuner, concert tanpura, rhythm metronome, and beat loops.
+                            </p>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('library')}
+                                    className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                >
+                                    <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
+                                        Flute Tuner
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 block mt-0.5">Accurate micro-tuning</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setPracticeSuiteTab?.('tanpura');
+                                        setShowPracticeSuite?.(true);
+                                    }}
+                                    className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                >
+                                    <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
+                                        Tanpura Drone
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 block mt-0.5">Custom scale & pitch</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setPracticeSuiteTab?.('metronome');
+                                        setShowPracticeSuite?.(true);
+                                    }}
+                                    className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                >
+                                    <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
+                                        Metronome & Taal
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 block mt-0.5">BPM & Teentaal cycles</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setPracticeSuiteTab?.('drums');
+                                        setShowPracticeSuite?.(true);
+                                    }}
+                                    className="p-3 bg-slate-50 dark:bg-slate-800/60 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-100 dark:border-slate-800 text-left transition-all cursor-pointer group"
+                                >
+                                    <span className="text-[11px] font-bold text-slate-900 dark:text-white block group-hover:text-amber-600">
+                                        Rhythm Loops
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 block mt-0.5">Tabla & drum beats</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="pt-5 border-t border-slate-100 dark:border-slate-800 mt-5">
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('library')}
+                                className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 hover:text-emerald-900 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                                <span>Open Practice Room</span>
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 3. Support & Academy Contact Banner */}
+                <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                        <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                            Need Assistance or Ready to Continue?
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Our team is here to assist with re-enrollment, batch timings, and account questions.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('policies')}
+                            className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 transition-all cursor-pointer"
+                        >
+                            Academy Policies
+                        </button>
+                        <a
+                            href={whatsappUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>WhatsApp KFA</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="animate-in fade-in duration-300">
             {/* ========================================================================= */}
@@ -563,29 +818,7 @@ export default function OverviewTab({
                     </div>
                 ) : null}
 
-                {/* 2. Important Classroom Update (Live Session / Overdue Tasks) */}
-                {classroom?.is_live && (
-                    <div className="bg-gradient-to-r from-red-600 via-amber-600 to-amber-500 rounded-2xl p-3 text-white shadow-xs flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                            <span className="text-[8px] font-black uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded-md animate-pulse font-mono">
-                                ● Live Now
-                            </span>
-                            <h4 className="font-extrabold text-xs text-white mt-0.5 truncate">{classroom.name}</h4>
-                            <p className="text-[10px] text-white/90 truncate">Instructor: {classroom.teacher_name}</p>
-                        </div>
-                        {classroom.live_meeting_link && (
-                            <a
-                                href={classroom.live_meeting_link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3.5 py-1.5 bg-white text-red-600 hover:bg-slate-50 text-[10px] font-black rounded-xl shadow-xs shrink-0 flex items-center gap-1 cursor-pointer"
-                            >
-                                <PlayCircle className="w-3.5 h-3.5" />
-                                <span>Join</span>
-                            </a>
-                        )}
-                    </div>
-                )}
+
 
                 {overdueTasks.length > 0 && (
                     <div 
@@ -1144,42 +1377,7 @@ export default function OverviewTab({
                 {/* ═══════════════════════════════════════════════════════════════════════ */}
                 {/* 1. COMPACT ACTION REQUIRED / ATTENTION BAR (40–56px)                    */}
                 {/* ═══════════════════════════════════════════════════════════════════════ */}
-                {/* Live Class Active Banner */}
-                {classroom?.is_live && (
-                    <div className="bg-gradient-to-r from-red-600 via-[#d49900] to-amber-500 rounded-2xl px-4 py-3 text-white shadow-md flex items-center justify-between gap-4 animate-in zoom-in-95 duration-300 border border-red-500/20 text-left">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center shrink-0 animate-pulse">
-                                <span className="material-symbols-outlined text-lg">video_call</span>
-                            </div>
-                            <div className="space-y-0.5 min-w-0">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[8.5px] font-black uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded-full animate-pulse font-mono">
-                                        ● Live Now
-                                    </span>
-                                    {classroom.live_session_started_at && (
-                                        <span className="text-[10px] text-white/80 font-bold font-mono">
-                                            Started at {new Date(classroom.live_session_started_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}
-                                        </span>
-                                    )}
-                                </div>
-                                <h3 className="font-extrabold text-white text-xs sm:text-sm leading-tight truncate">
-                                    {classroom.name} — Instructor: {classroom.teacher_name}
-                                </h3>
-                            </div>
-                        </div>
-                        {classroom.live_meeting_link && (
-                            <a
-                                href={classroom.live_meeting_link}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-4 py-1.5 bg-white text-red-600 hover:text-red-700 hover:bg-slate-50 transition-all font-black rounded-xl text-xs shadow-sm flex items-center gap-1.5 shrink-0 uppercase tracking-wider cursor-pointer"
-                            >
-                                <PlayCircle className="w-4 h-4 text-red-600" />
-                                <span>Join Class</span>
-                            </a>
-                        )}
-                    </div>
-                )}
+
 
                 {/* Compact Fee Reminder Action Bar (48–56px) */}
                 {(profile?.fees_classes_paid === undefined || profile?.fees_classes_paid === null || profile?.fees_classes_paid <= 0) && (

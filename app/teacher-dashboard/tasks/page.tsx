@@ -32,8 +32,17 @@ export default function TaskReviewPage() {
     
     // Top-level 4 views navigation
     const [activeTab, setActiveTab] = useState<TasksTab>('review');
+    const [reviewSubTab, setReviewSubTab] = useState<'awaiting' | 'revision' | 'approved'>('awaiting');
     const [searchQuery, setSearchQuery] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+
+    const handleNavigateToRevisionQueue = (taskTitle?: string) => {
+        setActiveTab('review');
+        setReviewSubTab('revision');
+        if (taskTitle) {
+            setSearchQuery(taskTitle);
+        }
+    };
 
     // Review Modal / Drawer States
     const [selectedSub, setSelectedSub] = useState<TaskSubmission | null>(null);
@@ -1026,7 +1035,9 @@ export default function TaskReviewPage() {
     }
 
     const awaitingCount = submissions.filter(s => s.status === 'submitted' && s.student_id !== 'draft' && s.student_id !== 'no-students').length;
-    const completedCount = submissions.filter(s => (s.status === 'approved' || s.status === 'reviewed') && s.student_id !== 'draft' && s.student_id !== 'no-students').length;
+    const revisionCount = submissions.filter(s => s.status === 'reviewed' && s.student_id !== 'draft' && s.student_id !== 'no-students').length;
+    const unresolvedReviewCount = awaitingCount + revisionCount;
+    const completedCount = submissions.filter(s => s.status === 'approved' && s.student_id !== 'draft' && s.student_id !== 'no-students').length;
     const activeAssignmentsCount = assignmentBatches.filter(b => !b.isDraft).length;
     const templatesCount = templateGroups.length;
 
@@ -1084,11 +1095,11 @@ export default function TaskReviewPage() {
                         >
                             <Inbox className="w-4 h-4" />
                             <span>Review</span>
-                            {awaitingCount > 0 && (
+                            {unresolvedReviewCount > 0 && (
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                     activeTab === 'review' ? 'bg-slate-900 text-[#ecb613]' : 'bg-[#ecb613] text-slate-900'
                                 }`}>
-                                    {awaitingCount}
+                                    {unresolvedReviewCount}
                                 </span>
                             )}
                         </button>
@@ -1153,6 +1164,8 @@ export default function TaskReviewPage() {
                                 classrooms={classrooms}
                                 onReview={handleOpenReview}
                                 searchQuery={searchQuery}
+                                activeSubTab={reviewSubTab}
+                                onSubTabChange={setReviewSubTab}
                             />
                         )}
 
@@ -1164,6 +1177,7 @@ export default function TaskReviewPage() {
                                 onDeleteAssignment={handleDeleteAssignment}
                                 onQuickUpdateDueDate={handleQuickUpdateDueDate}
                                 onReviewSubmission={handleOpenReview}
+                                onNavigateToRevisionQueue={handleNavigateToRevisionQueue}
                                 searchQuery={searchQuery}
                             />
                         )}

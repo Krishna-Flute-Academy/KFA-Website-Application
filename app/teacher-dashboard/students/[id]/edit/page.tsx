@@ -183,7 +183,7 @@ export default function EditStudentPage() {
                 name: formData.fullName,
                 email: formData.email,
                 phone: formData.phone,
-                status: (formData.status === 'archived' || formData.status === 'inactive') ? 'inactive' : formData.status,
+                status: formData.status,
                 join_date: formData.startDate,
                 level: formData.level,
                 learning_mode: formData.learningMode,
@@ -207,44 +207,15 @@ export default function EditStudentPage() {
             if (userError) throw userError;
 
             if (isAdmin) {
-                // Step 2: Handle Batch Re-assignment
-                let targetBatchId = formData.batchId;
+                // Step 2: Handle Batch Re-assignment if student is active and batch is provided
+                const targetBatchId = formData.batchId;
 
-                if (formData.status === 'archived' || formData.status === 'inactive') {
-                    const circleRoom = classrooms.find(r => r.name.toLowerCase().includes('learning circle'));
-                    if (circleRoom) {
-                        targetBatchId = circleRoom.id;
-                    } else {
-                        const { data: circleDbRoom } = await supabaseAuth
-                            .from('classrooms')
-                            .select('id')
-                            .ilike('name', '%Learning Circle%')
-                            .maybeSingle();
-                        if (circleDbRoom) {
-                            targetBatchId = circleDbRoom.id;
-                        } else {
-                            const { data: newRoom } = await supabaseAuth
-                                .from('classrooms')
-                                .insert([{
-                                    name: 'KFA Learning Circle',
-                                    type: 'learning_circle',
-                                    description: 'Community & Self-Paced Learning Circle for KFA Alumni & Inactive Students',
-                                    status: 'active'
-                                }])
-                                .select('id')
-                                .single();
-                            if (newRoom) targetBatchId = newRoom.id;
-                        }
-                    }
-                }
+                if (targetBatchId && formData.status === 'active') {
+                    await supabaseAuth
+                        .from('classroom_students')
+                        .delete()
+                        .eq('student_id', studentId);
 
-                // First, remove existing assignments (Simple approach for 1 batch per student)
-                await supabaseAuth
-                    .from('classroom_students')
-                    .delete()
-                    .eq('student_id', studentId);
-
-                if (targetBatchId) {
                     const { error: classroomError } = await supabaseAuth
                         .from('classroom_students')
                         .insert([{
@@ -341,17 +312,7 @@ export default function EditStudentPage() {
                                                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#ecb613]/20 focus:border-[#ecb613] transition-all outline-none appearance-none font-bold"
                                                     value={formData.status}
                                                     onChange={(e) => {
-                                                        const newStatus = e.target.value;
-                                                        if (newStatus === 'archived' || newStatus === 'inactive') {
-                                                            const circleRoom = classrooms.find(r => r.name.toLowerCase().includes('learning circle'));
-                                                            setFormData({
-                                                                ...formData,
-                                                                status: newStatus,
-                                                                batchId: circleRoom ? circleRoom.id : formData.batchId
-                                                            });
-                                                        } else {
-                                                            setFormData({ ...formData, status: newStatus });
-                                                        }
+                                                        setFormData({ ...formData, status: e.target.value });
                                                     }}
                                                 >
                                                     <option value="active">Active</option>

@@ -374,6 +374,7 @@ export default function ClassroomsPage() {
     };
 
     const [endingSessionId, setEndingSessionId] = useState<string | null>(null);
+    const [startingClassroomId, setStartingClassroomId] = useState<string | null>(null);
 
     const handleEndClassSession = async (room: any) => {
         const targetRoomId = room.type === 'permanent' ? room.id : (room.classroom_id || room.id);
@@ -383,33 +384,46 @@ export default function ClassroomsPage() {
             return;
         }
 
+        const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
         setEndingSessionId(room.id);
-        try {
-            // 1. Update classrooms table to set is_live = false
-            await supabaseAuth
-                .from('classrooms')
-                .update({
-                    is_live: false,
-                    live_meeting_link: null,
-                    live_session_started_at: null
-                })
-                .eq('id', targetRoomId);
 
-            // 2. Try calling RPC end_classroom_session if available
-            try {
-                await supabaseAuth.rpc('end_classroom_session', {
-                    p_classroom_id: targetRoomId,
-                    p_session_date: new Date().toISOString().split('T')[0],
-                    p_session_type: 'online',
-                    p_started_at: new Date().toISOString(),
-                    p_ended_at: new Date().toISOString(),
-                    p_duration_seconds: 0,
-                    p_present_count: 0,
-                    p_absent_count: 0,
-                    p_late_count: 0,
-                    p_excused_count: 0
-                });
-            } catch (_) {}
+        // 1. Optimistically update local state immediately for instant responsive UI
+        setActiveSession(null);
+        setClassrooms(prev => prev.map(c => {
+            if (c.id === room.id || c.id === targetRoomId) {
+                return { ...c, is_live: false, live_meeting_link: null, live_session_started_at: null };
+            }
+            return c;
+        }));
+
+        try {
+            // 2. Call RPC end_classroom_session directly (atomic update + logs)
+            const { error: rpcErr } = await supabaseAuth.rpc('end_classroom_session', {
+                p_classroom_id: targetRoomId,
+                p_session_date: new Date().toISOString().split('T')[0],
+                p_session_type: 'online',
+                p_started_at: new Date().toISOString(),
+                p_ended_at: new Date().toISOString(),
+                p_duration_seconds: 0,
+                p_present_count: 0,
+                p_absent_count: 0,
+                p_late_count: 0,
+                p_excused_count: 0
+            });
+
+            if (rpcErr) {
+                if (process.env.NODE_ENV !== 'production') {
+                    console.warn('[handleEndClassSession] RPC failed, falling back to direct table update', rpcErr);
+                }
+                await supabaseAuth
+                    .from('classrooms')
+                    .update({
+                        is_live: false,
+                        live_meeting_link: null,
+                        live_session_started_at: null
+                    })
+                    .eq('id', targetRoomId);
+            }
 
             // 3. Clear localStorage session tracker & dispatch events
             if (typeof window !== 'undefined') {
@@ -418,14 +432,10 @@ export default function ClassroomsPage() {
                 window.dispatchEvent(new CustomEvent('class_session_ended', { detail: { classroomId: targetRoomId } }));
             }
 
-            // 4. Update local state
-            setActiveSession(null);
-            setClassrooms(prev => prev.map(c => {
-                if (c.id === room.id || c.id === targetRoomId) {
-                    return { ...c, is_live: false, live_meeting_link: null, live_session_started_at: null };
-                }
-                return c;
-            }));
+            if (process.env.NODE_ENV !== 'production') {
+                const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+                console.log(`[handleEndClassSession] Completed in ${elapsed.toFixed(1)}ms for classroom:`, targetRoomId);
+            }
 
             setToast({
                 type: 'success',
@@ -815,24 +825,33 @@ export default function ClassroomsPage() {
 
         fetchData();
 
+        let debounceTimer: NodeJS.Timeout | null = null;
+        const debouncedFetchData = () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                fetchData();
+            }, 300);
+        };
+
         const channel = supabaseAuth
             .channel('classrooms-page-realtime')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'classrooms' },
                 () => {
-                    fetchData();
+                    debouncedFetchData();
                 }
             )
             .subscribe();
 
         const handleStorageOrCustomEvent = () => {
-            fetchData();
+            debouncedFetchData();
         };
         window.addEventListener('storage', handleStorageOrCustomEvent);
         window.addEventListener('class_session_ended', handleStorageOrCustomEvent);
 
         return () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
             supabaseAuth.removeChannel(channel);
             window.removeEventListener('storage', handleStorageOrCustomEvent);
             window.removeEventListener('class_session_ended', handleStorageOrCustomEvent);
@@ -1492,22 +1511,23 @@ export default function ClassroomsPage() {
                                                 </div>
                                                 <div className="flex items-center gap-2 mt-2 md:mt-0 justify-end w-full md:w-auto border-t md:border-t-0 border-slate-100 dark:border-slate-800/60 pt-2 md:pt-0">
                                                     <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`} className="flex-1 md:flex-initial">
-                                                        <button className="w-full md:w-auto px-3 sm:px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
+                                                        <button className="w-full md:w-auto px-3 sm:px-4 h-9 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-xs flex items-center justify-center">
                                                             Manage
                                                         </button>
                                                     </Link>
                                                     {isOngoing ? (
                                                         <div className="flex items-center gap-1.5 flex-1 md:flex-initial">
-                                                            <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                <button className="px-3 sm:px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center justify-center gap-1.5 animate-pulse cursor-pointer">
-                                                                    <Activity className="size-3.5 animate-spin" />
-                                                                    Started (Join)
-                                                                </button>
-                                                            </Link>
+                                                            <div className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-xs shrink-0 select-none">
+                                                                <span className="relative flex h-2 w-2">
+                                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                                                </span>
+                                                                <span>Started</span>
+                                                            </div>
                                                             <button
                                                                 onClick={() => handleEndClassSession(room)}
                                                                 disabled={endingSessionId === room.id}
-                                                                className="px-3 py-2 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 text-xs font-extrabold rounded-lg transition-colors border border-rose-300 dark:border-rose-800 flex items-center justify-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                                                                className="px-3 sm:px-4 h-9 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 text-xs font-bold rounded-lg transition-colors border border-rose-200 dark:border-rose-800/60 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
                                                                 title="Stop/End Live Session"
                                                             >
                                                                 {endingSessionId === room.id ? (
@@ -1515,20 +1535,31 @@ export default function ClassroomsPage() {
                                                                 ) : (
                                                                     <Square className="size-3 fill-current" />
                                                                 )}
-                                                                End Class
+                                                                <span>End Class</span>
                                                             </button>
                                                         </div>
                                                     ) : (
-                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} className="flex-1 md:flex-initial">
+                                                        <Link 
+                                                            href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`} 
+                                                            className="flex-1 md:flex-initial"
+                                                            onClick={() => setStartingClassroomId(room.id)}
+                                                        >
                                                             <button 
-                                                                disabled={isDisabled}
-                                                                className={`w-full md:w-auto px-3 sm:px-4 py-2 text-xs font-bold rounded-lg transition-colors shadow-sm ${
+                                                                disabled={isDisabled || startingClassroomId === room.id}
+                                                                className={`w-full md:w-auto px-3 sm:px-4 h-9 text-xs font-bold rounded-lg transition-colors shadow-xs flex items-center justify-center gap-1.5 ${
                                                                     isDisabled 
                                                                         ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed' 
                                                                         : 'bg-[#0d5a5e] text-white hover:bg-[#115e59]'
                                                                 }`}
                                                             >
-                                                                Start
+                                                                {startingClassroomId === room.id ? (
+                                                                    <>
+                                                                        <Loader2 className="size-3.5 animate-spin" />
+                                                                        <span>Starting…</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <span>Start</span>
+                                                                )}
                                                             </button>
                                                         </Link>
                                                     )}
@@ -1536,7 +1567,7 @@ export default function ClassroomsPage() {
                                                         <button
                                                             onClick={() => handleDeleteClassroom(room)}
                                                             disabled={isDeletingId === room.id}
-                                                            className="p-2 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            className="w-9 h-9 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                                                             title="Delete class"
                                                         >
                                                             <Trash2 className="size-4" />
@@ -1703,22 +1734,23 @@ export default function ClassroomsPage() {
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`}>
-                                                            <button className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-md hover:bg-slate-200 transition-colors">
+                                                            <button className="px-2.5 h-8 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-lg hover:bg-slate-200 transition-colors text-xs flex items-center justify-center">
                                                                 Manage
                                                             </button>
                                                         </Link>
                                                         {isOngoing ? (
                                                             <div className="flex items-center gap-1">
-                                                                <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                    <button className="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white font-extrabold rounded-md transition-all flex items-center gap-0.5 text-xs cursor-pointer">
-                                                                        <Activity className="size-3 animate-spin" />
-                                                                        Started
-                                                                    </button>
-                                                                </Link>
+                                                                <div className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shrink-0 select-none">
+                                                                    <span className="relative flex h-1.5 w-1.5">
+                                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                                                    </span>
+                                                                    <span>Started</span>
+                                                                </div>
                                                                 <button
                                                                     onClick={() => handleEndClassSession(room)}
                                                                     disabled={endingSessionId === room.id}
-                                                                    className="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 font-extrabold rounded-md transition-colors border border-rose-300 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                                                    className="px-2.5 h-8 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 font-bold rounded-lg transition-colors border border-rose-200 dark:border-rose-800/60 text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
                                                                     title="Stop/End Live Session"
                                                                 >
                                                                     {endingSessionId === room.id ? (
@@ -1726,20 +1758,30 @@ export default function ClassroomsPage() {
                                                                     ) : (
                                                                         <Square className="size-2.5 fill-current" />
                                                                     )}
-                                                                    Stop
+                                                                    <span>End</span>
                                                                 </button>
                                                             </div>
                                                         ) : (
-                                                            <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
+                                                            <Link 
+                                                                href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}
+                                                                onClick={() => setStartingClassroomId(room.id)}
+                                                            >
                                                                 <button 
-                                                                    disabled={isDisabled}
-                                                                    className={`px-2.5 py-1 font-bold rounded-md transition-colors ${
+                                                                    disabled={isDisabled || startingClassroomId === room.id}
+                                                                    className={`px-2.5 h-8 font-bold rounded-lg transition-colors text-xs flex items-center gap-1 ${
                                                                         isDisabled
                                                                             ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
                                                                             : 'bg-[#0d5a5e] hover:bg-[#115e59] text-white'
                                                                     }`}
                                                                 >
-                                                                    Start
+                                                                    {startingClassroomId === room.id ? (
+                                                                        <>
+                                                                            <Loader2 className="size-3 animate-spin" />
+                                                                            <span>Starting…</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <span>Start</span>
+                                                                    )}
                                                                 </button>
                                                             </Link>
                                                         )}
@@ -1747,7 +1789,7 @@ export default function ClassroomsPage() {
                                                             <button
                                                                 onClick={() => handleDeleteClassroom(room)}
                                                                 disabled={isDeletingId === room.id}
-                                                                className="p-1 border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-md disabled:opacity-50"
+                                                                className="w-8 h-8 border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-lg flex items-center justify-center shrink-0 disabled:opacity-50"
                                                                 title="Delete class"
                                                             >
                                                                 <Trash2 className="size-3.5" />
@@ -1993,22 +2035,23 @@ export default function ClassroomsPage() {
                                                         <td className="px-6 py-6 text-right">
                                                             <div className="flex items-center justify-end gap-2">
                                                                 <Link href={room.type === 'permanent' ? `/teacher-dashboard/classrooms/${room.id}` : `/teacher-dashboard/classrooms/${room.classroom_id}`}>
-                                                                    <button className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-705 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
+                                                                    <button className="px-3 sm:px-4 h-9 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-xs flex items-center justify-center">
                                                                         Manage
                                                                     </button>
                                                                 </Link>
                                                                 {isOngoing ? (
                                                                     <div className="flex items-center gap-1.5">
-                                                                        <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
-                                                                            <button className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-extrabold rounded-lg transition-all shadow-lg shadow-rose-500/25 flex items-center gap-1.5 animate-pulse cursor-pointer">
-                                                                                <Activity className="size-3.5 animate-spin" />
-                                                                                Started (Join)
-                                                                            </button>
-                                                                        </Link>
+                                                                        <div className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shadow-xs shrink-0 select-none">
+                                                                            <span className="relative flex h-2 w-2">
+                                                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                                                            </span>
+                                                                            <span>Started</span>
+                                                                        </div>
                                                                         <button
                                                                             onClick={() => handleEndClassSession(room)}
                                                                             disabled={endingSessionId === room.id}
-                                                                            className="px-3 py-2 bg-rose-100 hover:bg-rose-200 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 text-xs font-extrabold rounded-lg transition-colors border border-rose-300 dark:border-rose-800 flex items-center justify-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                                                                            className="px-3 sm:px-4 h-9 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/80 dark:text-rose-200 text-xs font-bold rounded-lg transition-colors border border-rose-200 dark:border-rose-800/60 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
                                                                             title="Stop/End Live Session"
                                                                         >
                                                                             {endingSessionId === room.id ? (
@@ -2016,20 +2059,30 @@ export default function ClassroomsPage() {
                                                                             ) : (
                                                                                 <Square className="size-3 fill-current" />
                                                                             )}
-                                                                            End Class
+                                                                            <span>End Class</span>
                                                                         </button>
                                                                     </div>
                                                                 ) : (
-                                                                    <Link href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}>
+                                                                    <Link 
+                                                                        href={`/teacher-dashboard/classrooms/${room.type === 'permanent' ? room.id : (room.classroom_id || room.id)}/meeting`}
+                                                                        onClick={() => setStartingClassroomId(room.id)}
+                                                                    >
                                                                         <button 
-                                                                            disabled={isDisabled}
-                                                                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors shadow-sm ${
+                                                                            disabled={isDisabled || startingClassroomId === room.id}
+                                                                            className={`px-3 sm:px-4 h-9 text-xs font-bold rounded-lg transition-colors shadow-xs flex items-center justify-center gap-1.5 ${
                                                                                 isDisabled
-                                                                                    ? 'bg-slate-205 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                                                                                    ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
                                                                                     : 'bg-[#0d5a5e] text-white hover:bg-[#115e59]'
                                                                             }`}
                                                                         >
-                                                                            Start
+                                                                            {startingClassroomId === room.id ? (
+                                                                                <>
+                                                                                    <Loader2 className="size-3.5 animate-spin" />
+                                                                                    <span>Starting…</span>
+                                                                                </>
+                                                                            ) : (
+                                                                                <span>Start</span>
+                                                                            )}
                                                                         </button>
                                                                     </Link>
                                                                 )}
@@ -2037,7 +2090,7 @@ export default function ClassroomsPage() {
                                                                     <button
                                                                         onClick={() => handleDeleteClassroom(room)}
                                                                         disabled={isDeletingId === room.id}
-                                                                        className="p-2 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed animate-in fade-in"
+                                                                        className="w-9 h-9 border border-rose-200 dark:border-rose-900/60 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg hover:scale-105 transition-all shadow-xs flex items-center justify-center shrink-0 disabled:opacity-50 disabled:cursor-not-allowed animate-in fade-in"
                                                                         title="Delete class"
                                                                     >
                                                                         <Trash2 className="size-4" />

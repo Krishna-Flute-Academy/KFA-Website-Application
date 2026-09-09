@@ -99,7 +99,9 @@ export default function TaskStudentsModal({
                                         sub.status === 'approved' ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300' :
                                         'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400'
                                     }`}>
-                                        {sub.status}
+                                        {sub.status === 'submitted' ? 'Submitted' :
+                                         sub.status === 'reviewed' ? 'Needs Revision' :
+                                         sub.status === 'approved' ? 'Approved' : 'Pending'}
                                     </span>
 
                                     {(sub.status === 'submitted' || sub.status === 'reviewed' || sub.status === 'approved') && (
@@ -109,10 +111,19 @@ export default function TaskStudentsModal({
                                                 onClose();
                                                 onReviewSubmission(sub);
                                             }}
-                                            className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 font-bold text-xs rounded-lg shadow-xs flex items-center gap-1 active:scale-95"
+                                            className={`min-h-[34px] px-3 py-1 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 active:scale-95 transition-all ${
+                                                sub.status === 'submitted'
+                                                    ? 'bg-[#ecb613] hover:bg-[#d9a50b] text-slate-950 shadow-amber-500/20'
+                                                    : sub.status === 'reviewed'
+                                                    ? 'bg-blue-50 hover:bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200 border border-blue-200 dark:border-blue-800'
+                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+                                            }`}
                                         >
-                                            <PlayCircle className="w-3.5 h-3.5" />
-                                            Review
+                                            <PlayCircle className="w-3.5 h-3.5 shrink-0" />
+                                            <span>
+                                                {sub.status === 'submitted' ? 'Review' :
+                                                 sub.status === 'reviewed' ? 'Reopen Review' : 'View Review'}
+                                            </span>
                                         </button>
                                     )}
                                 </div>
