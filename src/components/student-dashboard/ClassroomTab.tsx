@@ -22,6 +22,8 @@ interface ClassroomInfo {
     id: string;
     name: string;
     type?: string;
+    status?: string;
+    lifecycle_status?: string;
     teacher_id?: string;
     teacher_name?: string;
     teacher_email?: string;
@@ -475,7 +477,7 @@ export default function ClassroomTab({
                                                     ? isTemporary ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' : 'bg-blue-500/20 text-blue-700 dark:text-blue-300'
                                                     : 'bg-slate-200/50 dark:bg-slate-800 text-slate-500'
                                             }`}>
-                                                {isTemporary ? 'Temp' : 'Perm'}
+                                                {isTemporary ? 'Special Session' : 'Perm'}
                                             </span>
                                         </button>
                                     );
@@ -494,7 +496,7 @@ export default function ClassroomTab({
                                                     ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20' 
                                                     : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20'
                                         }`}>
-                                            {classroom.type === 'learning_circle' ? 'Learning Circle' : classroom.type === 'temporary' ? 'Temporary' : 'Permanent'}
+                                            {classroom.type === 'learning_circle' ? 'Learning Circle' : classroom.type === 'temporary' ? 'Special Session' : 'Permanent'}
                                         </span>
                                     </>
                                 ) : 'Classroom Portal'}
@@ -1165,6 +1167,8 @@ export default function ClassroomTab({
                             messages={classroomMessages}
                             participants={classroomChatParticipants}
                             sending={isSendingClassroomMessage}
+                            readOnly={classroom?.status === 'archived' || classroom?.lifecycle_status === 'completed' || classroom?.lifecycle_status === 'cancelled'}
+                            readOnlyMessage="This session is concluded. Chat history is preserved as read-only."
                             onSendMessage={async (messageText) => {
                                 if (!onSendClassroomMessage) return;
                                 await onSendClassroomMessage(messageText);

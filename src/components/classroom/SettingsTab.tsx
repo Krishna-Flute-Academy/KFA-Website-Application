@@ -28,6 +28,9 @@ interface SettingsTabProps {
         class_date?: string;
         start_time?: string;
         end_time?: string;
+        purpose?: string;
+        credit_treatment?: string;
+        lifecycle_status?: string;
     };
     setMetadataForm: React.Dispatch<React.SetStateAction<any>>;
     metadataError: string;
@@ -221,48 +224,147 @@ export default function SettingsTab({
                             </div>
 
                             {classroom?.type === 'temporary' && (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="space-y-1.5 text-left">
-                                        <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider px-1">
-                                            Class Date <span className="text-rose-500">*</span>
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={metadataForm.class_date}
-                                            onChange={e => setMetadataForm((prev: any) => ({ ...prev, class_date: e.target.value }))}
-                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all"
-                                        />
+                                <>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="space-y-1.5 text-left">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
+                                                Session Date <span className="text-rose-500">*</span>
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={metadataForm.class_date}
+                                                onChange={e => setMetadataForm((prev: any) => ({ ...prev, class_date: e.target.value }))}
+                                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5 text-left">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
+                                                Start Time <span className="text-rose-500">*</span>
+                                            </label>
+                                            <input
+                                                type="time"
+                                                value={metadataForm.start_time}
+                                                onChange={e => {
+                                                    const newStart = e.target.value;
+                                                    setMetadataForm((prev: any) => ({
+                                                        ...prev,
+                                                        start_time: newStart,
+                                                        end_time: addOneHour(newStart)
+                                                    }));
+                                                }}
+                                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5 text-left">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
+                                                End Time <span className="text-rose-500">*</span>
+                                            </label>
+                                            <input
+                                                type="time"
+                                                value={metadataForm.end_time}
+                                                onChange={e => setMetadataForm((prev: any) => ({ ...prev, end_time: e.target.value }))}
+                                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all"
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="space-y-1.5 text-left">
-                                        <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider px-1">
-                                            Start Time <span className="text-rose-500">*</span>
-                                        </label>
-                                        <input
-                                            type="time"
-                                            value={metadataForm.start_time}
-                                            onChange={e => {
-                                                const newStart = e.target.value;
-                                                setMetadataForm((prev: any) => ({
-                                                    ...prev,
-                                                    start_time: newStart,
-                                                    end_time: addOneHour(newStart)
-                                                }));
-                                            }}
-                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all"
-                                        />
+
+                                    {/* Special Session Configuration */}
+                                    <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-4 text-left">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-black uppercase text-amber-700 dark:text-amber-400 tracking-wider">
+                                                ⚡ Special Session Configuration
+                                            </span>
+                                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                metadataForm.lifecycle_status === 'completed'
+                                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                                    : metadataForm.lifecycle_status === 'cancelled'
+                                                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400'
+                                                    : metadataForm.lifecycle_status === 'active'
+                                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                                            }`}>
+                                                Status: {metadataForm.lifecycle_status || 'scheduled'}
+                                            </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
+                                                    Session Purpose
+                                                </label>
+                                                <select
+                                                    value={metadataForm.purpose || 'makeup'}
+                                                    onChange={(e) => setMetadataForm((prev: any) => ({ ...prev, purpose: e.target.value }))}
+                                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all"
+                                                >
+                                                    <option value="makeup">Makeup Class (Excused Absence)</option>
+                                                    <option value="extra_class">Extra Class (Bonus)</option>
+                                                    <option value="revision">Revision Session</option>
+                                                    <option value="practice">Supervised Practice</option>
+                                                    <option value="other">Other / Workshop</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
+                                                    Credit / Fee Treatment
+                                                </label>
+                                                <select
+                                                    value={metadataForm.credit_treatment || 'makeup'}
+                                                    onChange={(e) => setMetadataForm((prev: any) => ({ ...prev, credit_treatment: e.target.value }))}
+                                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all"
+                                                >
+                                                    <option value="makeup">Makeup (Reconciles 1 Missed Class)</option>
+                                                    <option value="complimentary">Complimentary (No Credit Consumed)</option>
+                                                    <option value="consume_credit">Consume Regular Monthly Credit</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        {/* Lifecycle status quick actions */}
+                                        <div className="pt-3 border-t border-amber-500/20 flex items-center gap-3 flex-wrap">
+                                            <span className="text-xs font-bold text-slate-500">Lifecycle Action:</span>
+                                            {metadataForm.lifecycle_status !== 'completed' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setMetadataForm((prev: any) => ({
+                                                        ...prev,
+                                                        lifecycle_status: 'completed',
+                                                        status: 'archived'
+                                                    }))}
+                                                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-300 transition-colors cursor-pointer"
+                                                >
+                                                    Mark as Completed
+                                                </button>
+                                            )}
+                                            {metadataForm.lifecycle_status !== 'cancelled' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setMetadataForm((prev: any) => ({
+                                                        ...prev,
+                                                        lifecycle_status: 'cancelled',
+                                                        status: 'archived'
+                                                    }))}
+                                                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 dark:hover:bg-rose-900/30 text-rose-700 dark:text-rose-300 transition-colors cursor-pointer"
+                                                >
+                                                    Cancel Session
+                                                </button>
+                                            )}
+                                            {(metadataForm.lifecycle_status === 'completed' || metadataForm.lifecycle_status === 'cancelled') && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setMetadataForm((prev: any) => ({
+                                                        ...prev,
+                                                        lifecycle_status: 'scheduled',
+                                                        status: 'active'
+                                                    }))}
+                                                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 transition-colors cursor-pointer"
+                                                >
+                                                    Reopen Session
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="space-y-1.5 text-left">
-                                        <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider px-1">
-                                            End Time <span className="text-rose-500">*</span>
-                                        </label>
-                                        <input
-                                            type="time"
-                                            value={metadataForm.end_time}
-                                            onChange={e => setMetadataForm((prev: any) => ({ ...prev, end_time: e.target.value }))}
-                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-[#ecb613]/30 focus:border-[#ecb613] outline-none transition-all"
-                                        />
-                                    </div>
-                                </div>
+                                </>
                             )}
 
                             {/* Delivery Format */}

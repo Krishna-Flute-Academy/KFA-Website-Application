@@ -62,8 +62,7 @@ async function resolveRecipientsToStudentIds(
                 const { data: overrideStudents } = await supabaseAuth
                     .from('session_student_overrides')
                     .select('student_id')
-                    .in('target_classroom_id', classIds)
-                    .eq('override_date', today);
+                    .in('target_classroom_id', classIds);
                 (overrideStudents || []).forEach(s => studentIdsSet.add(s.student_id));
             })()
         );

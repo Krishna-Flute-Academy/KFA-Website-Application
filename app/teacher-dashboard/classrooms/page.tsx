@@ -318,50 +318,77 @@ export default function ClassroomsPage() {
     };
 
     const handleDeleteClassroom = async (room: any) => {
-        const confirmMsg = `Are you sure you want to delete the ${room.type === 'permanent' ? 'permanent class' : 'temporary session'} "${room.name}"? This will move it to the Recycle Bin, from which you can restore it later.`;
+        const confirmMsg = `Are you sure you want to ${room.type === 'permanent' ? 'delete the permanent class' : 'cancel the special session'} "${room.name}"? This will move it to the Recycle Bin, from which you can restore it later.`;
         if (!window.confirm(confirmMsg)) return;
 
         setIsDeletingId(room.id);
         try {
-            const table = room.type === 'permanent' ? 'classrooms' : 'temporary_classes';
-
-            // 1. Fetch full details for archiving
-            const { data: fullClassroom, error: fetchErr } = await supabaseAuth
-                .from(table)
-                .select('*')
-                .eq('id', room.id)
-                .single();
-
-            if (fetchErr) throw fetchErr;
-
-            // 2. Delete from database
-            const { error } = await supabaseAuth
-                .from(table)
-                .delete()
-                .eq('id', room.id);
-
-            if (error) throw error;
-
-            // 3. Put into Recycle Bin local storage
-            const newBinItem: DeletedClassroomItem = {
-                id: room.id,
-                name: room.name || fullClassroom.title || 'Temporary Class',
-                type: room.type,
-                deletedAt: new Date().toISOString(),
-                classroom: fullClassroom
-            };
-            saveRecycleBin([newBinItem, ...recycleBin]);
-
-            // Remove from local state
             if (room.type === 'permanent') {
+                // 1. Fetch full details for archiving
+                const { data: fullClassroom, error: fetchErr } = await supabaseAuth
+                    .from('classrooms')
+                    .select('*')
+                    .eq('id', room.id)
+                    .single();
+
+                if (fetchErr) throw fetchErr;
+
+                // 2. Delete from database
+                const { error } = await supabaseAuth
+                    .from('classrooms')
+                    .delete()
+                    .eq('id', room.id);
+
+                if (error) throw error;
+
+                // 3. Put into Recycle Bin local storage
+                const newBinItem: DeletedClassroomItem = {
+                    id: room.id,
+                    name: room.name,
+                    type: room.type,
+                    deletedAt: new Date().toISOString(),
+                    classroom: fullClassroom
+                };
+                saveRecycleBin([newBinItem, ...recycleBin]);
                 setClassrooms(prev => prev.filter(c => c.id !== room.id));
             } else {
+                // Special Session: soft cancel
+                const { data: fullClassroom, error: fetchErr } = await supabaseAuth
+                    .from('temporary_classes')
+                    .select('*')
+                    .eq('id', room.id)
+                    .single();
+
+                if (fetchErr) throw fetchErr;
+
+                const { error } = await supabaseAuth
+                    .from('temporary_classes')
+                    .update({ lifecycle_status: 'cancelled' })
+                    .eq('id', room.id);
+
+                if (error) throw error;
+
+                if (room.classroom_id) {
+                    await supabaseAuth
+                        .from('classrooms')
+                        .update({ status: 'archived' })
+                        .eq('id', room.classroom_id);
+                }
+
+                const newBinItem: DeletedClassroomItem = {
+                    id: room.id,
+                    name: room.name || fullClassroom.title || 'Special Session',
+                    type: room.type,
+                    deletedAt: new Date().toISOString(),
+                    classroom: fullClassroom
+                };
+                saveRecycleBin([newBinItem, ...recycleBin]);
                 setTempClassrooms(prev => prev.filter(c => c.id !== room.id));
             }
 
             setToast({
                 type: 'success',
-                message: `Classroom "${room.name}" moved to Recycle Bin.`
+                message: `${room.type === 'permanent' ? 'Classroom' : 'Special Session'} "${room.name}" moved to Recycle Bin.`
             });
         } catch (err: any) {
             console.error('Error deleting classroom:', err);
@@ -495,7 +522,7 @@ export default function ClassroomsPage() {
                 });
             }
 
-            // Fetch and delete temporary
+            // Fetch and soft-cancel temporary classes
             if (temporaryIds.length > 0) {
                 const { data: fullTemps, error: fetchErr } = await supabaseAuth
                     .from('temporary_classes')
@@ -505,14 +532,22 @@ export default function ClassroomsPage() {
 
                 const { error: tempErr } = await supabaseAuth
                     .from('temporary_classes')
-                    .delete()
+                    .update({ lifecycle_status: 'cancelled' })
                     .in('id', temporaryIds);
                 if (tempErr) throw tempErr;
+
+                const linkedClassroomIds = fullTemps?.map(t => t.classroom_id).filter(Boolean) || [];
+                if (linkedClassroomIds.length > 0) {
+                    await supabaseAuth
+                        .from('classrooms')
+                        .update({ status: 'archived' })
+                        .in('id', linkedClassroomIds);
+                }
 
                 fullTemps?.forEach(t => {
                     newBinItems.push({
                         id: t.id,
-                        name: t.title || 'Temporary Class',
+                        name: t.title || 'Special Session',
                         type: 'temporary',
                         deletedAt: new Date().toISOString(),
                         classroom: t
@@ -772,10 +807,11 @@ export default function ClassroomsPage() {
 
             const tempRoomsWithCounts = (tempRoomsData || []).map((room) => {
                 const tStudents = tempStudentMap[room.id] || tempStudentMap[room.classroom_id] || [];
+                const isCancelled = room.lifecycle_status === 'cancelled';
                 return {
                     id: room.id,
-                    name: room.title || 'Temporary Class',
-                    description: (roomsData || []).find(c => c.id === room.classroom_id)?.description || `Temporary Session on ${room.class_date}`,
+                    name: room.title || 'Special Session',
+                    description: (roomsData || []).find(c => c.id === room.classroom_id)?.description || `Special Session on ${room.class_date}`,
                     schedule: (() => {
                         const parsed = parseClassDate(room.class_date);
                         const dayName = parsed ? parsed.toLocaleDateString('en-US', { weekday: 'short' }) : 'Invalid Date';
@@ -785,6 +821,7 @@ export default function ClassroomsPage() {
                     students: tStudents,
                     student_count: tStudents.length,
                     status: (() => {
+                        if (isCancelled) return 'Archived';
                         const shadowRoom = (roomsData || []).find(c => c.id === room.classroom_id);
                         return shadowRoom ? (shadowRoom.status || 'Active') : 'Active';
                     })(),
@@ -792,6 +829,9 @@ export default function ClassroomsPage() {
                     classroom_id: room.classroom_id,
                     start_time: room.start_time,
                     end_time: room.end_time,
+                    purpose: room.purpose || 'makeup',
+                    credit_treatment: room.credit_treatment || 'makeup',
+                    lifecycle_status: room.lifecycle_status || 'scheduled',
                     type: 'temporary' as const
                 };
             });
@@ -1231,7 +1271,7 @@ export default function ClassroomsPage() {
                                         onClick={() => setActiveView('temporary')}
                                         className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0 text-center transition-colors ${activeView === 'temporary' ? 'bg-white dark:bg-slate-700 text-[#451a03] dark:text-white' : 'text-slate-555 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 bg-transparent shadow-none'}`}
                                     >
-                                        Temporary Sessions
+                                        Special Sessions
                                     </button>
                                     <button 
                                         onClick={() => setActiveView('all')}
@@ -1593,7 +1633,7 @@ export default function ClassroomsPage() {
                                             </div>
                                             <p className="text-lg font-bold text-slate-900 dark:text-white">No classes scheduled</p>
                                             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
-                                                There are no classes scheduled for this date. Select another day or configure a temporary class.
+                                                There are no classes scheduled for this date. Select another day or schedule a special session.
                                             </p>
                                         </div>
                                     )}
@@ -1904,7 +1944,7 @@ export default function ClassroomsPage() {
                                                                         )}
                                                                         {room.type === 'temporary' ? (
                                                                             <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 dark:bg-amber-955/20 dark:text-amber-400 tracking-wider">
-                                                                                ⚡ Temporary
+                                                                                ⚡ Special Session
                                                                             </span>
                                                                         ) : (
                                                                             <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-955/20 dark:text-emerald-405 tracking-wider">

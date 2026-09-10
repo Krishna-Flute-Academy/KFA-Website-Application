@@ -38,6 +38,7 @@ import { htmlToPlainText, truncatePlainText } from '../../lib/text-utils';
 import ProfileCompletionModal from '../common/ProfileCompletionModal';
 import { INITIAL_MODULES } from '../../../app/teacher-dashboard/inventory/initial-data';
 import { getStudentAccess } from '../../lib/student-lifecycle';
+import { fetchEffectiveClassroomParticipants } from '../../lib/classroom-participants';
 
 interface StudentProfile {
     id: string;
@@ -1023,17 +1024,17 @@ export default function StudentDashboardContainer() {
                     live_classroom_name: r.is_live ? r.name : null
                 };
             });
-            const primaryRooms = enrichedActiveRooms.filter(r => r.type !== 'temporary');
-            setActiveRooms(primaryRooms);
+            // Include permanent rooms and active/scheduled/completed special sessions
+            setActiveRooms(enrichedActiveRooms);
 
-            const liveRoom = primaryRooms.find(r => r.is_live);
-            const primaryRoom = cls ? (primaryRooms.find(r => r.id === cls.id) || primaryRooms[0]) : primaryRooms[0];
+            const liveRoom = enrichedActiveRooms.find(r => r.is_live);
+            const primaryRoom = cls ? (enrichedActiveRooms.find(r => r.id === cls.id) || enrichedActiveRooms[0]) : enrichedActiveRooms[0];
             const defaultRoom = liveRoom || primaryRoom;
 
             if (defaultRoom) {
                 setClassroom(prev => {
                     if (prev) {
-                        const stillExists = primaryRooms.find(r => r.id === prev.id);
+                        const stillExists = enrichedActiveRooms.find(r => r.id === prev.id);
                         if (stillExists) return stillExists;
                     }
                     return defaultRoom;
@@ -1647,6 +1648,33 @@ export default function StudentDashboardContainer() {
             markBroadcastsAsRead();
         }
     }, [broadcasts, profile?.id]);
+
+    // Dynamically refresh classmates for the currently active/selected classroom
+    useEffect(() => {
+        if (!classroom?.id || classroom.id === 'synthetic-classroom' || !profile?.id) return;
+
+        let isMounted = true;
+        const loadClassmatesForRoom = async () => {
+            try {
+                const res = await fetchEffectiveClassroomParticipants(supabaseAuth, classroom.id);
+                if (!isMounted) return;
+                const filtered = res.students
+                    .filter(s => s.student_id !== profile.id)
+                    .map(s => ({
+                        id: s.student_id,
+                        name: s.name || 'Classmate',
+                        level: s.level || 'Beginner',
+                        profile_pic_url: s.profile_pic_url || null
+                    }));
+                setClassmates(filtered);
+            } catch (err) {
+                console.warn('[StudentDashboard] Failed to fetch participants for room:', classroom.id, err);
+            }
+        };
+
+        loadClassmatesForRoom();
+        return () => { isMounted = false; };
+    }, [classroom?.id, profile?.id]);
 
     // Merged classroom session/attendance logs
     const mergedLogs = useMemo(() => {

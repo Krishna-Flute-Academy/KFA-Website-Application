@@ -523,7 +523,7 @@ export default function AttendancePage() {
         const isAdmin = teacherProfile?.role === 'admin';
         if (!isAdmin) {
             const isOwnClass = isTemporary
-                ? temporaryClasses.some(tc => tc.id === batchId)
+                ? temporaryClasses.some(tc => (tc.classroom_id === batchId || tc.id === batchId))
                 : classrooms.some(c => c.id === batchId);
             if (!isOwnClass) {
                 console.error("Authorization error: batch does not belong to this teacher.");
@@ -621,7 +621,7 @@ export default function AttendancePage() {
             const targetClassId = params.get('classId');
             if (targetClassId) {
                 initialClassIdHandled.current = true;
-                const isTemp = temporaryClasses.some(tc => tc.id === targetClassId);
+                const isTemp = temporaryClasses.some(tc => tc.classroom_id === targetClassId || tc.id === targetClassId);
                 handleExpandBatch(targetClassId, isTemp, true);
             }
         }
@@ -1828,27 +1828,20 @@ export default function AttendancePage() {
             // 2. Process Temporary Classrooms
             const activeTemps = temporaryClasses.filter((tc: any) => tc.class_date === dateStr);
             activeTemps.forEach((tc: any) => {
-                const regularStudents = (tempStudentsData || [])
-                    .filter((tcs: any) => tcs.temporary_class_id === tc.id)
-                    .map((tcs: any) => ({
-                        id: tcs.student_id,
-                        name: tcs.users?.name || 'Unknown Student',
-                        isOverride: false
-                    }));
-
+                const targetRoomId = tc.classroom_id || tc.id;
                 const overrideStudents = (overridesData || [])
-                    .filter((o: any) => o.target_classroom_id === tc.id)
+                    .filter((o: any) => o.target_classroom_id === targetRoomId || o.target_classroom_id === tc.id)
                     .map((o: any) => ({
                         id: o.student_id,
                         name: o.users?.name || 'Unknown Student',
                         isOverride: true
                     }));
 
-                const allAllocated = [...regularStudents, ...overrideStudents];
+                const allAllocated = overrideStudents;
 
                 let excusedCount = 0;
                 const studentList = allAllocated.map(s => {
-                    const status = attendanceMap[`${tc.id}_${s.id}`];
+                    const status = attendanceMap[`${targetRoomId}_${s.id}`] || attendanceMap[`${tc.id}_${s.id}`];
                     if (status === 'excused') {
                         excusedCount++;
                     }
@@ -1862,7 +1855,7 @@ export default function AttendancePage() {
                 const endClean = tc.end_time.substring(0, 5);
 
                 suggestions.push({
-                    classroomId: tc.id,
+                    classroomId: targetRoomId,
                     classroomName: tc.title,
                     timings: `${startClean} - ${endClean}`,
                     isTemporary: true,
@@ -2151,7 +2144,7 @@ export default function AttendancePage() {
                                                                         ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-600'
                                                                         : 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400'
                                                                 }`}>
-                                                                    {batch.type === 'permanent' ? '👥 Classroom' : '⚡ Temporary'}
+                                                                    {batch.type === 'permanent' ? '👥 Classroom' : '⚡ Special Session'}
                                                                 </span>
                                                             </div>
                                                         </div>

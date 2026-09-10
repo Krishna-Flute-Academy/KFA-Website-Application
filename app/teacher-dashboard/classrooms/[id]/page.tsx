@@ -21,6 +21,7 @@ import SecureCurriculumMaterial from '../../../../src/components/SecureCurriculu
 import AudioRecorderWidget from '../../../../src/components/AudioRecorderWidget';
 import AutoLinkText from '../../../../src/components/common/AutoLinkText';
 import { getCurriculumMediaInfo } from '../../../../src/lib/curriculum-media';
+import { fetchEffectiveClassroomParticipants } from '../../../../src/lib/classroom-participants';
 
 import dynamic from 'next/dynamic';
 
@@ -77,6 +78,9 @@ interface ClassroomDetails {
     is_live?: boolean;
     live_meeting_link?: string | null;
     live_session_started_at?: string | null;
+    purpose?: string;
+    lifecycle_status?: string;
+    credit_treatment?: string;
 }
 
 interface ScheduleEntry {
@@ -656,26 +660,18 @@ export default function ClassroomDashboardPage({
 
             // Notify enrolled students in notifications table so their Bell Icon highlights
             try {
-                const { data: enrolledStudents } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('student_id')
-                    .eq('classroom_id', classroomId);
+                const participantRes = await fetchEffectiveClassroomParticipants(supabaseAuth, classroomId);
+                const targetStudentIds = (participantRes?.studentIds || []).filter(sid => sid && sid !== teacherProfile.id);
 
-                if (enrolledStudents && enrolledStudents.length > 0) {
-                    const targetStudentIds = enrolledStudents
-                        .map((s: any) => s.student_id)
-                        .filter((sid: string) => sid && sid !== teacherProfile.id);
-
-                    if (targetStudentIds.length > 0) {
-                        const notifPayloads = targetStudentIds.map((sid: string) => ({
-                            user_id: sid,
-                            type: 'classroom',
-                            title: `New Message in ${classroom?.name || 'Classroom'}`,
-                            message: `${teacherProfile.name || 'Instructor'}: ${htmlToPlainText(messageText).slice(0, 100)}`,
-                            is_read: false
-                        }));
-                        await supabaseAuth.from('notifications').insert(notifPayloads);
-                    }
+                if (targetStudentIds.length > 0) {
+                    const notifPayloads = targetStudentIds.map((sid: string) => ({
+                        user_id: sid,
+                        type: 'classroom',
+                        title: `New Message in ${classroom?.name || 'Classroom'}`,
+                        message: `${teacherProfile.name || 'Instructor'}: ${htmlToPlainText(messageText).slice(0, 100)}`,
+                        is_read: false
+                    }));
+                    await supabaseAuth.from('notifications').insert(notifPayloads);
                 }
             } catch (notifErr) {
                 console.warn('Failed to insert notifications for classroom chat:', notifErr);
@@ -863,6 +859,9 @@ export default function ClassroomDashboardPage({
         class_date: string;
         start_time: string;
         end_time: string;
+        purpose?: string;
+        credit_treatment?: string;
+        lifecycle_status?: string;
     }>({
         name: '',
         description: '',
@@ -870,7 +869,10 @@ export default function ClassroomDashboardPage({
         status: 'active',
         class_date: '',
         start_time: '10:00',
-        end_time: '11:00'
+        end_time: '11:00',
+        purpose: 'makeup',
+        credit_treatment: 'makeup',
+        lifecycle_status: 'scheduled'
     });
     const [isSavingMetadata, setIsSavingMetadata] = useState(false);
     const [metadataSaved, setMetadataSaved] = useState(false);
@@ -1445,7 +1447,7 @@ export default function ClassroomDashboardPage({
                         ? supabaseAuth.from('users').select('name').eq('id', roomData.teacher_id).maybeSingle()
                         : Promise.resolve({ data: null }),
                     roomData.type === 'temporary'
-                        ? supabaseAuth.from('temporary_classes').select('id, class_date, start_time, end_time').eq('classroom_id', classroomId).maybeSingle()
+                        ? supabaseAuth.from('temporary_classes').select('id, class_date, start_time, end_time, purpose, lifecycle_status, credit_treatment').eq('classroom_id', classroomId).maybeSingle()
                         : Promise.resolve({ data: null })
                 ]);
 
@@ -1459,7 +1461,10 @@ export default function ClassroomDashboardPage({
                     ...(roomData.type === 'temporary' && tempClassData ? {
                         class_date: tempClassData.class_date,
                         start_time: tempClassData.start_time,
-                        end_time: tempClassData.end_time
+                        end_time: tempClassData.end_time,
+                        purpose: tempClassData.purpose || 'makeup',
+                        lifecycle_status: tempClassData.lifecycle_status || (tempClassData.class_date < new Date().toISOString().split('T')[0] ? 'completed' : 'scheduled'),
+                        credit_treatment: tempClassData.credit_treatment || 'makeup'
                     } : {})
                 };
                 setClassroom(classroomData);
@@ -1478,6 +1483,9 @@ export default function ClassroomDashboardPage({
                     class_date: classroomData.class_date || '',
                     start_time: classroomData.start_time ? classroomData.start_time.slice(0, 5) : '10:00',
                     end_time: classroomData.end_time ? classroomData.end_time.slice(0, 5) : '11:00',
+                    purpose: tempClassData?.purpose || 'makeup',
+                    credit_treatment: tempClassData?.credit_treatment || 'makeup',
+                    lifecycle_status: tempClassData?.lifecycle_status || 'scheduled',
                 });
 
                 // Progressive Rendering: Minimum critical data ready, unblock dashboard shell immediately
@@ -2520,7 +2528,8 @@ export default function ClassroomDashboardPage({
                     student_id: studentId,
                     target_classroom_id: classroomId,
                     override_date: classroom.class_date || new Date().toISOString().split('T')[0],
-                    reason: 'Temporary Class Session'
+                    credit_treatment: classroom.credit_treatment || 'makeup',
+                    reason: `Special Session (${classroom.purpose ? classroom.purpose.replace('_', ' ') : 'makeup'})`
                 }));
 
                 const { error } = await supabaseAuth
@@ -3653,14 +3662,20 @@ export default function ClassroomDashboardPage({
         if (!classroomId) return;
         setIsUpdatingProgress(lessonId);
 
+        // In Special Sessions (temporary rooms), check if student already has a permanent classroom_id recorded
+        const existingProgressRow = studentProgress.find(p => p.student_id === studentId && p.lesson_id === lessonId);
+        const effectiveClassroomId = (classroom?.type === 'temporary' && existingProgressRow?.classroom_id)
+            ? existingProgressRow.classroom_id
+            : classroomId;
+
         const fallbackRow = {
             student_id: studentId,
-            classroom_id: classroomId,
+            classroom_id: effectiveClassroomId,
             lesson_id: lessonId,
             status: newStatus,
             unlocked_by: 'manual',
-            unlocked_at: newStatus !== 'locked' ? new Date().toISOString() : null,
-            completed_at: newStatus === 'completed' ? new Date().toISOString() : null
+            unlocked_at: newStatus !== 'locked' ? (existingProgressRow?.unlocked_at || new Date().toISOString()) : null,
+            completed_at: newStatus === 'completed' ? (existingProgressRow?.completed_at || new Date().toISOString()) : null
         };
 
         try {
@@ -3734,9 +3749,13 @@ export default function ClassroomDashboardPage({
                 status = 'completed';
             }
 
+            const effectiveRoomId = (classroom?.type === 'temporary' && existingRow?.classroom_id)
+                ? existingRow.classroom_id
+                : classroomId;
+
             return {
                 student_id: s.student_id,
-                classroom_id: classroomId,
+                classroom_id: effectiveRoomId,
                 lesson_id: lessonId,
                 status: status,
                 unlocked_by: 'manual',
@@ -4500,16 +4519,32 @@ export default function ClassroomDashboardPage({
             if (error) throw error;
 
             if (classroom?.type === 'temporary') {
-                const { error: tempErr } = await supabaseAuth
+                let { error: tempErr } = await supabaseAuth
                     .from('temporary_classes')
                     .update({
                         title: metadataForm.name.trim(),
                         class_date: (metadataForm as any).class_date,
                         start_time: (metadataForm as any).start_time,
                         end_time: (metadataForm as any).end_time,
+                        purpose: (metadataForm as any).purpose || 'makeup',
+                        credit_treatment: (metadataForm as any).credit_treatment || 'makeup',
+                        lifecycle_status: (metadataForm as any).lifecycle_status || 'scheduled',
                     })
                     .eq('classroom_id', classroomId);
                 
+                if (tempErr && (tempErr.code === '42703' || tempErr.message?.includes('does not exist') || tempErr.code === 'PGRST204')) {
+                    const retryResult = await supabaseAuth
+                        .from('temporary_classes')
+                        .update({
+                            title: metadataForm.name.trim(),
+                            class_date: (metadataForm as any).class_date,
+                            start_time: (metadataForm as any).start_time,
+                            end_time: (metadataForm as any).end_time,
+                        })
+                        .eq('classroom_id', classroomId);
+                    tempErr = retryResult.error;
+                }
+
                 if (tempErr) throw tempErr;
             }
 
@@ -4521,6 +4556,9 @@ export default function ClassroomDashboardPage({
                 class_date: classroom?.type === 'temporary' ? (metadataForm as any).class_date : prev.class_date,
                 start_time: classroom?.type === 'temporary' ? (metadataForm as any).start_time : prev.start_time,
                 end_time: classroom?.type === 'temporary' ? (metadataForm as any).end_time : prev.end_time,
+                purpose: classroom?.type === 'temporary' ? (metadataForm as any).purpose : prev.purpose,
+                credit_treatment: classroom?.type === 'temporary' ? (metadataForm as any).credit_treatment : prev.credit_treatment,
+                lifecycle_status: classroom?.type === 'temporary' ? (metadataForm as any).lifecycle_status : prev.lifecycle_status,
             } : prev);
 
             setMetadataSaved(true);
@@ -5070,6 +5108,11 @@ export default function ClassroomDashboardPage({
                             </Link>
                             <h2 className="text-xl font-bold text-[#ecb613] dark:text-[#ecb613]">{classroom?.name || 'Classroom'}</h2>
                             <span className="px-2 py-1 bg-[#ecb613]/10 text-[#ecb613] dark:bg-[#ecb613]/20 dark:text-[#ecb613] text-[10px] font-bold rounded uppercase tracking-wider select-none">{classroom?.status || 'Active'}</span>
+                            {classroom?.type === 'temporary' && (
+                                <span className="px-2 py-1 bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 text-[10px] font-bold rounded uppercase tracking-wider select-none">
+                                    Special Session {classroom.purpose ? `• ${classroom.purpose.replace('_', ' ')}` : ''}
+                                </span>
+                            )}
                             {classroom?.type === 'temporary' && classroom.class_date && (
                                 <span className="hidden sm:flex px-2.5 py-1 bg-amber-50 dark:bg-amber-955/20 text-amber-600 dark:text-amber-400 text-xs font-bold rounded items-center gap-1.5 border border-amber-200/50 dark:border-amber-900/30">
                                     <Calendar className="w-3.5 h-3.5" />
@@ -5365,6 +5408,8 @@ export default function ClassroomDashboardPage({
                             messages={classroomMessages}
                             participants={classroomChatParticipants}
                             sending={isSendingClassroomMessage}
+                            readOnly={classroom?.status === 'archived' || classroom?.lifecycle_status === 'completed' || classroom?.lifecycle_status === 'cancelled'}
+                            readOnlyMessage="This session is concluded. Chat history is preserved as read-only."
                             onSendMessage={handleSendClassroomChatMessage}
                         />
                     )}

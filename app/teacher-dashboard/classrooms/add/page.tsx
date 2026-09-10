@@ -26,12 +26,15 @@ export default function CreateClassPage() {
     const [students, setStudents] = useState<Student[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+    const [studentMissedDates, setStudentMissedDates] = useState<Record<string, string>>({});
 
     const [formData, setFormData] = useState({
         name: '',
         description: '',
         deliveryFormat: 'offline',
-        type: 'permanent',
+        type: 'permanent' as 'permanent' | 'temporary',
+        purpose: 'makeup' as 'makeup' | 'extra_class' | 'revision' | 'practice' | 'other',
+        creditTreatment: 'makeup' as 'complimentary' | 'makeup' | 'consume_credit',
         selectedDays: [] as number[], // 0=Sun, 1=Mon, ..., 6=Sat
         classDate: new Date().toISOString().split('T')[0],
         startTime: '10:00',
@@ -337,7 +340,7 @@ export default function CreateClassPage() {
                 }
             } else {
                 const formatTag = `[delivery_format:${formData.deliveryFormat}]`;
-                const finalDescription = `${(formData.description || 'Temporary class session').trim()} ${formatTag}`;
+                const finalDescription = `${(formData.description || 'Special session').trim()} ${formatTag}`;
 
                 // 1. Create shadow Classroom first
                 const { data: classroom, error: classroomError } = await supabaseAuth
@@ -353,33 +356,81 @@ export default function CreateClassPage() {
 
                 if (classroomError) throw classroomError;
 
-                // 2. Create Temporary Class
-                const { data: tempClass, error: tempError } = await supabaseAuth
+                // 2. Create Special Session in temporary_classes
+                const tempPayload = {
+                    teacher_id: formData.teacherId,
+                    classroom_id: classroom.id,
+                    title: formData.name,
+                    class_date: formData.classDate,
+                    start_time: formData.startTime,
+                    end_time: formData.endTime,
+                    purpose: formData.purpose,
+                    lifecycle_status: 'scheduled',
+                    credit_treatment: formData.creditTreatment
+                };
+
+                let { data: tempClass, error: tempError } = await supabaseAuth
                     .from('temporary_classes')
-                    .insert([{
+                    .insert([tempPayload])
+                    .select()
+                    .single();
+                
+                // Graceful fallback if purpose/lifecycle_status/credit_treatment columns do not exist yet on the DB
+                if (tempError && (tempError.code === '42703' || tempError.message?.includes('does not exist') || tempError.code === 'PGRST204')) {
+                    const fallbackTempPayload = {
                         teacher_id: formData.teacherId,
                         classroom_id: classroom.id,
                         title: formData.name,
                         class_date: formData.classDate,
                         start_time: formData.startTime,
                         end_time: formData.endTime
-                    }])
-                    .select()
-                    .single();
+                    };
+                    const retryResult = await supabaseAuth
+                        .from('temporary_classes')
+                        .insert([fallbackTempPayload])
+                        .select()
+                        .single();
+                    tempClass = retryResult.data;
+                    tempError = retryResult.error;
+                }
                 
                 if (tempError) throw tempError;
 
-                // 2. Assign Students to Temporary Class
+                // 3. Assign Students to Special Session in session_student_overrides
                 if (selectedStudents.length > 0) {
-                    const studentInserts = selectedStudents.map(studentId => ({
-                        student_id: studentId,
-                        target_classroom_id: classroom.id,
-                        override_date: formData.classDate,
-                        reason: 'Temporary Class Session'
-                    }));
-                    const { error: tempAssignmentError } = await supabaseAuth
+                    const studentInserts = selectedStudents.map(studentId => {
+                        const missedDate = studentMissedDates[studentId] || null;
+                        const reason = formData.purpose === 'makeup' && missedDate
+                            ? `Special Session (Makeup for ${missedDate}) [MissedDate:${missedDate}][credit_treatment:${formData.creditTreatment}][purpose:${formData.purpose}]`
+                            : `Special Session (${formData.purpose.replace('_', ' ')}) [credit_treatment:${formData.creditTreatment}][purpose:${formData.purpose}]`;
+                        return {
+                            student_id: studentId,
+                            target_classroom_id: classroom.id,
+                            override_date: formData.classDate,
+                            credit_treatment: formData.creditTreatment,
+                            missed_session_date: missedDate,
+                            reason
+                        };
+                    });
+
+                    let { error: tempAssignmentError } = await supabaseAuth
                         .from('session_student_overrides')
                         .insert(studentInserts);
+
+                    // Graceful fallback if credit_treatment / missed_session_date columns do not exist yet on DB
+                    if (tempAssignmentError && (tempAssignmentError.code === '42703' || tempAssignmentError.message?.includes('does not exist') || tempAssignmentError.code === 'PGRST204')) {
+                        const fallbackStudentInserts = studentInserts.map(row => ({
+                            student_id: row.student_id,
+                            target_classroom_id: row.target_classroom_id,
+                            override_date: row.override_date,
+                            reason: row.reason
+                        }));
+                        const retryAssignResult = await supabaseAuth
+                            .from('session_student_overrides')
+                            .insert(fallbackStudentInserts);
+                        tempAssignmentError = retryAssignResult.error;
+                    }
+
                     if (tempAssignmentError) throw tempAssignmentError;
                 }
             }
@@ -402,12 +453,13 @@ export default function CreateClassPage() {
 
                 if (recipientIds.length > 0) {
                     const teacherName = teachers.find(t => t.id === formData.teacherId)?.name || 'Teacher';
+                    const purposeLabel = formData.purpose ? formData.purpose.replace('_', ' ') : 'special session';
                     const title = formData.type === 'permanent' 
                         ? `New Class Created: ${formData.name}`
-                        : `New Temporary Session: ${formData.name}`;
+                        : `New Special Session: ${formData.name}`;
                     const message = formData.type === 'permanent'
                         ? `A new permanent class "${formData.name}" has been created with teacher ${teacherName}.`
-                        : `A new temporary class session "${formData.name}" has been scheduled for ${formData.classDate} from ${formatTime12hr(formData.startTime)} to ${formatTime12hr(formData.endTime)}.`;
+                        : `A new special session "${formData.name}" (${purposeLabel}) has been scheduled for ${formData.classDate} from ${formatTime12hr(formData.startTime)} to ${formatTime12hr(formData.endTime)}.`;
 
                     await sendClassroomNotification({
                         teacherId: formData.teacherId,
@@ -421,18 +473,13 @@ export default function CreateClassPage() {
                 console.error('Error sending creation notifications:', notifyErr);
             }
 
-            alert(`${formData.type === 'permanent' ? 'Permanent Class' : 'Temporary Session'} created successfully!`);
+            alert(`${formData.type === 'permanent' ? 'Permanent Class' : 'Special Session'} created successfully!`);
             router.push('/teacher-dashboard/classrooms');
 
         } catch (err: any) {
-            console.error('Error creating class details:', err);
-            let errorMessage = '';
-            if (err && typeof err === 'object') {
-                errorMessage = err.message || err.details || err.hint || JSON.stringify(err);
-            } else {
-                errorMessage = String(err);
-            }
-            alert(`Failed to create class: ${errorMessage}`);
+            const errStr = err?.message || err?.details || err?.hint || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+            console.error('Error creating class details:', errStr, err);
+            alert(`Failed to create class: ${errStr}`);
         } finally {
             setSubmitting(false);
         }
@@ -539,16 +586,16 @@ export default function CreateClassPage() {
                                                 <button
                                                     type="button"
                                                     onClick={() => setFormData({ ...formData, type: 'permanent' })}
-                                                    className={`flex-1 py-3 px-4 border rounded-xl font-medium text-sm transition-all ${formData.type === 'permanent' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}
+                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer ${formData.type === 'permanent' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                                                 >
-                                                    Permanent
+                                                    Permanent Class
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => setFormData({ ...formData, type: 'temporary' })}
-                                                    className={`flex-1 py-3 px-4 border rounded-xl font-medium text-sm transition-all ${formData.type === 'temporary' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500'}`}
+                                                    className={`flex-1 py-3 px-4 border rounded-xl font-bold text-sm transition-all cursor-pointer ${formData.type === 'temporary' ? 'border-[#ecb613] bg-[#ecb613]/10 text-[#ecb613]' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                                                 >
-                                                    Temporary
+                                                    Special Session
                                                 </button>
                                             </div>
                                         </div>
@@ -570,7 +617,7 @@ export default function CreateClassPage() {
                                             </div>
                                         ) : (
                                             <div>
-                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Class Date</label>
+                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Session Date</label>
                                                 <input
                                                     value={formData.classDate}
                                                     onChange={(e) => setFormData({ ...formData, classDate: e.target.value })}
@@ -580,6 +627,47 @@ export default function CreateClassPage() {
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* Special Session Options */}
+                                    {formData.type === 'temporary' && (
+                                        <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-4">
+                                            <div className="flex items-center gap-2 text-xs font-black uppercase text-amber-700 dark:text-amber-400 tracking-wider">
+                                                <span>⚡ Special Session Configuration</span>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
+                                                        Session Purpose
+                                                    </label>
+                                                    <select
+                                                        value={formData.purpose}
+                                                        onChange={(e) => setFormData({ ...formData, purpose: e.target.value as any })}
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
+                                                    >
+                                                        <option value="makeup">Makeup Class (Excused Absence)</option>
+                                                        <option value="extra_class">Extra Class (Bonus)</option>
+                                                        <option value="revision">Revision Session</option>
+                                                        <option value="practice">Supervised Practice</option>
+                                                        <option value="other">Other / Workshop</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wide">
+                                                        Credit / Fee Treatment
+                                                    </label>
+                                                    <select
+                                                        value={formData.creditTreatment}
+                                                        onChange={(e) => setFormData({ ...formData, creditTreatment: e.target.value as any })}
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-[#ecb613]/50 focus:border-[#ecb613] outline-none transition-all text-sm font-medium"
+                                                    >
+                                                        <option value="makeup">Makeup (Reconciles 1 Missed Class)</option>
+                                                        <option value="complimentary">Complimentary (No Credit Consumed)</option>
+                                                        <option value="consume_credit">Consume Regular Monthly Credit</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Delivery Format */}
                                     <div>
@@ -683,22 +771,41 @@ export default function CreateClassPage() {
                                             <div
                                                 key={student.id}
                                                 onClick={() => toggleStudent(student.id)}
-                                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all group ${isSelected ? 'border-[#ecb613] bg-[#ecb613]/5' : 'border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                className={`flex flex-col gap-2 p-3 rounded-xl border cursor-pointer transition-all group ${isSelected ? 'border-[#ecb613] bg-[#ecb613]/5' : 'border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                                             >
-                                                <div className={`size-4 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-[#ecb613] border-[#ecb613]' : 'border-slate-300 dark:border-slate-600'}`}>
-                                                    {isSelected && <CheckCircle2 className="size-3 text-white" />}
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`size-4 rounded border flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-[#ecb613] border-[#ecb613]' : 'border-slate-300 dark:border-slate-600'}`}>
+                                                        {isSelected && <CheckCircle2 className="size-3 text-white" />}
+                                                    </div>
+                                                    {student.profile_pic_url ? (
+                                                        <img src={student.profile_pic_url} alt={student.name} className="size-8 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" />
+                                                    ) : (
+                                                        <div className="size-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-500 shrink-0">
+                                                            {student.name.charAt(0)}
+                                                        </div>
+                                                    )}
+                                                    <div className="flex flex-col min-w-0 flex-1">
+                                                        <span className="text-xs font-bold truncate">{student.name}</span>
+                                                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">{student.level}</span>
+                                                    </div>
                                                 </div>
-                                                {student.profile_pic_url ? (
-                                                    <img src={student.profile_pic_url} alt={student.name} className="size-8 rounded-full object-cover border border-slate-200 dark:border-slate-700" />
-                                                ) : (
-                                                    <div className="size-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                                                        {student.name.charAt(0)}
+
+                                                {isSelected && formData.type === 'temporary' && formData.purpose === 'makeup' && (
+                                                    <div className="mt-1 pt-2 border-t border-amber-500/20" onClick={(e) => e.stopPropagation()}>
+                                                        <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 mb-1 uppercase tracking-wider">
+                                                            Missed Class Date:
+                                                        </label>
+                                                        <input
+                                                            type="date"
+                                                            value={studentMissedDates[student.id] || ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setStudentMissedDates(prev => ({ ...prev, [student.id]: val }));
+                                                            }}
+                                                            className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-1 focus:ring-[#ecb613] outline-none text-slate-800 dark:text-slate-100 font-medium"
+                                                        />
                                                     </div>
                                                 )}
-                                                <div className="flex flex-col min-w-0">
-                                                    <span className="text-xs font-bold truncate">{student.name}</span>
-                                                    <span className="text-[10px] text-slate-500 uppercase tracking-wider">{student.level}</span>
-                                                </div>
                                             </div>
                                         );
                                     })}

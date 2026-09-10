@@ -124,6 +124,11 @@ export default function TempClassManagePage() {
                     return;
                 }
 
+                if (roomData.classroom_id) {
+                    router.replace(`/teacher-dashboard/classrooms/${roomData.classroom_id}`);
+                    return;
+                }
+
                 let teacherName = '';
                 if (roomData?.teacher_id) {
                     const { data: tProfile, error: tErr } = await supabaseAuth

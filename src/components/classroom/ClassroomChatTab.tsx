@@ -26,6 +26,8 @@ interface ClassroomChatTabProps {
     messages: ClassroomChatMessage[];
     participants?: Array<{ id: string; name: string; role?: string | null; profile_pic_url?: string | null }>;
     sending?: boolean;
+    readOnly?: boolean;
+    readOnlyMessage?: string;
     onSendMessage: (messageText: string) => Promise<void>;
 }
 
@@ -35,6 +37,8 @@ export default function ClassroomChatTab({
     messages,
     participants = [],
     sending = false,
+    readOnly = false,
+    readOnlyMessage,
     onSendMessage
 }: ClassroomChatTabProps) {
     const [draft, setDraft] = useState('');
@@ -449,43 +453,52 @@ export default function ClassroomChatTab({
                     <div ref={chatEndRef} />
                 </div>
 
-                {/* Chat Bottom Editor Input (WhatsApp pill shape) */}
-                <form onSubmit={submitMessage} className="px-3 py-2.5 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-center gap-2 select-none z-10 border-t border-slate-200/30 dark:border-slate-800/40">
-                    <div className="flex-1 flex items-center gap-2.5 bg-white dark:bg-[#2a3942] rounded-full px-4 py-1.5 shadow-3xs border border-transparent focus-within:border-slate-250 dark:focus-within:border-slate-700">
-                        <button type="button" className="text-[#64748b] dark:text-[#8696a0] hover:text-slate-700 dark:hover:text-[#d1d7db] cursor-pointer shrink-0">
-                            <Smile className="w-5 h-5" />
-                        </button>
-                        
-                        <textarea
-                            value={draft}
-                            onChange={(event) => setDraft(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter' && !event.shiftKey) {
-                                    event.preventDefault();
-                                    submitMessage();
-                                }
-                            }}
-                            placeholder={classroom ? "Type a message" : "Select a classroom to chat..."}
-                            disabled={!classroom || !currentUser}
-                            rows={1}
-                            className="flex-1 bg-transparent border-none outline-none text-xs sm:text-sm text-slate-800 dark:text-[#e9edef] transition-all resize-none max-h-20 min-h-[22px] py-1 custom-scrollbar disabled:opacity-60 placeholder:text-slate-450 dark:placeholder:text-[#8696a0]"
-                        />
-
-                        <button type="button" className="text-[#64748b] dark:text-[#8696a0] hover:text-slate-700 dark:hover:text-[#d1d7db] cursor-pointer shrink-0 hidden xs:block">
-                            <Paperclip className="w-4.5 h-4.5" />
-                        </button>
+                {/* Chat Bottom Editor Input or Read-Only Notice */}
+                {readOnly ? (
+                    <div className="px-4 py-3 bg-slate-100 dark:bg-[#1a2730] border-t border-slate-200/50 dark:border-slate-800 text-center select-none flex items-center justify-center gap-2">
+                        <Info className="w-4 h-4 text-amber-500 shrink-0" />
+                        <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                            {readOnlyMessage || 'This session is completed. Chat history is preserved in read-only mode.'}
+                        </p>
                     </div>
+                ) : (
+                    <form onSubmit={submitMessage} className="px-3 py-2.5 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-center gap-2 select-none z-10 border-t border-slate-200/30 dark:border-slate-800/40">
+                        <div className="flex-1 flex items-center gap-2.5 bg-white dark:bg-[#2a3942] rounded-full px-4 py-1.5 shadow-3xs border border-transparent focus-within:border-slate-250 dark:focus-within:border-slate-700">
+                            <button type="button" className="text-[#64748b] dark:text-[#8696a0] hover:text-slate-700 dark:hover:text-[#d1d7db] cursor-pointer shrink-0">
+                                <Smile className="w-5 h-5" />
+                            </button>
+                            
+                            <textarea
+                                value={draft}
+                                onChange={(event) => setDraft(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter' && !event.shiftKey) {
+                                        event.preventDefault();
+                                        submitMessage();
+                                    }
+                                }}
+                                placeholder={classroom ? "Type a message" : "Select a classroom to chat..."}
+                                disabled={!classroom || !currentUser}
+                                rows={1}
+                                className="flex-1 bg-transparent border-none outline-none text-xs sm:text-sm text-slate-800 dark:text-[#e9edef] transition-all resize-none max-h-20 min-h-[22px] py-1 custom-scrollbar disabled:opacity-60 placeholder:text-slate-450 dark:placeholder:text-[#8696a0]"
+                            />
 
-                    {/* Send Button */}
-                    <button
-                        type="submit"
-                        disabled={sending || !draft.trim() || !classroom || !currentUser}
-                        className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#008f72] text-white flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed shrink-0 cursor-pointer"
-                        aria-label="Send classroom message"
-                    >
-                        {sending ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
-                    </button>
-                </form>
+                            <button type="button" className="text-[#64748b] dark:text-[#8696a0] hover:text-slate-700 dark:hover:text-[#d1d7db] cursor-pointer shrink-0 hidden xs:block">
+                                <Paperclip className="w-4.5 h-4.5" />
+                            </button>
+                        </div>
+
+                        {/* Send Button */}
+                        <button
+                            type="submit"
+                            disabled={sending || !draft.trim() || !classroom || !currentUser}
+                            className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#008f72] text-white flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed shrink-0 cursor-pointer"
+                            aria-label="Send classroom message"
+                        >
+                            {sending ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
+                        </button>
+                    </form>
+                )}
             </section>
 
             {/* Right Pane Group Info (Desktop View, shown when showGroupInfo is true) */}
