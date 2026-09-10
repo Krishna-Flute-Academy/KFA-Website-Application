@@ -33,6 +33,7 @@ import {
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
 import { ArrangeMakeupModal } from '../../../src/components/makeup/ArrangeMakeupModal';
+import { StudentAttendanceModal } from '../../../src/components/teacher-dashboard/attendance/StudentAttendanceModal';
 
 interface Classroom {
     id: string;
@@ -112,7 +113,6 @@ export default function AttendancePage() {
         }
         return new Date();
     }); // Calendar month being displayed
-    const [searchQuery, setSearchQuery] = useState('');
     
     // Core Data State
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
@@ -132,10 +132,18 @@ export default function AttendancePage() {
     const [batchLoadingMap, setBatchLoadingMap] = useState<Record<string, boolean>>({});
     const [batchSummaries, setBatchSummaries] = useState<Record<string, { present: number; absent: number; late: number; excused: number; total: number }>>({});
     
-    // Individual Search Report State
-    const [individualStudents, setIndividualStudents] = useState<Student[]>([]);
-    const [individualLoading, setIndividualLoading] = useState(false);
-    const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+    // Quick Student Attendance Modal & Top Search State
+    const [attendanceModalStudent, setAttendanceModalStudent] = useState<{ id: string; name?: string; pic?: string } | null>(null);
+    const openStudentAttendanceModal = useCallback((studentId: string, name?: string, pic?: string) => {
+        setAttendanceModalStudent({ id: studentId, name, pic });
+    }, []);
+    const closeStudentAttendanceModal = useCallback(() => {
+        setAttendanceModalStudent(null);
+    }, []);
+
+    const [quickStudentSearch, setQuickStudentSearch] = useState('');
+    const [quickSearchResults, setQuickSearchResults] = useState<Student[]>([]);
+    const [quickSearchLoading, setQuickSearchLoading] = useState(false);
 
     // Individual Range Report — Date-based student list
     const [dateStudentSearchQuery, setDateStudentSearchQuery] = useState('');
@@ -1009,39 +1017,40 @@ export default function AttendancePage() {
         }
     };
 
-    // ── Individual Search Mode logic ───────────────────────────────────────────
+    // ── Quick Student Search (Top Search Bar) logic ───────────────────────────
     useEffect(() => {
         const searchStudents = async () => {
-            if (!teacherProfile || mode !== 'individual') return;
-            if (searchQuery.trim().length < 2) {
-                setIndividualStudents([]);
+            if (!teacherProfile) return;
+            if (quickStudentSearch.trim().length < 2) {
+                setQuickSearchResults([]);
                 return;
             }
 
-            setIndividualLoading(true);
+            setQuickSearchLoading(true);
             try {
                 const studentsQuery = supabaseAuth
                     .from('users')
                     .select('id, name, profile_pic_url')
                     .or('role.eq.student,role.eq.pending,role.eq.mentor')
                     .eq('status', 'active')
-                    .ilike('name', `%${searchQuery}%`);
+                    .ilike('name', `%${quickStudentSearch.trim()}%`)
+                    .limit(10);
                 
                 const { data } = teacherProfile.role === 'admin'
                     ? await studentsQuery
                     : await studentsQuery.eq('teacher_id', teacherProfile.id);
                 
-                setIndividualStudents(data || []);
+                setQuickSearchResults(data || []);
             } catch (err) {
                 console.error('Error searching students:', err);
             } finally {
-                setIndividualLoading(false);
+                setQuickSearchLoading(false);
             }
         };
 
-        const timer = setTimeout(searchStudents, 300);
+        const timer = setTimeout(searchStudents, 250);
         return () => clearTimeout(timer);
-    }, [searchQuery, mode, teacherProfile]);
+    }, [quickStudentSearch, teacherProfile]);
 
     // ── Fetch students allocated for the selected date (Individual Range mode) ──
     const fetchDateStudents = useCallback(async () => {
@@ -1227,76 +1236,6 @@ export default function AttendancePage() {
             });
         }
     };
-
-    const fetchIndividualLogs = useCallback(async () => {
-        if (!selectedStudent) return;
-        setLogsLoading(true);
-        try {
-            const { data, error } = await supabaseAuth
-                .from('attendance')
-                .select(`
-                    id,
-                    date,
-                    status,
-                    classroom_id
-                `)
-                .eq('student_id', selectedStudent.id)
-                .gte('date', fromDate)
-                .lte('date', toDate)
-                .order('date', { ascending: false });
-
-            if (error) throw error;
-
-            // Resolve classroom names
-            const resolvedLogs = await Promise.all((data || []).map(async (row: any) => {
-                // Try finding classroom name in our permanent state
-                let name = classrooms.find(c => c.id === row.classroom_id)?.name;
-                let isTemp = false;
-
-                if (!name) {
-                    // Try temporary classes state
-                    const temp = temporaryClasses.find(tc => tc.id === row.classroom_id);
-                    if (temp) {
-                        name = temp.title;
-                        isTemp = true;
-                    }
-                }
-
-                // If not found in loaded states, run a small direct query
-                if (!name) {
-                    const { data: cl } = await supabaseAuth.from('classrooms').select('name').eq('id', row.classroom_id).maybeSingle();
-                    if (cl) {
-                        name = cl.name;
-                    } else {
-                        const { data: tc } = await supabaseAuth.from('temporary_classes').select('title').eq('id', row.classroom_id).maybeSingle();
-                        name = tc?.title || 'Unknown Classroom';
-                        isTemp = !!tc;
-                    }
-                }
-
-                return {
-                    id: row.id,
-                    date: row.date,
-                    status: row.status,
-                    classroom_id: row.classroom_id,
-                    classroom_name: name,
-                    is_temporary: isTemp
-                };
-            }));
-
-            setAttendanceLogs(resolvedLogs);
-        } catch (err) {
-            console.error('Error loading individual logs:', err);
-        } finally {
-            setLogsLoading(false);
-        }
-    }, [selectedStudent, fromDate, toDate, classrooms, temporaryClasses]);
-
-    useEffect(() => {
-        if (selectedStudent) {
-            fetchIndividualLogs();
-        }
-    }, [selectedStudent, fromDate, toDate, fetchIndividualLogs]);
 
     const fetchMissedReport = useCallback(async () => {
         if (!teacherProfile) return;
@@ -2077,9 +2016,9 @@ export default function AttendancePage() {
                         </div>
                     </div>
 
-                    {/* Mode Selector */}
-                    <div className="flex items-center justify-between w-full">
-                        <div className="bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap sm:flex-nowrap gap-1 shadow-sm w-full sm:w-auto">
+                    {/* Mode Selector and Quick Student Attendance Search */}
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 w-full">
+                        <div className="bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-wrap sm:flex-nowrap gap-1 shadow-sm w-full lg:w-auto">
                             <button 
                                 onClick={() => setMode('class')}
                                 className={`px-2 py-2 sm:px-6 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex-1 sm:flex-initial text-center ${mode === 'class' ? 'bg-[#ecb613] text-slate-900 shadow-lg shadow-[#ecb613]/10' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}
@@ -2112,6 +2051,67 @@ export default function AttendancePage() {
                                     </span>
                                 )}
                             </button>
+                        </div>
+
+                        {/* Compact Quick Student Attendance Search Bar */}
+                        <div className="relative w-full lg:w-80">
+                            <div className="relative">
+                                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                                <input 
+                                    type="text"
+                                    value={quickStudentSearch}
+                                    onChange={(e) => setQuickStudentSearch(e.target.value)}
+                                    placeholder="Search student attendance..."
+                                    className="w-full pl-10 pr-9 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-[#ecb613]/50 outline-none shadow-xs transition-all"
+                                />
+                                {quickSearchLoading ? (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#ecb613]" />
+                                    </div>
+                                ) : quickStudentSearch ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setQuickStudentSearch('');
+                                            setQuickSearchResults([]);
+                                        }}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                ) : null}
+                            </div>
+
+                            {/* Dropdown Suggestions */}
+                            {quickSearchResults.length > 0 && (
+                                <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl overflow-hidden max-h-[260px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                                    {quickSearchResults.map(student => (
+                                        <div 
+                                            key={student.id} 
+                                            onClick={() => {
+                                                openStudentAttendanceModal(student.id, student.name, student.profile_pic_url || undefined);
+                                                setQuickStudentSearch('');
+                                                setQuickSearchResults([]);
+                                            }}
+                                            className="px-3.5 py-2.5 hover:bg-[#ecb613]/10 dark:hover:bg-[#ecb613]/20 flex items-center justify-between cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                                                    {student.profile_pic_url ? (
+                                                        <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <span className="text-[#ecb613] font-black text-xs">{student.name.charAt(0)}</span>
+                                                    )}
+                                                </div>
+                                                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">{student.name}</span>
+                                            </div>
+                                            <span className="text-[10px] font-bold text-[#ecb613] uppercase tracking-wider flex items-center gap-0.5 shrink-0">
+                                                View <ArrowRight className="w-3 h-3" />
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -2373,16 +2373,15 @@ export default function AttendancePage() {
                                                                     return (
                                                                         <div 
                                                                             key={student.id} 
-                                                                            onDoubleClick={() => {
-                                                                                if (status) {
-                                                                                    handleUnmarkBatchAttendance(batch.id, student.id);
-                                                                                }
-                                                                            }}
-                                                                            title={status ? "Double-click marked section to unmark attendance" : undefined}
-                                                                            className="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shadow-xs select-none"
+                                                                            onDoubleClick={() => openStudentAttendanceModal(student.id, student.name, student.profile_pic_url || undefined)}
+                                                                            title="Double-click student to view attendance history"
+                                                                            className="bg-white dark:bg-slate-900 p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-amber-300/60 dark:hover:border-amber-700/60 flex items-center justify-between gap-2 shadow-xs select-none transition-colors"
                                                                         >
-                                                                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                                                                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                                                                            <div 
+                                                                                onClick={() => openStudentAttendanceModal(student.id, student.name, student.profile_pic_url || undefined)}
+                                                                                className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer group/student"
+                                                                            >
+                                                                                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0 group-hover/student:border-[#ecb613] transition-colors">
                                                                                     {student.profile_pic_url ? (
                                                                                         <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
                                                                                     ) : (
@@ -2391,7 +2390,7 @@ export default function AttendancePage() {
                                                                                 </div>
                                                                                 <div className="min-w-0 flex-1">
                                                                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                                                                        <h6 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-full leading-tight">{student.name}</h6>
+                                                                                        <h6 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-full leading-tight group-hover/student:text-[#ecb613] transition-colors">{student.name}</h6>
                                                                                         {student.isMakeup && (
                                                                                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
                                                                                                 GUEST • MAKEUP
@@ -2406,7 +2405,21 @@ export default function AttendancePage() {
                                                                                 </div>
                                                                             </div>
 
-                                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                                                                                {/* Accessible View Attendance Button */}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        openStudentAttendanceModal(student.id, student.name, student.profile_pic_url || undefined);
+                                                                                    }}
+                                                                                    title="View Attendance Details"
+                                                                                    className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                                                                >
+                                                                                    <BookOpen className="w-3.5 h-3.5 text-[#ecb613]" />
+                                                                                    <span className="hidden md:inline">History</span>
+                                                                                </button>
+
                                                                                 {([
                                                                                     { key: 'present', label: 'Present', shortLabel: 'P', activeClass: 'bg-emerald-500 text-white shadow-sm border-emerald-500', inactiveClass: 'border-emerald-200/80 text-emerald-600 dark:border-emerald-900/40' },
                                                                                     { key: 'absent', label: 'Absent', shortLabel: 'A', activeClass: 'bg-rose-500 text-white shadow-sm border-rose-500', inactiveClass: 'border-rose-200/80 text-rose-600 dark:border-rose-900/40' },
@@ -2561,16 +2574,15 @@ export default function AttendancePage() {
                                                                     return (
                                                                         <div
                                                                             key={attKey}
-                                                                            onDoubleClick={() => {
-                                                                                if (status) {
-                                                                                    handleUnmarkDateAttendance(entry.student.id, entry.classroom_id);
-                                                                                }
-                                                                            }}
-                                                                            title={status ? "Double-click marked section to unmark attendance" : undefined}
+                                                                            onDoubleClick={() => openStudentAttendanceModal(entry.student.id, entry.student.name, entry.student.profile_pic_url || undefined)}
+                                                                            title="Double-click student to view attendance history"
                                                                             className="px-3 py-2.5 sm:px-5 sm:py-3.5 flex items-center justify-between gap-2 hover:bg-slate-50/60 dark:hover:bg-slate-800/20 transition-colors select-none"
                                                                         >
-                                                                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                                                                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0">
+                                                                            <div 
+                                                                                onClick={() => openStudentAttendanceModal(entry.student.id, entry.student.name, entry.student.profile_pic_url || undefined)}
+                                                                                className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer group/student"
+                                                                            >
+                                                                                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shrink-0 group-hover/student:border-[#ecb613] transition-colors">
                                                                                     {entry.student.profile_pic_url ? (
                                                                                         <img src={entry.student.profile_pic_url} alt={entry.student.name} className="w-full h-full object-cover" />
                                                                                     ) : (
@@ -2578,14 +2590,28 @@ export default function AttendancePage() {
                                                                                     )}
                                                                                 </div>
                                                                                 <div className="min-w-0 flex-1">
-                                                                                    <h6 className="font-extrabold text-slate-900 dark:text-white text-xs sm:text-sm leading-tight truncate">{entry.student.name}</h6>
+                                                                                    <h6 className="font-extrabold text-slate-900 dark:text-white text-xs sm:text-sm leading-tight truncate group-hover/student:text-[#ecb613] transition-colors">{entry.student.name}</h6>
                                                                                     {entry.isMakeup && (
                                                                                         <span className="text-[8px] sm:text-[9px] font-black text-blue-500 uppercase tracking-wider block truncate">Makeup Session</span>
                                                                                     )}
                                                                                 </div>
                                                                             </div>
-                                                                            {/* Attendance buttons */}
-                                                                            <div className="flex items-center gap-1 shrink-0">
+
+                                                                            {/* Accessible View Attendance Button & Attendance buttons */}
+                                                                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        openStudentAttendanceModal(entry.student.id, entry.student.name, entry.student.profile_pic_url || undefined);
+                                                                                    }}
+                                                                                    title="View Attendance Details"
+                                                                                    className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                                                                >
+                                                                                    <BookOpen className="w-3.5 h-3.5 text-[#ecb613]" />
+                                                                                    <span className="hidden md:inline">History</span>
+                                                                                </button>
+
                                                                                 {([
                                                                                     { key: 'present' as const, label: 'Present', shortLabel: 'P', activeClass: 'bg-emerald-500 text-white shadow-sm border-emerald-500', inactiveClass: 'border-emerald-200/80 text-emerald-600 dark:border-emerald-900/40' },
                                                                                     { key: 'absent' as const, label: 'Absent', shortLabel: 'A', activeClass: 'bg-rose-500 text-white shadow-sm border-rose-500', inactiveClass: 'border-rose-200/80 text-rose-600 dark:border-rose-900/40' },
@@ -2625,281 +2651,6 @@ export default function AttendancePage() {
                                             );
                                         })()}
                                     </div>
-
-                                    {/* ── Section B: Individual Student History Search ── */}
-                                    <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
-                                        <div className="flex items-center gap-2 mb-0.5">
-                                            <BookOpen className="w-4 h-4 text-[#ecb613]" />
-                                            <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight text-sm">Individual History Lookup</h4>
-                                        </div>
-                                        <div className="relative">
-                                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                                            <input 
-                                                className="w-full pl-11 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-none rounded-xl focus:ring-2 focus:ring-[#ecb613]/50 text-xs font-semibold outline-none transition-all placeholder:text-slate-400" 
-                                                placeholder="Search student by name to get individual logs..."
-                                                type="text"
-                                                value={searchQuery}
-                                                onChange={(e) => setSearchQuery(e.target.value)}
-                                            />
-                                        </div>
-
-                                        {/* Dropdown Suggestions */}
-                                        {individualStudents.length > 0 && (
-                                            <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm max-h-[160px] overflow-y-auto">
-                                                {individualStudents.map(student => (
-                                                    <div 
-                                                        key={student.id} 
-                                                        onClick={() => {
-                                                            setSelectedStudent(student);
-                                                            setIndividualStudents([]);
-                                                            setSearchQuery('');
-                                                        }}
-                                                        className="px-4 py-2.5 hover:bg-[#ecb613]/10 dark:hover:bg-[#ecb613]/20 flex items-center justify-between cursor-pointer border-b border-slate-100/55 dark:border-slate-700 transition-colors"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-slate-100">
-                                                                {student.profile_pic_url ? (
-                                                                    <img src={student.profile_pic_url} alt={student.name} className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    <span className="text-[#ecb613] font-black text-xs">{student.name.charAt(0)}</span>
-                                                                )}
-                                                            </div>
-                                                            <span className="text-xs font-extrabold text-slate-900 dark:text-white">{student.name}</span>
-                                                        </div>
-                                                        <ChevronRight className="w-4 h-4 text-slate-400" />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Report Display Panel (student history) */}
-                                    {selectedStudent && (
-                                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                                            {/* Profile Header & Custom Date Inputs */}
-                                            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 border-2 border-slate-50 dark:border-slate-750 shadow-inner flex items-center justify-center overflow-hidden">
-                                                        {selectedStudent.profile_pic_url ? (
-                                                            <img src={selectedStudent.profile_pic_url} alt={selectedStudent.name} className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <span className="text-[#ecb613] text-xl font-black">{selectedStudent.name.charAt(0)}</span>
-                                                        )}
-                                                    </div>
-                                                    <div>
-                                                        <h5 className="font-extrabold text-slate-900 dark:text-white text-base tracking-tight">{selectedStudent.name}</h5>
-                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Individual Performance Log</p>
-                                                    </div>
-                                                </div>
-
-                                                {/* Date Range Inputs */}
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <div className="flex flex-col gap-1">
-                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider pl-1">From</label>
-                                                        <input 
-                                                            type="date" 
-                                                            value={fromDate}
-                                                            onChange={(e) => setFromDate(e.target.value)}
-                                                            className="bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/50 outline-none px-3 py-1.5 shadow-xs"
-                                                        />
-                                                    </div>
-                                                    <div className="flex flex-col gap-1">
-                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider pl-1">To</label>
-                                                        <input 
-                                                            type="date" 
-                                                            value={toDate}
-                                                            onChange={(e) => setToDate(e.target.value)}
-                                                            className="bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/50 outline-none px-3 py-1.5 shadow-xs"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Report Statistics Summary & Status Filters */}
-                                            {(() => {
-                                                const totalLogs = attendanceLogs.length;
-                                                const presentLogs = attendanceLogs.filter(l => l.status === 'present').length;
-                                                const lateLogs = attendanceLogs.filter(l => l.status === 'late').length;
-                                                const absentLogs = attendanceLogs.filter(l => l.status === 'absent').length;
-                                                const excusedLogs = attendanceLogs.filter(l => l.status === 'excused').length;
-                                                const rateValue = totalLogs > 0 ? Math.round(((presentLogs + lateLogs) / totalLogs) * 100) : 0;
-                                                const filteredIndividualLogs = attendanceLogs.filter(l => individualStatusFilter === 'all' || l.status === individualStatusFilter);
-                                                
-                                                return (
-                                                    <div className="space-y-4">
-                                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Logs</p>
-                                                                <h5 className="text-xl font-black mt-1 text-slate-950 dark:text-white">{totalLogs}</h5>
-                                                            </div>
-                                                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-emerald-600">Present Days</p>
-                                                                <h5 className="text-xl font-black mt-1 text-emerald-600">{presentLogs}</h5>
-                                                            </div>
-                                                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-rose-600">Absent Days</p>
-                                                                <h5 className="text-xl font-black mt-1 text-rose-600">{absentLogs}</h5>
-                                                            </div>
-                                                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-amber-500 font-sans">Attendance Rate</p>
-                                                                <h5 className="text-xl font-black mt-1 text-slate-900 dark:text-slate-100">{rateValue}%</h5>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Status Filter Tabs for Individual Student Logs */}
-                                                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/80 w-fit flex-wrap">
-                                                            {(['all', 'present', 'late', 'absent', 'excused'] as const).map(st => {
-                                                                const count = st === 'all' 
-                                                                    ? totalLogs 
-                                                                    : st === 'present' ? presentLogs 
-                                                                    : st === 'late' ? lateLogs 
-                                                                    : st === 'absent' ? absentLogs 
-                                                                    : excusedLogs;
-                                                                const labels: Record<string, string> = {
-                                                                    all: 'All Logs',
-                                                                    present: 'Present',
-                                                                    late: 'Late',
-                                                                    absent: 'Absent',
-                                                                    excused: 'Excused'
-                                                                };
-                                                                const activeColors: Record<string, string> = {
-                                                                    all: 'bg-[#ecb613] text-slate-900',
-                                                                    present: 'bg-emerald-500 text-white',
-                                                                    late: 'bg-amber-500 text-white',
-                                                                    absent: 'bg-rose-500 text-white',
-                                                                    excused: 'bg-slate-700 text-white'
-                                                                };
-                                                                const isActive = individualStatusFilter === st;
-                                                                return (
-                                                                    <button
-                                                                        key={st}
-                                                                        type="button"
-                                                                        onClick={() => setIndividualStatusFilter(st)}
-                                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                                                            isActive ? `${activeColors[st]} shadow-xs` : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                                                                        }`}
-                                                                    >
-                                                                        <span>{labels[st]}</span>
-                                                                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                                                                            isActive ? 'bg-black/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                                                                        }`}>
-                                                                            {count}
-                                                                        </span>
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
-
-                                                        {/* Log Results Table */}
-                                                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                                            {logsLoading ? (
-                                                                <div className="flex flex-col items-center justify-center py-20">
-                                                                    <Loader2 className="w-6 h-6 animate-spin text-[#ecb613] mb-2" />
-                                                                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Querying history logs...</p>
-                                                                </div>
-                                                            ) : filteredIndividualLogs.length > 0 ? (
-                                                                <div>
-                                                                    {/* Mobile view of logs (visible on mobile only) */}
-                                                                    <div className="block sm:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
-                                                                        {filteredIndividualLogs.map((log) => (
-                                                                            <div key={log.id} className="p-4 flex justify-between items-center bg-white dark:bg-slate-900">
-                                                                                <div className="min-w-0 flex-1 pr-3">
-                                                                                    <h6 className="font-extrabold text-slate-900 dark:text-white text-xs truncate">{log.classroom_name}</h6>
-                                                                                    <div className="flex items-center gap-2 mt-1">
-                                                                                        <span className="text-[10px] text-slate-400 font-bold">{formatLocalDateStr(log.date, true)}</span>
-                                                                                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
-                                                                                            log.is_temporary
-                                                                                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
-                                                                                                : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                                                                        }`}>
-                                                                                            {log.is_temporary ? 'Temp' : 'Perm'}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div className="shrink-0">
-                                                                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                                                                                        log.status === 'present'
-                                                                                            ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20'
-                                                                                            : log.status === 'absent'
-                                                                                            ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20'
-                                                                                            : log.status === 'late'
-                                                                                            ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20'
-                                                                                            : log.status === 'excused'
-                                                                                            ? 'bg-slate-50 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400'
-                                                                                            : 'bg-slate-50 text-slate-500 dark:bg-slate-800'
-                                                                                    }`}>
-                                                                                        {log.status}
-                                                                                    </span>
-                                                                                </div>
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                    <div className="overflow-x-auto hidden sm:block">
-                                                                        <table className="w-full text-left border-collapse min-w-[500px]">
-                                                                            <thead>
-                                                                                <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
-                                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Date</th>
-                                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Classroom / Batch</th>
-                                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Type</th>
-                                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Status</th>
-                                                                                </tr>
-                                                                            </thead>
-                                                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
-                                                                                {filteredIndividualLogs.map((log) => (
-                                                                                <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
-                                                                                    <td className="px-5 py-4 text-xs font-bold text-slate-800 dark:text-slate-300">
-                                                                                        {formatLocalDateStr(log.date, true)}
-                                                                                    </td>
-                                                                                    <td className="px-5 py-4 text-xs font-extrabold text-slate-950 dark:text-white">
-                                                                                        {log.classroom_name}
-                                                                                    </td>
-                                                                                    <td className="px-5 py-4">
-                                                                                        <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                                                                                            log.is_temporary
-                                                                                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
-                                                                                                : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                                                                        }`}>
-                                                                                            {log.is_temporary ? 'Temporary' : 'Classroom'}
-                                                                                        </span>
-                                                                                    </td>
-                                                                                    <td className="px-5 py-4 text-right">
-                                                                                        <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                                                                                            log.status === 'present'
-                                                                                                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20'
-                                                                                                : log.status === 'absent'
-                                                                                                ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20'
-                                                                                                : log.status === 'late'
-                                                                                                ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20'
-                                                                                                : log.status === 'excused'
-                                                                                                ? 'bg-slate-50 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400'
-                                                                                                : 'bg-slate-50 text-slate-500 dark:bg-slate-800'
-                                                                                        }`}>
-                                                                                            {log.status}
-                                                                                        </span>
-                                                                                    </td>
-                                                                                </tr>
-                                                                            ))}
-                                                                            </tbody>
-                                                                        </table>
-                                                                    </div>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="py-12 text-center">
-                                                                    <CalendarIcon className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                                                                    <h6 className="font-extrabold text-slate-400">No attendance logs found</h6>
-                                                                    <p className="text-xs text-slate-400 mt-1">
-                                                                        {individualStatusFilter !== 'all' 
-                                                                            ? `There are no "${individualStatusFilter}" records for this student in the selected date range.` 
-                                                                            : 'There are no attendance records for this student in the selected range.'}
-                                                                    </p>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })()}
-                                        </div>
-                                    )}
                                 </div>
                             )}
 
@@ -2989,10 +2740,15 @@ export default function AttendancePage() {
                                                         });
 
                                                         return (
-                                                            <div key={log.id} className="p-4 flex flex-col gap-3 bg-white dark:bg-slate-900 text-left">
+                                                            <div 
+                                                                key={log.id} 
+                                                                onDoubleClick={() => openStudentAttendanceModal(log.student_id, log.student_name, log.student_profile_pic_url)}
+                                                                title="Double-click to view student attendance history"
+                                                                className="p-4 flex flex-col gap-3 bg-white dark:bg-slate-900 text-left select-none"
+                                                            >
                                                                 <div className="flex items-center justify-between">
                                                                     <span 
-                                                                        onClick={() => fetchStudentHistory(log.student_id, log.student_name)}
+                                                                        onClick={() => openStudentAttendanceModal(log.student_id, log.student_name, log.student_profile_pic_url)}
                                                                         className="text-xs font-extrabold text-slate-900 dark:text-white hover:underline cursor-pointer"
                                                                     >
                                                                         {log.student_name}
@@ -3091,7 +2847,12 @@ export default function AttendancePage() {
                                                             });
 
                                                             return (
-                                                                <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
+                                                                <tr 
+                                                                    key={log.id} 
+                                                                    onDoubleClick={() => openStudentAttendanceModal(log.student_id, log.student_name, log.student_profile_pic_url)}
+                                                                    title="Double-click to view student attendance history"
+                                                                    className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors select-none"
+                                                                >
                                                                     <td className="px-5 py-4">
                                                                         <div className="flex items-center gap-3">
                                                                             <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 border flex items-center justify-center overflow-hidden">
@@ -3102,7 +2863,7 @@ export default function AttendancePage() {
                                                                                 )}
                                                                             </div>
                                                                             <span 
-                                                                                onClick={() => fetchStudentHistory(log.student_id, log.student_name)}
+                                                                                onClick={() => openStudentAttendanceModal(log.student_id, log.student_name, log.student_profile_pic_url)}
                                                                                 className="text-xs font-extrabold text-slate-900 dark:text-white hover:text-[#ecb613] hover:underline cursor-pointer transition-all"
                                                                             >
                                                                                 {log.student_name}
@@ -3229,7 +2990,12 @@ export default function AttendancePage() {
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
                                                         {completedMissedLogs.map((log) => (
-                                                            <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
+                                                            <tr 
+                                                                key={log.id} 
+                                                                onDoubleClick={() => openStudentAttendanceModal(log.student_id, log.student_name, log.student_profile_pic_url)}
+                                                                title="Double-click to view student attendance history"
+                                                                className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors select-none"
+                                                            >
                                                                 <td className="px-5 py-4">
                                                                     <div className="flex items-center gap-3">
                                                                         <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 border flex items-center justify-center overflow-hidden">
@@ -3240,7 +3006,7 @@ export default function AttendancePage() {
                                                                             )}
                                                                         </div>
                                                                         <span 
-                                                                            onClick={() => fetchStudentHistory(log.student_id, log.student_name)}
+                                                                            onClick={() => openStudentAttendanceModal(log.student_id, log.student_name, log.student_profile_pic_url)}
                                                                             className="text-xs font-extrabold text-slate-900 dark:text-white hover:text-[#ecb613] hover:underline cursor-pointer transition-all"
                                                                         >
                                                                             {log.student_name}
@@ -3710,6 +3476,15 @@ export default function AttendancePage() {
                     </div>
                 </div>
             )}
+
+            {/* Student Attendance Details Modal */}
+            <StudentAttendanceModal
+                isOpen={!!attendanceModalStudent}
+                onClose={closeStudentAttendanceModal}
+                studentId={attendanceModalStudent?.id || null}
+                initialStudentName={attendanceModalStudent?.name}
+                initialProfilePicUrl={attendanceModalStudent?.pic}
+            />
         </div>
     );
 }
