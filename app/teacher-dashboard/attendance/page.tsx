@@ -193,25 +193,71 @@ export default function AttendancePage() {
         return reasonStr.replace(/^\[MissedDate:[^\]]+\]\s*/, '');
     }, []);
 
-    const initialFromDate = useMemo(() => {
-        const d = new Date();
-        const pastDate = new Date(d.getTime() - 60 * 24 * 60 * 60 * 1000);
-        const year = pastDate.getFullYear();
-        const month = String(pastDate.getMonth() + 1).padStart(2, '0');
-        const day = String(pastDate.getDate()).padStart(2, '0');
+    const formatYMD = useCallback((d: Date) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     }, []);
-    const initialToDate = useMemo(() => {
-        const d = new Date();
-        // Set default to end of next month so future excused leaves are visible for scheduling makeups
-        const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0);
-        const year = lastDay.getFullYear();
-        const month = String(lastDay.getMonth() + 1).padStart(2, '0');
-        const day = String(lastDay.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
+
+    const initialMonthRange = useMemo(() => {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const year = now.getFullYear();
+        const m1 = String(now.getMonth() + 1).padStart(2, '0');
+        const dLast = String(lastDay.getDate()).padStart(2, '0');
+        return {
+            from: `${year}-${m1}-01`,
+            to: `${year}-${m1}-${dLast}`
+        };
     }, []);
-    const [fromDate, setFromDate] = useState<string>(initialFromDate);
-    const [toDate, setToDate] = useState<string>(initialToDate);
+
+    const [fromDate, setFromDate] = useState<string>(initialMonthRange.from);
+    const [toDate, setToDate] = useState<string>(initialMonthRange.to);
+    const [individualStatusFilter, setIndividualStatusFilter] = useState<'all' | 'present' | 'late' | 'absent' | 'excused'>('all');
+
+    const setPresetThisMonth = useCallback(() => {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        setFromDate(formatYMD(firstDay));
+        setToDate(formatYMD(lastDay));
+        setViewDate(now);
+    }, [formatYMD]);
+
+    const setPresetLastMonth = useCallback(() => {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+        setFromDate(formatYMD(firstDay));
+        setToDate(formatYMD(lastDay));
+        setViewDate(firstDay);
+    }, [formatYMD]);
+
+    const setPresetLast3Months = useCallback(() => {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        setFromDate(formatYMD(firstDay));
+        setToDate(formatYMD(lastDay));
+    }, [formatYMD]);
+
+    const activePreset = useMemo(() => {
+        const now = new Date();
+        const curFirst = formatYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+        const curLast = formatYMD(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+        if (fromDate === curFirst && toDate === curLast) return 'this_month';
+
+        const lastFirst = formatYMD(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+        const lastLast = formatYMD(new Date(now.getFullYear(), now.getMonth(), 0));
+        if (fromDate === lastFirst && toDate === lastLast) return 'last_month';
+
+        const threeFirst = formatYMD(new Date(now.getFullYear(), now.getMonth() - 2, 1));
+        if (fromDate === threeFirst && toDate === curLast) return 'last_3_months';
+
+        return 'custom';
+    }, [fromDate, toDate, formatYMD]);
     const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLog[]>([]);
     const [logsLoading, setLogsLoading] = useState(false);
 
@@ -641,7 +687,9 @@ export default function AttendancePage() {
             const isAdmin = teacherProfile.role === 'admin';
             const roomIds = loadedRooms.map(c => c.id);
 
-            let query = supabaseAuth
+            // 1. Pending leave requests: always query all pending requests regardless of date
+            // so actionable items are never hidden by historical date ranges
+            let pendingQuery = supabaseAuth
                 .from('leave_requests')
                 .select(`
                     id,
@@ -654,28 +702,69 @@ export default function AttendancePage() {
                     users!student_id(id, name, email, profile_pic_url, teacher_id),
                     classrooms!classroom_id(id, name)
                 `)
+                .eq('status', 'pending')
                 .order('created_at', { ascending: false });
 
             if (!isAdmin && roomIds.length > 0) {
-                query = query.in('classroom_id', roomIds);
+                pendingQuery = pendingQuery.in('classroom_id', roomIds);
             }
 
-            const { data: leaves, error } = await query;
-            if (error) throw error;
-            
-            const filteredLeaves = (leaves || []).filter((l: any) => isAdmin || l.users?.teacher_id === teacherProfile.id);
+            // 2. Historical approved/rejected leave requests: query within the selected reporting range
+            let historicalQuery = supabaseAuth
+                .from('leave_requests')
+                .select(`
+                    id,
+                    student_id,
+                    classroom_id,
+                    class_date,
+                    reason,
+                    status,
+                    created_at,
+                    users!student_id(id, name, email, profile_pic_url, teacher_id),
+                    classrooms!classroom_id(id, name)
+                `)
+                .in('status', ['approved', 'rejected'])
+                .gte('class_date', fromDate)
+                .lte('class_date', toDate)
+                .order('class_date', { ascending: false });
+
+            if (!isAdmin && roomIds.length > 0) {
+                historicalQuery = historicalQuery.in('classroom_id', roomIds);
+            }
+
+            const [{ data: pendingLeaves, error: pErr }, { data: historicalLeaves, error: hErr }] = await Promise.all([
+                pendingQuery,
+                historicalQuery
+            ]);
+
+            if (pErr) throw pErr;
+            if (hErr) throw hErr;
+
+            const allLeaves = [...(pendingLeaves || []), ...(historicalLeaves || [])];
+            const filteredLeaves = allLeaves.filter((l: any) => isAdmin || l.users?.teacher_id === teacherProfile.id);
             setLeaveRequests(filteredLeaves);
         } catch (err) {
             console.error('Error fetching leave requests:', err);
         } finally {
             setLeavesLoading(false);
         }
-    }, [classrooms, teacherProfile]);
+    }, [classrooms, teacherProfile, fromDate, toDate]);
 
-    // Fetch leave requests when teacherProfile loads, with Realtime updates
+    const fetchLeaveRequestsRef = useRef(fetchLeaveRequests);
+    useEffect(() => {
+        fetchLeaveRequestsRef.current = fetchLeaveRequests;
+    }, [fetchLeaveRequests]);
+
+    // Fetch leave requests when teacherProfile or date range changes
+    useEffect(() => {
+        if (teacherProfile) {
+            fetchLeaveRequests();
+        }
+    }, [teacherProfile, fetchLeaveRequests]);
+
+    // Realtime updates for leave requests
     useEffect(() => {
         if (!teacherProfile) return;
-        fetchLeaveRequests();
 
         const channel = supabaseAuth
             .channel('realtime_attendance_leave_requests_channel')
@@ -683,14 +772,14 @@ export default function AttendancePage() {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'leave_requests' },
                 () => {
-                    fetchLeaveRequests();
+                    fetchLeaveRequestsRef.current();
                 }
             )
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'attendance' },
                 () => {
-                    fetchLeaveRequests();
+                    fetchLeaveRequestsRef.current();
                 }
             )
             .subscribe();
@@ -698,7 +787,7 @@ export default function AttendancePage() {
         return () => {
             supabaseAuth.removeChannel(channel);
         };
-    }, [teacherProfile, fetchLeaveRequests]);
+    }, [teacherProfile?.id]);
 
     const handleApproveLeave = async (request: any) => {
         if (!teacherProfile) return;
@@ -1265,7 +1354,7 @@ export default function AttendancePage() {
                 attendanceMap[key] = r.status;
             });
 
-            // 4. Fetch attendance logs where status is absent or excused
+            // 4. Fetch attendance logs where status is absent or excused within selected date range
             const statuses = missedStatusFilter === 'all' ? ['absent', 'excused'] : [missedStatusFilter];
             const { data: logsData, error: logsErr } = await supabaseAuth
                 .from('attendance')
@@ -1279,6 +1368,8 @@ export default function AttendancePage() {
                 `)
                 .in('student_id', studentIds)
                 .in('status', statuses)
+                .gte('date', fromDate)
+                .lte('date', toDate)
                 .order('date', { ascending: false });
 
             if (logsErr) throw logsErr;
@@ -1422,16 +1513,8 @@ export default function AttendancePage() {
                 finalLogs = resolved.filter(log => log.student_name.toLowerCase().includes(query));
             }
 
-            const pending = finalLogs.filter(log => {
-                if (log.isMakeupCompleted) return false;
-                const logDate = log.date.split('T')[0].split(' ')[0];
-                return logDate <= toDate;
-            });
-            const completed = finalLogs.filter(log => {
-                if (!log.isMakeupCompleted) return false;
-                const logDate = log.date.split('T')[0].split(' ')[0];
-                return logDate >= fromDate && logDate <= toDate;
-            });
+            const pending = finalLogs.filter(log => !log.isMakeupCompleted);
+            const completed = finalLogs.filter(log => log.isMakeupCompleted);
 
             setMissedLogs(pending);
             setCompletedMissedLogs(completed);
@@ -2032,6 +2115,105 @@ export default function AttendancePage() {
                         </div>
                     </div>
 
+                    {/* Shared Global Attendance Reporting Range Bar */}
+                    <div className="bg-white dark:bg-slate-900 p-3 sm:p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-amber-50 dark:bg-amber-950/30 text-[#ecb613] rounded-xl shrink-0">
+                                <CalendarIcon className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-extrabold text-slate-900 dark:text-white">Reporting Period</span>
+                                    {activePreset === 'this_month' && (
+                                        <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 rounded-full border border-emerald-200 dark:border-emerald-800">
+                                            Current Month (Default)
+                                        </span>
+                                    )}
+                                    {activePreset === 'last_month' && (
+                                        <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-600 dark:bg-blue-950/30 rounded-full border border-blue-200 dark:border-blue-800">
+                                            Previous Month
+                                        </span>
+                                    )}
+                                    {activePreset === 'last_3_months' && (
+                                        <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-purple-50 text-purple-600 dark:bg-purple-950/30 rounded-full border border-purple-200 dark:border-purple-800">
+                                            Last 3 Months
+                                        </span>
+                                    )}
+                                    {activePreset === 'custom' && (
+                                        <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 rounded-full">
+                                            Custom Range
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                                    Historical attendance reports query directly between From and To dates.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* Preset buttons */}
+                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/80">
+                                <button
+                                    type="button"
+                                    onClick={setPresetThisMonth}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                        activePreset === 'this_month'
+                                            ? 'bg-[#ecb613] text-slate-900 shadow-xs'
+                                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                                    }`}
+                                >
+                                    This Month
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={setPresetLastMonth}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                        activePreset === 'last_month'
+                                            ? 'bg-[#ecb613] text-slate-900 shadow-xs'
+                                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                                    }`}
+                                >
+                                    Last Month
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={setPresetLast3Months}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                        activePreset === 'last_3_months'
+                                            ? 'bg-[#ecb613] text-slate-900 shadow-xs'
+                                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                                    }`}
+                                >
+                                    Last 3 Months
+                                </button>
+                            </div>
+
+                            {/* Date Inputs */}
+                            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+                                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700/80">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">From</span>
+                                    <input
+                                        type="date"
+                                        value={fromDate}
+                                        onChange={(e) => setFromDate(e.target.value)}
+                                        className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-200 outline-none border-none p-0 cursor-pointer"
+                                    />
+                                </div>
+                                <span className="text-slate-300 dark:text-slate-600 font-bold text-xs">→</span>
+                                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700/80">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">To</span>
+                                    <input
+                                        type="date"
+                                        value={toDate}
+                                        onChange={(e) => setToDate(e.target.value)}
+                                        className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-200 outline-none border-none p-0 cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Main Content Area */}
                     <div className="grid grid-cols-12 gap-5">
                         
@@ -2533,136 +2715,189 @@ export default function AttendancePage() {
                                                 </div>
                                             </div>
 
-                                            {/* Report Statistics Summary */}
+                                            {/* Report Statistics Summary & Status Filters */}
                                             {(() => {
                                                 const totalLogs = attendanceLogs.length;
                                                 const presentLogs = attendanceLogs.filter(l => l.status === 'present').length;
                                                 const lateLogs = attendanceLogs.filter(l => l.status === 'late').length;
+                                                const absentLogs = attendanceLogs.filter(l => l.status === 'absent').length;
+                                                const excusedLogs = attendanceLogs.filter(l => l.status === 'excused').length;
                                                 const rateValue = totalLogs > 0 ? Math.round(((presentLogs + lateLogs) / totalLogs) * 100) : 0;
+                                                const filteredIndividualLogs = attendanceLogs.filter(l => individualStatusFilter === 'all' || l.status === individualStatusFilter);
                                                 
                                                 return (
-                                                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                                                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Logs</p>
-                                                            <h5 className="text-xl font-black mt-1 text-slate-950 dark:text-white">{totalLogs}</h5>
+                                                    <div className="space-y-4">
+                                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
+                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Logs</p>
+                                                                <h5 className="text-xl font-black mt-1 text-slate-950 dark:text-white">{totalLogs}</h5>
+                                                            </div>
+                                                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
+                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-emerald-600">Present Days</p>
+                                                                <h5 className="text-xl font-black mt-1 text-emerald-600">{presentLogs}</h5>
+                                                            </div>
+                                                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
+                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-rose-600">Absent Days</p>
+                                                                <h5 className="text-xl font-black mt-1 text-rose-600">{absentLogs}</h5>
+                                                            </div>
+                                                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
+                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-amber-500 font-sans">Attendance Rate</p>
+                                                                <h5 className="text-xl font-black mt-1 text-slate-900 dark:text-slate-100">{rateValue}%</h5>
+                                                            </div>
                                                         </div>
-                                                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-emerald-600">Present Days</p>
-                                                            <h5 className="text-xl font-black mt-1 text-emerald-600">{presentLogs}</h5>
+
+                                                        {/* Status Filter Tabs for Individual Student Logs */}
+                                                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700/80 w-fit flex-wrap">
+                                                            {(['all', 'present', 'late', 'absent', 'excused'] as const).map(st => {
+                                                                const count = st === 'all' 
+                                                                    ? totalLogs 
+                                                                    : st === 'present' ? presentLogs 
+                                                                    : st === 'late' ? lateLogs 
+                                                                    : st === 'absent' ? absentLogs 
+                                                                    : excusedLogs;
+                                                                const labels: Record<string, string> = {
+                                                                    all: 'All Logs',
+                                                                    present: 'Present',
+                                                                    late: 'Late',
+                                                                    absent: 'Absent',
+                                                                    excused: 'Excused'
+                                                                };
+                                                                const activeColors: Record<string, string> = {
+                                                                    all: 'bg-[#ecb613] text-slate-900',
+                                                                    present: 'bg-emerald-500 text-white',
+                                                                    late: 'bg-amber-500 text-white',
+                                                                    absent: 'bg-rose-500 text-white',
+                                                                    excused: 'bg-slate-700 text-white'
+                                                                };
+                                                                const isActive = individualStatusFilter === st;
+                                                                return (
+                                                                    <button
+                                                                        key={st}
+                                                                        type="button"
+                                                                        onClick={() => setIndividualStatusFilter(st)}
+                                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                                                            isActive ? `${activeColors[st]} shadow-xs` : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                                                                        }`}
+                                                                    >
+                                                                        <span>{labels[st]}</span>
+                                                                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                                                                            isActive ? 'bg-black/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                                                                        }`}>
+                                                                            {count}
+                                                                        </span>
+                                                                    </button>
+                                                                );
+                                                            })}
                                                         </div>
-                                                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-rose-600">Absent Days</p>
-                                                            <h5 className="text-xl font-black mt-1 text-rose-600">{attendanceLogs.filter(l => l.status === 'absent').length}</h5>
-                                                        </div>
-                                                        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-150 dark:border-slate-800 shadow-xs">
-                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-amber-500 font-sans">Attendance Rate</p>
-                                                            <h5 className="text-xl font-black mt-1 text-slate-900 dark:text-slate-100">{rateValue}%</h5>
+
+                                                        {/* Log Results Table */}
+                                                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                                                            {logsLoading ? (
+                                                                <div className="flex flex-col items-center justify-center py-20">
+                                                                    <Loader2 className="w-6 h-6 animate-spin text-[#ecb613] mb-2" />
+                                                                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Querying history logs...</p>
+                                                                </div>
+                                                            ) : filteredIndividualLogs.length > 0 ? (
+                                                                <div>
+                                                                    {/* Mobile view of logs (visible on mobile only) */}
+                                                                    <div className="block sm:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
+                                                                        {filteredIndividualLogs.map((log) => (
+                                                                            <div key={log.id} className="p-4 flex justify-between items-center bg-white dark:bg-slate-900">
+                                                                                <div className="min-w-0 flex-1 pr-3">
+                                                                                    <h6 className="font-extrabold text-slate-900 dark:text-white text-xs truncate">{log.classroom_name}</h6>
+                                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                                        <span className="text-[10px] text-slate-400 font-bold">{formatLocalDateStr(log.date, true)}</span>
+                                                                                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                                                                                            log.is_temporary
+                                                                                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
+                                                                                                : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                                                                        }`}>
+                                                                                            {log.is_temporary ? 'Temp' : 'Perm'}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="shrink-0">
+                                                                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                                                                        log.status === 'present'
+                                                                                            ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20'
+                                                                                            : log.status === 'absent'
+                                                                                            ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20'
+                                                                                            : log.status === 'late'
+                                                                                            ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20'
+                                                                                            : log.status === 'excused'
+                                                                                            ? 'bg-slate-50 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400'
+                                                                                            : 'bg-slate-50 text-slate-500 dark:bg-slate-800'
+                                                                                    }`}>
+                                                                                        {log.status}
+                                                                                    </span>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                    <div className="overflow-x-auto hidden sm:block">
+                                                                        <table className="w-full text-left border-collapse min-w-[500px]">
+                                                                            <thead>
+                                                                                <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
+                                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Date</th>
+                                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Classroom / Batch</th>
+                                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Type</th>
+                                                                                    <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Status</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
+                                                                                {filteredIndividualLogs.map((log) => (
+                                                                                <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
+                                                                                    <td className="px-5 py-4 text-xs font-bold text-slate-800 dark:text-slate-300">
+                                                                                        {formatLocalDateStr(log.date, true)}
+                                                                                    </td>
+                                                                                    <td className="px-5 py-4 text-xs font-extrabold text-slate-950 dark:text-white">
+                                                                                        {log.classroom_name}
+                                                                                    </td>
+                                                                                    <td className="px-5 py-4">
+                                                                                        <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                                                                            log.is_temporary
+                                                                                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
+                                                                                                : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                                                                        }`}>
+                                                                                            {log.is_temporary ? 'Temporary' : 'Classroom'}
+                                                                                        </span>
+                                                                                    </td>
+                                                                                    <td className="px-5 py-4 text-right">
+                                                                                        <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                                                                                            log.status === 'present'
+                                                                                                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20'
+                                                                                                : log.status === 'absent'
+                                                                                                ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20'
+                                                                                                : log.status === 'late'
+                                                                                                ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20'
+                                                                                                : log.status === 'excused'
+                                                                                                ? 'bg-slate-50 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400'
+                                                                                                : 'bg-slate-50 text-slate-500 dark:bg-slate-800'
+                                                                                        }`}>
+                                                                                            {log.status}
+                                                                                        </span>
+                                                                                    </td>
+                                                                                </tr>
+                                                                            ))}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="py-12 text-center">
+                                                                    <CalendarIcon className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                                                                    <h6 className="font-extrabold text-slate-400">No attendance logs found</h6>
+                                                                    <p className="text-xs text-slate-400 mt-1">
+                                                                        {individualStatusFilter !== 'all' 
+                                                                            ? `There are no "${individualStatusFilter}" records for this student in the selected date range.` 
+                                                                            : 'There are no attendance records for this student in the selected range.'}
+                                                                    </p>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 );
                                             })()}
-
-                                            {/* Log Results Table */}
-                                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                                                {logsLoading ? (
-                                                    <div className="flex flex-col items-center justify-center py-20">
-                                                        <Loader2 className="w-6 h-6 animate-spin text-[#ecb613] mb-2" />
-                                                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Querying history logs...</p>
-                                                    </div>
-                                                ) : attendanceLogs.length > 0 ? (
-                                                    <div>
-                                                        {/* Mobile view of logs (visible on mobile only) */}
-                                                        <div className="block sm:hidden divide-y divide-slate-100 dark:divide-slate-800/40">
-                                                            {attendanceLogs.map((log) => (
-                                                                <div key={log.id} className="p-4 flex justify-between items-center bg-white dark:bg-slate-900">
-                                                                    <div className="min-w-0 flex-1 pr-3">
-                                                                        <h6 className="font-extrabold text-slate-900 dark:text-white text-xs truncate">{log.classroom_name}</h6>
-                                                                        <div className="flex items-center gap-2 mt-1">
-                                                                            <span className="text-[10px] text-slate-400 font-bold">{formatLocalDateStr(log.date, true)}</span>
-                                                                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
-                                                                                log.is_temporary
-                                                                                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
-                                                                                    : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                                                            }`}>
-                                                                                {log.is_temporary ? 'Temp' : 'Perm'}
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="shrink-0">
-                                                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                                                                            log.status === 'present'
-                                                                                ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20'
-                                                                                : log.status === 'absent'
-                                                                                ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20'
-                                                                                : log.status === 'late'
-                                                                                ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20'
-                                                                                : log.status === 'excused'
-                                                                                ? 'bg-slate-50 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400'
-                                                                                : 'bg-slate-50 text-slate-500 dark:bg-slate-800'
-                                                                        }`}>
-                                                                            {log.status}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                        <div className="overflow-x-auto hidden sm:block">
-                                                            <table className="w-full text-left border-collapse min-w-[500px]">
-                                                                <thead>
-                                                                    <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
-                                                                        <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Date</th>
-                                                                        <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Classroom / Batch</th>
-                                                                        <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider">Type</th>
-                                                                        <th className="px-5 py-3 text-[10px] font-black text-slate-450 dark:text-slate-400 uppercase tracking-wider text-right">Status</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
-                                                                    {attendanceLogs.map((log) => (
-                                                                    <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/25 transition-colors">
-                                                                        <td className="px-5 py-4 text-xs font-bold text-slate-800 dark:text-slate-300">
-                                                                            {formatLocalDateStr(log.date, true)}
-                                                                        </td>
-                                                                        <td className="px-5 py-4 text-xs font-extrabold text-slate-950 dark:text-white">
-                                                                            {log.classroom_name}
-                                                                        </td>
-                                                                        <td className="px-5 py-4">
-                                                                            <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                                                                                log.is_temporary
-                                                                                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
-                                                                                    : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                                                            }`}>
-                                                                                {log.is_temporary ? 'Temporary' : 'Classroom'}
-                                                                            </span>
-                                                                        </td>
-                                                                        <td className="px-5 py-4 text-right">
-                                                                            <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                                                                                log.status === 'present'
-                                                                                    ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20'
-                                                                                    : log.status === 'absent'
-                                                                                    ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20'
-                                                                                    : log.status === 'late'
-                                                                                    ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/20'
-                                                                                    : log.status === 'excused'
-                                                                                    ? 'bg-slate-50 text-slate-600 dark:bg-slate-800/40 dark:text-slate-400'
-                                                                                    : 'bg-slate-50 text-slate-500 dark:bg-slate-800'
-                                                                            }`}>
-                                                                                {log.status}
-                                                                            </span>
-                                                                        </td>
-                                                                    </tr>
-                                                                ))}
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="py-12 text-center">
-                                                        <CalendarIcon className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                                                        <h6 className="font-extrabold text-slate-400">No attendance logs found</h6>
-                                                        <p className="text-xs text-slate-400 mt-1">There are no attendance records for this student in the selected range.</p>
-                                                    </div>
-                                                )}
-                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -3083,6 +3318,9 @@ export default function AttendancePage() {
                                                 Rejected
                                             </button>
                                         </div>
+                                        <p className="text-[11px] text-slate-400 font-medium">
+                                            Actionable pending leaves remain visible. Approved/rejected history obeys <span className="font-bold text-slate-600 dark:text-slate-300">{fromDate} → {toDate}</span>.
+                                        </p>
                                     </div>
 
                                     {/* Leaves List */}
@@ -3195,7 +3433,11 @@ export default function AttendancePage() {
                                             <div className="py-16 text-center">
                                                 <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                                                 <h6 className="font-extrabold text-slate-450">No leave requests found</h6>
-                                                <p className="text-xs text-slate-450 mt-1">There are no leave requests matching the selected filter.</p>
+                                                <p className="text-xs text-slate-450 mt-1">
+                                                    {leavesFilter === 'pending'
+                                                        ? 'There are no pending leave requests requiring action.'
+                                                        : `There are no ${leavesFilter === 'all' ? '' : leavesFilter + ' '}leave requests in the selected reporting range (${fromDate} → ${toDate}).`}
+                                                </p>
                                             </div>
                                         )}
                                     </div>
