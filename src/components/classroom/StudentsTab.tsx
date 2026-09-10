@@ -705,7 +705,12 @@ export default function StudentsTab({
                                                 )}
                                             </div>
                                             <div>
-                                                <span className="text-sm font-bold text-slate-900 dark:text-white">{override.users?.name || 'Unknown'}</span>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="text-sm font-bold text-slate-900 dark:text-white">{override.users?.name || 'Unknown'}</span>
+                                                    <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                                        GUEST • MAKEUP
+                                                    </span>
+                                                </div>
                                                 <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">{override.users?.level || 'Beginner'}</p>
                                             </div>
                                         </div>
@@ -715,8 +720,13 @@ export default function StudentsTab({
                                             {formatLocalDate(override.override_date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-sm font-medium text-slate-600 dark:text-slate-400 italic">
-                                        {override.reason || 'No details provided'}
+                                    <td className="px-6 py-4 text-xs font-medium text-slate-600 dark:text-slate-400">
+                                        {override.missed_session_date && (
+                                            <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 block mb-0.5">
+                                                Makeup for: {formatLocalDate(override.missed_session_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                            </span>
+                                        )}
+                                        <span className="italic">{override.reason || 'Temporary makeup attendance'}</span>
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end items-center gap-2">

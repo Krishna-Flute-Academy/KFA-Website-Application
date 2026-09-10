@@ -169,10 +169,20 @@ export default function AttendanceTab({
                                             )}
                                         </div>
                                         <div className="text-left">
-                                            <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight">{student.name}</h4>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <h4 className="font-extrabold text-slate-900 dark:text-white tracking-tight">{student.name}</h4>
+                                                {student.is_makeup && (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300/60 dark:border-amber-700/60 shadow-xs">
+                                                        GUEST • MAKEUP
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
                                                 {student.is_makeup 
-                                                    ? 'Makeup Student' 
+                                                    ? (student.missed_session_date 
+                                                        ? `Makeup for: ${formatLocalDate(student.missed_session_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` 
+                                                        : 'Makeup Guest'
+                                                      )
                                                     : (student.joined_at ? `Joined ${formatLocalDate(student.joined_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Enrolled Student')
                                                 }
                                             </p>

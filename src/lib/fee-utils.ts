@@ -484,7 +484,7 @@ export interface StudentCycleCalculationInput {
     classrooms?: { id: string; name?: string; type?: string }[];
     batchSchedules?: { classroom_id: string; day_of_week: number; start_time?: string; end_time?: string }[];
     attendance?: { id?: string; student_id?: string; classroom_id: string; date?: string; session_date?: string; status: string }[];
-    overrides?: { id?: string; student_id?: string; target_classroom_id: string; override_date: string; reason?: string | null }[];
+    overrides?: { id?: string; student_id?: string; target_classroom_id: string; override_date: string; missed_session_date?: string | null; credit_treatment?: string | null; reason?: string | null }[];
     leaveRequests?: { id?: string; student_id?: string; classroom_id?: string; class_date: string; status: string }[];
     payments?: { payment_date: string; status?: string; classes_added?: number }[];
     cancelledSessions?: { classroom_id?: string; date: string }[];
@@ -902,6 +902,7 @@ export function evaluateStudentFeeCycle(
 
     excusedDates.forEach(missedDate => {
         const override = studentOverrides.find(o => {
+            if (o.missed_session_date && o.missed_session_date === missedDate) return true;
             const r = o.reason || '';
             return r.includes(`[MissedDate:${missedDate}]`) || r.includes(missedDate);
         });

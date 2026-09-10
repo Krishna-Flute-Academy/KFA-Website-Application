@@ -39,6 +39,8 @@ export interface EffectiveClassroomResult {
     classroomStatus: string;
     teacher: { id: string; name: string; email?: string; role?: string; profile_pic_url?: string | null } | null;
     students: ClassroomParticipant[];
+    regularStudents: ClassroomParticipant[];
+    guestStudents: ClassroomParticipant[];
     studentIds: string[];
     specialSession?: SpecialSessionMetadata | null;
 }
@@ -55,6 +57,8 @@ export async function fetchEffectiveClassroomParticipants(
             classroomStatus: 'active',
             teacher: null,
             students: [],
+            regularStudents: [],
+            guestStudents: [],
             studentIds: [],
             specialSession: null
         };
@@ -98,18 +102,21 @@ export async function fetchEffectiveClassroomParticipants(
                 .select('id, student_id, joined_at, users!student_id(id, name, email, role, level, profile_pic_url)')
                 .eq('classroom_id', classroomId);
 
-            let overrideQuery = supabaseClient
-                .from('session_student_overrides')
-                .select('id, student_id, override_date, reason, credit_treatment, missed_session_date, users!student_id(id, name, email, role, level, profile_pic_url)')
-                .eq('target_classroom_id', classroomId);
-
             if (options?.date) {
-                overrideQuery = overrideQuery.eq('override_date', options.date);
-            }
+                const overrideQuery = supabaseClient
+                    .from('session_student_overrides')
+                    .select('id, student_id, override_date, reason, credit_treatment, missed_session_date, users!student_id(id, name, email, role, level, profile_pic_url)')
+                    .eq('target_classroom_id', classroomId)
+                    .eq('override_date', options.date);
 
-            const [csRes, ssoRes] = await Promise.all([permQuery, overrideQuery]);
-            permStudents = csRes.data || [];
-            overrideStudents = ssoRes.data || [];
+                const [csRes, ssoRes] = await Promise.all([permQuery, overrideQuery]);
+                permStudents = csRes.data || [];
+                overrideStudents = ssoRes.data || [];
+            } else {
+                const csRes = await permQuery;
+                permStudents = csRes.data || [];
+                overrideStudents = [];
+            }
         }
 
         // 3. Resolve Teacher Profile
@@ -174,6 +181,8 @@ export async function fetchEffectiveClassroomParticipants(
         });
 
         const studentsList = Array.from(studentMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+        const regularStudents = studentsList.filter(s => !s.is_override);
+        const guestStudents = studentsList.filter(s => s.is_override);
         const studentIds = studentsList.map(s => s.student_id);
 
         return {
@@ -182,6 +191,8 @@ export async function fetchEffectiveClassroomParticipants(
             classroomStatus: classroom?.status || 'active',
             teacher: teacherInfo,
             students: studentsList,
+            regularStudents,
+            guestStudents,
             studentIds,
             specialSession: tempClass ? {
                 ...tempClass,
@@ -199,6 +210,8 @@ export async function fetchEffectiveClassroomParticipants(
             classroomStatus: 'active',
             teacher: options?.fallbackTeacher || null,
             students: [],
+            regularStudents: [],
+            guestStudents: [],
             studentIds: [],
             specialSession: null
         };

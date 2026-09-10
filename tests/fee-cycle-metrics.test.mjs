@@ -451,3 +451,41 @@ test('15. Fee Cycle Ledger: Per-Class Prepaid student report', () => {
     assert.equal(ledger.summary.classesAvailable, 5);
     assert.equal(ledger.summary.hasDiscrepancy, false);
 });
+
+test('16. Makeup Reconciliation: Direct missed_session_date column linking', () => {
+    const today = new Date(2026, 8, 9, 12, 0, 0);
+
+    const result = evaluateStudentFeeCycle({
+        student: {
+            id: 'student-direct-date',
+            fees_basis: 'monthly',
+            fees_collection_date: 13,
+            join_date: '2026-08-13'
+        },
+        classrooms: [{ id: 'class-main', name: 'Tuesday Flute' }, { id: 'class-saturday', name: 'Saturday Flute' }],
+        batchSchedules: [{ classroom_id: 'class-main', day_of_week: 2 }],
+        attendance: [
+            { student_id: 'student-direct-date', classroom_id: 'class-main', date: '2026-08-18', status: 'present' },
+            { student_id: 'student-direct-date', classroom_id: 'class-main', date: '2026-08-25', status: 'present' },
+            { student_id: 'student-direct-date', classroom_id: 'class-main', date: '2026-09-01', status: 'present' },
+            { student_id: 'student-direct-date', classroom_id: 'class-main', date: '2026-09-08', status: 'excused' }
+        ],
+        overrides: [
+            {
+                id: 'ov-direct',
+                student_id: 'student-direct-date',
+                target_classroom_id: 'class-saturday',
+                override_date: '2026-09-12', // Saturday makeup
+                missed_session_date: '2026-09-08', // direct column linkage
+                reason: 'Attending Saturday batch' // no [MissedDate:...] tag in text
+            }
+        ],
+        payments: [{ payment_date: '2026-08-13', status: 'approved', classes_added: 4 }],
+        today
+    });
+
+    assert.equal(result.metrics.makeupsScheduled, 1, 'Makeup is successfully linked via missed_session_date column');
+    assert.equal(result.metrics.makeupsPending, 0);
+    assert.equal(result.metrics.classesAvailable, 1);
+});
+

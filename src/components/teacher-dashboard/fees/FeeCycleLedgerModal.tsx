@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import {
@@ -20,8 +20,10 @@ import {
     HelpCircle,
     Info,
     CalendarCheck,
-    RotateCcw
+    RotateCcw,
+    Sparkles
 } from 'lucide-react';
+import { ArrangeMakeupModal } from '../../makeup/ArrangeMakeupModal';
 
 interface FeeCycleLedgerModalProps {
     isOpen: boolean;
@@ -32,6 +34,7 @@ interface FeeCycleLedgerModalProps {
     studentAvatar?: string | null;
     studentId: string;
     loading?: boolean;
+    onRefresh?: () => void;
 }
 
 export default function FeeCycleLedgerModal({
@@ -42,9 +45,12 @@ export default function FeeCycleLedgerModal({
     studentBatch,
     studentAvatar,
     studentId,
-    loading = false
+    loading = false,
+    onRefresh
 }: FeeCycleLedgerModalProps) {
     const modalRef = useRef<HTMLDivElement>(null);
+    const [showArrangeMakeup, setShowArrangeMakeup] = useState(false);
+    const [makeupMissedSession, setMakeupMissedSession] = useState<{ date: string; classroomId?: string; classroomName?: string }>({ date: '' });
 
     // Close on Escape
     useEffect(() => {
@@ -363,8 +369,25 @@ export default function FeeCycleLedgerModal({
                                                             </span>
                                                         </div>
 
-                                                        {/* Direct action link */}
-                                                        {sess.actionUrl && (
+                                                        {/* Direct action link or Arrange Makeup */}
+                                                        {sess.status === 'makeup_pending' ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setMakeupMissedSession({
+                                                                        date: sess.date,
+                                                                        classroomId: sess.classroomId,
+                                                                        classroomName: sess.classroomName
+                                                                    });
+                                                                    setShowArrangeMakeup(true);
+                                                                }}
+                                                                className="px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 shadow-xs shrink-0"
+                                                                title="Arrange makeup for this excused date"
+                                                            >
+                                                                <Sparkles className="size-3" />
+                                                                <span className="text-[10px] font-black">Arrange Makeup</span>
+                                                            </button>
+                                                        ) : sess.actionUrl ? (
                                                             <Link
                                                                 href={sess.actionUrl}
                                                                 onClick={onClose}
@@ -380,7 +403,7 @@ export default function FeeCycleLedgerModal({
                                                                 </span>
                                                                 <ArrowRight className="size-3.5" />
                                                             </Link>
-                                                        )}
+                                                        ) : null}
                                                     </div>
                                                 </div>
                                             );
@@ -422,6 +445,24 @@ export default function FeeCycleLedgerModal({
                         Close
                     </button>
                 </div>
+
+                {/* Arrange Makeup Modal nested trigger */}
+                {showArrangeMakeup && (
+                    <ArrangeMakeupModal
+                        isOpen={showArrangeMakeup}
+                        onClose={() => setShowArrangeMakeup(false)}
+                        onSuccess={() => {
+                            setShowArrangeMakeup(false);
+                            onRefresh?.();
+                        }}
+                        student={{
+                            id: studentId,
+                            name: studentName,
+                            profile_pic_url: studentAvatar
+                        }}
+                        missedSession={makeupMissedSession}
+                    />
+                )}
             </div>
         </div>,
         document.body

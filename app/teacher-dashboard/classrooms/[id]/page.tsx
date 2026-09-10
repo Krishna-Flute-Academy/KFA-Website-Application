@@ -105,6 +105,7 @@ interface EnrolledStudent {
     level?: string;
     is_makeup?: boolean;
     is_online?: boolean;
+    missed_session_date?: string | null;
 }
 
 interface DirectoryStudent {
@@ -1308,7 +1309,7 @@ export default function ClassroomDashboardPage({
                 list.push({
                     id: `override-${o.id}`,
                     student_id: o.student_id,
-                    name: `${o.users?.name || 'Unknown'} (Makeup)`,
+                    name: o.users?.name || 'Unknown',
                     profile_pic_url: o.users?.profile_pic_url || null,
                     level: level,
                     joined_at: o.override_date,
@@ -1318,7 +1319,8 @@ export default function ClassroomDashboardPage({
                     mock_submission,
                     mock_milestone: 'Makeup Session',
                     mock_status,
-                    is_makeup: true
+                    is_makeup: true,
+                    missed_session_date: o.missed_session_date
                 });
             }
         });
@@ -2401,6 +2403,21 @@ export default function ClassroomDashboardPage({
             alert('Please select a student and date.');
             return;
         }
+        // Validate date matching schedule for permanent classroom
+        if (classroom?.type === 'permanent' || !classroom?.type) {
+            const daysOfWeek = (schedules || []).map((s: any) => s.day_of_week);
+            if (daysOfWeek.length > 0) {
+                const [y, m, d] = overrideForm.date.split('-').map(Number);
+                const dayOfPick = new Date(y, m - 1, d).getDay();
+                if (!daysOfWeek.includes(dayOfPick)) {
+                    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const expected = daysOfWeek.map(dw => dayNames[dw]).join(' or ');
+                    alert(`Invalid date! ${classroom?.name || 'This classroom'} runs on ${expected}. Please choose a matching class date.`);
+                    return;
+                }
+            }
+        }
+
         setIsSavingOverride(true);
         try {
             if (editingOverrideId) {
@@ -2409,6 +2426,7 @@ export default function ClassroomDashboardPage({
                     .update({
                         student_id: overrideForm.studentId,
                         override_date: overrideForm.date,
+                        credit_treatment: 'makeup',
                         reason: overrideForm.reason || null
                     })
                     .eq('id', editingOverrideId)
@@ -2417,6 +2435,8 @@ export default function ClassroomDashboardPage({
                         student_id,
                         override_date,
                         reason,
+                        credit_treatment,
+                        missed_session_date,
                         users!student_id(name, profile_pic_url, level)
                     `)
                     .single();
@@ -2436,6 +2456,7 @@ export default function ClassroomDashboardPage({
                         student_id: overrideForm.studentId,
                         target_classroom_id: classroomId,
                         override_date: overrideForm.date,
+                        credit_treatment: 'makeup',
                         reason: overrideForm.reason || null
                     }])
                     .select(`
@@ -2443,6 +2464,8 @@ export default function ClassroomDashboardPage({
                         student_id,
                         override_date,
                         reason,
+                        credit_treatment,
+                        missed_session_date,
                         users!student_id(name, profile_pic_url, level)
                     `)
                     .single();

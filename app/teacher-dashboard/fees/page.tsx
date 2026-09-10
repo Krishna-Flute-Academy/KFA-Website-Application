@@ -2826,6 +2826,11 @@ export default function FeesManagementDashboard() {
                 studentAvatar={selectedLedgerStudent?.profile_pic_url}
                 studentId={selectedLedgerStudent?.id || ''}
                 loading={ledgerLoading}
+                onRefresh={() => {
+                    if (selectedLedgerStudent) {
+                        openLedgerModal(selectedLedgerStudent);
+                    }
+                }}
             />
         </div>
     );

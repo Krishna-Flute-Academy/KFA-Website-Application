@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
+import { ArrangeMakeupModal } from '../../../src/components/makeup/ArrangeMakeupModal';
 
 interface Classroom {
     id: string;
@@ -59,6 +60,9 @@ interface Student {
     id: string;
     name: string;
     profile_pic_url?: string | null;
+    isGuest?: boolean;
+    isMakeup?: boolean;
+    missedDate?: string | null;
 }
 
 interface BatchItem {
@@ -562,15 +566,18 @@ export default function AttendancePage() {
                     // Fetch temporary session override (makeup) students for this date
                     const { data: overrideStudents } = await supabaseAuth
                         .from('session_student_overrides')
-                        .select('student_id, users!student_id(name, profile_pic_url, teacher_id)')
+                        .select('student_id, missed_session_date, reason, users!student_id(name, profile_pic_url, teacher_id)')
                         .eq('target_classroom_id', batchId)
                         .eq('override_date', selectedDate);
 
                     const tempRoster = (overrideStudents || [])
                         .map((row: any) => ({
                             id: row.student_id,
-                            name: `${row.users?.name || 'Unknown Student'} (Makeup)`,
-                            profile_pic_url: row.users?.profile_pic_url
+                            name: row.users?.name || 'Unknown Student',
+                            profile_pic_url: row.users?.profile_pic_url,
+                            isGuest: true,
+                            isMakeup: true,
+                            missedDate: row.missed_session_date
                         }));
 
                     roster = [...permRoster, ...tempRoster];
@@ -2201,7 +2208,19 @@ export default function AttendancePage() {
                                                                                     )}
                                                                                 </div>
                                                                                 <div className="min-w-0 flex-1">
-                                                                                    <h6 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-full leading-tight">{student.name}</h6>
+                                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                        <h6 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate max-w-full leading-tight">{student.name}</h6>
+                                                                                        {student.isMakeup && (
+                                                                                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
+                                                                                                GUEST • MAKEUP
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    {student.missedDate && (
+                                                                                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                                                                                            Makeup for: {formatLocalDateStr(student.missedDate)}
+                                                                                        </p>
+                                                                                    )}
                                                                                 </div>
                                                                             </div>
 
@@ -3143,6 +3162,26 @@ export default function AttendancePage() {
                                                                                     <X className="size-4" />
                                                                                 </button>
                                                                             </div>
+                                                                        ) : request.status === 'approved' ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    setMakeupStudent({
+                                                                                        student_id: request.student_id,
+                                                                                        student_name: request.users?.name || 'Student',
+                                                                                        student_profile_pic_url: request.users?.profile_pic_url,
+                                                                                        date: request.class_date,
+                                                                                        classroom_name: request.classrooms?.name || 'Regular Batch',
+                                                                                        classroom_id: request.classroom_id
+                                                                                    });
+                                                                                    setShowMakeupModal(true);
+                                                                                }}
+                                                                                className="px-2.5 py-1 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors shadow-xs ml-auto"
+                                                                                title="Schedule makeup class for this approved leave"
+                                                                            >
+                                                                                <span>Schedule Makeup</span>
+                                                                                <ArrowRight className="size-3" />
+                                                                            </button>
                                                                         ) : (
                                                                             <span className="text-[10px] font-bold text-slate-400">Processed</span>
                                                                         )}
@@ -3171,183 +3210,29 @@ export default function AttendancePage() {
 
             {/* ── Schedule Makeup Modal ─────────────────────────────────────────── */}
             {showMakeupModal && makeupStudent && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md flex flex-col p-6 animate-in zoom-in-95 duration-200 text-left max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5 mb-4">
-                            <div>
-                                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-                                    {editingMakeupId ? 'Reschedule Makeup Class' : 'Schedule Makeup Class'}
-                                </h3>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Priority Booking Engine</p>
-                            </div>
-                            <button onClick={handleCloseModal} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"><X className="w-5 h-5" /></button>
-                        </div>
-
-                        <div className="space-y-4 flex-1">
-                            {/* Student details card */}
-                            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border border-white">
-                                    {makeupStudent.student_profile_pic_url ? (
-                                        <img src={makeupStudent.student_profile_pic_url} alt={makeupStudent.student_name} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <span className="text-[#ecb613] font-black text-sm">{makeupStudent.student_name.charAt(0)}</span>
-                                    )}
-                                </div>
-                                <div className="text-left">
-                                    <h6 className="text-xs font-black text-slate-900 dark:text-white">{makeupStudent.student_name}</h6>
-                                    <p className="text-[10px] text-slate-500 font-bold mt-0.5">
-                                        Missed: {makeupStudent.classroom_name} on {formatLocalDateStr(makeupStudent.date)}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Target classroom */}
-                            <div className="space-y-1">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1">Target Class / Batch</label>
-                                {classrooms.length > 0 ? (
-                                    <select 
-                                        value={makeupClassroomId}
-                                        onChange={(e) => setMakeupClassroomId(e.target.value)}
-                                        className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/40 outline-none transition-all"
-                                    >
-                                        {sortClassroomsByDayAndTime(classrooms).map(room => (
-                                            <option key={room.id} value={room.id}>{room.name}</option>
-                                        ))}
-                                    </select>
-                                ) : (
-                                    <div className="text-xs text-rose-500 font-bold p-2.5 bg-rose-50 dark:bg-rose-950/20 rounded-xl border border-rose-100 dark:border-rose-900/40">
-                                        No permanent classrooms found. You must configure at least one permanent classroom to schedule a makeup class.
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Date */}
-                            <div className="space-y-1">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1">Makeup Class Date</label>
-                                <input 
-                                    type="date"
-                                    value={makeupDate}
-                                    onChange={(e) => setMakeupDate(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/40 outline-none transition-all"
-                                />
-                            </div>
-
-                            {/* Suggestions based on excused absences */}
-                            {makeupDate && (
-                                <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
-                                    <div className="flex items-center gap-1.5 pl-1">
-                                        <Lightbulb className="w-3.5 h-3.5 text-[#ecb613]" />
-                                        <span className="block text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-wider">
-                                            Suggestions (Classes running on this date)
-                                        </span>
-                                    </div>
-                                    {excusedSuggestions.length > 0 ? (
-                                        <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
-                                            {excusedSuggestions.map((sug) => {
-                                                const isSelected = makeupClassroomId === sug.classroomId;
-                                                return (
-                                                    <button
-                                                        key={`${sug.classroomId}-${sug.timings}`}
-                                                        type="button"
-                                                        onClick={() => setMakeupClassroomId(sug.classroomId)}
-                                                        className={`w-full p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1.5 group cursor-pointer ${
-                                                            isSelected
-                                                                ? 'border-[#ecb613] bg-[#ecb613]/10 dark:bg-[#ecb613]/5'
-                                                                : 'border-slate-100 dark:border-slate-800 hover:border-[#ecb613]/50 hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-center justify-between w-full">
-                                                            <div className="flex items-center gap-1.5 min-w-0">
-                                                                <p className={`text-xs font-bold truncate ${isSelected ? 'text-[#b45309] dark:text-[#ecb613]' : 'text-slate-800 dark:text-slate-200'}`}>
-                                                                    {sug.classroomName}
-                                                                </p>
-                                                                {sug.isTemporary && (
-                                                                    <span className="px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
-                                                                        Temp
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
-                                                                isSelected
-                                                                    ? 'bg-[#ecb613] text-slate-900'
-                                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-650 dark:text-slate-350'
-                                                            }`}>
-                                                                {sug.timings}
-                                                            </span>
-                                                        </div>
-
-                                                        {/* Allocated students list */}
-                                                        <div className="w-full">
-                                                            <p className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Students Enrolled ({sug.students.length}):</p>
-                                                            {sug.students.length > 0 ? (
-                                                                <div className="flex flex-wrap gap-1 mt-0.5">
-                                                                    {sug.students.map((stud: any) => {
-                                                                        const isExcused = stud.status === 'excused';
-                                                                        const isAbsent = stud.status === 'absent';
-                                                                        return (
-                                                                            <span 
-                                                                                key={stud.id} 
-                                                                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium ${
-                                                                                    isExcused 
-                                                                                        ? 'bg-rose-50 text-rose-500 line-through decoration-rose-300 dark:bg-rose-950/20 dark:text-rose-450' 
-                                                                                        : isAbsent
-                                                                                        ? 'bg-red-50 text-red-500 line-through decoration-red-300 dark:bg-red-950/20 dark:text-red-450'
-                                                                                        : 'bg-slate-100 text-slate-650 dark:bg-slate-800 dark:text-slate-350'
-                                                                                }`}
-                                                                            >
-                                                                                {stud.name}
-                                                                                {isExcused && <span className="ml-0.5 text-[8px] font-black uppercase text-rose-600 dark:text-rose-450">(Excused)</span>}
-                                                                                {isAbsent && <span className="ml-0.5 text-[8px] font-black uppercase text-red-600 dark:text-red-450">(Absent)</span>}
-                                                                            </span>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            ) : (
-                                                                <p className="text-[8px] text-slate-400 italic">No students allocated</p>
-                                                            )}
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    ) : (
-                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 italic pl-1">
-                                            No active classes running on this date. You can select any classroom manually from the dropdown.
-                                        </p>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="space-y-1">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider pl-1">Reason / Notes</label>
-                                <textarea
-                                    value={makeupReason}
-                                    onChange={(e) => setMakeupReason(e.target.value)}
-                                    rows={3}
-                                    placeholder="Write a reason or notes..."
-                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#ecb613]/40 outline-none transition-all resize-none"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-3 mt-6 border-t border-slate-100 dark:border-slate-800 pt-4">
-                            <button 
-                                onClick={handleCloseModal}
-                                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleSaveMakeup}
-                                disabled={isSavingMakeup || (!makeupClassroomId && classrooms.length === 0) || !makeupDate}
-                                className="px-5 py-2.5 rounded-xl text-xs font-black bg-[#ecb613] text-slate-900 hover:bg-[#ecb613]/90 shadow-md shadow-[#ecb613]/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
-                            >
-                                {isSavingMakeup ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                                {editingMakeupId ? 'Reschedule Class' : 'Schedule Class'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ArrangeMakeupModal
+                    isOpen={showMakeupModal}
+                    onClose={handleCloseModal}
+                    onSuccess={() => {
+                        handleCloseModal();
+                        fetchMissedReport();
+                        if (expandedBatchId) {
+                            handleExpandBatch(expandedBatchId, false, true);
+                        }
+                    }}
+                    student={{
+                        id: makeupStudent.student_id,
+                        name: makeupStudent.student_name,
+                        profile_pic_url: makeupStudent.student_profile_pic_url
+                    }}
+                    missedSession={{
+                        date: makeupStudent.date,
+                        classroomId: makeupStudent.classroom_id,
+                        classroomName: makeupStudent.classroom_name
+                    }}
+                    currentTeacherId={teacherProfile?.id}
+                    isAdmin={teacherProfile?.role === 'admin'}
+                />
             )}
 
             {showHistoryModal && historyStudent && (
