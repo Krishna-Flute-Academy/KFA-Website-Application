@@ -22,15 +22,35 @@ export default function ForgotPasswordPage() {
         }
 
         setLoading(true);
-        const { data, error: resetError } = await supabaseAuth.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-        });
+        try {
+            const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+            const { data, error: resetError } = await supabaseAuth.auth.resetPasswordForEmail(email.trim(), {
+                redirectTo: `${baseUrl}/auth/callback?next=/reset-password`,
+            });
 
-        if (resetError) {
-            setError(resetError.message);
-            setLoading(false);
-        } else {
-            setSuccessMessage('Password reset instructions have been sent to your email.');
+            if (resetError) {
+                console.error('Password reset request error:', {
+                    message: resetError.message,
+                    status: (resetError as any).status,
+                    code: (resetError as any).code,
+                });
+
+                const isRateLimit = (resetError as any).status === 429 || 
+                    (resetError as any).code === 'over_email_send_rate_limit' ||
+                    resetError.message?.toLowerCase().includes('rate limit');
+
+                if (isRateLimit) {
+                    setError('Too many reset attempts. Please wait a few minutes and try again.');
+                } else {
+                    setError('Unable to send the password reset email at this moment. Please try again shortly or contact academy support.');
+                }
+            } else {
+                setSuccessMessage("We've sent password reset instructions to your email address. Please check your inbox and spam/junk folder.");
+            }
+        } catch (err) {
+            console.error('Unexpected password reset exception:', err);
+            setError('An unexpected error occurred. Please try again later.');
+        } finally {
             setLoading(false);
         }
     };

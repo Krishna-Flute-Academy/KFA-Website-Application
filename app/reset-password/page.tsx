@@ -24,24 +24,48 @@ export default function ResetPasswordPage() {
 
     // Verify authenticated session on mount
     useEffect(() => {
+        let isMounted = true;
+
+        // 1. Listen for PASSWORD_RECOVERY or SIGNED_IN auth events
+        const { data: { subscription } } = supabaseAuth.auth.onAuthStateChange((event, session) => {
+            if (!isMounted) return;
+            if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+                setSessionError(null);
+                setCheckingSession(false);
+            }
+        });
+
+        // 2. Check current session
         const verifySession = async () => {
             try {
                 // Wait a moment for any in-flight session initialization to finish
                 await new Promise(resolve => setTimeout(resolve, 800));
+                if (!isMounted) return;
                 
                 const { data: { session }, error: err } = await supabaseAuth.auth.getSession();
                 
                 if (err || !session) {
                     setSessionError('No active recovery session found. Please request a new password reset link.');
+                } else {
+                    setSessionError(null);
                 }
             } catch (e) {
-                setSessionError('An unexpected error occurred. Please try again.');
+                if (isMounted) {
+                    setSessionError('An unexpected error occurred. Please try again.');
+                }
             } finally {
-                setCheckingSession(false);
+                if (isMounted) {
+                    setCheckingSession(false);
+                }
             }
         };
 
         verifySession();
+
+        return () => {
+            isMounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     // Countdown and redirect on success

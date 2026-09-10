@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { useToast } from '../../lib/ToastContext';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
 import { parseDayAndStartFromClassroom } from '../../lib/classroomSort';
+import { fetchAcademyTeachers } from '../../lib/teachers';
 
 // Import subcomponents
 import StatsSummary from './StatsSummary';
@@ -311,12 +312,10 @@ export default function TeacherDashboardContainer() {
                 ? supabaseAuth.from('fees_payments').select('amount').eq('status', 'approved').gte('payment_date', startOfMonth)
                 : Promise.resolve({ data: [] });
 
-            const teacherUsersReq = profile.role === 'admin'
-                ? supabaseAuth.from('users').select('id, name').eq('role', 'teacher')
-                : Promise.resolve({ data: [] });
+            const teacherUsersReq = fetchAcademyTeachers(supabaseAuth, userId);
 
             const schedulesReq = supabaseAuth.from('batch_schedules').select('id, classroom_id, classrooms(name, description), day_of_week, start_time, end_time');
-            const tempsDetailReq = supabaseAuth.from('temporary_classes').select('id, classroom_id, classrooms(name, description), title, class_date, start_time, end_time');
+            const tempsDetailReq = supabaseAuth.from('temporary_classes').select('id, classroom_id, classrooms(name, description), title, class_date, start_time, end_time, teacher_id');
 
             const [
                 { data: dbClassrooms },
@@ -325,7 +324,7 @@ export default function TeacherDashboardContainer() {
                 { count: studentsCountRes },
                 { data: liveRooms },
                 { data: collections },
-                { data: teacherUsers },
+                teacherUsers,
                 { data: schedules },
                 { data: temps }
             ] = await Promise.all([
@@ -340,7 +339,38 @@ export default function TeacherDashboardContainer() {
                 tempsDetailReq
             ]);
 
-            if (teacherUsers) setTeachers(teacherUsers);
+            let resolvedTeachers = (teacherUsers || []).map((t: any) => ({
+                id: t.id,
+                name: t.name
+            }));
+            const additionalTeacherIds = Array.from(new Set([
+                ...(dbClassrooms || []).map((c: any) => c.teacher_id),
+                ...(temps || []).map((t: any) => (t as any).teacher_id),
+                ...(tempRoomsData || []).map((t: any) => (t as any).teacher_id)
+            ])).filter(Boolean) as string[];
+
+            const existingTeacherIds = new Set(resolvedTeachers.map(t => t.id));
+            const missingFromResolved = additionalTeacherIds.filter(id => !existingTeacherIds.has(id));
+            if (missingFromResolved.length > 0) {
+                const { data: missingUsers } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, email')
+                    .in('id', missingFromResolved);
+                (missingUsers || []).forEach((u: any) => {
+                    if (u?.id && !existingTeacherIds.has(u.id)) {
+                        existingTeacherIds.add(u.id);
+                        resolvedTeachers.push({
+                            id: u.id,
+                            name: u.name?.trim() || u.email?.split('@')[0]?.trim() || 'Instructor'
+                        });
+                    }
+                });
+                resolvedTeachers.sort((a, b) => a.name.localeCompare(b.name));
+            }
+
+            if (resolvedTeachers.length > 0) {
+                setTeachers(resolvedTeachers);
+            }
 
             const classIds = (dbClassrooms || []).map(c => c.id);
             setClassrooms(dbClassrooms || []);

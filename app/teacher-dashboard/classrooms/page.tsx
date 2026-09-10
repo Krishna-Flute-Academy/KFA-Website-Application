@@ -7,6 +7,7 @@ import { Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, Search, Chev
 import Link from 'next/link';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
+import { fetchAcademyTeachers } from '../../../src/lib/teachers';
 
 function formatTime12hr(time24: string) {
     if (!time24) return '';
@@ -608,14 +609,14 @@ export default function ClassroomsPage() {
             const isAdminUser = profile.role === 'admin';
 
             // Stage 1: Fetch teachers, permanent classrooms, and temporary classrooms IN PARALLEL!
-            const teachersReq = supabaseAuth.from('users').select('id, name').in('role', ['teacher', 'admin']);
+            const teachersReq = fetchAcademyTeachers(supabaseAuth, profile.id);
             const classroomsQuery = supabaseAuth.from('classrooms').select('*');
             const roomsReq = isAdminUser ? classroomsQuery : classroomsQuery.eq('teacher_id', profile.id);
             const tempQuery = supabaseAuth.from('temporary_classes').select('*').order('class_date', { ascending: false });
             const tempReq = isAdminUser ? tempQuery : tempQuery.eq('teacher_id', profile.id);
 
             const [
-                { data: teachersData, error: teachersError },
+                teachersData,
                 { data: roomsData, error: roomsError },
                 { data: tempRoomsData }
             ] = await Promise.all([
@@ -624,13 +625,21 @@ export default function ClassroomsPage() {
                 tempReq
             ]);
 
-            if (teachersError) {
-                console.error('Error fetching teachersData for mapping:', teachersError);
-            }
             const teacherMap: Record<string, string> = {};
             if (teachersData) {
                 teachersData.forEach(t => {
                     teacherMap[t.id] = t.name;
+                });
+            }
+
+            const missingRoomTeacherIds = (roomsData || []).map((r: any) => r.teacher_id).filter((id: any) => id && !teacherMap[id]);
+            if (missingRoomTeacherIds.length > 0) {
+                const { data: missingUsers } = await supabaseAuth
+                    .from('users')
+                    .select('id, name, email')
+                    .in('id', missingRoomTeacherIds);
+                (missingUsers || []).forEach((u: any) => {
+                    teacherMap[u.id] = u.name?.trim() || u.email?.split('@')[0]?.trim() || 'Instructor';
                 });
             }
 

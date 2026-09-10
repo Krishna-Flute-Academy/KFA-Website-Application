@@ -7,7 +7,7 @@ import { Loader2, ArrowLeft, PlayCircle, Clock, Mail, Edit, Music, Award, Calend
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
-import { getStudentFeeStatus } from '../../../../src/lib/fee-utils';
+import { getStudentFeeStatus, calculateStudentFeeCycleMetrics, StudentFeeCycleMetrics } from '../../../../src/lib/fee-utils';
 import { INITIAL_MODULES } from '../../inventory/initial-data';
 
 import { stripHtml } from '../../../../src/lib/text-utils';
@@ -61,6 +61,7 @@ export default function StudentProfilePage() {
     const [payments, setPayments] = useState<any[]>([]);
     const [submissions, setSubmissions] = useState<Submission[]>([]);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+    const [feeMetrics, setFeeMetrics] = useState<StudentFeeCycleMetrics | null>(null);
     const [viewDate, setViewDate] = useState(new Date()); // Calendar view month
     const [activeTab, setActiveTab] = useState('profile'); // profile, tasks, history, attendance, curriculum
     const [studentTasks, setStudentTasks] = useState<any[]>([]);
@@ -545,6 +546,41 @@ export default function StudentProfilePage() {
                         };
                     }));
                     setAttendance(resolved as AttendanceRecord[]);
+
+                    // Compute dynamic fee cycle metrics
+                    const allStudentClassroomIds = (studentRooms || [])
+                        .map((cs: any) => cs.classroom_id)
+                        .filter(Boolean);
+
+                    const [schedRes, overridesRes, leavesRes] = await Promise.all([
+                        allStudentClassroomIds.length > 0
+                            ? supabaseAuth.from('batch_schedules').select('id, classroom_id, day_of_week, start_time, end_time').in('classroom_id', allStudentClassroomIds)
+                            : Promise.resolve({ data: [] }),
+                        supabaseAuth.from('session_student_overrides').select('*').eq('student_id', studentId),
+                        supabaseAuth.from('leave_requests').select('*').eq('student_id', studentId)
+                    ]);
+
+                    const m = calculateStudentFeeCycleMetrics({
+                        student: {
+                            id: userData.id,
+                            fees_basis: userData.fees_basis,
+                            fees_collection_date: userData.fees_collection_date,
+                            join_date: userData.join_date,
+                            fees_classes_paid: userData.fees_classes_paid || 0,
+                            fees_amount: userData.fees_amount || 0
+                        },
+                        payments: payData || [],
+                        attendance: (attData || []).map((a: any) => ({
+                            id: a.id,
+                            session_date: a.date,
+                            status: a.status,
+                            classroom_id: a.classroom_id
+                        })),
+                        batchSchedules: (schedRes.data || []) as any,
+                        overrides: (overridesRes.data || []) as any,
+                        leaveRequests: (leavesRes.data || []) as any
+                    });
+                    setFeeMetrics(m);
                 }
 
             } catch (err) {
@@ -2075,15 +2111,34 @@ export default function StudentProfilePage() {
                                             </div>
                                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Prepaid Classes Left</p>
-                                                <p className={`font-bold ${(studentInfo.fees_classes_paid ?? 0) <= 0 ? 'text-rose-600' : 'text-slate-750'}`}>
-                                                    {studentInfo.fees_classes_paid ?? 0} classes
-                                                </p>
+                                                {(() => {
+                                                    const available = feeMetrics ? feeMetrics.classesAvailable : (studentInfo.fees_classes_paid ?? 0);
+                                                    return (
+                                                        <div>
+                                                            <p className={`font-bold ${available <= 0 ? 'text-rose-600' : 'text-slate-750'}`}>
+                                                                {available} {available === 1 ? 'class' : 'classes'}
+                                                            </p>
+                                                            {feeMetrics && feeMetrics.basis === 'monthly' && feeMetrics.unresolvedSessions > 0 && (
+                                                                <p className="text-[11px] font-semibold text-amber-600 mt-1 flex items-center gap-1">
+                                                                    ⚠️ Review Needed ({feeMetrics.unresolvedSessions} unresolved)
+                                                                </p>
+                                                            )}
+                                                            {feeMetrics && feeMetrics.basis === 'monthly' && feeMetrics.validOutstandingMakeups > 0 && (
+                                                                <p className="text-[11px] font-medium text-purple-600 mt-1">
+                                                                    {feeMetrics.validOutstandingMakeups} makeup available
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Fees Status</p>
                                                 <div>
                                                     {(() => {
-                                                        const classesCompleted = (studentInfo.fees_classes_paid ?? 0) <= 0;
+                                                        const classesCompleted = feeMetrics
+                                                            ? feeMetrics.classesAvailable <= 0
+                                                            : (studentInfo.fees_classes_paid ?? 0) <= 0;
 
                                                         if (studentInfo.fees_basis === 'monthly' && studentInfo.fees_collection_date) {
                                                             const feeStatus = getStudentFeeStatus(

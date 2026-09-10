@@ -9,6 +9,7 @@ import TeacherHeader from '../../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import ImageUploadWithCrop from '../../../../src/components/teacher-dashboard/ImageUploadWithCrop';
 import { sortClassroomsByDayAndTime } from '../../../../src/lib/classroomSort';
+import { fetchAcademyTeachers } from '../../../../src/lib/teachers';
 
 interface Classroom {
     id: string;
@@ -93,11 +94,8 @@ export default function AddStudentPage() {
                 }
 
                 if (profile.role === 'admin') {
-                    const { data: teachersData } = await supabaseAuth
-                        .from('users')
-                        .select('id, name')
-                        .in('role', ['teacher', 'admin']);
-                    if (teachersData) {
+                    const teachersData = await fetchAcademyTeachers(supabaseAuth, profile.id, rooms);
+                    if (teachersData && teachersData.length > 0) {
                         setTeachers(teachersData);
                     }
                 }

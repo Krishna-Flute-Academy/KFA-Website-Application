@@ -4,7 +4,8 @@ import React from 'react';
 import { 
     Sparkles, Plus, BookOpen, Sliders, Search, X, 
     ChevronDown, ChevronUp, Trash2, Loader2, Film, Music, 
-    FileText, Lock, Unlock, CheckCircle, Check, UserPlus
+    FileText, Lock, Unlock, CheckCircle, Check, UserPlus,
+    Users, Star
 } from 'lucide-react';
 
 interface CurriculumTabProps {
@@ -53,6 +54,20 @@ interface CurriculumTabProps {
     getStudentStatuses: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => any[];
     getIsLocked: (itemType: 'level' | 'chapter' | 'topic', itemId: string) => boolean;
     openUnlockModal?: (targetType: 'level' | 'chapter' | 'topic', targetItem: any) => void;
+    classroomType?: 'permanent' | 'temporary' | string;
+    relevantStudentsCount?: number;
+    cohortMetrics?: {
+        studentCount: number;
+        activeTopicsCount: number;
+        completedCount: number;
+        inProgressCount: number;
+        spotlightCount: number;
+    };
+    getTopicSpotlights?: (lessonId: string) => {
+        count: number;
+        studentNames: string[];
+        hasSpotlight: boolean;
+    };
 }
 
 import { stripHtml } from '../../lib/text-utils';
@@ -91,7 +106,11 @@ export default function CurriculumTab({
     getClassSummary,
     getStudentStatuses,
     getIsLocked,
-    openUnlockModal
+    openUnlockModal,
+    classroomType,
+    relevantStudentsCount,
+    cohortMetrics,
+    getTopicSpotlights
 }: CurriculumTabProps) {
     const [expandedStudentStatuses, setExpandedStudentStatuses] = React.useState<Record<string, boolean>>({});
 
@@ -141,9 +160,20 @@ export default function CurriculumTab({
                                      </div>
                                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate min-w-0">{student.name || 'Student'}</span>
                                 </div>
-                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border font-mono tracking-wider shrink-0 whitespace-nowrap ${textClass}`}>
-                                    {statusBadge}
-                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    {student.isSpotlighted && (
+                                        <span 
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-400/15 text-amber-600 dark:text-amber-300 border border-amber-400/30 whitespace-nowrap"
+                                            title="Spotlight item for this student"
+                                        >
+                                            <Star className="size-2.5 fill-amber-400 text-amber-500" />
+                                            <span>Spotlight</span>
+                                        </span>
+                                    )}
+                                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border font-mono tracking-wider shrink-0 whitespace-nowrap ${textClass}`}>
+                                        {statusBadge}
+                                    </span>
+                                </div>
                             </div>
                         );
                     })}
@@ -251,31 +281,64 @@ export default function CurriculumTab({
             {/* Two-Column Responsive Grid */}
             <div className="grid grid-cols-12 gap-8 items-start">
                 <div className={`${curriculumTab === 'individual' && selectedStudentForCurriculum ? 'col-span-12 lg:col-span-8' : 'col-span-12'} space-y-6`}>
-                    {allocatedInventoryItems.length === 0 ? (
+                    {(relevantStudentsCount !== undefined ? relevantStudentsCount : activeAttendanceRoster.length) === 0 ? (
                         <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[400px]">
-                            <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner animate-bounce">
+                            <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner">
+                                <Users className="size-10 text-amber-500" />
+                            </div>
+                            <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">No Students Assigned</h3>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center font-semibold">
+                                No students are currently assigned to this classroom.
+                            </p>
+                        </div>
+                    ) : visibleCurriculum.length === 0 ? (
+                        <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[400px]">
+                            <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner">
                                 <BookOpen className="size-10 text-amber-500" />
                             </div>
                             <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">No Learning Path Set</h3>
                             <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center font-semibold">
-                                You haven't allocated any study materials yet. Open the Inventory Library to allocate levels, chapters, or individual lessons.
-                            </p>
-                        </div>
-                    ) : !hasAnyVisibleModule ? (
-                        <div className="p-16 text-center bg-slate-50/50 dark:bg-slate-900/40 backdrop-blur-sm border border-slate-200/60 dark:border-slate-800/80 rounded-3xl shadow-sm text-slate-400 flex flex-col items-center justify-center min-h-[400px] border-dashed">
-                            <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/[0.05] border border-amber-500/20 flex items-center justify-center text-amber-500 mb-6 shadow-inner animate-pulse">
-                                <Sliders className="size-10 text-amber-500" />
-                            </div>
-                            <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">No Allocated Topics</h3>
-                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-md leading-relaxed text-center font-medium">
-                                This student has no active or unlocked study materials in their personalized learning path yet.
-                            </p>
-                            <p className="text-xs text-slate-400 dark:text-slate-505 mt-2.5 max-w-sm text-center leading-normal">
-                                You can switch to the <strong>Class Curriculum</strong> tab to unlock specific topics for them, or assign specialized materials individually from the Inventory Library.
+                                {curriculumTab === 'individual'
+                                    ? 'This student has no active or unlocked study materials in their personalized learning path yet.'
+                                    : 'The students in this classroom do not have any curriculum assigned yet.'}
                             </p>
                         </div>
                     ) : (
                         <div className="space-y-4">
+                            {/* Cumulative Cohort Progress Summary Bar */}
+                            {curriculumTab === 'classwide' && cohortMetrics && (
+                                <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-50/70 dark:bg-slate-900/50 backdrop-blur-sm border border-slate-200/70 dark:border-slate-800/80 rounded-2xl text-xs font-semibold text-slate-600 dark:text-slate-300 shadow-xs mb-1 animate-in fade-in duration-300">
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-200 shadow-2xs">
+                                        <Users className="size-3.5 text-slate-500 dark:text-slate-400" />
+                                        <span>{cohortMetrics.studentCount} {cohortMetrics.studentCount === 1 ? 'Student' : 'Students'}</span>
+                                    </div>
+                                    <span className="text-slate-300 dark:text-slate-700">·</span>
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 text-slate-700 dark:text-slate-200 shadow-2xs">
+                                        <BookOpen className="size-3.5 text-amber-500" />
+                                        <span>{cohortMetrics.activeTopicsCount} {cohortMetrics.activeTopicsCount === 1 ? 'Active Topic' : 'Active Topics'}</span>
+                                    </div>
+                                    <span className="text-slate-300 dark:text-slate-700">·</span>
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-2xs">
+                                        <CheckCircle className="size-3.5" />
+                                        <span>{cohortMetrics.completedCount} Completed</span>
+                                    </div>
+                                    <span className="text-slate-300 dark:text-slate-700">·</span>
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-600 dark:text-[#ecb613] border border-amber-500/20 shadow-2xs">
+                                        <Sliders className="size-3.5" />
+                                        <span>{cohortMetrics.inProgressCount} In Progress</span>
+                                    </div>
+                                    {cohortMetrics.spotlightCount > 0 && (
+                                        <>
+                                            <span className="text-slate-300 dark:text-slate-700">·</span>
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-400/15 text-amber-600 dark:text-amber-300 border border-amber-400/30 shadow-2xs">
+                                                <Star className="size-3.5 fill-amber-400 text-amber-500" />
+                                                <span>{cohortMetrics.spotlightCount} Spotlight</span>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Action bar (Search & Collapse) */}
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-2.5 bg-slate-50/50 dark:bg-slate-900/30 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-sm mb-1 animate-in fade-in duration-300">
                                 {/* Left: Search input */}
@@ -581,41 +644,45 @@ export default function CurriculumTab({
                                                                                                 {expandedStudentStatuses[`module-${mod.id}`] ? 'Hide' : 'Students'}
                                                                                             </button>
                                                                                         )}
-                                                                                        {(() => {
-                                                                                            const isLevelLocked = getIsLocked('level', mod.id);
-                                                                                            return (
+                                                                                        {!(curriculumTab === 'classwide' && classroomType === 'temporary') && (
+                                                                                            <>
+                                                                                                {(() => {
+                                                                                                    const isLevelLocked = getIsLocked('level', mod.id);
+                                                                                                    return (
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                if (openUnlockModal) {
+                                                                                                                    openUnlockModal('level', mod);
+                                                                                                                } else {
+                                                                                                                    handleUpdatePacingState('level', mod.id, isLevelLocked ? 'unlocked' : 'locked');
+                                                                                                                }
+                                                                                                            }}
+                                                                                                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                                isLevelLocked
+                                                                                                                    ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
+                                                                                                                    : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
+                                                                                                            }`}
+                                                                                                            title={isLevelLocked ? "Unlock Level (Unlock all chapters and topics)" : "Lock Level (Lock all chapters and topics)"}
+                                                                                                        >
+                                                                                                            {isLevelLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+                                                                                                        </button>
+                                                                                                    );
+                                                                                                })()}
                                                                                                 <button
                                                                                                     type="button"
                                                                                                     onClick={(e) => {
                                                                                                         e.stopPropagation();
-                                                                                                        if (openUnlockModal) {
-                                                                                                            openUnlockModal('level', mod);
-                                                                                                        } else {
-                                                                                                            handleUpdatePacingState('level', mod.id, isLevelLocked ? 'unlocked' : 'locked');
-                                                                                                        }
+                                                                                                        handleUpdatePacingState('level', mod.id, 'completed');
                                                                                                     }}
-                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                                                                                        isLevelLocked
-                                                                                                            ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
-                                                                                                            : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
-                                                                                                    }`}
-                                                                                                    title={isLevelLocked ? "Unlock Level (Unlock all chapters and topics)" : "Lock Level (Lock all chapters and topics)"}
+                                                                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                                    title="Complete Level (Complete all chapters and topics)"
                                                                                                 >
-                                                                                                    {isLevelLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+                                                                                                    <CheckCircle className="size-3.5" />
                                                                                                 </button>
-                                                                                            );
-                                                                                        })()}
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                handleUpdatePacingState('level', mod.id, 'completed');
-                                                                                            }}
-                                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                            title="Complete Level (Complete all chapters and topics)"
-                                                                                        >
-                                                                                            <CheckCircle className="size-3.5" />
-                                                                                        </button>
+                                                                                            </>
+                                                                                        )}
                                                                                         <button
                                                                                             type="button"
                                                                                             title="Manage level pacing & student allocations"
@@ -738,42 +805,46 @@ export default function CurriculumTab({
                                                                                                                 >
                                                                                                                     {expandedStudentStatuses[`chapter-${chap.id}`] ? 'Hide' : 'Students'}
                                                                                                                 </button>
-                                                                                                            )}
-                                                                                                            {(() => {
-                                                                                                                const isChapLocked = getIsLocked('chapter', chap.id);
-                                                                                                                return (
+                                                                                                             )}
+                                                                                                            {!(curriculumTab === 'classwide' && classroomType === 'temporary') && (
+                                                                                                                <>
+                                                                                                                    {(() => {
+                                                                                                                        const isChapLocked = getIsLocked('chapter', chap.id);
+                                                                                                                        return (
+                                                                                                                            <button
+                                                                                                                                type="button"
+                                                                                                                                onClick={(e) => {
+                                                                                                                                    e.stopPropagation();
+                                                                                                                                    if (openUnlockModal) {
+                                                                                                                                        openUnlockModal('chapter', chap);
+                                                                                                                                    } else {
+                                                                                                                                        handleUpdatePacingState('chapter', chap.id, isChapLocked ? 'unlocked' : 'locked');
+                                                                                                                                    }
+                                                                                                                                }}
+                                                                                                                                className={`p-1 rounded-lg transition-all cursor-pointer ${
+                                                                                                                                    isChapLocked
+                                                                                                                                        ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
+                                                                                                                                        : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
+                                                                                                                                }`}
+                                                                                                                                title={isChapLocked ? "Unlock Chapter (Unlock all topics)" : "Lock Chapter (Lock all topics)"}
+                                                                                                                            >
+                                                                                                                                {isChapLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                                                                                                                            </button>
+                                                                                                                        );
+                                                                                                                    })()}
                                                                                                                     <button
                                                                                                                         type="button"
                                                                                                                         onClick={(e) => {
                                                                                                                             e.stopPropagation();
-                                                                                                                            if (openUnlockModal) {
-                                                                                                                                openUnlockModal('chapter', chap);
-                                                                                                                            } else {
-                                                                                                                                handleUpdatePacingState('chapter', chap.id, isChapLocked ? 'unlocked' : 'locked');
-                                                                                                                            }
+                                                                                                                            handleUpdatePacingState('chapter', chap.id, 'completed');
                                                                                                                         }}
-                                                                                                                        className={`p-1 rounded-lg transition-all cursor-pointer ${
-                                                                                                                            isChapLocked
-                                                                                                                                ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
-                                                                                                                                : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
-                                                                                                                        }`}
-                                                                                                                        title={isChapLocked ? "Unlock Chapter (Unlock all topics)" : "Lock Chapter (Lock all topics)"}
+                                                                                                                        className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
+                                                                                                                        title="Complete Chapter (Complete all topics)"
                                                                                                                     >
-                                                                                                                        {isChapLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                                                                                                                        <CheckCircle className="size-3" />
                                                                                                                     </button>
-                                                                                                                );
-                                                                                                            })()}
-                                                                                                            <button
-                                                                                                                type="button"
-                                                                                                                onClick={(e) => {
-                                                                                                                    e.stopPropagation();
-                                                                                                                    handleUpdatePacingState('chapter', chap.id, 'completed');
-                                                                                                                }}
-                                                                                                                className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700 transition-all cursor-pointer"
-                                                                                                                title="Complete Chapter (Complete all topics)"
-                                                                                                            >
-                                                                                                                <CheckCircle className="size-3" />
-                                                                                                            </button>
+                                                                                                                </>
+                                                                                                            )}
                                                                                                             <button
                                                                                                                 type="button"
                                                                                                                 title="Manage chapter pacing & student allocations"
@@ -912,6 +983,21 @@ export default function CurriculumTab({
                                                                                                     </div>
                                                                                                 )}
 
+                                                                                                {/* Spotlight indicator for topic */}
+                                                                                                {(() => {
+                                                                                                    const spot = getTopicSpotlights ? getTopicSpotlights(lesson.id) : null;
+                                                                                                    if (!spot || !spot.hasSpotlight) return null;
+                                                                                                    return (
+                                                                                                        <span 
+                                                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider bg-amber-400/15 text-amber-600 dark:text-amber-300 border border-amber-400/30 shadow-xs cursor-help"
+                                                                                                            title={`Spotlight for: ${spot.studentNames.join(', ')}`}
+                                                                                                        >
+                                                                                                            <Star className="size-2.5 fill-amber-400 text-amber-500" />
+                                                                                                            <span>{spot.count} Spotlight</span>
+                                                                                                        </span>
+                                                                                                    );
+                                                                                                })()}
+
                                                                                                 {curriculumTab === 'classwide' && (
                                                                                                     <button
                                                                                                         type="button"
@@ -933,45 +1019,48 @@ export default function CurriculumTab({
                                                                                                 {isUpdatingProgress === lesson.id ? (
                                                                                                     <Loader2 className="size-4 animate-spin text-[#ecb613] mx-1.5" />
                                                                                                 ) : (
-                                                                                                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-805 p-1 rounded-xl border border-slate-205 dark:border-slate-700/60 shadow-xs">
-                                                                                                        {(() => {
-                                                                                                            const isTopicLocked = getIsLocked('topic', lesson.id);
-                                                                                                            return (
-                                                                                                                <button
-                                                                                                                    type="button"
-                                                                                                                    onClick={(e) => {
-                                                                                                                        e.stopPropagation();
-                                                                                                                        if (openUnlockModal) {
-                                                                                                                            openUnlockModal('topic', lesson);
-                                                                                                                        } else {
-                                                                                                                            handleUpdatePacingState('topic', lesson.id, isTopicLocked ? 'unlocked' : 'locked');
-                                                                                                                        }
-                                                                                                                    }}
-                                                                                                                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                                                                                                        isTopicLocked
-                                                                                                                            ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
-                                                                                                                            : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
-                                                                                                                    }`}
-                                                                                                                    title={isTopicLocked ? "Unlock Topic" : "Lock Topic"}
-                                                                                                                >
-                                                                                                                    {isTopicLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
-                                                                                                                </button>
-                                                                                                            );
-                                                                                                        })()}
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
-                                                                                                                handleUpdatePacingState('topic', lesson.id, 'completed');
-                                                                                                            }}
-                                                                                                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                                                                                                pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-emerald-500 shadow-xs' : 'text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700'
-                                                                                                            }`}
-                                                                                                            title="Complete Topic"
-                                                                                                        >
-                                                                                                            <CheckCircle className="size-3" />
-                                                                                                        </button>
-                                                                                                    </div>
+                                                                                                    // For temporary classes in classwide view, bulk lock/unlock across disparate levels is ambiguous and disabled
+                                                                                                    !(curriculumTab === 'classwide' && classroomType === 'temporary') && (
+                                                                                                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-805 p-1 rounded-xl border border-slate-205 dark:border-slate-700/60 shadow-xs">
+                                                                                                            {(() => {
+                                                                                                                const isTopicLocked = getIsLocked('topic', lesson.id);
+                                                                                                                return (
+                                                                                                                    <button
+                                                                                                                        type="button"
+                                                                                                                        onClick={(e) => {
+                                                                                                                            e.stopPropagation();
+                                                                                                                            if (openUnlockModal) {
+                                                                                                                                openUnlockModal('topic', lesson);
+                                                                                                                            } else {
+                                                                                                                                handleUpdatePacingState('topic', lesson.id, isTopicLocked ? 'unlocked' : 'locked');
+                                                                                                                            }
+                                                                                                                        }}
+                                                                                                                        className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                                            isTopicLocked
+                                                                                                                                ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20 shadow-xs'
+                                                                                                                                : 'bg-amber-500/10 text-[#ecb613] border border-amber-500/20 shadow-xs'
+                                                                                                                        }`}
+                                                                                                                        title={isTopicLocked ? "Unlock Topic" : "Lock Topic"}
+                                                                                                                    >
+                                                                                                                        {isTopicLocked ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                                                                                                                    </button>
+                                                                                                                );
+                                                                                                            })()}
+                                                                                                            <button
+                                                                                                                type="button"
+                                                                                                                onClick={(e) => {
+                                                                                                                    e.stopPropagation();
+                                                                                                                    handleUpdatePacingState('topic', lesson.id, 'completed');
+                                                                                                                }}
+                                                                                                                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                                                                                                    pacing.isCompleted ? 'bg-white dark:bg-slate-700 text-emerald-500 shadow-xs' : 'text-slate-400 hover:text-emerald-500 hover:bg-white dark:hover:bg-slate-700'
+                                                                                                                }`}
+                                                                                                                title="Complete Topic"
+                                                                                                            >
+                                                                                                                <CheckCircle className="size-3" />
+                                                                                                            </button>
+                                                                                                        </div>
+                                                                                                    )
                                                                                                 )}
                                                                                                 <button
                                                                                                     type="button"

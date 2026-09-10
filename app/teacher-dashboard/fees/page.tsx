@@ -6,7 +6,8 @@ import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { Loader2, Plus, Calendar, DollarSign, Users, AlertTriangle, AlertCircle, ShieldCheck, Mail, History, Send, Check, Trash2, Download, FileSpreadsheet, TrendingUp, BarChart3 } from 'lucide-react';
 import TeacherSidebar from '../../../src/components/TeacherSidebar';
 import TeacherHeader from '../../../src/components/TeacherHeader';
-import { getStudentFeeStatus, calculateClassesAdded } from '../../../src/lib/fee-utils';
+import { getStudentFeeStatus, calculateClassesAdded, getStudentBillingCycle, calculateStudentFeeCycleMetrics, getStudentFeeCycleLedger, StudentFeeCycleMetrics, FeeCycleLedgerReport } from '../../../src/lib/fee-utils';
+import FeeCycleLedgerModal from '../../../src/components/teacher-dashboard/fees/FeeCycleLedgerModal';
 import { exportFeesCSV } from '../../../src/lib/csv-export';
 
 interface StudentFeesData {
@@ -21,6 +22,7 @@ interface StudentFeesData {
     fees_collection_date: number | null;
     fees_classes_paid: number;
     batch_name: string;
+    classroom_students_raw?: any[];
 }
 
 interface PaymentRecord {
@@ -50,6 +52,7 @@ export default function FeesManagementDashboard() {
     const [teacherProfile, setTeacherProfile] = useState<{ id: string; name: string; email: string; phone?: string | null; role?: string; profile_pic_url?: string | null } | null>(null);
     const [students, setStudents] = useState<StudentFeesData[]>([]);
     const [payments, setPayments] = useState<PaymentRecord[]>([]);
+    const [studentMetricsMap, setStudentMetricsMap] = useState<Record<string, StudentFeeCycleMetrics>>({});
     
     const [totalCount, setTotalCount] = useState<number>(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -245,6 +248,12 @@ export default function FeesManagementDashboard() {
     const [studentNotifications, setStudentNotifications] = useState<NotificationRecord[]>([]);
     const [isDeletingPayment, setIsDeletingPayment] = useState<string | null>(null);
 
+    // Fee Cycle Ledger Modal
+    const [selectedLedgerStudent, setSelectedLedgerStudent] = useState<StudentFeesData | null>(null);
+    const [ledgerReport, setLedgerReport] = useState<FeeCycleLedgerReport | null>(null);
+    const [showLedgerModal, setShowLedgerModal] = useState(false);
+    const [ledgerLoading, setLedgerLoading] = useState(false);
+
     // Payment Form State
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('UPI');
@@ -349,7 +358,8 @@ export default function FeesManagementDashboard() {
                     profile_pic_url,
                     status,
                     classroom_students(
-                        classrooms(name)
+                        classroom_id,
+                        classrooms(id, name, type)
                     )
                 `, { count: 'exact' })
                 .or('role.eq.student,role.eq.pending,role.eq.mentor')
@@ -424,11 +434,97 @@ export default function FeesManagementDashboard() {
                             fees_amount: Number(s.fees_amount) || 0,
                             fees_collection_date: derivedCollectionDate,
                             fees_classes_paid: Number(s.fees_classes_paid) || 0,
-                            batch_name: batch_name || 'Unassigned'
+                            batch_name: batch_name || 'Unassigned',
+                            classroom_students_raw: s.classroom_students || []
                         };
                     });
                 setStudents(formatted);
                 setTotalCount(studentsRes.count ?? formatted.length);
+
+                // Batch-fetch operational records for all loaded students to compute dynamic fee metrics
+                const allStudentIds = formatted.map(s => s.id);
+                if (allStudentIds.length > 0) {
+                    const paymentsList = (paymentsRes.data || []) as PaymentRecord[];
+                    const studentPaymentsMap: Record<string, PaymentRecord[]> = {};
+                    paymentsList.forEach(p => {
+                        if (!studentPaymentsMap[p.student_id]) studentPaymentsMap[p.student_id] = [];
+                        studentPaymentsMap[p.student_id].push(p);
+                    });
+
+                    // Determine overall cycle boundaries across all students
+                    let minDateStr = '';
+                    let maxDateStr = '';
+                    const now = new Date();
+
+                    formatted.forEach(s => {
+                        if (s.fees_basis === 'monthly') {
+                            const cycle = getStudentBillingCycle(
+                                s.fees_collection_date,
+                                studentPaymentsMap[s.id] || [],
+                                now,
+                                s.join_date
+                            );
+                            if (!minDateStr || cycle.cycleStart < minDateStr) minDateStr = cycle.cycleStart;
+                            if (!maxDateStr || cycle.nextDueDate > maxDateStr) maxDateStr = cycle.nextDueDate;
+                        }
+                    });
+
+                    if (!minDateStr) {
+                        const d = new Date();
+                        d.setDate(d.getDate() - 45);
+                        minDateStr = d.toISOString().split('T')[0];
+                    }
+                    if (!maxDateStr) {
+                        const d = new Date();
+                        d.setDate(d.getDate() + 45);
+                        maxDateStr = d.toISOString().split('T')[0];
+                    }
+
+                    const [attRes, ovRes, lvsRes, schedRes] = await Promise.all([
+                        supabaseAuth
+                            .from('attendance')
+                            .select('student_id, classroom_id, date, status')
+                            .in('student_id', allStudentIds)
+                            .gte('date', minDateStr)
+                            .lte('date', maxDateStr),
+                        supabaseAuth
+                            .from('session_student_overrides')
+                            .select('id, student_id, target_classroom_id, override_date, reason')
+                            .in('student_id', allStudentIds)
+                            .gte('override_date', minDateStr)
+                            .lte('override_date', maxDateStr),
+                        supabaseAuth
+                            .from('leave_requests')
+                            .select('id, student_id, classroom_id, class_date, status')
+                            .in('student_id', allStudentIds)
+                            .eq('status', 'approved')
+                            .gte('class_date', minDateStr)
+                            .lte('class_date', maxDateStr),
+                        supabaseAuth
+                            .from('batch_schedules')
+                            .select('id, classroom_id, day_of_week, start_time, end_time')
+                    ]);
+
+                    const newMetrics: Record<string, StudentFeeCycleMetrics> = {};
+                    formatted.forEach(s => {
+                        const sClassrooms = (s.classroom_students_raw || []).map((cs: any) => ({
+                            id: cs.classroom_id || cs.classrooms?.id,
+                            name: cs.classrooms?.name,
+                            type: cs.classrooms?.type
+                        }));
+                        newMetrics[s.id] = calculateStudentFeeCycleMetrics({
+                            student: s,
+                            classrooms: sClassrooms,
+                            batchSchedules: schedRes.data || [],
+                            attendance: attRes.data || [],
+                            overrides: ovRes.data || [],
+                            leaveRequests: lvsRes.data || [],
+                            payments: studentPaymentsMap[s.id] || [],
+                            today: now
+                        });
+                    });
+                    setStudentMetricsMap(newMetrics);
+                }
             }
 
             if (paymentsRes.data) {
@@ -515,15 +611,19 @@ export default function FeesManagementDashboard() {
     // Calculate student payment status with O(1) payments map lookup
     const getStudentStatus = useCallback((student: StudentFeesData) => {
         if (student.fees_amount <= 0) return 'setup_required';
-        const classesCompleted = student.fees_classes_paid <= 0;
+        const metrics = studentMetricsMap[student.id];
+        const classesCompleted = metrics
+            ? metrics.classesAvailable <= 0
+            : student.fees_classes_paid <= 0;
         
         const studentPayments = paymentsMap[student.id] || [];
         const hasPending = studentPayments.some(p => p.status === 'pending_approval');
         if (hasPending) return 'pending_verification';
 
         if (student.fees_basis === 'class') {
-            if (student.fees_classes_paid < 0) return 'overdue';
-            if (student.fees_classes_paid === 0) return 'due_classes';
+            const available = metrics ? metrics.classesAvailable : student.fees_classes_paid;
+            if (available < 0) return 'overdue';
+            if (available === 0) return 'due_classes';
             return 'good';
         }
 
@@ -554,7 +654,7 @@ export default function FeesManagementDashboard() {
 
         // Fallback
         return classesCompleted ? 'due_classes' : 'good';
-    }, [paymentsMap, activePeriodDate]);
+    }, [paymentsMap, activePeriodDate, studentMetricsMap]);
 
     const handleHeaderSort = (field: SortField) => {
         if (sortField === field) {
@@ -666,14 +766,17 @@ export default function FeesManagementDashboard() {
 
         if (classesLeftFilter !== 'all') {
             result = result.filter(s => {
-                if (classesLeftFilter === 'zero' || classesLeftFilter === '0') return s.fees_classes_paid <= 0;
-                if (classesLeftFilter === 'one' || classesLeftFilter === '1') return s.fees_classes_paid === 1;
-                if (classesLeftFilter === '2') return s.fees_classes_paid === 2;
-                if (classesLeftFilter === '3') return s.fees_classes_paid === 3;
-                if (classesLeftFilter === '4') return s.fees_classes_paid === 4;
-                if (classesLeftFilter === '5') return s.fees_classes_paid === 5;
-                if (classesLeftFilter === '6+') return s.fees_classes_paid >= 6;
-                if (classesLeftFilter === 'multiple') return s.fees_classes_paid > 1;
+                const count = studentMetricsMap[s.id] !== undefined
+                    ? studentMetricsMap[s.id].classesAvailable
+                    : s.fees_classes_paid;
+                if (classesLeftFilter === 'zero' || classesLeftFilter === '0') return count <= 0;
+                if (classesLeftFilter === 'one' || classesLeftFilter === '1') return count === 1;
+                if (classesLeftFilter === '2') return count === 2;
+                if (classesLeftFilter === '3') return count === 3;
+                if (classesLeftFilter === '4') return count === 4;
+                if (classesLeftFilter === '5') return count === 5;
+                if (classesLeftFilter === '6+') return count >= 6;
+                if (classesLeftFilter === 'multiple') return count > 1;
                 return true;
             });
         }
@@ -711,7 +814,9 @@ export default function FeesManagementDashboard() {
             } else if (sortField === 'fees_basis') {
                 comparison = a.fees_basis.localeCompare(b.fees_basis);
             } else if (sortField === 'fees_classes_paid') {
-                comparison = a.fees_classes_paid - b.fees_classes_paid;
+                const cA = studentMetricsMap[a.id] !== undefined ? studentMetricsMap[a.id].classesAvailable : a.fees_classes_paid;
+                const cB = studentMetricsMap[b.id] !== undefined ? studentMetricsMap[b.id].classesAvailable : b.fees_classes_paid;
+                comparison = cA - cB;
             } else if (sortField === 'next_collection') {
                 const tA = nextCollectionMap.get(a.id) || 9999999999999;
                 const tB = nextCollectionMap.get(b.id) || 9999999999999;
@@ -949,6 +1054,74 @@ export default function FeesManagementDashboard() {
             console.error('Error fetching history:', err);
         } finally {
             setHistoryLoading(false);
+        }
+    };
+
+    // Open Fee Cycle Class Ledger Modal (Detail On Demand)
+    const openLedgerModal = async (student: StudentFeesData) => {
+        setSelectedLedgerStudent(student);
+        setShowLedgerModal(true);
+        setLedgerLoading(true);
+
+        try {
+            const sClassrooms = (student.classroom_students_raw || []).map((cs: any) => ({
+                id: cs.classroom_id || cs.classrooms?.id,
+                name: cs.classrooms?.name,
+                type: cs.classrooms?.type
+            }));
+
+            const now = new Date();
+            const studentPayments = payments.filter(p => p.student_id === student.id);
+            const cycle = getStudentBillingCycle(
+                student.fees_collection_date,
+                studentPayments,
+                now,
+                student.join_date
+            );
+
+            // Targeted single-student fetch scoped strictly to active billing period
+            const [attRes, ovRes, lvsRes, schedRes] = await Promise.all([
+                supabaseAuth
+                    .from('attendance')
+                    .select('id, student_id, classroom_id, date, status')
+                    .eq('student_id', student.id)
+                    .gte('date', cycle.cycleStart)
+                    .lte('date', cycle.nextDueDate),
+                supabaseAuth
+                    .from('session_student_overrides')
+                    .select('id, student_id, target_classroom_id, override_date, reason')
+                    .eq('student_id', student.id)
+                    .gte('override_date', cycle.cycleStart)
+                    .lte('override_date', cycle.nextDueDate),
+                supabaseAuth
+                    .from('leave_requests')
+                    .select('id, student_id, classroom_id, class_date, status')
+                    .eq('student_id', student.id)
+                    .eq('status', 'approved')
+                    .gte('class_date', cycle.cycleStart)
+                    .lte('class_date', cycle.nextDueDate),
+                supabaseAuth
+                    .from('batch_schedules')
+                    .select('id, classroom_id, day_of_week, start_time, end_time')
+                    .in('classroom_id', sClassrooms.map(c => c.id).filter(Boolean))
+            ]);
+
+            const report = getStudentFeeCycleLedger({
+                student,
+                classrooms: sClassrooms,
+                batchSchedules: schedRes.data || [],
+                attendance: attRes.data || [],
+                overrides: ovRes.data || [],
+                leaveRequests: lvsRes.data || [],
+                payments: studentPayments,
+                today: now
+            });
+
+            setLedgerReport(report);
+        } catch (err) {
+            console.error('Error opening fee cycle ledger:', err);
+        } finally {
+            setLedgerLoading(false);
         }
     };
 
@@ -1568,14 +1741,53 @@ export default function FeesManagementDashboard() {
                                                             <span className="font-semibold text-slate-700 dark:text-slate-350">{student.fees_basis === 'monthly' ? 'Monthly' : 'Class Basis'}</span>
                                                         </div>
                                                         <div className="p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                                                            <span className="block text-[10px] font-bold text-slate-400 uppercase">Classes Left</span>
-                                                            <span className={`font-black ${
-                                                                student.fees_classes_paid <= 0
-                                                                    ? 'text-rose-600 dark:text-rose-400'
-                                                                    : student.fees_classes_paid === 1
-                                                                        ? 'text-amber-500'
-                                                                        : 'text-slate-700 dark:text-slate-300'
-                                                            }`}>{student.fees_classes_paid}</span>
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Classes Left</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => openLedgerModal(student)}
+                                                                    className="text-[9px] font-bold text-[#b45309] dark:text-[#ecb613] hover:underline cursor-pointer"
+                                                                >
+                                                                    View cycle
+                                                                </button>
+                                                            </div>
+                                                            {(() => {
+                                                                const metrics = studentMetricsMap[student.id];
+                                                                const hasDisc = metrics && metrics.basis === 'monthly' && metrics.creditsRemaining > 0 && metrics.classesAvailable === 0 && metrics.unresolvedSessions > 0;
+                                                                const displayCount = hasDisc ? metrics.creditsRemaining : (metrics !== undefined ? metrics.classesAvailable : student.fees_classes_paid);
+                                                                return (
+                                                                    <div>
+                                                                        <span className={`font-black ${
+                                                                            hasDisc
+                                                                                ? 'text-amber-600 dark:text-amber-400'
+                                                                                : displayCount <= 0
+                                                                                ? 'text-rose-600 dark:text-rose-400'
+                                                                                : displayCount === 1
+                                                                                    ? 'text-amber-500'
+                                                                                    : 'text-slate-700 dark:text-slate-300'
+                                                                        }`}>{displayCount}</span>
+                                                                        <span className="text-[10px] font-medium text-slate-400 ml-1">
+                                                                            {hasDisc
+                                                                                ? (displayCount === 1 ? 'credit unresolved' : 'credits unresolved')
+                                                                                : (displayCount === 1 ? 'class left' : 'classes left')}
+                                                                        </span>
+                                                                        {metrics && metrics.basis === 'monthly' && metrics.unresolvedSessions > 0 ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => openLedgerModal(student)}
+                                                                                className="mt-1 text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded-md flex items-center gap-1 cursor-pointer"
+                                                                            >
+                                                                                <span className="size-1 rounded-full bg-amber-500 animate-pulse"></span>
+                                                                                ⚠️ Review ({metrics.unresolvedSessions}) →
+                                                                            </button>
+                                                                        ) : metrics && metrics.validOutstandingMakeups > 0 ? (
+                                                                            <span className="block text-[9px] font-medium text-purple-600 dark:text-purple-400 mt-0.5">
+                                                                                {metrics.validOutstandingMakeups} makeup available
+                                                                            </span>
+                                                                        ) : null}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
                                                         {(() => {
                                                             const inPeriod = periodPaymentsMap.get(student.id) || [];
@@ -1834,18 +2046,105 @@ export default function FeesManagementDashboard() {
 
                                                             {/* Prepaid Classes Balance */}
                                                             <td className="px-4 py-3.5 whitespace-nowrap">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <span className={`text-sm font-black ${
-                                                                        student.fees_classes_paid <= 0
-                                                                            ? 'text-rose-600 dark:text-rose-400'
-                                                                            : student.fees_classes_paid === 1
-                                                                                ? 'text-amber-500'
-                                                                                : 'text-slate-800 dark:text-slate-200'
-                                                                    }`}>
-                                                                        {student.fees_classes_paid}
-                                                                    </span>
-                                                                    <span className="text-xs font-medium text-slate-400">classes left</span>
-                                                                </div>
+                                                                {(() => {
+                                                                    const metrics = studentMetricsMap[student.id];
+                                                                    const hasDisc = metrics && metrics.basis === 'monthly' && metrics.creditsRemaining > 0 && metrics.classesAvailable === 0 && metrics.unresolvedSessions > 0;
+                                                                    const displayCount = hasDisc ? metrics.creditsRemaining : (metrics !== undefined ? metrics.classesAvailable : student.fees_classes_paid);
+                                                                    const countColor = hasDisc
+                                                                        ? 'text-amber-600 dark:text-amber-400'
+                                                                        : displayCount <= 0
+                                                                        ? 'text-rose-600 dark:text-rose-400'
+                                                                        : displayCount === 1
+                                                                            ? 'text-amber-500'
+                                                                            : 'text-slate-800 dark:text-slate-200';
+
+                                                                    let subtitleNode: React.ReactNode = null;
+                                                                    if (metrics && metrics.basis === 'monthly') {
+                                                                        if (metrics.unresolvedSessions > 0) {
+                                                                            subtitleNode = (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        openLedgerModal(student);
+                                                                                    }}
+                                                                                    className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 leading-tight transition-all cursor-pointer shadow-2xs"
+                                                                                    title={`${metrics.unresolvedSessions} past scheduled session(s) have no attendance record. Click to inspect ledger.`}
+                                                                                >
+                                                                                    <span className="size-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                                                                    ⚠️ Review Needed ({metrics.unresolvedSessions})
+                                                                                </button>
+                                                                            );
+                                                                        } else if (metrics.validOutstandingMakeups > 0) {
+                                                                            subtitleNode = (
+                                                                                <span className="text-[10px] font-medium text-purple-600 dark:text-purple-400 leading-tight flex items-center gap-1">
+                                                                                    <span>{metrics.validOutstandingMakeups} makeup {metrics.validOutstandingMakeups > 1 ? 'slots' : 'slot'}</span>
+                                                                                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            openLedgerModal(student);
+                                                                                        }}
+                                                                                        className="hover:underline text-purple-700 dark:text-purple-300 font-semibold cursor-pointer"
+                                                                                    >
+                                                                                        View cycle
+                                                                                    </button>
+                                                                                </span>
+                                                                            );
+                                                                        } else if (metrics.regularFuture > 0) {
+                                                                            subtitleNode = (
+                                                                                <span className="text-[10px] font-medium text-slate-400 leading-tight flex items-center gap-1">
+                                                                                    <span>{metrics.regularFuture} upcoming</span>
+                                                                                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            openLedgerModal(student);
+                                                                                        }}
+                                                                                        className="hover:underline text-slate-500 dark:text-slate-400 font-semibold cursor-pointer"
+                                                                                    >
+                                                                                        View cycle
+                                                                                    </button>
+                                                                                </span>
+                                                                            );
+                                                                        } else {
+                                                                            subtitleNode = (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        openLedgerModal(student);
+                                                                                    }}
+                                                                                    className="text-[10px] font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:underline leading-tight cursor-pointer"
+                                                                                >
+                                                                                    View cycle
+                                                                                </button>
+                                                                            );
+                                                                        }
+                                                                    }
+
+                                                                    return (
+                                                                        <div className="flex flex-col justify-center">
+                                                                            <div className="flex items-center gap-1.5 leading-tight">
+                                                                                <span className={`text-sm font-black ${countColor}`}>
+                                                                                    {displayCount}
+                                                                                </span>
+                                                                                <span className="text-xs font-medium text-slate-400">
+                                                                                    {hasDisc
+                                                                                        ? (displayCount === 1 ? 'credit unresolved' : 'credits unresolved')
+                                                                                        : (displayCount === 1 ? 'class left' : 'classes left')}
+                                                                                </span>
+                                                                            </div>
+                                                                            {subtitleNode && (
+                                                                                <div className="mt-1">
+                                                                                    {subtitleNode}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </td>
 
                                                             {/* Next Collection Date */}
@@ -2330,8 +2629,35 @@ export default function FeesManagementDashboard() {
                                     <p className="text-xs font-bold text-slate-850 dark:text-slate-200 mt-1">₹{selectedStudent.fees_amount.toLocaleString('en-IN')}</p>
                                 </div>
                                 <div>
-                                    <p className="text-[9px] font-black uppercase text-slate-400">Prepaid Classes Left</p>
-                                    <p className="text-xs font-black text-[#ecb613] mt-1">{selectedStudent.fees_classes_paid} classes</p>
+                                    <p className="text-[9px] font-black uppercase text-slate-400">Class Balance</p>
+                                    {(() => {
+                                        const sm = studentMetricsMap[selectedStudent.id];
+                                        if (sm && sm.basis === 'monthly') {
+                                            const hasDisc = sm.creditsRemaining > 0 && sm.classesAvailable === 0 && sm.unresolvedSessions > 0;
+                                            return (
+                                                <div className="mt-1">
+                                                    <p className={`text-xs font-black ${hasDisc ? 'text-amber-600 dark:text-amber-400' : 'text-[#ecb613]'}`}>
+                                                        {hasDisc ? `${sm.creditsRemaining} credit unresolved` : `${sm.classesAvailable} classes`}
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setShowHistoryModal(false);
+                                                            openLedgerModal(selectedStudent);
+                                                        }}
+                                                        className="text-[10px] font-bold text-amber-600 hover:text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 mt-0.5 cursor-pointer"
+                                                    >
+                                                        {sm.unresolvedSessions > 0 ? `⚠️ Review Needed (${sm.unresolvedSessions}) →` : 'View Cycle Ledger →'}
+                                                    </button>
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <p className="text-xs font-black text-[#ecb613] mt-1">
+                                                {selectedStudent.fees_classes_paid} classes
+                                            </p>
+                                        );
+                                    })()}
                                 </div>
                             </div>
 
@@ -2489,6 +2815,18 @@ export default function FeesManagementDashboard() {
                     </div>
                 </div>
             )}
+
+            {/* Fee Cycle Ledger Diagnostic Modal */}
+            <FeeCycleLedgerModal
+                isOpen={showLedgerModal}
+                onClose={() => setShowLedgerModal(false)}
+                report={ledgerReport}
+                studentName={selectedLedgerStudent?.name || ''}
+                studentBatch={selectedLedgerStudent?.batch_name}
+                studentAvatar={selectedLedgerStudent?.profile_pic_url}
+                studentId={selectedLedgerStudent?.id || ''}
+                loading={ledgerLoading}
+            />
         </div>
     );
 }

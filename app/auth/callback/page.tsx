@@ -32,6 +32,12 @@ export default function AuthCallbackPage() {
                 return;
             }
 
+            // Immediately route password recovery requests to reset-password without running OAuth merging logic
+            if (nextParam === '/reset-password') {
+                router.push('/reset-password');
+                return;
+            }
+
             const userId = session.user.id;
             const googleName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
             const googleEmail = session.user.email || '';
@@ -114,13 +120,6 @@ export default function AuthCallbackPage() {
                 } else if (newUser) {
                     existingUser = newUser;
                 }
-            }
-
-            // Check if there is a 'next' redirect URL (e.g. /reset-password)
-            // (nextParam is extracted at the top of the function)
-            if (nextParam === '/reset-password') {
-                router.push('/reset-password');
-                return;
             }
 
             // Existing user — redirect based on role

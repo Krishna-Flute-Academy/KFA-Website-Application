@@ -7,6 +7,7 @@ import { sendClassroomNotification } from '../../../../src/lib/notifications';
 import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
+import { fetchAcademyTeachers } from '../../../../src/lib/teachers';
 
 interface Student {
     id: string;
@@ -109,13 +110,9 @@ export default function CreateClassPage() {
                 }
                 setTeacherProfile({ id: profile.id, name: profile.name, email: profile.email, role: profile.role });
 
-                // 3. Fetch active teachers
-                const { data: teachersData } = await supabaseAuth
-                    .from('users')
-                    .select('id, name')
-                    .in('role', ['teacher', 'admin'])
-                    .eq('status', 'active');
-                if (teachersData) {
+                // 3. Fetch teachers and admins
+                const teachersData = await fetchAcademyTeachers(supabaseAuth, profile.id);
+                if (teachersData && teachersData.length > 0) {
                     setTeachers(teachersData);
                 }
 

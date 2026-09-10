@@ -14,6 +14,7 @@ import dynamic from 'next/dynamic';
 
 const PracticeSuiteModal = dynamic(() => import('../PracticeSuiteModal'), { ssr: false });
 const FluteTunerModal = dynamic(() => import('../tools/tuner/FluteTunerModal'), { ssr: false });
+const SurToNotationModal = dynamic(() => import('../tools/sur-to-notation/SurToNotationModal'), { ssr: false });
 
 const OverviewTab = dynamic(() => import('./OverviewTab'), { ssr: false });
 const CurriculumTab = dynamic(() => import('./CurriculumTab'), { ssr: false });
@@ -350,6 +351,7 @@ export default function StudentDashboardContainer() {
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [showPracticeSuite, setShowPracticeSuite] = useState(false);
     const [showFluteTuner, setShowFluteTuner] = useState(false);
+    const [showSurToNotation, setShowSurToNotation] = useState(false);
     const [practiceSuiteTab, setPracticeSuiteTab] = useState<'metronome' | 'tanpura' | 'drums' | 'combosetup'>('metronome');
     const [snoozedFeeNotifIds, setSnoozedFeeNotifIds] = useState<string[]>([]);
     const [policiesInitialSubTab, setPoliciesInitialSubTab] = useState<'policies' | 'how-to'>('policies');
@@ -2912,6 +2914,12 @@ export default function StudentDashboardContainer() {
                 />
             )}
 
+            {showSurToNotation && (
+                <SurToNotationModal
+                    onClose={() => setShowSurToNotation(false)}
+                />
+            )}
+
             <div className="flex min-h-screen bg-[#FAF6F0]" style={{ fontFamily: 'Lexend, sans-serif' }}>
                 {/* Google Fonts */}
                 <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -3483,6 +3491,7 @@ export default function StudentDashboardContainer() {
                                     setPracticeSuiteTab={setPracticeSuiteTab}
                                     setShowPracticeSuite={setShowPracticeSuite}
                                     onOpenTuner={() => setShowFluteTuner(true)}
+                                    onOpenSurToNotation={() => setShowSurToNotation(true)}
                                 />
                             </div>
                         )}

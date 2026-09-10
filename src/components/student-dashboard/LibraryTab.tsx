@@ -7,6 +7,7 @@ interface LibraryTabProps {
     setPracticeSuiteTab: (tab: 'metronome' | 'tanpura' | 'drums' | 'combosetup') => void;
     setShowPracticeSuite: (show: boolean) => void;
     onOpenTuner?: () => void;
+    onOpenSurToNotation?: () => void;
 }
 
 /**
@@ -15,7 +16,8 @@ interface LibraryTabProps {
 export default function LibraryTab({
     setPracticeSuiteTab,
     setShowPracticeSuite,
-    onOpenTuner
+    onOpenTuner,
+    onOpenSurToNotation
 }: LibraryTabProps) {
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
@@ -25,7 +27,28 @@ export default function LibraryTab({
                 <h3 className="font-extrabold text-slate-800 text-base mb-1">Practice Tools</h3>
                 <p className="text-xs text-slate-500 mb-6">Interactive instruments to support your flute rehearsal sessions</p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* Sur to Notation Tool */}
+                    <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
+                        <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#d46211] flex items-center justify-center shrink-0 border border-orange-100">
+                                <span className="material-symbols-outlined text-xl font-bold">mic</span>
+                            </div>
+                            <div className="text-left">
+                                <h4 className="font-extrabold text-xs md:text-sm text-slate-800">Sur to Notation</h4>
+                                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                    Play a note or phrase and convert your Sur into Sargam notation.
+                                </p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={onOpenSurToNotation}
+                            className="px-4 py-2 bg-[#ecb613] hover:bg-[#d49f0e] text-slate-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors mt-2"
+                        >
+                            Open Tool
+                        </button>
+                    </div>
+
                     {/* Flute Tuner Tool */}
                     <div className="border border-slate-150 rounded-2xl p-5 hover:shadow-xs transition-shadow flex flex-col justify-between items-start gap-4 bg-slate-50/20">
                         <div className="flex items-start gap-3">

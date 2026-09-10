@@ -10,6 +10,7 @@ import TeacherHeader from '../../../src/components/TeacherHeader';
 import Link from 'next/link';
 import { sortClassroomsByDayAndTime } from '../../../src/lib/classroomSort';
 import { getStudentStatusBadge } from '../../../src/lib/student-lifecycle';
+import { fetchAcademyTeachers } from '../../../src/lib/teachers';
 
 const GUIDANCE_TEMPLATES = [
     {
@@ -658,7 +659,7 @@ export default function StudentDirectory() {
                     ? supabaseAuth.from('classrooms').select('id, name, teacher_id')
                     : supabaseAuth.from('classrooms').select('id, name, teacher_id').eq('teacher_id', userId);
 
-                const teachersReq = supabaseAuth.from('users').select('id, name').in('role', ['teacher', 'admin']);
+                const teachersReq = fetchAcademyTeachers(supabaseAuth, userId);
                 const sessionsReq = supabaseAuth.from('user_sessions').select('user_id').is('logout_at', null).gt('last_activity_at', fiveMinutesAgoForQuery);
 
                 const studentsBaseReq = supabaseAuth
@@ -693,7 +694,7 @@ export default function StudentDirectory() {
 
                 const [
                     { data: rooms },
-                    { data: teachersData },
+                    teachersData,
                     { data: activeSessions },
                     { data: studentsData, error: studentsError }
                 ] = await Promise.all([

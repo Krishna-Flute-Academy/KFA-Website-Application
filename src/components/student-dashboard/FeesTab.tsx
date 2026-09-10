@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CreditCard, History, Clock, CheckCircle, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { supabaseAuth } from '../../lib/supabase-auth';
-import { getStudentFeeStatus, calculateClassesAdded } from '../../lib/fee-utils';
+import { getStudentFeeStatus, calculateClassesAdded, calculateStudentFeeCycleMetrics, StudentFeeCycleMetrics } from '../../lib/fee-utils';
 import { htmlToPlainText } from '../../lib/text-utils';
 
 interface FeesTabProps {
@@ -19,9 +19,65 @@ export default function FeesTab({ profile, payments, notifications = [], directM
     const [notes, setNotes] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [successMsg, setSuccessMsg] = useState('');
+    const [feeMetrics, setFeeMetrics] = useState<StudentFeeCycleMetrics | null>(null);
+
+    React.useEffect(() => {
+        if (!profile?.id) return;
+        let isMounted = true;
+
+        async function loadCycleMetrics() {
+            try {
+                const { data: csData } = await supabaseAuth
+                    .from('classroom_students')
+                    .select('classroom_id')
+                    .eq('student_id', profile.id);
+
+                const cIds = (csData || []).map((c: any) => c.classroom_id).filter(Boolean);
+
+                const [schedRes, overRes, leaveRes, attRes] = await Promise.all([
+                    cIds.length > 0
+                        ? supabaseAuth.from('batch_schedules').select('id, classroom_id, day_of_week, start_time, end_time').in('classroom_id', cIds)
+                        : Promise.resolve({ data: [] }),
+                    supabaseAuth.from('session_student_overrides').select('*').eq('student_id', profile.id),
+                    supabaseAuth.from('leave_requests').select('*').eq('student_id', profile.id),
+                    supabaseAuth.from('attendance').select('id, date, status, classroom_id').eq('student_id', profile.id)
+                ]);
+
+                if (!isMounted) return;
+
+                const m = calculateStudentFeeCycleMetrics({
+                    student: {
+                        id: profile.id,
+                        fees_basis: profile.fees_basis,
+                        fees_collection_date: profile.fees_collection_date,
+                        join_date: profile.join_date,
+                        fees_classes_paid: profile.fees_classes_paid || 0,
+                        fees_amount: profile.fees_amount || 0
+                    },
+                    payments: payments || [],
+                    attendance: (attRes.data || []).map((a: any) => ({
+                        id: a.id,
+                        session_date: a.date,
+                        status: a.status,
+                        classroom_id: a.classroom_id
+                    })),
+                    batchSchedules: (schedRes.data || []) as any,
+                    overrides: (overRes.data || []) as any,
+                    leaveRequests: (leaveRes.data || []) as any
+                });
+
+                setFeeMetrics(m);
+            } catch (err) {
+                console.error('Error calculating student fee cycle metrics in FeesTab:', err);
+            }
+        }
+
+        loadCycleMetrics();
+        return () => { isMounted = false; };
+    }, [profile?.id, profile?.fees_basis, profile?.fees_collection_date, profile?.join_date, profile?.fees_classes_paid, profile?.fees_amount, payments]);
 
     const feeStatus = getStudentFeeStatus(profile?.fees_basis, profile?.fees_collection_date, payments);
-    const classesLeft = profile?.fees_classes_paid || 0;
+    const classesLeft = feeMetrics ? feeMetrics.classesAvailable : (profile?.fees_classes_paid || 0);
     const monthlyFee = profile?.fees_amount || 0;
     
     // Sort payments by date descending
@@ -137,7 +193,21 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                 </div>
             )}
 
-            {classesLeft <= 0 && (
+            {classesLeft <= 0 && feeMetrics && feeMetrics.basis === 'monthly' && feeMetrics.unresolvedSessions > 0 ? (
+                <div className="bg-amber-50 border-2 border-amber-200 text-amber-800 px-5 py-4 rounded-2xl flex items-start gap-4 shadow-sm animate-in slide-in-from-top-4 duration-300 text-left">
+                    <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0 mt-0.5">
+                        <Clock className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1">
+                        <span className="bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md inline-block">
+                            Attendance Verification In Progress
+                        </span>
+                        <p className="text-xs sm:text-sm font-bold text-slate-800 leading-relaxed">
+                            Your attendance for a recent scheduled session is being recorded by your teacher. Once updated, your classes left balance will refresh.
+                        </p>
+                    </div>
+                </div>
+            ) : classesLeft <= 0 ? (
                 <div className="bg-red-50 border-2 border-red-200 text-red-700 px-5 py-4 rounded-2xl flex items-start gap-4 shadow-sm animate-in slide-in-from-top-4 duration-300 text-left">
                     <div className="w-9 h-9 rounded-xl bg-red-100 border border-red-200 flex items-center justify-center text-red-600 shrink-0 mt-0.5">
                         <AlertTriangle className="w-5 h-5" />
@@ -151,7 +221,7 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                         </p>
                     </div>
                 </div>
-            )}
+            ) : null}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
                 {/* Left Column: Status & Balance */}
@@ -180,6 +250,17 @@ export default function FeesTab({ profile, payments, notifications = [], directM
                                 <span className="text-sm font-bold text-slate-400">Classes Left</span>
                             </div>
                             
+                            {feeMetrics && feeMetrics.basis === 'monthly' && feeMetrics.unresolvedSessions > 0 && (
+                                <p className="text-xs font-semibold text-amber-600 mt-2">
+                                    ⚠️ Attendance review in progress ({feeMetrics.unresolvedSessions} session)
+                                </p>
+                            )}
+                            {feeMetrics && feeMetrics.basis === 'monthly' && feeMetrics.validOutstandingMakeups > 0 && (
+                                <p className="text-xs font-semibold text-purple-600 mt-2">
+                                    Includes {feeMetrics.validOutstandingMakeups} makeup class credit
+                                </p>
+                            )}
+
                             {classesLeft < 0 && (
                                 <p className="text-xs font-bold text-rose-600 mt-2">
                                     You have {-classesLeft} unpaid past class{-classesLeft > 1 ? 'es' : ''}.

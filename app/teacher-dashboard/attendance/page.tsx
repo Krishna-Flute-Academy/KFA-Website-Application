@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseAuth } from '../../../src/lib/supabase-auth';
 import { sortClassroomsByDayAndTime, parseDayAndStartFromClassroom } from '../../../src/lib/classroomSort';
@@ -499,16 +499,23 @@ export default function AttendancePage() {
         fetchHeaderSummaries();
     }, [activeBatchesOnSelectedDate, selectedDate]);
 
+    const isFirstDateMount = useRef(true);
+    const initialClassIdHandled = useRef(false);
+
     // Reset expanded batch and cached maps when selectedDate changes to guarantee date-specific roster loading
     useEffect(() => {
+        if (isFirstDateMount.current) {
+            isFirstDateMount.current = false;
+            return;
+        }
         setExpandedBatchId(null);
         setBatchStudentsMap({});
         setBatchAttendanceMap({});
     }, [selectedDate]);
 
     // Accordion Batch expansion fetch
-    const handleExpandBatch = async (batchId: string, isTemporary: boolean) => {
-        if (expandedBatchId === batchId) {
+    const handleExpandBatch = async (batchId: string, isTemporary: boolean, forceOpen = false) => {
+        if (!forceOpen && expandedBatchId === batchId) {
             setExpandedBatchId(null);
             return;
         }
@@ -605,6 +612,20 @@ export default function AttendancePage() {
             setBatchLoadingMap(prev => ({ ...prev, [batchId]: false }));
         }
     };
+
+    // Auto-expand batch if classId was passed via URL
+    useEffect(() => {
+        if (loading || initialClassIdHandled.current) return;
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const targetClassId = params.get('classId');
+            if (targetClassId) {
+                initialClassIdHandled.current = true;
+                const isTemp = temporaryClasses.some(tc => tc.id === targetClassId);
+                handleExpandBatch(targetClassId, isTemp, true);
+            }
+        }
+    }, [loading, temporaryClasses, classrooms]);
 
     const fetchLeaveRequests = useCallback(async (loadedRooms = classrooms) => {
         if (!teacherProfile) return;
