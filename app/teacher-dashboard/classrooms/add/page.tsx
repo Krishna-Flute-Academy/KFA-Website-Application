@@ -8,6 +8,7 @@ import { Loader2, ArrowLeft, Search, UserPlus, Clock, Info, CheckCircle2 } from 
 import Link from 'next/link';
 import TeacherSidebar from '../../../../src/components/TeacherSidebar';
 import { fetchAcademyTeachers } from '../../../../src/lib/teachers';
+import { createSpecialSession } from '../../../../src/lib/special-sessions';
 
 interface Student {
     id: string;
@@ -338,139 +339,53 @@ export default function CreateClassPage() {
 
                     if (assignmentError) throw assignmentError;
                 }
-            } else {
-                const formatTag = `[delivery_format:${formData.deliveryFormat}]`;
-                const finalDescription = `${(formData.description || 'Special session').trim()} ${formatTag}`;
 
-                // 1. Create shadow Classroom first
-                const { data: classroom, error: classroomError } = await supabaseAuth
-                    .from('classrooms')
-                    .insert([{
-                        teacher_id: formData.teacherId,
-                        name: formData.name,
-                        description: finalDescription,
-                        type: 'temporary'
-                    }])
-                    .select()
-                    .single();
+                // Notify Teacher, Students, and Admins for permanent class
+                try {
+                    const { data: admins } = await supabaseAuth
+                        .from('users')
+                        .select('id')
+                        .eq('role', 'admin')
+                        .eq('status', 'active');
+                    
+                    const adminIds = (admins || []).map(a => a.id);
+                    const recipientIds = Array.from(new Set([
+                        formData.teacherId,
+                        ...selectedStudents,
+                        ...adminIds
+                    ]));
 
-                if (classroomError) throw classroomError;
+                    if (recipientIds.length > 0) {
+                        const teacherName = teachers.find(t => t.id === formData.teacherId)?.name || 'Teacher';
+                        const title = `New Class Created: ${formData.name}`;
+                        const message = `A new permanent class "${formData.name}" has been created with teacher ${teacherName}.`;
 
-                // 2. Create Special Session in temporary_classes
-                const tempPayload = {
-                    teacher_id: formData.teacherId,
-                    classroom_id: classroom.id,
-                    title: formData.name,
-                    class_date: formData.classDate,
-                    start_time: formData.startTime,
-                    end_time: formData.endTime,
-                    purpose: formData.purpose,
-                    lifecycle_status: 'scheduled',
-                    credit_treatment: formData.creditTreatment
-                };
-
-                let { data: tempClass, error: tempError } = await supabaseAuth
-                    .from('temporary_classes')
-                    .insert([tempPayload])
-                    .select()
-                    .single();
-                
-                // Graceful fallback if purpose/lifecycle_status/credit_treatment columns do not exist yet on the DB
-                if (tempError && (tempError.code === '42703' || tempError.message?.includes('does not exist') || tempError.code === 'PGRST204')) {
-                    const fallbackTempPayload = {
-                        teacher_id: formData.teacherId,
-                        classroom_id: classroom.id,
-                        title: formData.name,
-                        class_date: formData.classDate,
-                        start_time: formData.startTime,
-                        end_time: formData.endTime
-                    };
-                    const retryResult = await supabaseAuth
-                        .from('temporary_classes')
-                        .insert([fallbackTempPayload])
-                        .select()
-                        .single();
-                    tempClass = retryResult.data;
-                    tempError = retryResult.error;
-                }
-                
-                if (tempError) throw tempError;
-
-                // 3. Assign Students to Special Session in session_student_overrides
-                if (selectedStudents.length > 0) {
-                    const studentInserts = selectedStudents.map(studentId => {
-                        const missedDate = studentMissedDates[studentId] || null;
-                        const reason = formData.purpose === 'makeup' && missedDate
-                            ? `Special Session (Makeup for ${missedDate}) [MissedDate:${missedDate}][credit_treatment:${formData.creditTreatment}][purpose:${formData.purpose}]`
-                            : `Special Session (${formData.purpose.replace('_', ' ')}) [credit_treatment:${formData.creditTreatment}][purpose:${formData.purpose}]`;
-                        return {
-                            student_id: studentId,
-                            target_classroom_id: classroom.id,
-                            override_date: formData.classDate,
-                            credit_treatment: formData.creditTreatment,
-                            missed_session_date: missedDate,
-                            reason
-                        };
-                    });
-
-                    let { error: tempAssignmentError } = await supabaseAuth
-                        .from('session_student_overrides')
-                        .insert(studentInserts);
-
-                    // Graceful fallback if credit_treatment / missed_session_date columns do not exist yet on DB
-                    if (tempAssignmentError && (tempAssignmentError.code === '42703' || tempAssignmentError.message?.includes('does not exist') || tempAssignmentError.code === 'PGRST204')) {
-                        const fallbackStudentInserts = studentInserts.map(row => ({
-                            student_id: row.student_id,
-                            target_classroom_id: row.target_classroom_id,
-                            override_date: row.override_date,
-                            reason: row.reason
-                        }));
-                        const retryAssignResult = await supabaseAuth
-                            .from('session_student_overrides')
-                            .insert(fallbackStudentInserts);
-                        tempAssignmentError = retryAssignResult.error;
+                        await sendClassroomNotification({
+                            teacherId: formData.teacherId,
+                            recipients: [],
+                            title,
+                            message,
+                            studentIds: recipientIds
+                        });
                     }
-
-                    if (tempAssignmentError) throw tempAssignmentError;
+                } catch (notifyErr) {
+                    console.error('Error sending creation notifications:', notifyErr);
                 }
-            }
-
-            // Notify Teacher, Students, and Admins
-            try {
-                // 1. Fetch active admins
-                const { data: admins } = await supabaseAuth
-                    .from('users')
-                    .select('id')
-                    .eq('role', 'admin')
-                    .eq('status', 'active');
-                
-                const adminIds = (admins || []).map(a => a.id);
-                const recipientIds = Array.from(new Set([
-                    formData.teacherId,
-                    ...selectedStudents,
-                    ...adminIds
-                ]));
-
-                if (recipientIds.length > 0) {
-                    const teacherName = teachers.find(t => t.id === formData.teacherId)?.name || 'Teacher';
-                    const purposeLabel = formData.purpose ? formData.purpose.replace('_', ' ') : 'special session';
-                    const title = formData.type === 'permanent' 
-                        ? `New Class Created: ${formData.name}`
-                        : `New Special Session: ${formData.name}`;
-                    const message = formData.type === 'permanent'
-                        ? `A new permanent class "${formData.name}" has been created with teacher ${teacherName}.`
-                        : `A new special session "${formData.name}" (${purposeLabel}) has been scheduled for ${formData.classDate} from ${formatTime12hr(formData.startTime)} to ${formatTime12hr(formData.endTime)}.`;
-
-                    await sendClassroomNotification({
-                        teacherId: formData.teacherId,
-                        recipients: [],
-                        title,
-                        message,
-                        studentIds: recipientIds
-                    });
-                }
-            } catch (notifyErr) {
-                console.error('Error sending creation notifications:', notifyErr);
+            } else {
+                // Canonical Special Session creation via shared service
+                await createSpecialSession(supabaseAuth, {
+                    teacherId: formData.teacherId,
+                    name: formData.name,
+                    description: formData.description,
+                    deliveryFormat: formData.deliveryFormat as 'offline' | 'online',
+                    classDate: formData.classDate,
+                    startTime: formData.startTime,
+                    endTime: formData.endTime,
+                    purpose: formData.purpose,
+                    creditTreatment: formData.creditTreatment,
+                    selectedStudents: selectedStudents,
+                    studentMissedDates: studentMissedDates
+                });
             }
 
             alert(`${formData.type === 'permanent' ? 'Permanent Class' : 'Special Session'} created successfully!`);

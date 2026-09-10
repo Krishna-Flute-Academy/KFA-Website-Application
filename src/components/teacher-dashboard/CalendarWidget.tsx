@@ -3,13 +3,16 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-interface CalendarEvent {
+export interface CalendarEvent {
     id: string;
     type: 'recurring' | 'temporary';
     name: string;
     time: string;
     date: string;
     classroom_id: string | null;
+    purpose?: string;
+    lifecycle_status?: string;
+    credit_treatment?: string;
 }
 
 interface CalendarDay {
@@ -30,7 +33,7 @@ interface CalendarWidgetProps {
 
 /**
  * CalendarWidget renders the monthly interactive grid calendar.
- * Recurring and makeup (temporary) classes are styled in blue and orange respectively.
+ * Recurring and Special Sessions are styled in blue and orange respectively.
  */
 export default function CalendarWidget({
     calendarDate,
@@ -46,7 +49,7 @@ export default function CalendarWidget({
                     <h3 className="font-bold text-base sm:text-lg">Class Calendar</h3>
                     <div className="flex items-center gap-3 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">
                         <span className="flex items-center gap-1.5"><span className="size-2 sm:size-2.5 rounded-full bg-blue-500"></span> Recurring</span>
-                        <span className="flex items-center gap-1.5"><span className="size-2 sm:size-2.5 rounded-full bg-orange-500"></span> Temporary</span>
+                        <span className="flex items-center gap-1.5"><span className="size-2 sm:size-2.5 rounded-full bg-orange-500"></span> Special Session</span>
                     </div>
                 </div>
                 <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">

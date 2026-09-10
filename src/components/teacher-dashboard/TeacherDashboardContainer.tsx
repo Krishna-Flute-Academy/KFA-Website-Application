@@ -8,7 +8,8 @@ import {
     Loader2, Plus, Users, Clock, ArrowRight, Lightbulb, Video, 
     LayoutDashboard, ClipboardList, Calendar, Trash2, Edit, 
     CheckCircle, AlertCircle, ChevronLeft, ChevronRight, X,
-    MessageSquare, StickyNote, Wallet, Sparkles, Coins, Search
+    MessageSquare, StickyNote, Wallet, Sparkles, Coins, Search,
+    ExternalLink, Edit3, CheckCircle2, XCircle
 } from 'lucide-react';
 import TeacherSidebar from '../TeacherSidebar';
 import TeacherHeader from '../TeacherHeader';
@@ -17,6 +18,18 @@ import { useToast } from '../../lib/ToastContext';
 import { getStudentFeeStatus } from '../../lib/fee-utils';
 import { parseDayAndStartFromClassroom } from '../../lib/classroomSort';
 import { fetchAcademyTeachers } from '../../lib/teachers';
+import { 
+    createSpecialSession, 
+    updateSpecialSession, 
+    cancelSpecialSession, 
+    completeSpecialSession, 
+    getDefaultCreditTreatment, 
+    getSpecialSessionPurposeLabel,
+    SpecialSessionPurpose, 
+    SpecialSessionCreditTreatment, 
+    SpecialSessionLifecycleStatus 
+} from '../../lib/special-sessions';
+import { fetchEffectiveClassroomParticipants } from '../../lib/classroom-participants';
 
 // Import subcomponents
 import StatsSummary from './StatsSummary';
@@ -68,6 +81,9 @@ interface TemporaryClass {
     class_date: string;
     start_time: string;
     end_time: string;
+    purpose?: SpecialSessionPurpose;
+    lifecycle_status?: SpecialSessionLifecycleStatus;
+    credit_treatment?: SpecialSessionCreditTreatment;
 }
 
 interface CalendarEvent {
@@ -77,6 +93,9 @@ interface CalendarEvent {
     time: string;
     date: string;
     classroom_id: string | null;
+    purpose?: SpecialSessionPurpose;
+    lifecycle_status?: SpecialSessionLifecycleStatus;
+    credit_treatment?: SpecialSessionCreditTreatment;
 }
 
 interface PanelStudent {
@@ -203,13 +222,51 @@ export default function TeacherDashboardContainer() {
     const [inquiries, setInquiries] = useState<Inquiry[]>([]);
     const [inquiriesLoading, setInquiriesLoading] = useState(true);
 
-    // Temporary class scheduler modal
+    // Special Session scheduler modal (creation)
     const [showTempModal, setShowTempModal] = useState(false);
     const [tempModalDate, setTempModalDate] = useState('');
     const [allStudents, setAllStudents] = useState<{ id: string; name: string }[]>([]);
     const [tempSelectedStudents, setTempSelectedStudents] = useState<string[]>([]);
-    const [tempForm, setTempForm] = useState({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: '', delivery_format: 'offline' });
+    const [tempStudentMissedDates, setTempStudentMissedDates] = useState<Record<string, string>>({});
+    const [tempForm, setTempForm] = useState<{
+        title: string;
+        start_time: string;
+        end_time: string;
+        classroom_id: string;
+        teacher_id: string;
+        delivery_format: 'offline' | 'online';
+        purpose: SpecialSessionPurpose;
+        credit_treatment: SpecialSessionCreditTreatment;
+    }>({ 
+        title: '', 
+        start_time: '10:00', 
+        end_time: '11:00', 
+        classroom_id: '', 
+        teacher_id: '', 
+        delivery_format: 'offline',
+        purpose: 'makeup',
+        credit_treatment: 'makeup'
+    });
     const [studentSearchQuery, setStudentSearchQuery] = useState('');
+
+    // Special Session edit modal
+    const [showEditTempModal, setShowEditTempModal] = useState(false);
+    const [editingSpecialSession, setEditingSpecialSession] = useState<{
+        classroomId: string;
+        name: string;
+        teacherId: string;
+        classDate: string;
+        startTime: string;
+        endTime: string;
+        deliveryFormat: 'offline' | 'online';
+        purpose: SpecialSessionPurpose;
+        creditTreatment: SpecialSessionCreditTreatment;
+        lifecycleStatus: SpecialSessionLifecycleStatus;
+        selectedStudents: string[];
+        studentMissedDates: Record<string, string>;
+    } | null>(null);
+    const [editStudentSearchQuery, setEditStudentSearchQuery] = useState('');
+    const [actionLoading, setActionLoading] = useState(false);
     
     // Admin features
     const [teachers, setTeachers] = useState<{ id: string; name: string }[]>([]);
@@ -222,6 +279,7 @@ export default function TeacherDashboardContainer() {
     const [pendingSubmissionsList, setPendingSubmissionsList] = useState<any[]>([]);
 
     const isAdmin = teacherProfile?.role === 'admin';
+    const isTeacher = teacherProfile?.role === 'teacher' || teacherProfile?.role === 'mentor';
 
     // Mandatory Profile Prompt state for Admin/Teacher
     const [showProfilePromptModal, setShowProfilePromptModal] = useState(false);
@@ -561,22 +619,45 @@ export default function TeacherDashboardContainer() {
                 setClassroomSchedules(formattedSchedules);
                 localSchedules = formattedSchedules;
 
-                // Fetch temporary classes
-                const { data: temps } = await supabaseAuth
+                // Fetch temporary classes with graceful metadata fallback
+                let tempsData: any[] = [];
+                const { data: tempsRes, error: tempsErr } = await supabaseAuth
                     .from('temporary_classes')
-                    .select('id, classroom_id, classrooms(name, description), title, class_date, start_time, end_time')
+                    .select('id, classroom_id, classrooms(name, description), title, class_date, start_time, end_time, purpose, lifecycle_status, credit_treatment')
                     .in('classroom_id', classIds);
 
-                const formattedTemps: TemporaryClass[] = (temps || []).map((t: any) => ({
-                    id: t.id,
-                    classroom_id: t.classroom_id,
-                    classroom_name: t.classrooms?.name || t.title || 'Special Session',
-                    classroom_description: t.classrooms?.description || '',
-                    title: t.title || 'Temporary Class',
-                    class_date: t.class_date,
-                    start_time: t.start_time,
-                    end_time: t.end_time
-                }));
+                if (tempsErr) {
+                    const { data: tempsFallback } = await supabaseAuth
+                        .from('temporary_classes')
+                        .select('id, classroom_id, classrooms(name, description), title, class_date, start_time, end_time')
+                        .in('classroom_id', classIds);
+                    tempsData = tempsFallback || [];
+                } else {
+                    tempsData = tempsRes || [];
+                }
+
+                const formattedTemps: TemporaryClass[] = tempsData.map((t: any) => {
+                    const desc = t.classrooms?.description || '';
+                    const purposeMatch = desc.match(/\[purpose:([a-z_]+)\]/);
+                    const creditMatch = desc.match(/\[credit_treatment:([a-z_]+)\]/);
+                    const resolvedPurpose = t.purpose || (purposeMatch ? purposeMatch[1] : 'makeup');
+                    const resolvedCredit = t.credit_treatment || (creditMatch ? creditMatch[1] : 'makeup');
+                    const resolvedLifecycle = t.lifecycle_status || (t.class_date < new Date().toISOString().split('T')[0] ? 'completed' : 'scheduled');
+
+                    return {
+                        id: t.id,
+                        classroom_id: t.classroom_id,
+                        classroom_name: t.classrooms?.name || t.title || 'Special Session',
+                        classroom_description: desc,
+                        title: t.title || 'Special Session',
+                        class_date: t.class_date,
+                        start_time: t.start_time,
+                        end_time: t.end_time,
+                        purpose: resolvedPurpose,
+                        lifecycle_status: resolvedLifecycle,
+                        credit_treatment: resolvedCredit
+                    };
+                });
                 setTemporaryClasses(formattedTemps);
                 localTemps = formattedTemps;
 
@@ -1134,7 +1215,7 @@ export default function TeacherDashboardContainer() {
 
     const handleCreateTempClass = async () => {
         if (!tempForm.title.trim()) {
-            alert('Please fill out all required fields!');
+            alert('Please provide a session name.');
             return;
         }
 
@@ -1150,61 +1231,206 @@ export default function TeacherDashboardContainer() {
                 return;
             }
 
-            const formatTag = `[delivery_format:${tempForm.delivery_format || 'offline'}]`;
-            const finalDescription = `Special makeup/extra class for date ${tempModalDate} ${formatTag}`;
+            setActionLoading(true);
 
-            // 1. Create classroom
-            const { data: newClassroom, error: classError } = await supabaseAuth
-                .from('classrooms')
-                .insert([{
-                    name: tempForm.title,
-                    description: finalDescription,
-                    teacher_id: selectedTeacherId,
-                    type: 'temporary',
-                    status: 'active'
-                }])
-                .select()
-                .single();
+            await createSpecialSession(supabaseAuth, {
+                teacherId: selectedTeacherId,
+                name: tempForm.title,
+                deliveryFormat: tempForm.delivery_format,
+                classDate: tempModalDate,
+                startTime: tempForm.start_time,
+                endTime: tempForm.end_time,
+                purpose: tempForm.purpose,
+                creditTreatment: tempForm.credit_treatment,
+                selectedStudents: tempSelectedStudents,
+                studentMissedDates: tempStudentMissedDates
+            });
 
-            if (classError) throw classError;
-
-            // 2. Schedule record
-            const { error: tempClassError } = await supabaseAuth
-                .from('temporary_classes')
-                .insert([{
-                    classroom_id: newClassroom.id,
-                    teacher_id: selectedTeacherId,
-                    title: tempForm.title,
-                    class_date: tempModalDate,
-                    start_time: tempForm.start_time,
-                    end_time: tempForm.end_time
-                }]);
-
-            if (tempClassError) throw tempClassError;
-
-            // 3. Add student overrides
-            if (tempSelectedStudents.length > 0) {
-                const overrideRows = tempSelectedStudents.map(studentId => ({
-                    student_id: studentId,
-                    target_classroom_id: newClassroom.id,
-                    override_date: tempModalDate,
-                    reason: `Assigned to temporary makeup session: ${tempForm.title}`
-                }));
-
-                const { error: overrideError } = await supabaseAuth
-                    .from('session_student_overrides')
-                    .insert(overrideRows);
-
-                if (overrideError) throw overrideError;
-            }
-
-            showToast('Makeup class scheduled successfully!', 'success');
+            showToast('Special Session scheduled successfully!', 'success');
             setShowTempModal(false);
             setTempSelectedStudents([]);
+            setTempStudentMissedDates({});
+            setTempForm({
+                title: '',
+                start_time: '10:00',
+                end_time: '11:00',
+                classroom_id: '',
+                teacher_id: teacherProfile?.id || '',
+                delivery_format: 'offline',
+                purpose: 'makeup',
+                credit_treatment: 'makeup'
+            });
             await loadDashboardData();
+            setSidePanelOpen(false);
         } catch (err: any) {
             console.error(err);
-            alert(`Failed to schedule makeup class: ${err.message}`);
+            alert(`Failed to schedule special session: ${err.message}`);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleOpenEditSpecialSession = async (evt: CalendarEvent) => {
+        if (!evt.classroom_id) return;
+        try {
+            // 1. Fetch classroom details
+            const { data: room } = await supabaseAuth
+                .from('classrooms')
+                .select('id, name, description, teacher_id')
+                .eq('id', evt.classroom_id)
+                .single();
+
+            // 2. Fetch temporary_classes row with fallback
+            let tc: any = null;
+            const { data: tcRes, error: tcErr } = await supabaseAuth
+                .from('temporary_classes')
+                .select('id, title, class_date, start_time, end_time, teacher_id, purpose, lifecycle_status, credit_treatment')
+                .eq('classroom_id', evt.classroom_id)
+                .maybeSingle();
+
+            if (tcErr) {
+                const { data: tcFallback } = await supabaseAuth
+                    .from('temporary_classes')
+                    .select('id, title, class_date, start_time, end_time, teacher_id')
+                    .eq('classroom_id', evt.classroom_id)
+                    .maybeSingle();
+                tc = tcFallback;
+            } else {
+                tc = tcRes;
+            }
+
+            // 3. Fetch session_student_overrides with fallback
+            let overrides: any[] = [];
+            const { data: overRes, error: overErr } = await supabaseAuth
+                .from('session_student_overrides')
+                .select('student_id, missed_session_date, credit_treatment, reason')
+                .eq('target_classroom_id', evt.classroom_id);
+
+            if (overErr) {
+                const { data: overFallback } = await supabaseAuth
+                    .from('session_student_overrides')
+                    .select('student_id, reason')
+                    .eq('target_classroom_id', evt.classroom_id);
+                overrides = overFallback || [];
+            } else {
+                overrides = overRes || [];
+            }
+
+            const missedDatesMap: Record<string, string> = {};
+            const studentIds: string[] = [];
+            (overrides || []).forEach((o: any) => {
+                studentIds.push(o.student_id);
+                if (o.missed_session_date) {
+                    missedDatesMap[o.student_id] = o.missed_session_date;
+                } else if (o.reason) {
+                    const match = o.reason.match(/\[MissedDate:([^\]]+)\]/);
+                    if (match) missedDatesMap[o.student_id] = match[1];
+                }
+            });
+
+            const desc = room?.description || '';
+            const formatMatch = desc.match(/\[delivery_format:(online|offline)\]/);
+            const format = (formatMatch ? formatMatch[1] : 'offline') as 'offline' | 'online';
+
+            const purposeMatch = desc.match(/\[purpose:([a-z_]+)\]/);
+            const creditMatch = desc.match(/\[credit_treatment:([a-z_]+)\]/);
+
+            const resolvedPurpose: SpecialSessionPurpose = tc?.purpose || (purposeMatch ? (purposeMatch[1] as any) : 'makeup');
+            const resolvedCredit: SpecialSessionCreditTreatment = tc?.credit_treatment || (creditMatch ? (creditMatch[1] as any) : getDefaultCreditTreatment(resolvedPurpose));
+            const resolvedLifecycle: SpecialSessionLifecycleStatus = tc?.lifecycle_status || (evt.date < new Date().toISOString().split('T')[0] ? 'completed' : 'scheduled');
+
+            setEditingSpecialSession({
+                classroomId: evt.classroom_id,
+                name: tc?.title || room?.name || evt.name,
+                teacherId: tc?.teacher_id || room?.teacher_id || teacherProfile?.id || '',
+                classDate: tc?.class_date || evt.date,
+                startTime: tc?.start_time ? tc.start_time.slice(0, 5) : '10:00',
+                endTime: tc?.end_time ? tc.end_time.slice(0, 5) : '11:00',
+                deliveryFormat: format,
+                purpose: resolvedPurpose,
+                creditTreatment: resolvedCredit,
+                lifecycleStatus: resolvedLifecycle,
+                selectedStudents: studentIds,
+                studentMissedDates: missedDatesMap
+            });
+            setEditStudentSearchQuery('');
+            setShowEditTempModal(true);
+        } catch (err: any) {
+            console.error('Error loading special session for edit:', err);
+            alert('Failed to load session details: ' + err.message);
+        }
+    };
+
+    const handleSaveEditSpecialSession = async () => {
+        if (!editingSpecialSession) return;
+        if (!editingSpecialSession.name.trim()) {
+            alert('Please provide a session name.');
+            return;
+        }
+        if (editingSpecialSession.endTime <= editingSpecialSession.startTime) {
+            alert('End time must be after start time.');
+            return;
+        }
+
+        try {
+            setActionLoading(true);
+            await updateSpecialSession(supabaseAuth, {
+                classroomId: editingSpecialSession.classroomId,
+                name: editingSpecialSession.name,
+                teacherId: editingSpecialSession.teacherId,
+                classDate: editingSpecialSession.classDate,
+                startTime: editingSpecialSession.startTime,
+                endTime: editingSpecialSession.endTime,
+                deliveryFormat: editingSpecialSession.deliveryFormat,
+                purpose: editingSpecialSession.purpose,
+                creditTreatment: editingSpecialSession.creditTreatment,
+                lifecycleStatus: editingSpecialSession.lifecycleStatus,
+                selectedStudents: editingSpecialSession.selectedStudents,
+                studentMissedDates: editingSpecialSession.studentMissedDates
+            });
+
+            showToast('Special Session updated successfully!', 'success');
+            setShowEditTempModal(false);
+            setEditingSpecialSession(null);
+            await loadDashboardData();
+            setSidePanelOpen(false);
+        } catch (err: any) {
+            console.error(err);
+            alert('Failed to update session: ' + err.message);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleMarkSessionCompleted = async (classroomId: string) => {
+        if (!confirm('Mark this Special Session as completed?')) return;
+        try {
+            setActionLoading(true);
+            await completeSpecialSession(supabaseAuth, classroomId);
+            showToast('Special Session marked as completed!', 'success');
+            await loadDashboardData();
+            setSelectedDateEvents(prev => prev.map(e => e.classroom_id === classroomId ? { ...e, lifecycle_status: 'completed' } : e));
+        } catch (err: any) {
+            console.error(err);
+            alert('Failed to complete session: ' + err.message);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleCancelSpecialSession = async (classroomId: string) => {
+        if (!confirm('Are you sure you want to cancel this Special Session? This will archive the session.')) return;
+        try {
+            setActionLoading(true);
+            await cancelSpecialSession(supabaseAuth, classroomId);
+            showToast('Special Session cancelled successfully!', 'success');
+            await loadDashboardData();
+            setSelectedDateEvents(prev => prev.map(e => e.classroom_id === classroomId ? { ...e, lifecycle_status: 'cancelled' } : e));
+        } catch (err: any) {
+            console.error(err);
+            alert('Failed to cancel session: ' + err.message);
+        } finally {
+            setActionLoading(false);
         }
     };
 
@@ -1298,7 +1524,10 @@ export default function TeacherDashboardContainer() {
                     name: t.classroom_name,
                     time: `${formatTime12hr(t.start_time.slice(0, 5))} - ${formatTime12hr(t.end_time.slice(0, 5))}`,
                     date: cell.date,
-                    classroom_id: t.classroom_id
+                    classroom_id: t.classroom_id,
+                    purpose: t.purpose,
+                    lifecycle_status: t.lifecycle_status,
+                    credit_treatment: t.credit_treatment
                 });
             });
 
@@ -1318,16 +1547,31 @@ export default function TeacherDashboardContainer() {
         const studentMap: Record<string, PanelStudent[]> = {};
         for (const evt of events) {
             if (evt.classroom_id) {
-                const { data } = await supabaseAuth
-                    .from('classroom_students')
-                    .select('student_id, users!student_id(name, profile_pic_url)')
-                    .eq('classroom_id', evt.classroom_id);
-                
-                studentMap[evt.classroom_id] = (data || []).map((row: any) => ({
-                    id: row.student_id,
-                    name: row.users?.name || 'Student',
-                    profile_pic_url: row.users?.profile_pic_url || undefined
-                }));
+                if (evt.type === 'temporary') {
+                    // For Special Sessions, fetch effective participants from session_student_overrides
+                    try {
+                        const res = await fetchEffectiveClassroomParticipants(supabaseAuth, evt.classroom_id, { date: dateStr });
+                        studentMap[evt.classroom_id] = (res.students || []).map((s: any) => ({
+                            id: s.student_id,
+                            name: s.name || 'Student',
+                            profile_pic_url: s.profile_pic_url || undefined
+                        }));
+                    } catch (pErr) {
+                        console.error('Error fetching special session participants:', pErr);
+                        studentMap[evt.classroom_id] = [];
+                    }
+                } else {
+                    const { data } = await supabaseAuth
+                        .from('classroom_students')
+                        .select('student_id, users!student_id(name, profile_pic_url)')
+                        .eq('classroom_id', evt.classroom_id);
+                    
+                    studentMap[evt.classroom_id] = (data || []).map((row: any) => ({
+                        id: row.student_id,
+                        name: row.users?.name || 'Student',
+                        profile_pic_url: row.users?.profile_pic_url || undefined
+                    }));
+                }
             }
         }
         setPanelClassStudents(studentMap);
@@ -1438,7 +1682,7 @@ export default function TeacherDashboardContainer() {
                         <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
                             <div>
                                 <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Classes for {selectedDateStr}</h3>
-                                <p className="text-xs text-slate-505 mt-1">{selectedDateEvents.length} class(es) scheduled</p>
+                                <p className="text-xs text-slate-500 mt-1">{selectedDateEvents.length} class(es) scheduled</p>
                             </div>
                             <div className="flex items-center gap-2">
                                 {isAdmin && (
@@ -1446,14 +1690,25 @@ export default function TeacherDashboardContainer() {
                                         onClick={() => {
                                             setTempModalDate(selectedDateStr);
                                             setTempSelectedStudents([]);
-                                            setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '', delivery_format: 'offline' });
+                                            setTempStudentMissedDates({});
+                                            setTempForm({ 
+                                                title: '', 
+                                                start_time: '10:00', 
+                                                end_time: '11:00', 
+                                                classroom_id: '', 
+                                                teacher_id: teacherProfile?.id || '', 
+                                                delivery_format: 'offline',
+                                                purpose: 'makeup',
+                                                credit_treatment: 'makeup'
+                                            });
                                             setStudentSearchQuery('');
                                             setShowTempModal(true);
                                         }} 
-                                        className="p-2 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-xs font-bold transition-all"
-                                        title="Add Makeup Class"
+                                        className="p-2 bg-[#ecb613] hover:bg-[#ecb613]/90 text-slate-900 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                                        title="Create Special Session"
                                     >
                                         <Plus size={16} />
+                                        <span className="hidden sm:inline text-xs">Special Session</span>
                                     </button>
                                 )}
                                 <button onClick={() => setSidePanelOpen(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
@@ -1466,23 +1721,36 @@ export default function TeacherDashboardContainer() {
                             {selectedDateEvents.length > 0 ? (
                                 selectedDateEvents.map((evt, idx) => (
                                     <div key={idx} className="bg-slate-50 dark:bg-slate-800/40 rounded-xl p-4 border border-slate-100 dark:border-slate-800 space-y-4">
-                                        <div className="flex justify-between items-start">
+                                        <div className="flex justify-between items-start gap-2">
                                             <div>
                                                 <h4 className="font-bold text-sm text-slate-900 dark:text-white">{evt.name}</h4>
-                                                <p className="text-xs text-slate-550 mt-1 flex items-center gap-1"><Clock size={12} /> {evt.time}</p>
+                                                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Clock size={12} /> {evt.time}</p>
                                             </div>
-                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                evt.type === 'recurring'
-                                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30'
-                                                    : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30'
-                                            }`}>
-                                                {evt.type}
-                                            </span>
+                                            <div className="flex flex-col items-end gap-1 shrink-0">
+                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+                                                    evt.type === 'recurring'
+                                                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                                        : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                                                }`}>
+                                                    {evt.type === 'recurring' ? 'Recurring' : `Special Session${evt.purpose ? ` • ${getSpecialSessionPurposeLabel(evt.purpose)}` : ''}`}
+                                                </span>
+                                                {evt.type === 'temporary' && evt.lifecycle_status && (
+                                                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                                                        evt.lifecycle_status === 'completed'
+                                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                                            : evt.lifecycle_status === 'cancelled'
+                                                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
+                                                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                                    }`}>
+                                                        {evt.lifecycle_status}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <div className="border-t border-slate-100 dark:border-slate-700/50 pt-3">
                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Student Roster</p>
-                                            {evt.classroom_id && panelClassStudents[evt.classroom_id] ? (
+                                            {evt.classroom_id && panelClassStudents[evt.classroom_id] && panelClassStudents[evt.classroom_id].length > 0 ? (
                                                 <div className="grid grid-cols-2 gap-2">
                                                     {panelClassStudents[evt.classroom_id].map(s => (
                                                         <div key={s.id} className="flex items-center gap-2 p-1.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-800">
@@ -1501,24 +1769,76 @@ export default function TeacherDashboardContainer() {
                                                 <p className="text-[10px] text-slate-400 text-center py-2 italic font-medium">No students enrolled yet.</p>
                                             )}
                                         </div>
+
+                                        {/* Class Actions */}
+                                        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                            {evt.classroom_id && (
+                                                <Link
+                                                    href={`/teacher-dashboard/classrooms/${evt.classroom_id}`}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 transition-colors"
+                                                >
+                                                    <ExternalLink size={13} />
+                                                    Open Session
+                                                </Link>
+                                            )}
+                                            {evt.type === 'temporary' && evt.classroom_id && (isAdmin || isTeacher) && evt.lifecycle_status !== 'cancelled' && (
+                                                <>
+                                                    <button
+                                                        onClick={() => handleOpenEditSpecialSession(evt)}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/40 transition-colors"
+                                                    >
+                                                        <Edit3 size={13} />
+                                                        Edit Session
+                                                    </button>
+                                                    {evt.lifecycle_status !== 'completed' && (
+                                                        <button
+                                                            onClick={() => handleMarkSessionCompleted(evt.classroom_id!)}
+                                                            disabled={actionLoading}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/40 transition-colors disabled:opacity-50"
+                                                        >
+                                                            <CheckCircle2 size={13} />
+                                                            Mark Completed
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleCancelSpecialSession(evt.classroom_id!)}
+                                                        disabled={actionLoading}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-100 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 hover:bg-rose-200 dark:hover:bg-rose-900/40 transition-colors disabled:opacity-50"
+                                                    >
+                                                        <XCircle size={13} />
+                                                        Cancel Session
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 ))
                             ) : (
                                 <div className="text-center py-12">
                                     <Calendar size={48} className="mx-auto text-slate-200 mb-4" />
-                                    <p className="text-sm font-medium text-slate-550">No classes scheduled for this day.</p>
+                                    <p className="text-sm font-medium text-slate-500">No classes scheduled for this day.</p>
                                     {isAdmin && (
                                         <button 
                                             onClick={() => {
                                                 setTempModalDate(selectedDateStr);
                                                 setTempSelectedStudents([]);
-                                                setTempForm({ title: '', start_time: '10:00', end_time: '11:00', classroom_id: '', teacher_id: teacherProfile?.id || '', delivery_format: 'offline' });
+                                                setTempStudentMissedDates({});
+                                                setTempForm({ 
+                                                    title: '', 
+                                                    start_time: '10:00', 
+                                                    end_time: '11:00', 
+                                                    classroom_id: '', 
+                                                    teacher_id: teacherProfile?.id || '', 
+                                                    delivery_format: 'offline',
+                                                    purpose: 'makeup',
+                                                    credit_treatment: 'makeup'
+                                                });
                                                 setStudentSearchQuery('');
                                                 setShowTempModal(true);
                                             }}
                                             className="mt-4 text-xs font-bold text-[#ecb613] hover:underline"
                                         >
-                                            + Schedule a Temporary Class
+                                            + Schedule a Special Session
                                         </button>
                                     )}
                                 </div>
@@ -1528,49 +1848,52 @@ export default function TeacherDashboardContainer() {
                 </>
             )}
 
-            {/* Temporary Class Modal */}
+            {/* Create Special Session Modal */}
             {showTempModal && (
                 <>
                     <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => { setShowTempModal(false); setStudentSearchQuery(''); }} />
-                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 text-left flex flex-col max-h-[90vh] overflow-hidden">
-                        <div className="flex items-center justify-between mb-6 shrink-0">
-                            <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Add Temporary Class</h3>
-                            <button onClick={() => { setShowTempModal(false); setTempSelectedStudents([]); setStudentSearchQuery(''); }} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] max-w-[480px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 text-left flex flex-col max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between mb-4 shrink-0 pb-3 border-b border-slate-100 dark:border-slate-800">
+                            <div>
+                                <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Create Special Session</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Date: <span className="font-semibold text-slate-700 dark:text-slate-300">{tempModalDate}</span></p>
+                            </div>
+                            <button onClick={() => { setShowTempModal(false); setTempSelectedStudents([]); setTempStudentMissedDates({}); setStudentSearchQuery(''); }} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                 <X size={18} />
                             </button>
                         </div>
-                        <div className="overflow-y-auto flex-1 pr-1 -mr-1">
-                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-4 shrink-0">Date: {tempModalDate}</p>
-                            <div className="space-y-4">
+                        <div className="overflow-y-auto flex-1 pr-1 -mr-1 space-y-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">Title</label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Session Name</label>
                                 <input
                                     type="text"
                                     value={tempForm.title}
                                     onChange={e => setTempForm({ ...tempForm, title: e.target.value })}
-                                    placeholder="e.g. Extra Practice Session"
+                                    placeholder="e.g. Makeup Session - Raag Yaman"
                                     className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
                                 />
                             </div>
+
                             {isAdmin && (
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">Assign Instructor (Teacher)</label>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Instructor (Teacher)</label>
                                     <select
                                         required
                                         value={tempForm.teacher_id}
                                         onChange={e => setTempForm({ ...tempForm, teacher_id: e.target.value })}
                                         className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
                                     >
-                                        <option value="">Select a Teacher</option>
+                                        <option value="">Select an Instructor</option>
                                         {teachers.map(t => (
                                             <option key={t.id} value={t.id}>{t.name}</option>
                                         ))}
                                     </select>
                                 </div>
                             )}
+
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">Start Time</label>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time</label>
                                     <input
                                         type="time"
                                         value={tempForm.start_time}
@@ -1582,21 +1905,22 @@ export default function TeacherDashboardContainer() {
                                                 end_time: addOneHour(newStart)
                                             }));
                                         }}
-                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-855 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">End Time</label>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">End Time</label>
                                     <input
                                         type="time"
                                         value={tempForm.end_time}
                                         onChange={e => setTempForm(prev => ({ ...prev, end_time: e.target.value }))}
-                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-855 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
                                     />
                                 </div>
                             </div>
+
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Delivery Format</label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Format</label>
                                 <div className="flex gap-3">
                                     {(['offline', 'online'] as const).map(df => (
                                         <button
@@ -1610,8 +1934,45 @@ export default function TeacherDashboardContainer() {
                                     ))}
                                 </div>
                             </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Session Purpose</label>
+                                    <select
+                                        value={tempForm.purpose}
+                                        onChange={e => {
+                                            const p = e.target.value as SpecialSessionPurpose;
+                                            setTempForm({
+                                                ...tempForm,
+                                                purpose: p,
+                                                credit_treatment: getDefaultCreditTreatment(p)
+                                            });
+                                        }}
+                                        className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    >
+                                        <option value="makeup">Makeup Class</option>
+                                        <option value="extra_class">Extra Class</option>
+                                        <option value="revision">Revision Session</option>
+                                        <option value="practice">Guided Practice</option>
+                                        <option value="other">Other / Masterclass</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Fee / Credit Treatment</label>
+                                    <select
+                                        value={tempForm.credit_treatment}
+                                        onChange={e => setTempForm({ ...tempForm, credit_treatment: e.target.value as SpecialSessionCreditTreatment })}
+                                        className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    >
+                                        <option value="makeup">Makeup (No extra credit)</option>
+                                        <option value="complimentary">Complimentary (Free)</option>
+                                        <option value="consume_credit">Consume Credit / Bill Fee</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div>
-                                <label className="block text-xs font-bold text-slate-505 uppercase tracking-wider mb-1.5">Select Students</label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Select Students ({tempSelectedStudents.length})</label>
                                 <div className="relative mb-2">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-4" />
                                     <input
@@ -1622,34 +1983,275 @@ export default function TeacherDashboardContainer() {
                                         className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
                                     />
                                 </div>
-                                <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl p-2 space-y-1 bg-slate-50 dark:bg-slate-850/50">
-                                    {filteredStudents.length > 0 ? filteredStudents.map(s => (
-                                        <label key={s.id} className="flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-slate-80 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={tempSelectedStudents.includes(s.id)}
-                                                onChange={(e) => {
-                                                    if (e.target.checked) setTempSelectedStudents(prev => [...prev, s.id]);
-                                                    else setTempSelectedStudents(prev => prev.filter(id => id !== s.id));
-                                                }}
-                                                className="w-4 h-4 rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]"
-                                            />
-                                            <span className="text-sm font-medium">{s.name}</span>
-                                        </label>
-                                    )) : (
-                                        <p className="text-xs text-slate-500 p-2 text-center">No students available.</p>
+                                <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl p-2 space-y-1.5 bg-slate-50 dark:bg-slate-850/50">
+                                    {filteredStudents.length > 0 ? filteredStudents.map(s => {
+                                        const isSelected = tempSelectedStudents.includes(s.id);
+                                        return (
+                                            <div key={s.id} className="p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700/60">
+                                                <label className="flex items-center gap-2.5 cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) setTempSelectedStudents(prev => [...prev, s.id]);
+                                                            else {
+                                                                setTempSelectedStudents(prev => prev.filter(id => id !== s.id));
+                                                                setTempStudentMissedDates(prev => {
+                                                                    const next = { ...prev };
+                                                                    delete next[s.id];
+                                                                    return next;
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="w-4 h-4 rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]"
+                                                    />
+                                                    <span className="text-xs font-medium">{s.name}</span>
+                                                </label>
+                                                {isSelected && tempForm.purpose === 'makeup' && (
+                                                    <div className="mt-2 pl-6">
+                                                        <label className="block text-[10px] font-semibold text-slate-400 uppercase">Missed Class Date (Optional)</label>
+                                                        <input
+                                                            type="date"
+                                                            value={tempStudentMissedDates[s.id] || ''}
+                                                            onChange={e => setTempStudentMissedDates(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                                            className="mt-0.5 w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-1 focus:ring-[#ecb613]"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    }) : (
+                                        <p className="text-xs text-slate-500 p-2 text-center">No students found.</p>
                                     )}
                                 </div>
                             </div>
+
                             <button
                                 onClick={handleCreateTempClass}
-                                className="mt-6 w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-500/20 text-sm shrink-0"
+                                disabled={actionLoading}
+                                className="mt-4 w-full py-3 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg shadow-orange-500/20 text-sm shrink-0 flex items-center justify-center gap-2"
                             >
-                                Create Temporary Class
+                                {actionLoading && <Loader2 className="animate-spin size-4" />}
+                                Create Special Session
                             </button>
                         </div>
                     </div>
-                </div>
+                </>
+            )}
+
+            {/* Edit Special Session Modal */}
+            {showEditTempModal && editingSpecialSession && (
+                <>
+                    <div className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm" onClick={() => setShowEditTempModal(false)} />
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] max-w-[480px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[60] p-6 text-left flex flex-col max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between mb-4 shrink-0 pb-3 border-b border-slate-100 dark:border-slate-800">
+                            <div>
+                                <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Edit Special Session</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Modify session details and roster</p>
+                            </div>
+                            <button onClick={() => setShowEditTempModal(false)} className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto flex-1 pr-1 -mr-1 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Session Name</label>
+                                <input
+                                    type="text"
+                                    value={editingSpecialSession.name}
+                                    onChange={e => setEditingSpecialSession({ ...editingSpecialSession, name: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Session Date</label>
+                                    <input
+                                        type="date"
+                                        value={editingSpecialSession.classDate}
+                                        onChange={e => setEditingSpecialSession({ ...editingSpecialSession, classDate: e.target.value })}
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
+                                    <select
+                                        value={editingSpecialSession.lifecycleStatus}
+                                        onChange={e => setEditingSpecialSession({ ...editingSpecialSession, lifecycleStatus: e.target.value as SpecialSessionLifecycleStatus })}
+                                        className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    >
+                                        <option value="scheduled">Scheduled</option>
+                                        <option value="active">Active / In Progress</option>
+                                        <option value="completed">Completed</option>
+                                        <option value="cancelled">Cancelled</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {isAdmin && (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Instructor (Teacher)</label>
+                                    <select
+                                        value={editingSpecialSession.teacherId}
+                                        onChange={e => setEditingSpecialSession({ ...editingSpecialSession, teacherId: e.target.value })}
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    >
+                                        <option value="">Select an Instructor</option>
+                                        {teachers.map(t => (
+                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time</label>
+                                    <input
+                                        type="time"
+                                        value={editingSpecialSession.startTime}
+                                        onChange={e => setEditingSpecialSession({ ...editingSpecialSession, startTime: e.target.value })}
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">End Time</label>
+                                    <input
+                                        type="time"
+                                        value={editingSpecialSession.endTime}
+                                        onChange={e => setEditingSpecialSession({ ...editingSpecialSession, endTime: e.target.value })}
+                                        className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Delivery Format</label>
+                                <div className="flex gap-3">
+                                    {(['offline', 'online'] as const).map(df => (
+                                        <button
+                                            key={df}
+                                            type="button"
+                                            onClick={() => setEditingSpecialSession({ ...editingSpecialSession, deliveryFormat: df })}
+                                            className={`flex-1 py-2.5 px-3 border rounded-xl font-bold text-xs transition-all cursor-pointer text-center ${editingSpecialSession.deliveryFormat === df ? (df === 'online' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-400' : 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400') : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                        >
+                                            {df === 'online' ? 'Online' : 'Offline (In-Person)'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Session Purpose</label>
+                                    <select
+                                        value={editingSpecialSession.purpose}
+                                        onChange={e => {
+                                            const p = e.target.value as SpecialSessionPurpose;
+                                            setEditingSpecialSession({
+                                                ...editingSpecialSession,
+                                                purpose: p,
+                                                creditTreatment: getDefaultCreditTreatment(p)
+                                            });
+                                        }}
+                                        className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    >
+                                        <option value="makeup">Makeup Class</option>
+                                        <option value="extra_class">Extra Class</option>
+                                        <option value="revision">Revision Session</option>
+                                        <option value="practice">Guided Practice</option>
+                                        <option value="other">Other / Masterclass</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Fee / Credit Treatment</label>
+                                    <select
+                                        value={editingSpecialSession.creditTreatment}
+                                        onChange={e => setEditingSpecialSession({ ...editingSpecialSession, creditTreatment: e.target.value as SpecialSessionCreditTreatment })}
+                                        className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    >
+                                        <option value="makeup">Makeup (No extra credit)</option>
+                                        <option value="complimentary">Complimentary (Free)</option>
+                                        <option value="consume_credit">Consume Credit / Bill Fee</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Assigned Students ({editingSpecialSession.selectedStudents.length})</label>
+                                <div className="relative mb-2">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-4" />
+                                    <input
+                                        type="text"
+                                        value={editStudentSearchQuery}
+                                        onChange={e => setEditStudentSearchQuery(e.target.value)}
+                                        placeholder="Search students..."
+                                        className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-850 focus:ring-2 focus:ring-[#ecb613] focus:border-transparent outline-none"
+                                    />
+                                </div>
+                                <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl p-2 space-y-1.5 bg-slate-50 dark:bg-slate-850/50">
+                                    {allStudents.filter(s => s.name.toLowerCase().includes(editStudentSearchQuery.toLowerCase())).map(s => {
+                                        const isSelected = editingSpecialSession.selectedStudents.includes(s.id);
+                                        return (
+                                            <div key={s.id} className="p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700/60">
+                                                <label className="flex items-center gap-2.5 cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setEditingSpecialSession({
+                                                                    ...editingSpecialSession,
+                                                                    selectedStudents: [...editingSpecialSession.selectedStudents, s.id]
+                                                                });
+                                                            } else {
+                                                                const nextMissed = { ...editingSpecialSession.studentMissedDates };
+                                                                delete nextMissed[s.id];
+                                                                setEditingSpecialSession({
+                                                                    ...editingSpecialSession,
+                                                                    selectedStudents: editingSpecialSession.selectedStudents.filter(id => id !== s.id),
+                                                                    studentMissedDates: nextMissed
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="w-4 h-4 rounded border-slate-300 text-[#ecb613] focus:ring-[#ecb613]"
+                                                    />
+                                                    <span className="text-xs font-medium">{s.name}</span>
+                                                </label>
+                                                {isSelected && editingSpecialSession.purpose === 'makeup' && (
+                                                    <div className="mt-2 pl-6">
+                                                        <label className="block text-[10px] font-semibold text-slate-400 uppercase">Missed Class Date (Optional)</label>
+                                                        <input
+                                                            type="date"
+                                                            value={editingSpecialSession.studentMissedDates[s.id] || ''}
+                                                            onChange={e => setEditingSpecialSession({
+                                                                ...editingSpecialSession,
+                                                                studentMissedDates: {
+                                                                    ...editingSpecialSession.studentMissedDates,
+                                                                    [s.id]: e.target.value
+                                                                }
+                                                            })}
+                                                            className="mt-0.5 w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 outline-none focus:ring-1 focus:ring-[#ecb613]"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={handleSaveEditSpecialSession}
+                                disabled={actionLoading}
+                                className="mt-4 w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg shadow-amber-500/20 text-sm shrink-0 flex items-center justify-center gap-2"
+                            >
+                                {actionLoading && <Loader2 className="animate-spin size-4" />}
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
                 </>
             )}
 
