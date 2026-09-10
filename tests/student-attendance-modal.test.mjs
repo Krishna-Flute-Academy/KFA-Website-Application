@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import createJiti from 'jiti';
+
+const jiti = createJiti(import.meta.url);
+const { getStudentFeeStatus } = jiti('../src/lib/fee-utils.ts');
 
 // Helper replication to test modal business logic
 function getOrdinalSuffix(day) {
@@ -86,3 +90,50 @@ test('4. Attendance summary rate calculation', () => {
     assert.strictEqual(late, 1);
     assert.strictEqual(rate, 60); // 3 out of 5 = 60%
 });
+
+test('5. Fee status resolution for student with approved current cycle payment (e.g. Uddeepta Bandyopadhyay)', () => {
+    // Scenario: Today is Sep 10, 2026. Student due day is 1st of every month.
+    // Student paid for September cycle (payment_date: 2026-09-01, status: 'approved')
+    const today = new Date('2026-09-10T12:00:00Z');
+    const payments = [
+        {
+            id: 'pay-1',
+            student_id: 'uddeepta-id',
+            amount: 2500,
+            payment_date: '2026-09-01T10:00:00Z',
+            status: 'approved',
+            created_at: '2026-09-01T10:00:00Z'
+        }
+    ];
+
+    const feeStatus = getStudentFeeStatus('monthly', 1, payments, today);
+    assert.ok(feeStatus);
+    assert.strictEqual(feeStatus.status, 'good', 'Status should be good/paid, NOT overdue');
+    assert.strictEqual(feeStatus.dueDate.getDate(), 1);
+    assert.strictEqual(feeStatus.dueDate.getMonth(), 9); // Month 9 is October (0-indexed: 0=Jan..9=Oct)
+    assert.strictEqual(feeStatus.dueDate.getFullYear(), 2026);
+    assert.strictEqual(feeStatus.formattedDueDate, '1 October');
+});
+
+test('6. Fee status resolution when payment is empty/unpaid vs pending_approval', () => {
+    const today = new Date('2026-09-10T12:00:00Z');
+
+    // Case A: Unpaid student on Sep 10 whose due day is 1st
+    const unpaidStatus = getStudentFeeStatus('monthly', 1, [], today);
+    assert.strictEqual(unpaidStatus.status, 'overdue');
+    assert.strictEqual(unpaidStatus.hasPendingPayment, false);
+
+    // Case B: Student has pending approval payment
+    const pendingPayments = [
+        {
+            id: 'pay-2',
+            student_id: 'student-2',
+            amount: 2500,
+            payment_date: '2026-09-02T10:00:00Z',
+            status: 'pending_approval'
+        }
+    ];
+    const pendingStatus = getStudentFeeStatus('monthly', 1, pendingPayments, today);
+    assert.strictEqual(pendingStatus.hasPendingPayment, true);
+});
+

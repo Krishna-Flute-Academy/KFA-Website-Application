@@ -217,8 +217,8 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
 
             // 2. Fetch Payments to derive Fee Due status using canonical getStudentFeeStatus
             const { data: paymentsData } = await supabaseAuth
-                .from('payments')
-                .select('id, payment_date, amount, status')
+                .from('fees_payments')
+                .select('id, student_id, payment_date, amount, status, created_at')
                 .eq('student_id', studentId)
                 .order('payment_date', { ascending: false });
 
@@ -441,7 +441,10 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
         let statusBg = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800';
         let statusText = 'Paid / Good Standing';
 
-        if (feeStatus?.status === 'overdue') {
+        if (feeStatus?.hasPendingPayment) {
+            statusBg = 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200 dark:border-amber-800';
+            statusText = 'Pending Approval';
+        } else if (feeStatus?.status === 'overdue') {
             statusBg = 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border-rose-200 dark:border-rose-800';
             statusText = 'Overdue';
         } else if (feeStatus?.status === 'due') {
@@ -452,15 +455,17 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
             statusText = 'Upcoming Due';
         }
 
+        const displayDueDate = feeStatus?.dueDate ? `${feeStatus.dueDate.getDate()} ${feeStatus.dueDate.toLocaleString('en-US', { month: 'short', year: 'numeric' })}` : feeStatus?.formattedDueDate;
+
         feeBadgeContent = (
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
                 <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-medium">
                     <CreditCard className="w-3.5 h-3.5 text-[#ecb613] shrink-0" />
                     <span>Fee Due Day: <strong className="text-slate-900 dark:text-white font-bold">{dayLabel}</strong></span>
                 </div>
-                {feeStatus?.formattedDueDate && (
+                {displayDueDate && (
                     <div className="text-slate-500 dark:text-slate-400">
-                        • Next Due: <strong className="text-slate-800 dark:text-slate-200 font-bold">{feeStatus.formattedDueDate}</strong>
+                        • Next Due: <strong className="text-slate-800 dark:text-slate-200 font-bold">{displayDueDate}</strong>
                     </div>
                 )}
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${statusBg}`}>
