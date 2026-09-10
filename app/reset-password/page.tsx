@@ -106,9 +106,16 @@ export default function ResetPasswordPage() {
 
         setUpdating(true);
         try {
-            const { error: updateError } = await supabaseAuth.auth.updateUser({
+            // Use a timeout to prevent the button from spinning forever
+            // if the Supabase auth server is slow or the session wrapper causes lock contention
+            const updatePromise = supabaseAuth.auth.updateUser({
                 password: password,
             });
+            const timeoutPromise = new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Password update timed out. Please try again.')), 10000)
+            );
+
+            const { error: updateError } = await Promise.race([updatePromise, timeoutPromise]);
 
             if (updateError) {
                 setError(updateError.message);

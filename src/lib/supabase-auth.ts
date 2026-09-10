@@ -72,7 +72,7 @@ if (typeof window !== 'undefined') {
         }
 
         const sessionPromise = rawGetSession();
-        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 3000));
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 8000));
 
         _activeSessionPromise = Promise.race([sessionPromise, timeoutPromise]).then((response: any) => {
             _activeSessionPromise = null;
